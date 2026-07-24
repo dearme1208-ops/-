@@ -1,0 +1,75 @@
+export type Weekday = 1 | 2 | 3 | 4 | 5; // 1=月 ... 5=金
+
+export const WEEKDAY_LABELS: Record<Weekday, string> = {
+  1: "月",
+  2: "火",
+  3: "水",
+  4: "木",
+  5: "金",
+};
+
+export interface MasterTask {
+  id: string;
+  category: string;
+  name: string;
+  estimatedSeconds: number;
+  isFavorite: boolean;
+  sampleCount: number; // 実績平均の算出に使ったサンプル数（表示用）
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TemplateItem {
+  id: string;
+  weekday: Weekday;
+  order: number;
+  masterTaskId?: string;
+  category: string;
+  name: string;
+  estimatedSeconds: number;
+}
+
+export type TaskStatus = "pending" | "running" | "paused" | "done";
+
+export interface TimeSegment {
+  start: number; // epoch ms
+  end?: number; // epoch ms, undefined = still running
+}
+
+export interface DailyTask {
+  id: string;
+  date: string; // YYYY-MM-DD
+  order: number;
+  masterTaskId?: string;
+  category: string;
+  name: string;
+  estimatedSeconds: number;
+  status: TaskStatus;
+  segments: TimeSegment[];
+  accumulatedMs: number; // completed segments total
+  startedAt?: number;
+  endedAt?: number;
+  isSpontaneous: boolean;
+  notifiedOverrun?: boolean;
+  overrunPromptShown?: boolean;
+  overrunPromptDismissedAt?: number;
+}
+
+export interface WorkRecord {
+  id: string;
+  date: string; // YYYY-MM-DD
+  category: string;
+  name: string;
+  masterTaskId?: string;
+  seconds: number;
+  startedAt: number;
+  endedAt: number;
+  excludedFromStats: boolean;
+  excludeReason?: "auto-iqr" | "manual";
+  manualOverride?: boolean; // true = ユーザーが除外/復活を手動指定済み。自動IQR判定の対象外
+}
+
+export interface AppSetting {
+  key: string;
+  value: string;
+}

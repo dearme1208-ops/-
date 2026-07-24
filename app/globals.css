@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #0b0b0c;
+  color: #e9e6bd;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2d;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .btn-pill {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-cream px-5 py-2.5
+      font-sans font-bold text-ink shadow-pill transition-transform active:scale-95
+      disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-pill-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-cream/40 px-5 py-2.5
+      font-sans font-bold text-cream transition-colors hover:bg-cream/10 active:scale-95
+      disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-pill-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-alert px-5 py-2.5
+      font-sans font-bold text-cream shadow-pill transition-transform active:scale-95
+      disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .panel {
+    @apply rounded-2xl border border-cream/10 bg-panel shadow-panel;
+  }
+  .frame-corners {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 40;
+  }
+  .frame-corners::before,
+  .frame-corners::after,
+  .frame-corners .corner-tr,
+  .frame-corners .corner-br {
+    content: "";
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    border-color: rgba(233, 230, 189, 0.55);
+  }
+  .frame-corners::before {
+    top: 10px;
+    left: 10px;
+    border-top: 2px solid;
+    border-left: 2px solid;
+  }
+  .frame-corners::after {
+    bottom: 10px;
+    left: 10px;
+    border-bottom: 2px solid;
+    border-left: 2px solid;
+  }
+  .frame-corners .corner-tr {
+    top: 10px;
+    right: 10px;
+    border-top: 2px solid;
+    border-right: 2px solid;
+  }
+  .frame-corners .corner-br {
+    bottom: 10px;
+    right: 10px;
+    border-bottom: 2px solid;
+    border-right: 2px solid;
+  }
+}

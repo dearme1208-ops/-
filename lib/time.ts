@@ -1,0 +1,31 @@
+export function formatHms(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return [h, m, sec].map((v) => String(v).padStart(2, "0")).join(":");
+}
+
+export function parseHmsToSeconds(hms: string): number {
+  const parts = hms.split(":").map((p) => parseInt(p, 10) || 0);
+  while (parts.length < 3) parts.unshift(0);
+  const [h, m, s] = parts.slice(-3);
+  return h * 3600 + m * 60 + s;
+}
+
+export function formatMsClock(totalMs: number): string {
+  return formatHms(totalMs / 1000);
+}
+
+export function todayStr(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function jsWeekdayToApp(date: Date): 1 | 2 | 3 | 4 | 5 | null {
+  const d = date.getDay(); // 0=Sun..6=Sat
+  if (d >= 1 && d <= 5) return d as 1 | 2 | 3 | 4 | 5;
+  return null;
+}
