@@ -15,6 +15,7 @@ import type { DailyTask, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
+import EditTaskDialog from "@/components/sections/EditTaskDialog";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 
@@ -32,6 +33,7 @@ export default function TodaySection() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [notifPermission, setNotifPermission] = useState<string>("default");
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
+  const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
 
   const tasks = useLiveQuery(
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
@@ -216,6 +218,26 @@ export default function TodaySection() {
     await db.dailyTasks.add(task);
   }
 
+  // 作業名を入力せずにすぐ計測を開始し、内容は後から編集する
+  async function startTrouble() {
+    const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
+    const nowMs = Date.now();
+    const task: DailyTask = {
+      id: uid(),
+      date,
+      order: count,
+      category: "トラブル対応",
+      name: `トラブル ${formatClock(nowMs)}`,
+      estimatedSeconds: 0,
+      status: "running",
+      segments: [{ start: nowMs }],
+      accumulatedMs: 0,
+      startedAt: nowMs,
+      isSpontaneous: true,
+    };
+    await db.dailyTasks.add(task);
+  }
+
   async function enableNotifications() {
     const perm = await requestNotificationPermission();
     setNotifPermission(perm);
@@ -273,7 +295,10 @@ export default function TodaySection() {
 
       <div className="flex items-center justify-between">
         <h2 className="font-display text-lg font-bold">{date} の作業リスト</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-pill-danger text-sm" onClick={startTrouble}>
+            ⚡ トラブル発生
+          </button>
           <button className="btn-pill-outline text-sm" onClick={() => setShowAddDialog(true)}>
             + 突発作業を追加
           </button>
@@ -306,13 +331,22 @@ export default function TodaySection() {
                       {isNext && task.status !== "done" && <span className="ml-2 text-cream">▶ 次の作業</span>}
                     </span>
                     {task.status !== "done" && (
-                      <button
-                        onClick={() => deleteTask(task)}
-                        className="text-cream/40 hover:text-alert"
-                        aria-label="削除"
-                      >
-                        ✕
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setEditingTask(task)}
+                          className="text-cream/40 hover:text-cream"
+                          aria-label="編集"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          onClick={() => deleteTask(task)}
+                          className="text-cream/40 hover:text-alert"
+                          aria-label="削除"
+                        >
+                          ✕
+                        </button>
+                      </>
                     )}
                   </div>
                   <div className="font-display text-base font-bold">{task.name}</div>
@@ -365,6 +399,8 @@ export default function TodaySection() {
       </div>
 
       {showAddDialog && <AddTaskDialog date={date} onClose={() => setShowAddDialog(false)} />}
+
+      {editingTask && <EditTaskDialog task={editingTask} onClose={() => setEditingTask(null)} />}
 
       {overrunTask && (
         <Modal title="まだこの作業中ですか?">
