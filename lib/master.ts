@@ -45,6 +45,64 @@ export async function recomputeEstimateFromRecords(masterTaskId: string): Promis
   });
 }
 
+// 大量の実績CSVを取り込む際に使う一括版。行ごとにテーブル全体を走査するのを避けるため、
+// 既存マスタを1回だけ読み込み、未登録の組み合わせだけをbulkAddする。
+export async function bulkFindOrCreateMasterTasks(
+  pairs: { category: string; name: string }[]
+): Promise<Map<string, MasterTask>> {
+  const existing = await db.masterTasks.toArray();
+  const map = new Map<string, MasterTask>();
+  for (const t of existing) map.set(`${t.category}::${t.name}`, t);
+
+  const now = Date.now();
+  const toCreate: MasterTask[] = [];
+  for (const { category, name } of pairs) {
+    const key = `${category}::${name}`;
+    if (map.has(key)) continue;
+    const task: MasterTask = {
+      id: uid(),
+      category,
+      name,
+      estimatedSeconds: 0,
+      isFavorite: false,
+      sampleCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    map.set(key, task);
+    toCreate.push(task);
+  }
+  if (toCreate.length > 0) {
+    await db.masterTasks.bulkAdd(toCreate);
+  }
+  return map;
+}
+
+// recomputeEstimateFromRecordsの一括版。全実績を1回だけ読み込み、対象マスタIDごとに平均を計算して更新する。
+export async function recomputeEstimatesForMasterTasks(masterTaskIds: Iterable<string>): Promise<void> {
+  const idSet = new Set(masterTaskIds);
+  if (idSet.size === 0) return;
+  const allRecords = await db.records.toArray();
+  const grouped = new Map<string, number[]>();
+  for (const r of allRecords) {
+    if (!r.masterTaskId || !idSet.has(r.masterTaskId) || r.excludedFromStats) continue;
+    if (!grouped.has(r.masterTaskId)) grouped.set(r.masterTaskId, []);
+    grouped.get(r.masterTaskId)!.push(r.seconds);
+  }
+
+  const now = Date.now();
+  await db.transaction("rw", db.masterTasks, async () => {
+    for (const [id, secs] of grouped) {
+      const avg = secs.reduce((sum, s) => sum + s, 0) / secs.length;
+      await db.masterTasks.update(id, {
+        estimatedSeconds: Math.round(avg),
+        sampleCount: secs.length,
+        updatedAt: now,
+      });
+    }
+  });
+}
+
 // CSVから作業マスタを一括登録・更新する。id一致 → 区分+作業名一致 → 新規作成の順でマッチングする
 export async function upsertMasterTasksFromCsv(
   rows: ParsedMasterRow[]

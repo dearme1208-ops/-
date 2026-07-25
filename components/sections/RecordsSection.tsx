@@ -3,7 +3,11 @@
 import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
+import {
+  recomputeEstimateFromRecords,
+  bulkFindOrCreateMasterTasks,
+  recomputeEstimatesForMasterTasks,
+} from "@/lib/master";
 import { recomputeOutliersForAll, setManualOverride, clearManualOverride } from "@/lib/outliers";
 import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
 import { downloadTextFile } from "@/lib/report";
@@ -13,6 +17,7 @@ import type { WorkRecord } from "@/lib/types";
 export default function RecordsSection() {
   const [search, setSearch] = useState("");
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importStatus, setImportStatus] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const records = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
@@ -51,16 +56,26 @@ export default function RecordsSection() {
   }
 
   async function importCsv(file: File) {
+    setImportStatus("読み込み中...");
     const text = await file.text();
     const { records: parsed, errors } = parseRecordsCsv(text);
     setImportErrors(errors);
-    for (const rec of parsed) {
-      const master = await findOrCreateMasterTask(rec.category, rec.name, rec.seconds);
-      const full: WorkRecord = { ...rec, masterTaskId: master.id };
-      await db.records.put(full);
-      await recomputeEstimateFromRecords(master.id);
+    if (parsed.length === 0) {
+      setImportStatus("");
+      return;
     }
+
+    const uniquePairs = [...new Map(parsed.map((r) => [`${r.category}::${r.name}`, { category: r.category, name: r.name }])).values()];
+    const masterMap = await bulkFindOrCreateMasterTasks(uniquePairs);
+
+    const fullRecords: WorkRecord[] = parsed.map((r) => ({
+      ...r,
+      masterTaskId: masterMap.get(`${r.category}::${r.name}`)!.id,
+    }));
+    await db.records.bulkPut(fullRecords);
+    await recomputeEstimatesForMasterTasks(Array.from(masterMap.values(), (m) => m.id));
     await recomputeOutliersForAll();
+    setImportStatus(`${fullRecords.length}件を取り込みました。`);
   }
 
   return (
@@ -93,6 +108,7 @@ export default function RecordsSection() {
         </div>
       </div>
 
+      {importStatus && <p className="text-xs text-cream/70">{importStatus}</p>}
       {importErrors.length > 0 && (
         <div className="panel border border-alert/40 p-3 text-xs text-alert">
           {importErrors.map((e, i) => (
@@ -106,26 +122,26 @@ export default function RecordsSection() {
           <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <input
-                key={r.date}
+                key={`date-${r.date}`}
                 type="date"
                 defaultValue={r.date}
                 onBlur={(e) => e.target.value && updateRecord(r, { date: e.target.value })}
                 className="rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
               <input
-                key={r.category}
+                key={`category-${r.category}`}
                 defaultValue={r.category}
                 onBlur={(e) => updateRecord(r, { category: e.target.value })}
                 className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
               <input
-                key={r.name}
+                key={`name-${r.name}`}
                 defaultValue={r.name}
                 onBlur={(e) => updateRecord(r, { name: e.target.value })}
                 className="w-32 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
               <input
-                key={r.seconds}
+                key={`seconds-${r.seconds}`}
                 defaultValue={formatHms(r.seconds)}
                 onBlur={(e) => updateRecord(r, { seconds: parseHmsToSeconds(e.target.value) })}
                 className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"

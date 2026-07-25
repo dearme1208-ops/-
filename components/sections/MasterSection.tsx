@@ -193,7 +193,7 @@ export default function MasterSection() {
                   </div>
                   <div className="flex items-center gap-2">
                     <input
-                      key={t.estimatedSeconds}
+                      key={`estimate-${t.estimatedSeconds}`}
                       defaultValue={formatHms(t.estimatedSeconds)}
                       onBlur={(e) => updateEstimate(t, e.target.value)}
                       className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"
