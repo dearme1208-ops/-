@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { formatHms, todayStr } from "@/lib/time";
 
-const PX_PER_MIN = 6;
+const DEFAULT_PX_PER_MIN = 6;
+const MIN_PX_PER_MIN = 1;
+const MAX_PX_PER_MIN = 24;
 const ROW_H = 46;
 
 function baseEightAm(dateStr: string): number {
@@ -16,6 +18,8 @@ function baseEightAm(dateStr: string): number {
 export default function GanttSection() {
   const [date, setDate] = useState(todayStr());
   const [now, setNow] = useState(() => Date.now());
+  const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5000);
@@ -63,9 +67,22 @@ export default function GanttSection() {
   );
   const hourMarks = Array.from({ length: Math.ceil(totalMinutes / 60) + 1 }, (_, i) => i);
 
+  function zoomIn() {
+    setPxPerMin((v) => Math.min(MAX_PX_PER_MIN, +(v * 1.4).toFixed(2)));
+  }
+  function zoomOut() {
+    setPxPerMin((v) => Math.max(MIN_PX_PER_MIN, +(v / 1.4).toFixed(2)));
+  }
+  function fitToView() {
+    const containerWidth = scrollRef.current?.clientWidth ?? 0;
+    if (containerWidth <= 0 || totalMinutes <= 0) return;
+    const fit = containerWidth / totalMinutes;
+    setPxPerMin(Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +fit.toFixed(2))));
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm text-cream/70">日付</label>
         <input
           type="date"
@@ -73,6 +90,17 @@ export default function GanttSection() {
           onChange={(e) => setDate(e.target.value)}
           className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
+        <div className="ml-auto flex items-center gap-1">
+          <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
+            －
+          </button>
+          <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomIn} aria-label="拡大">
+            ＋
+          </button>
+          <button className="btn-pill-outline text-xs" onClick={fitToView}>
+            全体表示
+          </button>
+        </div>
       </div>
 
       <div className="panel flex p-4">
@@ -93,15 +121,15 @@ export default function GanttSection() {
         </div>
 
         {/* スクロール可能なタイムライン */}
-        <div className="min-w-0 flex-1 overflow-x-auto">
-          <div style={{ width: Math.max(totalMinutes * PX_PER_MIN + 40, 320) }}>
+        <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
+          <div style={{ width: Math.max(totalMinutes * pxPerMin + 40, 320) }}>
             {/* axis */}
             <div className="relative mb-2 h-6 border-b border-cream/20 text-xs text-cream/50">
               {hourMarks.map((h) => (
                 <div
                   key={h}
                   className="absolute top-0 border-l border-cream/10 pl-1"
-                  style={{ left: h * 60 * PX_PER_MIN }}
+                  style={{ left: h * 60 * pxPerMin }}
                 >
                   {String(8 + h).padStart(2, "0")}:00
                 </div>
@@ -113,14 +141,14 @@ export default function GanttSection() {
                 <div
                   key={h}
                   className="absolute top-0 bottom-0 border-l border-cream/5"
-                  style={{ left: h * 60 * PX_PER_MIN }}
+                  style={{ left: h * 60 * pxPerMin }}
                 />
               ))}
               {rows.map((r, idx) => {
                 const top = idx * ROW_H;
-                const planLeft = r.scheduledStartMin * PX_PER_MIN;
-                const planWidth = Math.max((r.task.estimatedSeconds / 60) * PX_PER_MIN, 3);
-                const predWidth = Math.max((r.predictedSeconds / 60) * PX_PER_MIN, 3);
+                const planLeft = r.scheduledStartMin * pxPerMin;
+                const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
+                const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
                 const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
                 return (
                   <div key={r.task.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
@@ -139,8 +167,8 @@ export default function GanttSection() {
                       <div
                         className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
                         style={{
-                          left: r.actualStartMin * PX_PER_MIN,
-                          width: Math.max((r.actualSeconds / 60) * PX_PER_MIN, 3),
+                          left: r.actualStartMin * pxPerMin,
+                          width: Math.max((r.actualSeconds / 60) * pxPerMin, 3),
                           top: 14,
                           height: 20,
                           boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",

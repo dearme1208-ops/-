@@ -142,6 +142,11 @@ export default function TodaySection() {
     });
   }
 
+  async function deleteTask(task: DailyTask) {
+    if (!confirm(`「${task.name}」を本日の作業リストから削除しますか?`)) return;
+    await db.dailyTasks.delete(task.id);
+  }
+
   async function pauseTask(task: DailyTask) {
     const segments = task.segments.map((s, i) =>
       i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
@@ -295,9 +300,20 @@ export default function TodaySection() {
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs text-cream/60">
-                    {task.category} {task.isSpontaneous && <span className="ml-1 text-alert">突発</span>}
-                    {isNext && task.status !== "done" && <span className="ml-2 text-cream">▶ 次の作業</span>}
+                  <div className="flex items-center gap-2 text-xs text-cream/60">
+                    <span>
+                      {task.category} {task.isSpontaneous && <span className="ml-1 text-alert">突発</span>}
+                      {isNext && task.status !== "done" && <span className="ml-2 text-cream">▶ 次の作業</span>}
+                    </span>
+                    {task.status !== "done" && (
+                      <button
+                        onClick={() => deleteTask(task)}
+                        className="text-cream/40 hover:text-alert"
+                        aria-label="削除"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                   <div className="font-display text-base font-bold">{task.name}</div>
                   <div className="text-xs text-cream/50">
