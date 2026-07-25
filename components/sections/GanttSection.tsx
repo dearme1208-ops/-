@@ -7,7 +7,7 @@ import { useSetting } from "@/lib/settings";
 import { formatHms, todayStr } from "@/lib/time";
 
 const DEFAULT_PX_PER_MIN = 6;
-const MIN_PX_PER_MIN = 1;
+const MIN_PX_PER_MIN = 0.05;
 const MAX_PX_PER_MIN = 24;
 const ROW_H = 46;
 const DAY_MINUTES = 24 * 60;
@@ -75,6 +75,9 @@ export default function GanttSection() {
   );
   const totalMinutes = rangeMode === "24h" ? Math.max(DAY_MINUTES, autoMinutes) : autoMinutes;
   const hourMarks = Array.from({ length: Math.ceil(totalMinutes / 60) + 1 }, (_, i) => i);
+  // ズームアウト時にラベルが重なって読めなくなるのを防ぐため、間引いて表示する
+  const MIN_LABEL_SPACING_PX = 34;
+  const labelStepHours = Math.max(1, Math.ceil(MIN_LABEL_SPACING_PX / (60 * pxPerMin)));
 
   function zoomIn() {
     setPxPerMin((v) => Math.min(MAX_PX_PER_MIN, +(v * 1.4).toFixed(2)));
@@ -85,8 +88,8 @@ export default function GanttSection() {
   function fitToView() {
     const containerWidth = scrollRef.current?.clientWidth ?? 0;
     if (containerWidth <= 0 || totalMinutes <= 0) return;
-    const fit = containerWidth / totalMinutes;
-    setPxPerMin(Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +fit.toFixed(2))));
+    const fit = Math.max(0, containerWidth - 40) / totalMinutes;
+    setPxPerMin(Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +fit.toFixed(3))));
   }
 
   return (
@@ -162,28 +165,32 @@ export default function GanttSection() {
 
         {/* スクロール可能なタイムライン */}
         <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
-          <div style={{ width: Math.max(totalMinutes * pxPerMin + 40, 320) }}>
+          <div style={{ width: totalMinutes * pxPerMin + 40 }}>
             {/* axis */}
             <div className="relative mb-2 h-6 border-b border-cream/20 text-xs text-cream/50">
-              {hourMarks.map((h) => (
-                <div
-                  key={h}
-                  className="absolute top-0 border-l border-cream/10 pl-1"
-                  style={{ left: h * 60 * pxPerMin }}
-                >
-                  {String((startHour + h) % 24).padStart(2, "0")}:00
-                </div>
-              ))}
+              {hourMarks
+                .filter((h) => h % labelStepHours === 0)
+                .map((h) => (
+                  <div
+                    key={h}
+                    className="absolute top-0 border-l border-cream/10 pl-1"
+                    style={{ left: h * 60 * pxPerMin }}
+                  >
+                    {String((startHour + h) % 24).padStart(2, "0")}:00
+                  </div>
+                ))}
             </div>
 
             <div className="relative" style={{ height: rows.length * ROW_H }}>
-              {hourMarks.map((h) => (
-                <div
-                  key={h}
-                  className="absolute top-0 bottom-0 border-l border-cream/5"
-                  style={{ left: h * 60 * pxPerMin }}
-                />
-              ))}
+              {hourMarks
+                .filter((h) => h % labelStepHours === 0)
+                .map((h) => (
+                  <div
+                    key={h}
+                    className="absolute top-0 bottom-0 border-l border-cream/5"
+                    style={{ left: h * 60 * pxPerMin }}
+                  />
+                ))}
               {rows.map((r, idx) => {
                 const top = idx * ROW_H;
                 const planLeft = r.scheduledStartMin * pxPerMin;
