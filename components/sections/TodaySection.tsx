@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
 import { recomputeOutliersForAll } from "@/lib/outliers";
-import { formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
+import { formatClock, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
   notify,
@@ -78,6 +78,31 @@ export default function TodaySection() {
     const next = tasks.find((t) => t.status === "pending" || t.status === "paused" || t.status === "running");
     return next?.id ?? null;
   }, [tasks]);
+
+  // 想定時間から、このまま順番どおり進めた場合の各作業の終了予定時刻を計算する
+  const projectedFinishByTaskId = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!tasks) return map;
+    let cursor = now;
+    for (const task of tasks) {
+      if (task.status === "done" || task.estimatedSeconds <= 0) continue;
+      if (task.status === "running") {
+        const remainingMs = Math.max(0, task.estimatedSeconds * 1000 - segmentsAccumulatedMs(task, now));
+        const finish = now + remainingMs;
+        map.set(task.id, finish);
+        cursor = Math.max(cursor, finish);
+      } else if (task.status === "paused") {
+        const remainingMs = Math.max(0, task.estimatedSeconds * 1000 - task.accumulatedMs);
+        const finish = now + remainingMs;
+        map.set(task.id, finish);
+        cursor = Math.max(cursor, finish);
+      } else {
+        cursor += task.estimatedSeconds * 1000;
+        map.set(task.id, cursor);
+      }
+    }
+    return map;
+  }, [tasks, now]);
 
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
@@ -277,6 +302,11 @@ export default function TodaySection() {
                   <div className="font-display text-base font-bold">{task.name}</div>
                   <div className="text-xs text-cream/50">
                     予定 {formatMsClock(estMs)}
+                    {projectedFinishByTaskId.has(task.id) && (
+                      <span className="ml-2 text-cream/70">
+                        終了予定 {formatClock(projectedFinishByTaskId.get(task.id)!)}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="text-right">

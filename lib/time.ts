@@ -17,6 +17,14 @@ export function formatMsClock(totalMs: number): string {
   return formatHms(totalMs / 1000);
 }
 
+// 時刻表示 (hh:mm) 例: 15:42
+export function formatClock(epochMs: number): string {
+  const d = new Date(epochMs);
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
 export function todayStr(d: Date = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
