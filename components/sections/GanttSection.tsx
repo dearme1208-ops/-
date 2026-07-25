@@ -75,67 +75,83 @@ export default function GanttSection() {
         />
       </div>
 
-      <div className="panel overflow-x-auto p-4">
-        <div style={{ width: Math.max(totalMinutes * PX_PER_MIN + 80, 320) }}>
-          {/* axis */}
-          <div className="relative mb-2 h-6 border-b border-cream/20 text-xs text-cream/50">
-            {hourMarks.map((h) => (
-              <div
-                key={h}
-                className="absolute top-0 border-l border-cream/10 pl-1"
-                style={{ left: h * 60 * PX_PER_MIN }}
-              >
-                {String(8 + h).padStart(2, "0")}:00
-              </div>
-            ))}
-          </div>
+      <div className="panel flex p-4">
+        {/* 固定ラベル列: 横スクロールしても常に見える */}
+        <div className="w-32 shrink-0 pr-2 sm:w-44">
+          <div className="mb-2 h-6 border-b border-cream/20" />
+          {rows.map((r) => (
+            <div
+              key={r.task.id}
+              className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
+              style={{ height: ROW_H }}
+              title={`${r.task.category} / ${r.task.name}`}
+            >
+              <span className="truncate text-cream/50">{r.task.category}</span>
+              <span className="truncate">{r.task.name}</span>
+            </div>
+          ))}
+        </div>
 
-          <div className="relative" style={{ height: rows.length * ROW_H }}>
-            {hourMarks.map((h) => (
-              <div
-                key={h}
-                className="absolute top-0 bottom-0 border-l border-cream/5"
-                style={{ left: h * 60 * PX_PER_MIN }}
-              />
-            ))}
-            {rows.map((r, idx) => {
-              const top = idx * ROW_H;
-              const planLeft = r.scheduledStartMin * PX_PER_MIN;
-              const planWidth = Math.max((r.task.estimatedSeconds / 60) * PX_PER_MIN, 3);
-              const predWidth = Math.max((r.predictedSeconds / 60) * PX_PER_MIN, 3);
-              const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
-              return (
-                <div key={r.task.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
-                  <div className="absolute -top-0.5 left-0 max-w-[240px] truncate text-[11px] text-cream/60">
-                    {r.task.category} / {r.task.name}
-                  </div>
-                  {/* 予測枠（点線） */}
-                  <div
-                    className="absolute rounded border border-dashed border-cream/50"
-                    style={{ left: planLeft, width: predWidth, top: 14, height: 20 }}
-                  />
-                  {/* 予定バー */}
-                  <div
-                    className="absolute rounded bg-cream/70"
-                    style={{ left: planLeft, width: planWidth, top: 14, height: 20 }}
-                  />
-                  {/* 実績バー */}
-                  {r.actualStartMin !== null && r.actualSeconds > 0 && (
-                    <div
-                      className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
-                      style={{
-                        left: r.actualStartMin * PX_PER_MIN,
-                        width: Math.max((r.actualSeconds / 60) * PX_PER_MIN, 3),
-                        top: 14,
-                        height: 20,
-                        boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
-                      }}
-                      title={`実績 ${formatHms(r.actualSeconds)}`}
-                    />
-                  )}
+        {/* スクロール可能なタイムライン */}
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <div style={{ width: Math.max(totalMinutes * PX_PER_MIN + 40, 320) }}>
+            {/* axis */}
+            <div className="relative mb-2 h-6 border-b border-cream/20 text-xs text-cream/50">
+              {hourMarks.map((h) => (
+                <div
+                  key={h}
+                  className="absolute top-0 border-l border-cream/10 pl-1"
+                  style={{ left: h * 60 * PX_PER_MIN }}
+                >
+                  {String(8 + h).padStart(2, "0")}:00
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            <div className="relative" style={{ height: rows.length * ROW_H }}>
+              {hourMarks.map((h) => (
+                <div
+                  key={h}
+                  className="absolute top-0 bottom-0 border-l border-cream/5"
+                  style={{ left: h * 60 * PX_PER_MIN }}
+                />
+              ))}
+              {rows.map((r, idx) => {
+                const top = idx * ROW_H;
+                const planLeft = r.scheduledStartMin * PX_PER_MIN;
+                const planWidth = Math.max((r.task.estimatedSeconds / 60) * PX_PER_MIN, 3);
+                const predWidth = Math.max((r.predictedSeconds / 60) * PX_PER_MIN, 3);
+                const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
+                return (
+                  <div key={r.task.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
+                    {/* 予測枠（点線） */}
+                    <div
+                      className="absolute rounded border border-dashed border-cream/50"
+                      style={{ left: planLeft, width: predWidth, top: 14, height: 20 }}
+                    />
+                    {/* 予定バー */}
+                    <div
+                      className="absolute rounded bg-cream/70"
+                      style={{ left: planLeft, width: planWidth, top: 14, height: 20 }}
+                    />
+                    {/* 実績バー */}
+                    {r.actualStartMin !== null && r.actualSeconds > 0 && (
+                      <div
+                        className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                        style={{
+                          left: r.actualStartMin * PX_PER_MIN,
+                          width: Math.max((r.actualSeconds / 60) * PX_PER_MIN, 3),
+                          top: 14,
+                          height: 20,
+                          boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
+                        }}
+                        title={`実績 ${formatHms(r.actualSeconds)}`}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

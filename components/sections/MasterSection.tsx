@@ -3,7 +3,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { upsertMasterTasksFromCsv } from "@/lib/master";
+import { upsertMasterTasksFromCsv, recomputeAllMasterEstimates } from "@/lib/master";
+import { recomputeOutliersForAll } from "@/lib/outliers";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/masterCsv";
 import { downloadTextFile } from "@/lib/report";
@@ -18,6 +19,7 @@ export default function MasterSection() {
   const [newEstimate, setNewEstimate] = useState("00:10:00");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
+  const [recalcStatus, setRecalcStatus] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -96,6 +98,13 @@ export default function MasterSection() {
     setImportResult(`${created}件を新規追加、${updated}件を更新しました。`);
   }
 
+  async function recalcEstimates() {
+    setRecalcStatus("再計算中...");
+    await recomputeOutliersForAll();
+    await recomputeAllMasterEstimates();
+    setRecalcStatus("すべての想定時間を再計算しました。");
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -126,12 +135,16 @@ export default function MasterSection() {
               e.target.value = "";
             }}
           />
+          <button className="btn-pill-outline text-sm" onClick={recalcEstimates}>
+            想定時間を再計算
+          </button>
           <button className="btn-pill text-sm" onClick={() => setShowNew((v) => !v)}>
             + 新規作業を追加
           </button>
         </div>
       </div>
 
+      {recalcStatus && <p className="text-xs text-cream/70">{recalcStatus}</p>}
       {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
       {importErrors.length > 0 && (
         <div className="panel border border-alert/40 p-3 text-xs text-alert">

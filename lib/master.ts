@@ -78,6 +78,13 @@ export async function bulkFindOrCreateMasterTasks(
   return map;
 }
 
+// 全マスタの想定時間を、現在の外れ値判定を反映した実績平均で再計算する。
+// 一括インポート直後など、想定時間が外れ値込みの平均のまま残ってしまった場合の復旧用。
+export async function recomputeAllMasterEstimates(): Promise<void> {
+  const allIds = (await db.masterTasks.toArray()).map((t) => t.id);
+  await recomputeEstimatesForMasterTasks(allIds);
+}
+
 // recomputeEstimateFromRecordsの一括版。全実績を1回だけ読み込み、対象マスタIDごとに平均を計算して更新する。
 export async function recomputeEstimatesForMasterTasks(masterTaskIds: Iterable<string>): Promise<void> {
   const idSet = new Set(masterTaskIds);

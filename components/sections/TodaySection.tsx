@@ -159,8 +159,8 @@ export default function TodaySection() {
       excludedFromStats: false,
     });
 
-    await recomputeEstimateFromRecords(masterTaskId);
     await recomputeOutliersForAll();
+    await recomputeEstimateFromRecords(masterTaskId);
     if (overrunTask?.id === task.id) setOverrunTask(null);
   }
 
