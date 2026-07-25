@@ -12,7 +12,7 @@ const HEADERS = [
   "excludeReason",
 ] as const;
 
-function csvEscape(value: string): string {
+export function csvEscape(value: string): string {
   if (/[",\n]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
   }
@@ -39,7 +39,7 @@ export function recordsToCsv(records: WorkRecord[]): string {
   return rows.join("\n");
 }
 
-function parseCsvLine(line: string): string[] {
+export function parseCsvLine(line: string): string[] {
   const result: string[] = [];
   let cur = "";
   let inQuotes = false;

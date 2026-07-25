@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { formatHms, parseHmsToSeconds } from "@/lib/time";
+import { upsertMasterTasksFromCsv } from "@/lib/master";
+import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
+import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/masterCsv";
+import { downloadTextFile } from "@/lib/report";
 import type { MasterTask } from "@/lib/types";
 
 export default function MasterSection() {
@@ -13,6 +16,9 @@ export default function MasterSection() {
   const [newCategory, setNewCategory] = useState("");
   const [newName, setNewName] = useState("");
   const [newEstimate, setNewEstimate] = useState("00:10:00");
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importResult, setImportResult] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
 
@@ -69,6 +75,27 @@ export default function MasterSection() {
     setShowNew(false);
   }
 
+  function downloadTemplate() {
+    downloadTextFile("master_template.csv", masterCsvTemplate());
+  }
+
+  function exportCsv() {
+    if (!tasks) return;
+    downloadTextFile(`master_${todayStr()}.csv`, masterTasksToCsv(tasks));
+  }
+
+  async function importCsv(file: File) {
+    const text = await file.text();
+    const { rows, errors } = parseMasterCsv(text);
+    setImportErrors(errors);
+    if (rows.length === 0) {
+      setImportResult("");
+      return;
+    }
+    const { created, updated } = await upsertMasterTasksFromCsv(rows);
+    setImportResult(`${created}件を新規追加、${updated}件を更新しました。`);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -78,10 +105,41 @@ export default function MasterSection() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
-        <button className="btn-pill text-sm" onClick={() => setShowNew((v) => !v)}>
-          + 新規作業を追加
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+            CSVテンプレート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+            CSVエクスポート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+            CSVインポート
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importCsv(file);
+              e.target.value = "";
+            }}
+          />
+          <button className="btn-pill text-sm" onClick={() => setShowNew((v) => !v)}>
+            + 新規作業を追加
+          </button>
+        </div>
       </div>
+
+      {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
+      {importErrors.length > 0 && (
+        <div className="panel border border-alert/40 p-3 text-xs text-alert">
+          {importErrors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      )}
 
       {showNew && (
         <div className="panel space-y-2 p-4">
@@ -135,6 +193,7 @@ export default function MasterSection() {
                   </div>
                   <div className="flex items-center gap-2">
                     <input
+                      key={t.estimatedSeconds}
                       defaultValue={formatHms(t.estimatedSeconds)}
                       onBlur={(e) => updateEstimate(t, e.target.value)}
                       className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"

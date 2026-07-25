@@ -106,22 +106,26 @@ export default function RecordsSection() {
           <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <input
+                key={r.date}
                 type="date"
                 defaultValue={r.date}
                 onBlur={(e) => e.target.value && updateRecord(r, { date: e.target.value })}
                 className="rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
               <input
+                key={r.category}
                 defaultValue={r.category}
                 onBlur={(e) => updateRecord(r, { category: e.target.value })}
                 className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
               <input
+                key={r.name}
                 defaultValue={r.name}
                 onBlur={(e) => updateRecord(r, { name: e.target.value })}
                 className="w-32 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
               <input
+                key={r.seconds}
                 defaultValue={formatHms(r.seconds)}
                 onBlur={(e) => updateRecord(r, { seconds: parseHmsToSeconds(e.target.value) })}
                 className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"
