@@ -1,33 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { parseHmsToSeconds } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 
 export default function AddTaskDialog({ date, onClose }: { date: string; onClose: () => void }) {
   const [mode, setMode] = useState<"master" | "free">("master");
-  const [search, setSearch] = useState("");
   const [selectedMasterId, setSelectedMasterId] = useState<string | null>(null);
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
   const [estimate, setEstimate] = useState("00:10:00");
-
-  const masterTasks = useLiveQuery(
-    () =>
-      db.masterTasks
-        .filter(
-          (t) =>
-            search.trim() === "" ||
-            t.category.includes(search) ||
-            t.name.includes(search)
-        )
-        .toArray(),
-    [search]
-  );
 
   async function addAndOptionallyStart(start: boolean) {
     let taskCategory = category;
@@ -87,28 +73,7 @@ export default function AddTaskDialog({ date, onClose }: { date: string; onClose
       </div>
 
       {mode === "master" ? (
-        <div className="space-y-2">
-          <input
-            placeholder="検索..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          />
-          <div className="max-h-56 space-y-1 overflow-y-auto">
-            {masterTasks?.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setSelectedMasterId(t.id)}
-                className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${
-                  selectedMasterId === t.id ? "bg-cream text-ink" : "bg-ink/60 text-cream hover:bg-ink"
-                }`}
-              >
-                {t.category} / {t.name}
-              </button>
-            ))}
-            {masterTasks?.length === 0 && <p className="text-xs text-cream/50">該当なし</p>}
-          </div>
-        </div>
+        <MasterTaskPicker selectedId={selectedMasterId} onSelect={(t) => setSelectedMasterId(t.id)} />
       ) : (
         <div className="space-y-2">
           <input

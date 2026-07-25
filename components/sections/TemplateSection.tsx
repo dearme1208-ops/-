@@ -20,9 +20,10 @@ import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { formatHms, parseHmsToSeconds } from "@/lib/time";
-import type { TemplateItem, Weekday } from "@/lib/types";
+import type { MasterTask, TemplateItem, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 
 function SortableRow({ item, onDelete }: { item: TemplateItem; onDelete: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -149,22 +150,11 @@ function TemplatePickerDialog({
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"master" | "free">("master");
-  const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
   const [estimate, setEstimate] = useState("00:10:00");
 
-  const masterTasks = useLiveQuery(
-    () =>
-      db.masterTasks
-        .filter((t) => search.trim() === "" || t.category.includes(search) || t.name.includes(search))
-        .toArray(),
-    [search]
-  );
-
-  async function addFromMaster(masterId: string) {
-    const master = await db.masterTasks.get(masterId);
-    if (!master) return;
+  async function addFromMaster(master: MasterTask) {
     await db.templateItems.add({
       id: uid(),
       weekday,
@@ -210,25 +200,7 @@ function TemplatePickerDialog({
         </button>
       </div>
       {mode === "master" ? (
-        <div className="space-y-2">
-          <input
-            placeholder="検索..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          />
-          <div className="max-h-56 space-y-1 overflow-y-auto">
-            {masterTasks?.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => addFromMaster(t.id)}
-                className="block w-full rounded-lg bg-ink/60 px-3 py-2 text-left text-sm text-cream hover:bg-ink"
-              >
-                {t.category} / {t.name}
-              </button>
-            ))}
-          </div>
-        </div>
+        <MasterTaskPicker onSelect={addFromMaster} />
       ) : (
         <div className="space-y-2">
           <input
