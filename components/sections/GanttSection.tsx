@@ -3,23 +3,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { useSetting } from "@/lib/settings";
 import { formatHms, todayStr } from "@/lib/time";
 
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 1;
 const MAX_PX_PER_MIN = 24;
 const ROW_H = 46;
+const DAY_MINUTES = 24 * 60;
 
-function baseEightAm(dateStr: string): number {
+type RangeMode = "auto" | "24h";
+
+function baseAtHour(dateStr: string, hour: number): number {
   const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d, 8, 0, 0).getTime();
+  return new Date(y, m - 1, d, hour, 0, 0).getTime();
 }
 
 export default function GanttSection() {
   const [date, setDate] = useState(todayStr());
   const [now, setNow] = useState(() => Date.now());
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
+  const [startHourStr, setStartHourStr] = useSetting("gantt.startHour", "8");
+  const [rangeMode, setRangeMode] = useSetting("gantt.rangeMode", "auto");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const startHour = Math.min(23, Math.max(0, Number(startHourStr) || 0));
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5000);
@@ -32,8 +40,8 @@ export default function GanttSection() {
 
   const rows = useMemo(() => {
     if (!tasks) return [];
-    const base = baseEightAm(date);
-    let cursor = 0; // minutes from 8:00
+    const base = baseAtHour(date, startHour);
+    let cursor = 0; // minutes from startHour
     return tasks.map((task) => {
       const predictedSeconds = task.masterTaskId ? masterMap.get(task.masterTaskId)?.estimatedSeconds ?? task.estimatedSeconds : task.estimatedSeconds;
       const layoutDurationMin = Math.max(task.estimatedSeconds, predictedSeconds) / 60;
@@ -58,13 +66,14 @@ export default function GanttSection() {
         actualSeconds,
       };
     });
-  }, [tasks, masterMap, date, now]);
+  }, [tasks, masterMap, date, now, startHour]);
 
-  const totalMinutes = Math.max(
+  const autoMinutes = Math.max(
     ...rows.map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
     (rows.at(-1)?.actualStartMin ?? 0) + (rows.at(-1)?.actualSeconds ?? 0) / 60,
     480
   );
+  const totalMinutes = rangeMode === "24h" ? Math.max(DAY_MINUTES, autoMinutes) : autoMinutes;
   const hourMarks = Array.from({ length: Math.ceil(totalMinutes / 60) + 1 }, (_, i) => i);
 
   function zoomIn() {
@@ -103,6 +112,37 @@ export default function GanttSection() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-cream/60">表示開始時刻</label>
+          <select
+            value={startHour}
+            onChange={(e) => setStartHourStr(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+          >
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>
+                {String(h).padStart(2, "0")}:00
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className={rangeMode === "auto" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setRangeMode("auto" satisfies RangeMode)}
+          >
+            作業に合わせる
+          </button>
+          <button
+            className={rangeMode === "24h" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setRangeMode("24h" satisfies RangeMode)}
+          >
+            24時間表示
+          </button>
+        </div>
+      </div>
+
       <div className="panel flex p-4">
         {/* 固定ラベル列: 横スクロールしても常に見える */}
         <div className="w-32 shrink-0 pr-2 sm:w-44">
@@ -131,7 +171,7 @@ export default function GanttSection() {
                   className="absolute top-0 border-l border-cream/10 pl-1"
                   style={{ left: h * 60 * pxPerMin }}
                 >
-                  {String(8 + h).padStart(2, "0")}:00
+                  {String((startHour + h) % 24).padStart(2, "0")}:00
                 </div>
               ))}
             </div>
