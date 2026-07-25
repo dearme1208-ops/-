@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Oswald, Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 import HeaderArt from "@/components/HeaderArt";
+import BadgeUpdater from "@/components/BadgeUpdater";
 
 const oswald = Oswald({
   subsets: ["latin"],
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ja" className={`${oswald.variable} ${notoSansJp.variable}`}>
       <body className="min-h-screen bg-ink font-sans text-cream antialiased">
+        <BadgeUpdater />
         <div className="frame-corners">
           <span className="corner-tr" />
           <span className="corner-br" />

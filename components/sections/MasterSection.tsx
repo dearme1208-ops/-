@@ -10,8 +10,17 @@ import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/maste
 import { downloadTextFile } from "@/lib/report";
 import type { MasterTask } from "@/lib/types";
 
+type SortKey = "name" | "sampleCount" | "estimatedSeconds";
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "name", label: "名前順" },
+  { key: "sampleCount", label: "実績件数順" },
+  { key: "estimatedSeconds", label: "想定時間順" },
+];
+
 export default function MasterSection() {
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("name");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [showNew, setShowNew] = useState(false);
   const [newCategory, setNewCategory] = useState("");
@@ -37,13 +46,19 @@ export default function MasterSection() {
       if (!map.has(t.category)) map.set(t.category, []);
       map.get(t.category)!.push(t);
     }
+    const sortItems = (items: MasterTask[]) => {
+      if (sortKey === "name") {
+        return items.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+      }
+      return items.sort((a, b) => b[sortKey] - a[sortKey] || a.name.localeCompare(b.name, "ja"));
+    };
     return [...map.entries()]
       .sort((a, b) => a[0].localeCompare(b[0], "ja"))
       .map(([category, items]) => ({
         category,
-        items: items.sort((a, b) => a.name.localeCompare(b.name, "ja")),
+        items: sortItems(items),
       }));
-  }, [tasks, search]);
+  }, [tasks, search, sortKey]);
 
   async function toggleFavorite(t: MasterTask) {
     await db.masterTasks.update(t.id, { isFavorite: !t.isFavorite });
@@ -114,6 +129,18 @@ export default function MasterSection() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-cream/50">並び替え:</span>
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setSortKey(opt.key)}
+              className={sortKey === opt.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
             CSVテンプレート
