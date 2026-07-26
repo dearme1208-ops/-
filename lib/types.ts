@@ -73,3 +73,12 @@ export interface AppSetting {
   key: string;
   value: string;
 }
+
+export interface ProjectItem {
+  id: string;
+  title: string; // 件名
+  workName: string; // 作業名（本日の作業に反映する際の作業名）
+  dueDate: string; // 期日 YYYY-MM-DD
+  createdAt: number;
+  completedAt?: number;
+}

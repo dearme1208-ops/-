@@ -37,3 +37,15 @@ export function jsWeekdayToApp(date: Date): 1 | 2 | 3 | 4 | 5 | null {
   if (d >= 1 && d <= 5) return d as 1 | 2 | 3 | 4 | 5;
   return null;
 }
+
+// "YYYY-MM-DD"同士の日数差 (to - from)
+export function daysBetweenDateStrs(fromStr: string, toStr: string): number {
+  const from = new Date(fromStr + "T00:00:00");
+  const to = new Date(toStr + "T00:00:00");
+  return Math.round((to.getTime() - from.getTime()) / 86400000);
+}
+
+export function formatDateJp(dateStr: string): string {
+  const [, m, d] = dateStr.split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
