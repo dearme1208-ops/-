@@ -18,6 +18,7 @@ const MIN_LABEL_SPACING_PX = 50;
 
 export default function ProjectsSection() {
   const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("");
   const [workName, setWorkName] = useState("");
   const [dueDate, setDueDate] = useState(todayStr());
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
@@ -29,16 +30,18 @@ export default function ProjectsSection() {
   const today = todayStr();
 
   async function addProject() {
-    if (!title.trim() || !workName.trim() || !dueDate) return;
+    if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) return;
     const item: ProjectItem = {
       id: uid(),
       title: title.trim(),
+      category: category.trim(),
       workName: workName.trim(),
       dueDate,
       createdAt: Date.now(),
     };
     await db.projects.add(item);
     setTitle("");
+    setCategory("");
     setWorkName("");
     setDueDate(todayStr());
   }
@@ -53,14 +56,16 @@ export default function ProjectsSection() {
   }
 
   async function addToToday(item: ProjectItem) {
-    const master = await findOrCreateMasterTask(item.title, item.workName, 0);
+    // 旧データ(業務区分未登録)との互換のため、未設定なら件名にフォールバックする
+    const taskCategory = item.category || item.title;
+    const master = await findOrCreateMasterTask(taskCategory, item.workName, 0);
     const count = (await db.dailyTasks.where("date").equals(today).toArray()).length;
     const task: DailyTask = {
       id: uid(),
       date: today,
       order: count,
       masterTaskId: master.id,
-      category: item.title,
+      category: taskCategory,
       name: item.workName,
       estimatedSeconds: master.estimatedSeconds,
       status: "pending",
@@ -124,7 +129,13 @@ export default function ProjectsSection() {
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
         <input
-          placeholder="作業名"
+          placeholder="業務区分（大項目）"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <input
+          placeholder="詳細作業名"
           value={workName}
           onChange={(e) => setWorkName(e.target.value)}
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
@@ -149,7 +160,10 @@ export default function ProjectsSection() {
         {rows.map(({ project, overdue, daysLeft }) => (
           <div key={project.id} className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""}`}>
             <div>
-              <div className="text-xs text-cream/50">{project.title}</div>
+              <div className="text-xs text-cream/50">
+                {project.title}
+                {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
+              </div>
               <div className="text-sm text-cream">{project.workName}</div>
               <div className={`text-xs ${overdue ? "text-alert font-bold" : "text-cream/60"}`}>
                 期日 {project.dueDate} {project.completedAt ? "（完了）" : overdue ? `（${-daysLeft}日超過）` : `（残り${daysLeft}日）`}
