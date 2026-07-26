@@ -26,6 +26,7 @@ export default function ProjectsSection() {
   const [addedMessage, setAddedMessage] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
+  const [showForm, setShowForm] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
@@ -122,38 +123,48 @@ export default function ProjectsSection() {
 
   return (
     <div className="space-y-4">
-      <div className="panel space-y-2 p-4">
-        <h2 className="mb-1 font-display text-lg font-bold">案件を登録</h2>
-        <input
-          placeholder="件名"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
-        <input
-          placeholder="業務区分（大項目）"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
-        <input
-          placeholder="詳細作業名"
-          value={workName}
-          onChange={(e) => setWorkName(e.target.value)}
-          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-cream/60">期日</label>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          />
-        </div>
-        <button className="btn-pill text-sm" onClick={addProject}>
-          追加
+      <div className="panel p-4">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowForm((v) => !v)}
+        >
+          <h2 className="font-display text-lg font-bold">案件を登録</h2>
+          <span className="text-cream/60">{showForm ? "▼" : "▶"}</span>
         </button>
+        {showForm && (
+          <div className="mt-2 space-y-2">
+            <input
+              placeholder="件名"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+            <input
+              placeholder="業務区分（大項目）"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+            <input
+              placeholder="詳細作業名"
+              value={workName}
+              onChange={(e) => setWorkName(e.target.value)}
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-cream/60">期日</label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+            </div>
+            <button className="btn-pill text-sm" onClick={addProject}>
+              追加
+            </button>
+          </div>
+        )}
       </div>
 
       {addedMessage && <p className="text-xs text-cream/70">{addedMessage}</p>}
