@@ -6,6 +6,9 @@ import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { daysBetweenDateStrs, formatDateJp, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem } from "@/lib/types";
+import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
+
+type ViewMode = "gantt" | "calendar";
 
 const DEFAULT_PX_PER_DAY = 28;
 const MIN_PX_PER_DAY = 0.3;
@@ -19,6 +22,7 @@ export default function ProjectsSection() {
   const [dueDate, setDueDate] = useState(todayStr());
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const [addedMessage, setAddedMessage] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("gantt");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
@@ -169,22 +173,41 @@ export default function ProjectsSection() {
 
       {rows.length > 0 && (
         <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="font-display text-base font-bold">期日ガントチャート</h3>
-            <div className="flex items-center gap-1">
-              <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
-                －
-              </button>
-              <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomIn} aria-label="拡大">
-                ＋
-              </button>
-              <button className="btn-pill-outline text-xs" onClick={fitToView}>
-                全体表示
-              </button>
-            </div>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              className={viewMode === "gantt" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setViewMode("gantt")}
+            >
+              ガントチャート
+            </button>
+            <button
+              className={viewMode === "calendar" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setViewMode("calendar")}
+            >
+              カレンダー
+            </button>
           </div>
 
-          <div className="panel flex p-4">
+          {viewMode === "calendar" ? (
+            <ProjectsCalendarView projects={projects ?? []} today={today} />
+          ) : (
+            <>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="font-display text-base font-bold">期日ガントチャート</h3>
+                <div className="flex items-center gap-1">
+                  <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
+                    －
+                  </button>
+                  <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomIn} aria-label="拡大">
+                    ＋
+                  </button>
+                  <button className="btn-pill-outline text-xs" onClick={fitToView}>
+                    全体表示
+                  </button>
+                </div>
+              </div>
+
+              <div className="panel flex p-4">
             {/* 固定ラベル列 */}
             <div className="w-28 shrink-0 pr-2 sm:w-40">
               <div className="mb-2 h-6 border-b border-cream/20" />
@@ -254,8 +277,10 @@ export default function ProjectsSection() {
                 </div>
               </div>
             </div>
-          </div>
-          <p className="mt-2 text-xs text-cream/40">赤い縦線が本日の位置です。バーは登録日から期日までの猶予を表します。</p>
+              </div>
+              <p className="mt-2 text-xs text-cream/40">赤い縦線が本日の位置です。バーは登録日から期日までの猶予を表します。</p>
+            </>
+          )}
         </div>
       )}
     </div>
