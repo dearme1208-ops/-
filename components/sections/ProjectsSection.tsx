@@ -7,6 +7,7 @@ import { findOrCreateMasterTask } from "@/lib/master";
 import { daysBetweenDateStrs, formatDateJp, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
+import EditProjectDialog from "@/components/sections/EditProjectDialog";
 
 type ViewMode = "gantt" | "calendar";
 
@@ -24,6 +25,7 @@ export default function ProjectsSection() {
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const [addedMessage, setAddedMessage] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
+  const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
@@ -176,6 +178,9 @@ export default function ProjectsSection() {
               <button className="btn-pill-outline text-xs" onClick={() => toggleComplete(project)}>
                 {project.completedAt ? "未完了に戻す" : "完了"}
               </button>
+              <button className="text-xs text-cream/60 hover:text-cream" onClick={() => setEditingProject(project)}>
+                編集
+              </button>
               <button className="text-xs text-alert" onClick={() => deleteProject(project)}>
                 削除
               </button>
@@ -297,6 +302,8 @@ export default function ProjectsSection() {
           )}
         </div>
       )}
+
+      {editingProject && <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
     </div>
   );
 }
