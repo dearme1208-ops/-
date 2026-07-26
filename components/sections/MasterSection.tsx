@@ -52,8 +52,14 @@ export default function MasterSection() {
       }
       return items.sort((a, b) => b[sortKey] - a[sortKey] || a.name.localeCompare(b.name, "ja"));
     };
+    const sum = (items: MasterTask[], key: "sampleCount" | "estimatedSeconds") =>
+      items.reduce((s, t) => s + t[key], 0);
+
     return [...map.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0], "ja"))
+      .sort((a, b) => {
+        if (sortKey === "name") return a[0].localeCompare(b[0], "ja");
+        return sum(b[1], sortKey) - sum(a[1], sortKey) || a[0].localeCompare(b[0], "ja");
+      })
       .map(([category, items]) => ({
         category,
         items: sortItems(items),
