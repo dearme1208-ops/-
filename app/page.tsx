@@ -15,6 +15,7 @@ const HeatmapSection = dynamic(() => import("@/components/sections/HeatmapSectio
 const AttentionSection = dynamic(() => import("@/components/sections/AttentionSection"), { ssr: false });
 const ReportSection = dynamic(() => import("@/components/sections/ReportSection"), { ssr: false });
 const RecordsSection = dynamic(() => import("@/components/sections/RecordsSection"), { ssr: false });
+const SettingsSection = dynamic(() => import("@/components/sections/SettingsSection"), { ssr: false });
 
 const TABS: TabDef[] = [
   { key: "today", label: "本日の作業" },
@@ -28,6 +29,7 @@ const TABS: TabDef[] = [
   { key: "attention", label: "要注意リスト" },
   { key: "report", label: "週報・月報" },
   { key: "records", label: "実績編集" },
+  { key: "settings", label: "設定" },
 ];
 
 export default function HomePage() {
@@ -47,6 +49,7 @@ export default function HomePage() {
       {active === "attention" && <AttentionSection />}
       {active === "report" && <ReportSection />}
       {active === "records" && <RecordsSection />}
+      {active === "settings" && <SettingsSection />}
     </div>
   );
 }

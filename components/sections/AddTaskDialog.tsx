@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
+import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { parseHmsToSeconds } from "@/lib/time";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -44,7 +45,14 @@ export default function AddTaskDialog({ date, onClose }: { date: string; onClose
 
   async function submitMaster(start: boolean) {
     if (!selectedMaster) return;
-    await insertTask(selectedMaster.category, selectedMaster.name, selectedMaster.estimatedSeconds, selectedMaster.id, start);
+    // 同日中に同じ大項目・詳細作業名の作業が既にあれば、残りの想定時間を繰り越す
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(
+      date,
+      selectedMaster.category,
+      selectedMaster.name,
+      selectedMaster.estimatedSeconds
+    );
+    await insertTask(selectedMaster.category, selectedMaster.name, estimatedSeconds, selectedMaster.id, start);
   }
 
   async function submitFreeform(start: boolean) {

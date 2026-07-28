@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
 import { useSetting } from "@/lib/settings";
-import { segmentsAccumulatedMs } from "@/lib/tasks";
+import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -31,16 +31,15 @@ export default function TodaySection() {
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
-  const [thresholdMinutesStr, setThresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
+  const [thresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
   const thresholdMinutes = Math.max(1, Number(thresholdMinutesStr) || 5);
-  const [provisionalEnabledStr, setProvisionalEnabledStr] = useSetting("today.provisionalEnabled", "false");
+  const [provisionalEnabledStr] = useSetting("today.provisionalEnabled", "false");
   const provisionalEnabled = provisionalEnabledStr === "true";
-  const [provisionalNotifyEnabledStr, setProvisionalNotifyEnabledStr] = useSetting(
-    "today.provisionalNotifyEnabled",
-    "true"
-  );
+  const [provisionalNotifyEnabledStr] = useSetting("today.provisionalNotifyEnabled", "true");
   const provisionalNotifyEnabled = provisionalNotifyEnabledStr === "true";
   const provisionalNotifiedAtRef = useRef<number | null>(null);
+  const [emphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
+  const emphasizeRunning = emphasizeRunningStr === "true";
 
   const tasks = useLiveQuery(
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
@@ -155,6 +154,9 @@ export default function TodaySection() {
 
   // 未割り当ての仮計測タスク（未計測時間が閾値を超えた際に自動生成される）
   const provisionalTask = useMemo(() => tasks?.find((t) => t.isProvisional) ?? null, [tasks]);
+  // トラブル対応などで仮計測自体が一時停止中の場合は「計測中」ではないため、
+  // 他の作業をブロックする対象からは除外する
+  const provisionalActive = provisionalTask?.status === "running";
 
   // 仮計測タスクの割り当て先として選べる、本日の作業に登録済みの未着手/一時停止中タスク
   const candidateTasks = useMemo(
@@ -170,6 +172,15 @@ export default function TodaySection() {
       if (t.status === "running" && !t.isProvisional) keys.add(`${t.category}::${t.name}`);
     }
     return keys;
+  }, [tasks]);
+
+  // 「計測中の作業を強調表示」設定用: 現在計測中（仮計測を除く）の作業ID一覧
+  const runningTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const t of tasks ?? []) {
+      if (t.status === "running" && !t.isProvisional) ids.add(t.id);
+    }
+    return ids;
   }, [tasks]);
 
   // 誰も計測していない状態が閾値を超えたら、自動で仮計測タスクを立ち上げる（オフの場合は何もしない）
@@ -201,9 +212,10 @@ export default function TodaySection() {
     })();
   }, [provisionalEnabled, tasks, now, lastStopTime, thresholdMinutes, date]);
 
-  // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する（オフの場合は何もしない）
+  // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する
+  // （オフの場合や、トラブル対応などで一時停止中の場合は何もしない）
   useEffect(() => {
-    if (!provisionalNotifyEnabled || !provisionalTask) {
+    if (!provisionalNotifyEnabled || !provisionalTask || !provisionalActive) {
       provisionalNotifiedAtRef.current = null;
       return;
     }
@@ -216,7 +228,7 @@ export default function TodaySection() {
       "provisional-tracking"
     );
     provisionalNotifiedAtRef.current = now;
-  }, [provisionalNotifyEnabled, provisionalTask, now]);
+  }, [provisionalNotifyEnabled, provisionalTask, provisionalActive, now]);
 
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
@@ -338,6 +350,13 @@ export default function TodaySection() {
     }
     const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
     await commitFinish(task, segments, accumulatedMs);
+    // トラブル対応を完了した場合、それによって中断していた作業（仮計測含む）を自動的に再開する
+    if (task.isTrouble && task.resumeTaskId) {
+      const target = await db.dailyTasks.get(task.resumeTaskId);
+      if (target && target.status === "paused") {
+        await startTask(target);
+      }
+    }
   }
 
   // 仮計測タスクを、本日の作業に既に登録されている作業に割り当てる。
@@ -393,6 +412,7 @@ export default function TodaySection() {
   async function addFavoriteAndStart(masterTaskId: string) {
     const master = await db.masterTasks.get(masterTaskId);
     if (!master) return;
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(date, master.category, master.name, master.estimatedSeconds);
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
     const id = uid();
     const task: DailyTask = {
@@ -402,7 +422,7 @@ export default function TodaySection() {
       masterTaskId: master.id,
       category: master.category,
       name: master.name,
-      estimatedSeconds: master.estimatedSeconds,
+      estimatedSeconds,
       status: "running",
       segments: [{ start: Date.now() }],
       accumulatedMs: 0,
@@ -413,7 +433,10 @@ export default function TodaySection() {
   }
 
   // 作業名を入力せずにすぐ計測を開始し、内容は後から編集する
+  // どんな状態でもトラブル対応を最優先で開始する。仮計測を含め、計測中の作業が
+  // あればまず一時停止し、トラブル対応が終わったら自動的に再開できるよう覚えておく
   async function startTrouble() {
+    const running = tasks?.find((t) => t.status === "running");
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
     const nowMs = Date.now();
     const task: DailyTask = {
@@ -428,8 +451,13 @@ export default function TodaySection() {
       accumulatedMs: 0,
       startedAt: nowMs,
       isSpontaneous: true,
+      isTrouble: true,
+      resumeTaskId: running?.id,
     };
-    await db.dailyTasks.add(task);
+    await db.transaction("rw", db.dailyTasks, async () => {
+      if (running) await pauseTask(running);
+      await db.dailyTasks.add(task);
+    });
   }
 
   async function enableNotifications() {
@@ -504,34 +532,6 @@ export default function TodaySection() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-cream/50">
-        <button
-          className={provisionalEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-          onClick={() => setProvisionalEnabledStr(provisionalEnabled ? "false" : "true")}
-        >
-          未計測の自動計測: {provisionalEnabled ? "ON" : "OFF"}
-        </button>
-        {provisionalEnabled && (
-          <>
-            <span>未計測が</span>
-            <input
-              type="number"
-              min={1}
-              value={thresholdMinutesStr}
-              onChange={(e) => setThresholdMinutesStr(e.target.value)}
-              className="w-14 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
-            />
-            <span>分以上続いたら、自動で仮計測を開始します</span>
-            <button
-              className={provisionalNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setProvisionalNotifyEnabledStr(provisionalNotifyEnabled ? "false" : "true")}
-            >
-              仮計測の通知: {provisionalNotifyEnabled ? "ON" : "OFF"}
-            </button>
-          </>
-        )}
-      </div>
-
       {provisionalTask && (
         <ProvisionalTaskCard
           task={provisionalTask}
@@ -557,9 +557,11 @@ export default function TodaySection() {
                 : isNext
                   ? "border-cream/60 ring-1 ring-cream/40"
                   : "";
-          const dimmed = task.status !== "done" && !!provisionalTask;
+          const isBlockedByEmphasis = emphasizeRunning && runningTaskIds.size > 0 && !runningTaskIds.has(task.id);
+          const dimmed = task.status !== "done" && (provisionalActive || isBlockedByEmphasis);
           const duplicateRunning =
             task.status !== "running" && runningTaskKeys.has(`${task.category}::${task.name}`);
+          const controlsDisabled = provisionalActive || isBlockedByEmphasis;
           return (
             <div
               key={task.id}
@@ -602,11 +604,13 @@ export default function TodaySection() {
                   </div>
                   <div className="font-display text-base font-bold">{task.name}</div>
                   {task.projectId && projectMap.get(task.projectId) && (
-                    <div className="text-xs text-cream/60">
-                      案件: {projectMap.get(task.projectId)!.title}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="rounded-full border border-cream/30 px-2 py-0.5 text-cream/80">
+                        案件: {projectMap.get(task.projectId)!.title}
+                      </span>
                       {(projectTotalSeconds.get(task.projectId) ?? 0) > 0 && (
-                        <span className="ml-2 text-cream/50">
-                          累計 {formatHms(projectTotalSeconds.get(task.projectId)!)}
+                        <span className="font-bold tabular-nums text-cream/70">
+                          この案件の累計 {formatHms(projectTotalSeconds.get(task.projectId)!)}
                         </span>
                       )}
                     </div>
@@ -632,7 +636,7 @@ export default function TodaySection() {
                       <>
                         <button
                           className="btn-pill text-xs"
-                          disabled={!!provisionalTask || duplicateRunning}
+                          disabled={controlsDisabled || duplicateRunning}
                           onClick={() => startTask(task)}
                         >
                           開始
@@ -640,7 +644,7 @@ export default function TodaySection() {
                         {lastStopTime && (
                           <button
                             className="btn-pill-outline text-xs"
-                            disabled={!!provisionalTask || duplicateRunning}
+                            disabled={controlsDisabled || duplicateRunning}
                             onClick={() => startTask(task, lastStopTime)}
                           >
                             さかのぼって開始
@@ -648,7 +652,7 @@ export default function TodaySection() {
                         )}
                         <button
                           className="btn-pill-outline text-xs"
-                          disabled={!!provisionalTask}
+                          disabled={controlsDisabled}
                           onClick={() => setManualFinishTaskTarget(task)}
                         >
                           手動で記録
@@ -657,10 +661,10 @@ export default function TodaySection() {
                     )}
                     {task.status === "running" && (
                       <>
-                        <button className="btn-pill-outline text-xs" disabled={!!provisionalTask} onClick={() => pauseTask(task)}>
+                        <button className="btn-pill-outline text-xs" disabled={controlsDisabled} onClick={() => pauseTask(task)}>
                           一時停止
                         </button>
-                        <button className="btn-pill text-xs" disabled={!!provisionalTask} onClick={() => finishTask(task)}>
+                        <button className="btn-pill text-xs" disabled={controlsDisabled} onClick={() => finishTask(task)}>
                           終了
                         </button>
                       </>
@@ -669,7 +673,7 @@ export default function TodaySection() {
                       <>
                         <button
                           className="btn-pill-outline text-xs"
-                          disabled={!!provisionalTask || duplicateRunning}
+                          disabled={controlsDisabled || duplicateRunning}
                           onClick={() => startTask(task)}
                         >
                           再開
@@ -677,18 +681,18 @@ export default function TodaySection() {
                         {lastStopTime && (
                           <button
                             className="btn-pill-outline text-xs"
-                            disabled={!!provisionalTask || duplicateRunning}
+                            disabled={controlsDisabled || duplicateRunning}
                             onClick={() => startTask(task, lastStopTime)}
                           >
                             さかのぼって再開
                           </button>
                         )}
-                        <button className="btn-pill text-xs" disabled={!!provisionalTask} onClick={() => finishTask(task)}>
+                        <button className="btn-pill text-xs" disabled={controlsDisabled} onClick={() => finishTask(task)}>
                           終了
                         </button>
                         <button
                           className="btn-pill-outline text-xs"
-                          disabled={!!provisionalTask}
+                          disabled={controlsDisabled}
                           onClick={() => setManualFinishTaskTarget(task)}
                         >
                           手動で記録

@@ -55,6 +55,8 @@ export interface DailyTask {
   overrunPromptDismissedAt?: number;
   isProvisional?: boolean; // 未計測時間の自動仮計測タスク（作業未割り当て）
   projectId?: string; // 案件から追加された場合、その案件のID
+  isTrouble?: boolean; // トラブル対応タスクかどうか
+  resumeTaskId?: string; // トラブル対応で中断した作業のID。トラブル完了時に再開する
 }
 
 export interface WorkRecord {

@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { upsertProjectsFromCsv } from "@/lib/projects";
+import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
 import { downloadTextFile } from "@/lib/report";
 import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/time";
@@ -101,6 +102,12 @@ export default function ProjectsSection() {
     // 旧データ(業務区分未登録)との互換のため、未設定なら件名にフォールバックする
     const taskCategory = item.category || item.title;
     const master = await findOrCreateMasterTask(taskCategory, item.workName, 0);
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(
+      today,
+      taskCategory,
+      item.workName,
+      master.estimatedSeconds
+    );
     const count = (await db.dailyTasks.where("date").equals(today).toArray()).length;
     const task: DailyTask = {
       id: uid(),
@@ -109,7 +116,7 @@ export default function ProjectsSection() {
       masterTaskId: master.id,
       category: taskCategory,
       name: item.workName,
-      estimatedSeconds: master.estimatedSeconds,
+      estimatedSeconds,
       status: "pending",
       segments: [],
       accumulatedMs: 0,
