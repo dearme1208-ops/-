@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
+import { useSetting } from "@/lib/settings";
+import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -16,15 +18,9 @@ import Modal from "@/components/ui/Modal";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
 import EditTaskDialog from "@/components/sections/EditTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
+import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
-
-function segmentsAccumulatedMs(task: DailyTask, now: number): number {
-  let total = task.accumulatedMs;
-  const running = task.segments.find((s) => s.end === undefined);
-  if (running) total += now - running.start;
-  return total;
-}
 
 export default function TodaySection() {
   const date = todayStr();
@@ -35,6 +31,8 @@ export default function TodaySection() {
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
+  const [thresholdMinutesStr, setThresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
+  const thresholdMinutes = Math.max(1, Number(thresholdMinutesStr) || 5);
 
   const tasks = useLiveQuery(
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
@@ -78,7 +76,9 @@ export default function TodaySection() {
 
   const nextTaskId = useMemo(() => {
     if (!tasks) return null;
-    const next = tasks.find((t) => t.status === "pending" || t.status === "paused" || t.status === "running");
+    const next = tasks.find(
+      (t) => !t.isProvisional && (t.status === "pending" || t.status === "paused" || t.status === "running")
+    );
     return next?.id ?? null;
   }, [tasks]);
 
@@ -132,20 +132,42 @@ export default function TodaySection() {
     return stops.length > 0 ? Math.max(...stops) : null;
   }, [tasks]);
 
-  // 未計測時間: 最初の作業を始めてから今まで(または最後に完了した時刻まで)の
-  // 経過時間から、実際に計測された合計時間を差し引いた「空白」の時間
-  const untrackedSeconds = useMemo(() => {
-    if (!tasks || tasks.length === 0) return 0;
-    const startTimes = tasks.filter((t) => t.startedAt).map((t) => t.startedAt!);
-    if (startTimes.length === 0) return 0;
-    const windowStart = Math.min(...startTimes);
-    const anyActive = tasks.some((t) => t.status === "running" || t.status === "pending" || t.status === "paused");
-    const doneEnds = tasks.filter((t) => t.status === "done" && t.endedAt).map((t) => t.endedAt!);
-    const windowEnd = anyActive ? now : doneEnds.length > 0 ? Math.max(...doneEnds) : now;
-    const trackedMs = tasks.reduce((sum, t) => sum + segmentsAccumulatedMs(t, now), 0);
-    const windowMs = Math.max(0, windowEnd - windowStart);
-    return Math.max(0, Math.round((windowMs - trackedMs) / 1000));
-  }, [tasks, now]);
+  // 未割り当ての仮計測タスク（未計測時間が閾値を超えた際に自動生成される）
+  const provisionalTask = useMemo(() => tasks?.find((t) => t.isProvisional) ?? null, [tasks]);
+
+  // 仮計測タスクの割り当て先として選べる、本日の作業に登録済みの未着手/一時停止中タスク
+  const candidateTasks = useMemo(
+    () => (tasks ?? []).filter((t) => !t.isProvisional && (t.status === "pending" || t.status === "paused")),
+    [tasks]
+  );
+
+  // 誰も計測していない状態が閾値を超えたら、自動で仮計測タスクを立ち上げる
+  useEffect(() => {
+    if (!tasks) return;
+    if (tasks.some((t) => t.isProvisional)) return;
+    if (tasks.some((t) => t.status === "running")) return;
+    if (lastStopTime === null) return;
+    if (now - lastStopTime < thresholdMinutes * 60000) return;
+    const gapStart = lastStopTime;
+    (async () => {
+      const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
+      const task: DailyTask = {
+        id: uid(),
+        date,
+        order: count,
+        category: "未分類",
+        name: "仮計測中",
+        estimatedSeconds: 0,
+        status: "running",
+        segments: [{ start: gapStart }],
+        accumulatedMs: 0,
+        startedAt: gapStart,
+        isSpontaneous: true,
+        isProvisional: true,
+      };
+      await db.dailyTasks.add(task);
+    })();
+  }, [tasks, now, lastStopTime, thresholdMinutes, date]);
 
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
@@ -260,6 +282,41 @@ export default function TodaySection() {
     }
     const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
     await commitFinish(task, segments, accumulatedMs);
+  }
+
+  // 仮計測タスクを、本日の作業に既に登録されている作業に割り当てる。
+  // 未計測だった区間の開始時刻から、そのままその作業の計測として続ける
+  // （一時停止中だった場合は、その時間が計測に加算される形になる）
+  async function resolveProvisionalToExisting(targetId: string) {
+    if (!provisionalTask) return;
+    const target = tasks?.find((t) => t.id === targetId);
+    if (!target) return;
+    await startTask(target, provisionalTask.startedAt ?? Date.now());
+    await db.dailyTasks.delete(provisionalTask.id);
+  }
+
+  // 仮計測タスクを、新しい作業（マスタ選択 or 自由入力）として確定する。
+  // 計測はそのまま継続する
+  async function resolveProvisionalAsNew(
+    category: string,
+    name: string,
+    estimatedSeconds: number,
+    masterTaskId: string | undefined
+  ) {
+    if (!provisionalTask) return;
+    await db.dailyTasks.update(provisionalTask.id, {
+      category,
+      name,
+      estimatedSeconds,
+      masterTaskId,
+      isProvisional: false,
+    });
+  }
+
+  // 割り当てずに「未分類」の実績としてそのまま終了する
+  async function resolveProvisionalFinish() {
+    if (!provisionalTask) return;
+    await finishTask(provisionalTask);
   }
 
   // 計測し忘れた場合に、実際の所要時間を直接入力して終了する
@@ -385,17 +442,31 @@ export default function TodaySection() {
         </div>
       </div>
 
-      {untrackedSeconds > 0 && (
-        <div className="panel flex items-center justify-between p-3">
-          <span className="text-sm text-cream/70">未計測時間</span>
-          <span className="font-display text-lg font-bold text-alert tabular-nums">
-            {formatMsClock(untrackedSeconds * 1000)}
-          </span>
-        </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-cream/50">
+        <span>未計測が</span>
+        <input
+          type="number"
+          min={1}
+          value={thresholdMinutesStr}
+          onChange={(e) => setThresholdMinutesStr(e.target.value)}
+          className="w-14 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+        />
+        <span>分以上続いたら、自動で仮計測を開始します</span>
+      </div>
+
+      {provisionalTask && (
+        <ProvisionalTaskCard
+          task={provisionalTask}
+          now={now}
+          candidateTasks={candidateTasks}
+          onAssignExisting={resolveProvisionalToExisting}
+          onAssignNew={resolveProvisionalAsNew}
+          onFinishAsIs={resolveProvisionalFinish}
+        />
       )}
 
       <div className="space-y-3">
-        {sortedTasks.map((task) => {
+        {sortedTasks.filter((task) => !task.isProvisional).map((task) => {
           const elapsedMs = segmentsAccumulatedMs(task, now);
           const estMs = task.estimatedSeconds * 1000;
           const overEstimate = task.estimatedSeconds > 0 && elapsedMs > estMs;
@@ -408,10 +479,13 @@ export default function TodaySection() {
                 : isNext
                   ? "border-cream/60 ring-1 ring-cream/40"
                   : "";
+          const dimmed = task.status !== "done" && !!provisionalTask;
           return (
             <div
               key={task.id}
-              className={`panel p-4 ${cardClass} ${task.status === "done" ? "opacity-50" : ""}`}
+              className={`panel p-4 transition-opacity ${cardClass} ${
+                task.status === "done" ? "opacity-50" : dimmed ? "opacity-40" : ""
+              }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

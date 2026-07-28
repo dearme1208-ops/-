@@ -53,6 +53,7 @@ export interface DailyTask {
   notifiedOverrun?: boolean;
   overrunPromptShown?: boolean;
   overrunPromptDismissedAt?: number;
+  isProvisional?: boolean; // 未計測時間の自動仮計測タスク（作業未割り当て）
 }
 
 export interface WorkRecord {
