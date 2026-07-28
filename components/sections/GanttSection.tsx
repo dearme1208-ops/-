@@ -27,11 +27,13 @@ export default function GanttSection() {
   const [startHourStr, setStartHourStr] = useSetting("gantt.startHour", "8");
   const [rangeMode, setRangeMode] = useSetting("gantt.rangeMode", "auto");
   const [stackBarsStr, setStackBarsStr] = useSetting("gantt.stackBars", "false");
+  const [compactViewStr, setCompactViewStr] = useSetting("gantt.compactView", "false");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const startHour = Math.min(23, Math.max(0, Number(startHourStr) || 0));
   const stackBars = stackBarsStr === "true";
-  const ROW_H = stackBars ? ROW_H_STACKED : ROW_H_OVERLAP;
+  const compactView = compactViewStr === "true";
+  const ROW_H = compactView ? ROW_H_OVERLAP : stackBars ? ROW_H_STACKED : ROW_H_OVERLAP;
   const planBarTop = stackBars ? 15 : 14;
   const planBarHeight = stackBars ? 14 : 20;
   const actualBarTop = stackBars ? 31 : 14;
@@ -171,14 +173,25 @@ export default function GanttSection() {
             24時間表示
           </button>
         </div>
+        {!compactView && (
+          <label className="flex items-center gap-2 text-xs text-cream/60">
+            <input
+              type="checkbox"
+              checked={stackBars}
+              onChange={(e) => setStackBarsStr(e.target.checked ? "true" : "false")}
+              className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+            />
+            予定と実績を重ねずに表示
+          </label>
+        )}
         <label className="flex items-center gap-2 text-xs text-cream/60">
           <input
             type="checkbox"
-            checked={stackBars}
-            onChange={(e) => setStackBarsStr(e.target.checked ? "true" : "false")}
+            checked={compactView}
+            onChange={(e) => setCompactViewStr(e.target.checked ? "true" : "false")}
             className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
           />
-          予定と実績を重ねずに表示
+          予定・実績を1本ずつの行で表示
         </label>
       </div>
 
@@ -186,17 +199,28 @@ export default function GanttSection() {
         {/* 固定ラベル列: 横スクロールしても常に見える */}
         <div className="w-32 shrink-0 pr-2 sm:w-44">
           <div className="mb-2 h-6 border-b border-cream/20" />
-          {rows.map((r) => (
-            <div
-              key={r.task.id}
-              className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
-              style={{ height: ROW_H }}
-              title={`${r.task.category} / ${r.task.name}`}
-            >
-              <span className="truncate text-cream/50">{r.task.category}</span>
-              <span className="truncate">{r.task.name}</span>
-            </div>
-          ))}
+          {compactView ? (
+            <>
+              <div className="flex items-center text-[11px] font-bold text-cream/70" style={{ height: ROW_H }}>
+                予定
+              </div>
+              <div className="flex items-center text-[11px] font-bold text-cream/70" style={{ height: ROW_H }}>
+                実績
+              </div>
+            </>
+          ) : (
+            rows.map((r) => (
+              <div
+                key={r.task.id}
+                className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
+                style={{ height: ROW_H }}
+                title={`${r.task.category} / ${r.task.name}`}
+              >
+                <span className="truncate text-cream/50">{r.task.category}</span>
+                <span className="truncate">{r.task.name}</span>
+              </div>
+            ))
+          )}
         </div>
 
         {/* スクロール可能なタイムライン */}
@@ -217,7 +241,7 @@ export default function GanttSection() {
                 ))}
             </div>
 
-            <div className="relative" style={{ height: rows.length * ROW_H }}>
+            <div className="relative" style={{ height: (compactView ? 2 : rows.length) * ROW_H }}>
               {minuteMarks.map((m) => (
                 <div
                   key={`m${m}`}
@@ -234,60 +258,135 @@ export default function GanttSection() {
                     style={{ left: h * 60 * pxPerMin }}
                   />
                 ))}
-              {rows.map((r, idx) => {
-                const top = idx * ROW_H;
-                const planLeft = r.scheduledStartMin * pxPerMin;
-                const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
-                const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
-                const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
-                const hasActual = r.actualStartMin !== null && r.actualSeconds > 0;
-                const nameLeft = hasActual ? r.actualStartMin! * pxPerMin : planLeft;
-                const endMin = hasActual ? r.actualStartMin! + r.actualSeconds / 60 : r.scheduledStartMin + r.task.estimatedSeconds / 60;
-                const endLeft = endMin * pxPerMin;
-                const endLabel = formatClock(timelineBase + endMin * 60000);
-                return (
-                  <div key={r.task.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
-                    {/* 作業名ラベル */}
-                    <div
-                      className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
-                      style={{ left: nameLeft + 2, top: 1 }}
-                    >
-                      {r.task.name}
-                    </div>
-                    {/* 予測枠（点線） */}
-                    <div
-                      className="absolute rounded border border-dashed border-cream/50"
-                      style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
-                    />
-                    {/* 予定バー */}
-                    <div
-                      className="absolute rounded bg-cream/70"
-                      style={{ left: planLeft, width: planWidth, top: planBarTop, height: planBarHeight }}
-                    />
-                    {/* 実績バー */}
-                    {hasActual && (
+              {compactView ? (
+                <>
+                  {/* 予定行: 全作業の予定バーを1本の行にまとめて表示 */}
+                  {rows.map((r) => {
+                    const planLeft = r.scheduledStartMin * pxPerMin;
+                    const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
+                    const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
+                    const planEndMin = r.scheduledStartMin + r.task.estimatedSeconds / 60;
+                    const planEndLabel = formatClock(timelineBase + planEndMin * 60000);
+                    return (
+                      <div key={`plan-${r.task.id}`} className="absolute left-0 right-0" style={{ top: 0, height: ROW_H }}>
+                        <div
+                          className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                          style={{ left: planLeft + 2, top: 1 }}
+                        >
+                          {r.task.name}
+                        </div>
+                        <div
+                          className="absolute rounded border border-dashed border-cream/50"
+                          style={{ left: planLeft, width: predWidth, top: 14, height: 20 }}
+                        />
+                        <div
+                          className="absolute rounded bg-cream/70"
+                          style={{ left: planLeft, width: planWidth, top: 14, height: 20 }}
+                          title={`${r.task.name} 予定 ${formatHms(r.task.estimatedSeconds)}`}
+                        />
+                        <div
+                          className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
+                          style={{ left: planLeft + planWidth + 3, top: 34 }}
+                        >
+                          {planEndLabel}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* 実績行: 全作業の実績バーを1本の行にまとめて表示 */}
+                  {rows
+                    .filter((r) => r.actualStartMin !== null && r.actualSeconds > 0)
+                    .map((r) => {
+                      const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
+                      const actualLeft = r.actualStartMin! * pxPerMin;
+                      const actualWidth = Math.max((r.actualSeconds / 60) * pxPerMin, 3);
+                      const actualEndMin = r.actualStartMin! + r.actualSeconds / 60;
+                      const actualEndLabel = formatClock(timelineBase + actualEndMin * 60000);
+                      return (
+                        <div key={`actual-${r.task.id}`} className="absolute left-0 right-0" style={{ top: ROW_H, height: ROW_H }}>
+                          <div
+                            className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                            style={{ left: actualLeft + 2, top: 1 }}
+                          >
+                            {r.task.name}
+                          </div>
+                          <div
+                            className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                            style={{
+                              left: actualLeft,
+                              width: actualWidth,
+                              top: 14,
+                              height: 20,
+                              boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
+                            }}
+                            title={`実績 ${formatHms(r.actualSeconds)}`}
+                          />
+                          <div
+                            className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
+                            style={{ left: actualLeft + actualWidth + 3, top: 34 }}
+                          >
+                            {actualEndLabel}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </>
+              ) : (
+                rows.map((r, idx) => {
+                  const top = idx * ROW_H;
+                  const planLeft = r.scheduledStartMin * pxPerMin;
+                  const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
+                  const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
+                  const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
+                  const hasActual = r.actualStartMin !== null && r.actualSeconds > 0;
+                  const nameLeft = hasActual ? r.actualStartMin! * pxPerMin : planLeft;
+                  const endMin = hasActual ? r.actualStartMin! + r.actualSeconds / 60 : r.scheduledStartMin + r.task.estimatedSeconds / 60;
+                  const endLeft = endMin * pxPerMin;
+                  const endLabel = formatClock(timelineBase + endMin * 60000);
+                  return (
+                    <div key={r.task.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
+                      {/* 作業名ラベル */}
                       <div
-                        className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
-                        style={{
-                          left: r.actualStartMin! * pxPerMin,
-                          width: Math.max((r.actualSeconds / 60) * pxPerMin, 3),
-                          top: actualBarTop,
-                          height: actualBarHeight,
-                          boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
-                        }}
-                        title={`実績 ${formatHms(r.actualSeconds)}`}
+                        className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                        style={{ left: nameLeft + 2, top: 1 }}
+                      >
+                        {r.task.name}
+                      </div>
+                      {/* 予測枠（点線） */}
+                      <div
+                        className="absolute rounded border border-dashed border-cream/50"
+                        style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
                       />
-                    )}
-                    {/* 終了時刻ラベル */}
-                    <div
-                      className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
-                      style={{ left: endLeft + 3, top: endLabelTop }}
-                    >
-                      {endLabel}
+                      {/* 予定バー */}
+                      <div
+                        className="absolute rounded bg-cream/70"
+                        style={{ left: planLeft, width: planWidth, top: planBarTop, height: planBarHeight }}
+                      />
+                      {/* 実績バー */}
+                      {hasActual && (
+                        <div
+                          className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                          style={{
+                            left: r.actualStartMin! * pxPerMin,
+                            width: Math.max((r.actualSeconds / 60) * pxPerMin, 3),
+                            top: actualBarTop,
+                            height: actualBarHeight,
+                            boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
+                          }}
+                          title={`実績 ${formatHms(r.actualSeconds)}`}
+                        />
+                      )}
+                      {/* 終了時刻ラベル */}
+                      <div
+                        className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
+                        style={{ left: endLeft + 3, top: endLabelTop }}
+                      >
+                        {endLabel}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
