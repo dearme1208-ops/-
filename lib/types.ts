@@ -99,6 +99,7 @@ export interface TodoList {
 }
 
 export type RecurrenceType = "daily" | "weekly" | "monthlyDate" | "monthlyWeekday" | "yearly";
+export type RecurrenceOrdinal = 1 | 2 | 3 | 4 | -1; // monthlyWeekday用: 第1..4, -1=最終
 
 export interface RecurrenceRule {
   type: RecurrenceType;
@@ -107,7 +108,7 @@ export interface RecurrenceRule {
   day?: number; // monthlyDate用: 日付(1-31), yearly用: 日付
   month?: number; // yearly用: 月(1-12)
   weekday?: number; // monthlyWeekday用: 0=日..6=土
-  ordinal?: 1 | 2 | 3 | 4 | -1; // monthlyWeekday用: 第1..4, -1=最終
+  ordinal?: RecurrenceOrdinal;
 }
 
 export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
@@ -120,7 +121,7 @@ export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
 
 export const WEEKDAY_JP = ["日", "月", "火", "水", "木", "金", "土"];
 
-export const ORDINAL_LABELS: Record<1 | 2 | 3 | 4 | -1, string> = {
+export const ORDINAL_LABELS: Record<RecurrenceOrdinal, string> = {
   1: "第1",
   2: "第2",
   3: "第3",
@@ -143,4 +144,5 @@ export interface TodoTask {
   order: number;
   createdAt: number;
   recurrence?: RecurrenceRule;
+  projectId?: string; // 案件タブに反映済みの場合、その案件のID
 }

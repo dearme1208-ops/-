@@ -1,4 +1,6 @@
-import type { RecurrenceRule } from "./types";
+import { db, uid } from "./db";
+import type { RecurrenceRule, TodoList, TodoTask } from "./types";
+import type { ParsedTodoRow } from "./todoCsv";
 import { todayStr } from "./time";
 
 export const DEFAULT_TAG_PRESETS = ["社内確認中", "客先確認中", "打ち合わせ", "対応中", "保留"];
@@ -92,4 +94,62 @@ export function computeNextDueDate(rule: RecurrenceRule, fromDateStr: string): s
       return fromDate(new Date(year, month0, clampedDay));
     }
   }
+}
+
+// CSVの行を、リスト名でリストを紐付けながらタスクとして取り込む。
+// idが一致する既存タスクは上書き、なければ新規作成する
+export async function upsertTodoFromCsv(
+  rows: ParsedTodoRow[]
+): Promise<{ created: number; updated: number; listsCreated: number }> {
+  let created = 0;
+  let updated = 0;
+  let listsCreated = 0;
+
+  const existingLists = await db.todoLists.toArray();
+  const listIdByTitle = new Map(existingLists.map((l) => [l.title, l.id]));
+  const orderCursor = new Map<string, number>();
+
+  for (const row of rows) {
+    if (!listIdByTitle.has(row.listTitle)) {
+      const newList: TodoList = { id: uid(), title: row.listTitle, order: listIdByTitle.size, createdAt: Date.now() };
+      await db.todoLists.add(newList);
+      listIdByTitle.set(row.listTitle, newList.id);
+      listsCreated++;
+    }
+  }
+
+  for (const row of rows) {
+    const listId = listIdByTitle.get(row.listTitle)!;
+    const id = row.id || uid();
+    const existing = await db.todoTasks.get(id);
+
+    if (!orderCursor.has(listId)) {
+      orderCursor.set(listId, await db.todoTasks.where("listId").equals(listId).count());
+    }
+    const order = existing?.order ?? orderCursor.get(listId)!;
+    if (!existing) orderCursor.set(listId, order + 1);
+
+    const task: TodoTask = {
+      id,
+      listId,
+      parentTaskId: row.parentId || undefined,
+      title: row.title,
+      tag: row.tag,
+      dueDate: row.dueDate,
+      important: row.important,
+      completed: row.completed,
+      completedAt: row.completed ? (existing?.completedAt ?? Date.now()) : undefined,
+      notes: row.notes,
+      order,
+      createdAt: existing?.createdAt ?? Date.now(),
+      recurrence: row.recurrence,
+      myDayDate: existing?.myDayDate,
+      projectId: existing?.projectId,
+    };
+    await db.todoTasks.put(task);
+    if (existing) updated++;
+    else created++;
+  }
+
+  return { created, updated, listsCreated };
 }

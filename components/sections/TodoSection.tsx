@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { computeNextDueDate, DEFAULT_TAG_PRESETS } from "@/lib/todo";
+import { computeNextDueDate, DEFAULT_TAG_PRESETS, upsertTodoFromCsv } from "@/lib/todo";
+import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
+import { downloadTextFile } from "@/lib/report";
 import { todayStr, formatDateJp } from "@/lib/time";
-import type { RecurrenceRule, RecurrenceType, TodoTask } from "@/lib/types";
+import type { ProjectItem, RecurrenceRule, RecurrenceType, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
@@ -24,6 +26,9 @@ export default function TodoSection() {
   const [newTaskCustomTag, setNewTaskCustomTag] = useState("");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importResult, setImportResult] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const today = todayStr();
 
@@ -168,6 +173,42 @@ export default function TodoSection() {
     if (detailTaskId === task.id) setDetailTaskId(null);
   }
 
+  // タスクの内容を案件タブに反映する（1度反映すると同じタスクからは再反映しない）
+  async function reflectToProject(task: TodoTask) {
+    if (task.projectId) return;
+    const item: ProjectItem = {
+      id: uid(),
+      title: task.title,
+      category: task.tag ?? "未分類",
+      workName: task.title,
+      dueDate: task.dueDate ?? today,
+      createdAt: Date.now(),
+    };
+    await db.projects.add(item);
+    await db.todoTasks.update(task.id, { projectId: item.id });
+  }
+
+  function downloadTemplate() {
+    downloadTextFile("todo_template.csv", todoCsvTemplate());
+  }
+
+  function exportCsv() {
+    if (!allTasks || !lists) return;
+    downloadTextFile(`todo_${today}.csv`, todoTasksToCsv(allTasks, lists));
+  }
+
+  async function importCsv(file: File) {
+    const text = await file.text();
+    const { rows, errors } = parseTodoCsv(text);
+    setImportErrors(errors);
+    if (rows.length === 0) {
+      setImportResult("");
+      return;
+    }
+    const { created, updated, listsCreated } = await upsertTodoFromCsv(rows);
+    setImportResult(`${created}件を新規追加、${updated}件を更新しました（新規リスト${listsCreated}件）。`);
+  }
+
   const listLabel = (key: ViewKey) => {
     if (key === "myday") return "マイデイ";
     if (key === "important") return "重要";
@@ -220,6 +261,38 @@ export default function TodoSection() {
           </button>
         )}
       </div>
+
+      <div className="flex flex-wrap justify-end gap-2">
+        <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+          CSVテンプレート
+        </button>
+        <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+          CSVエクスポート
+        </button>
+        <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+          CSVインポート
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) importCsv(file);
+            e.target.value = "";
+          }}
+        />
+      </div>
+
+      {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
+      {importErrors.length > 0 && (
+        <div className="panel border border-alert/40 p-3 text-xs text-alert">
+          {importErrors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      )}
 
       <div className="panel p-4">
         <div className="mb-3 flex items-center justify-between">
@@ -316,6 +389,7 @@ export default function TodoSection() {
           onClose={() => setDetailTaskId(null)}
           onToggleMyDay={() => toggleMyDay(detailTask)}
           onDelete={() => deleteTask(detailTask)}
+          onReflectToProject={() => reflectToProject(detailTask)}
         />
       )}
     </div>
@@ -358,6 +432,11 @@ function TaskRow({
           )}
           <span className={`text-sm text-cream ${task.completed ? "line-through" : ""}`}>{task.title}</span>
           {task.recurrence && !task.completed && <span className="text-xs text-cream/40">🔁</span>}
+          {task.projectId && (
+            <span className="text-xs text-cream/40" title="案件に反映済み">
+              📁
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           {task.dueDate && (
@@ -385,6 +464,7 @@ function TaskDetailModal({
   onClose,
   onToggleMyDay,
   onDelete,
+  onReflectToProject,
 }: {
   task: TodoTask;
   subtasks: TodoTask[];
@@ -393,6 +473,7 @@ function TaskDetailModal({
   onClose: () => void;
   onToggleMyDay: () => void;
   onDelete: () => void;
+  onReflectToProject: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes ?? "");
@@ -495,12 +576,21 @@ function TaskDetailModal({
           )}
         </div>
 
-        <button
-          className={task.myDayDate === today ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-          onClick={onToggleMyDay}
-        >
-          ☀ {task.myDayDate === today ? "マイデイから削除" : "マイデイに追加"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={task.myDayDate === today ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={onToggleMyDay}
+          >
+            ☀ {task.myDayDate === today ? "マイデイから削除" : "マイデイに追加"}
+          </button>
+          <button
+            className={task.projectId ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={onReflectToProject}
+            disabled={!!task.projectId}
+          >
+            📁 {task.projectId ? "案件に反映済み" : "案件に反映"}
+          </button>
+        </div>
 
         <textarea
           value={notes}
