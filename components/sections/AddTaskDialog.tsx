@@ -10,6 +10,7 @@ import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 
 export default function AddTaskDialog({ date, onClose }: { date: string; onClose: () => void }) {
   const [mode, setMode] = useState<"master" | "free">("master");
+  const [selectedMaster, setSelectedMaster] = useState<MasterTask | null>(null);
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
   const [estimate, setEstimate] = useState("00:10:00");
@@ -41,9 +42,9 @@ export default function AddTaskDialog({ date, onClose }: { date: string; onClose
     onClose();
   }
 
-  // マスタから選ぶ場合はタップ1回で即追加+開始する
-  async function selectMaster(master: MasterTask) {
-    await insertTask(master.category, master.name, master.estimatedSeconds, master.id, true);
+  async function submitMaster(start: boolean) {
+    if (!selectedMaster) return;
+    await insertTask(selectedMaster.category, selectedMaster.name, selectedMaster.estimatedSeconds, selectedMaster.id, start);
   }
 
   async function submitFreeform(start: boolean) {
@@ -71,10 +72,17 @@ export default function AddTaskDialog({ date, onClose }: { date: string; onClose
       </div>
 
       {mode === "master" ? (
-        <>
-          <p className="mb-2 text-xs text-cream/50">タップするとすぐに追加して開始します。</p>
-          <MasterTaskPicker onSelect={selectMaster} />
-        </>
+        <div className="space-y-2">
+          <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => submitMaster(false)} disabled={!selectedMaster}>
+              追加のみ
+            </button>
+            <button className="btn-pill text-sm" onClick={() => submitMaster(true)} disabled={!selectedMaster}>
+              追加してすぐ開始
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="space-y-2">
           <input

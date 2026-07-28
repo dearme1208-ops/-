@@ -10,7 +10,7 @@ import {
   notify,
   requestNotificationPermission,
 } from "@/lib/notifications";
-import type { DailyTask, TaskStatus, TimeSegment, Weekday } from "@/lib/types";
+import type { DailyTask, TimeSegment, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
@@ -18,7 +18,6 @@ import EditTaskDialog from "@/components/sections/EditTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
-const STATUS_ORDER: Record<TaskStatus, number> = { running: 0, paused: 1, pending: 2, done: 3 };
 
 function segmentsAccumulatedMs(task: DailyTask, now: number): number {
   let total = task.accumulatedMs;
@@ -108,10 +107,14 @@ export default function TodaySection() {
     return map;
   }, [tasks, now]);
 
-  // 実行中・一時停止中・未着手を先に、完了済みを最後に表示する
+  // 完了済みだけを最後に沈める。実行中/一時停止中/未着手はもとの順番のまま
+  // （開始・一時停止のたびにカードが並び替わって誤タップを誘発しないようにするため）
   const sortedTasks = useMemo(() => {
     if (!tasks) return [];
-    return [...tasks].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.order - b.order);
+    return [...tasks].sort((a, b) => {
+      const doneDiff = Number(a.status === "done") - Number(b.status === "done");
+      return doneDiff || a.order - b.order;
+    });
   }, [tasks]);
 
   // 直近に完了した作業の終了時刻（さかのぼって開始する際の起点）
