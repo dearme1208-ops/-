@@ -54,6 +54,7 @@ export interface DailyTask {
   overrunPromptShown?: boolean;
   overrunPromptDismissedAt?: number;
   isProvisional?: boolean; // 未計測時間の自動仮計測タスク（作業未割り当て）
+  projectId?: string; // 案件から追加された場合、その案件のID
 }
 
 export interface WorkRecord {
@@ -68,6 +69,7 @@ export interface WorkRecord {
   excludedFromStats: boolean;
   excludeReason?: "auto-iqr" | "manual";
   manualOverride?: boolean; // true = ユーザーが除外/復活を手動指定済み。自動IQR判定の対象外
+  projectId?: string; // 案件から追加された作業の場合、その案件のID
 }
 
 export interface AppSetting {

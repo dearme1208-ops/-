@@ -7,7 +7,7 @@ import { findOrCreateMasterTask } from "@/lib/master";
 import { upsertProjectsFromCsv } from "@/lib/projects";
 import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
 import { downloadTextFile } from "@/lib/report";
-import { daysBetweenDateStrs, formatDateJp, todayStr } from "@/lib/time";
+import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
@@ -36,7 +36,18 @@ export default function ProjectsSection() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
+  const records = useLiveQuery(() => db.records.toArray(), []);
   const today = todayStr();
+
+  // 案件ごとの累計作業時間（全期間の実績を合算）
+  const projectTotalSeconds = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of records ?? []) {
+      if (!r.projectId) continue;
+      map.set(r.projectId, (map.get(r.projectId) ?? 0) + r.seconds);
+    }
+    return map;
+  }, [records]);
 
   function downloadTemplate() {
     downloadTextFile("projects_template.csv", projectsCsvTemplate());
@@ -102,6 +113,7 @@ export default function ProjectsSection() {
       segments: [],
       accumulatedMs: 0,
       isSpontaneous: true,
+      projectId: item.id,
     };
     await db.dailyTasks.add(task);
     setAddedMessage(`「${item.workName}」を本日の作業に追加しました。`);
@@ -240,6 +252,11 @@ export default function ProjectsSection() {
               <div className={`text-xs ${overdue ? "text-alert font-bold" : "text-cream/60"}`}>
                 期日 {project.dueDate} {project.completedAt ? "（完了）" : overdue ? `（${-daysLeft}日超過）` : `（残り${daysLeft}日）`}
               </div>
+              {(projectTotalSeconds.get(project.id) ?? 0) > 0 && (
+                <div className="text-xs text-cream/70">
+                  累計作業時間 <span className="font-bold tabular-nums text-cream">{formatHms(projectTotalSeconds.get(project.id)!)}</span>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button className="btn-pill-outline text-xs" onClick={() => addToToday(project)}>
