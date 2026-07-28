@@ -249,10 +249,15 @@ export default function TodaySection() {
 
   async function startTask(task: DailyTask, startAt: number = Date.now()) {
     const segments = [...task.segments, { start: startAt }];
+    // さかのぼって開始/再開した場合、その時点で既に「予定超過+20分」を
+    // 超えていることがあり得るが、開始直後に超過確認ダイアログが出るのは
+    // 紛らわしいため、この時点では抑制しておく（超過が続けば通常どおり後で再表示される）
+    const isRetroactive = startAt < Date.now() - 5000;
     await db.dailyTasks.update(task.id, {
       segments,
       status: "running",
       startedAt: task.startedAt ?? startAt,
+      ...(isRetroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
     });
   }
 
@@ -342,8 +347,14 @@ export default function TodaySection() {
     if (!provisionalTask) return;
     const target = tasks?.find((t) => t.id === targetId);
     if (!target) return;
-    await startTask(target, provisionalTask.startedAt ?? Date.now());
-    await db.dailyTasks.delete(provisionalTask.id);
+    const provisionalId = provisionalTask.id;
+    const startAt = provisionalTask.startedAt ?? Date.now();
+    // 対象作業を再開してから仮計測タスクを消すまでの間、両方が「計測中」に
+    // 見える瞬間ができないよう、ひとつのトランザクションでまとめて処理する
+    await db.transaction("rw", db.dailyTasks, async () => {
+      await startTask(target, startAt);
+      await db.dailyTasks.delete(provisionalId);
+    });
   }
 
   // 仮計測タスクを、新しい作業（マスタ選択 or 自由入力）として確定する。

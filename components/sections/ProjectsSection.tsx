@@ -66,8 +66,9 @@ export default function ProjectsSection() {
       setImportResult("");
       return;
     }
-    const { created, updated } = await upsertProjectsFromCsv(rows);
-    setImportResult(`${created}件を新規追加、${updated}件を更新しました。`);
+    const { created, updated, skipped } = await upsertProjectsFromCsv(rows);
+    const skippedText = skipped > 0 ? `、${skipped}件を重複のためスキップしました（同じ客先・機種・期日の登録が既にあります）` : "";
+    setImportResult(`${created}件を新規追加、${updated}件を更新しました${skippedText}。`);
   }
 
   async function addProject() {
