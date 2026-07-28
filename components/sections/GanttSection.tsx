@@ -28,7 +28,6 @@ export default function GanttSection() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const startHour = Math.min(23, Math.max(0, Number(startHourStr) || 0));
-  const timelineBase = useMemo(() => baseAtHour(date, startHour), [date, startHour]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5000);
@@ -39,10 +38,19 @@ export default function GanttSection() {
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const masterMap = useMemo(() => new Map((masterTasks ?? []).map((m) => [m.id, m])), [masterTasks]);
 
+  // 予定バーの起点: 実際に最初に計測を開始した作業の開始時刻を優先し、
+  // まだ何も開始していない日は「表示開始時刻」の設定にフォールバックする
+  const timelineBase = useMemo(() => {
+    if (tasks) {
+      const starts = tasks.filter((t) => t.startedAt).map((t) => t.startedAt!);
+      if (starts.length > 0) return Math.min(...starts);
+    }
+    return baseAtHour(date, startHour);
+  }, [tasks, date, startHour]);
+
   const rows = useMemo(() => {
     if (!tasks) return [];
-    const base = baseAtHour(date, startHour);
-    let cursor = 0; // minutes from startHour
+    let cursor = 0; // minutes from timelineBase
     return tasks.map((task) => {
       const predictedSeconds = task.masterTaskId ? masterMap.get(task.masterTaskId)?.estimatedSeconds ?? task.estimatedSeconds : task.estimatedSeconds;
       const layoutDurationMin = Math.max(task.estimatedSeconds, predictedSeconds) / 60;
@@ -52,7 +60,7 @@ export default function GanttSection() {
       let actualStartMin: number | null = null;
       let actualSeconds = 0;
       if (task.startedAt) {
-        actualStartMin = (task.startedAt - base) / 60000;
+        actualStartMin = (task.startedAt - timelineBase) / 60000;
         actualSeconds =
           task.status === "running"
             ? task.accumulatedMs / 1000 + (task.segments.find((s) => s.end === undefined) ? (now - task.segments[task.segments.length - 1].start) / 1000 : 0)
@@ -67,7 +75,7 @@ export default function GanttSection() {
         actualSeconds,
       };
     });
-  }, [tasks, masterMap, date, now, startHour]);
+  }, [tasks, masterMap, now, timelineBase]);
 
   const autoMinutes = Math.max(
     ...rows.map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
@@ -127,7 +135,7 @@ export default function GanttSection() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <label className="text-xs text-cream/60">表示開始時刻</label>
+          <label className="text-xs text-cream/60">表示開始時刻（未着手の日のみ）</label>
           <select
             value={startHour}
             onChange={(e) => setStartHourStr(e.target.value)}
@@ -186,7 +194,7 @@ export default function GanttSection() {
                     className="absolute top-0 border-l border-cream/10 pl-1"
                     style={{ left: h * 60 * pxPerMin }}
                   >
-                    {String((startHour + h) % 24).padStart(2, "0")}:00
+                    {formatClock(timelineBase + h * 60 * 60000)}
                   </div>
                 ))}
             </div>

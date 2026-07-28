@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   DndContext,
@@ -19,7 +19,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { formatHms, parseHmsToSeconds } from "@/lib/time";
+import { upsertTemplateItemsFromCsv } from "@/lib/template";
+import { templateItemsToCsv, templateCsvTemplate, parseTemplateCsv } from "@/lib/templateCsv";
+import { downloadTextFile } from "@/lib/report";
+import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import type { MasterTask, TemplateItem, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -67,11 +70,15 @@ function SortableRow({ item, onDelete }: { item: TemplateItem; onDelete: () => v
 export default function TemplateSection() {
   const [weekday, setWeekday] = useState<Weekday>(1);
   const [showPicker, setShowPicker] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importResult, setImportResult] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const items = useLiveQuery(
     () => db.templateItems.where("weekday").equals(weekday).sortBy("order"),
     [weekday]
   );
+  const allItems = useLiveQuery(() => db.templateItems.toArray(), []);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -93,19 +100,73 @@ export default function TemplateSection() {
     await db.templateItems.delete(id);
   }
 
+  function downloadTemplate() {
+    downloadTextFile("template_template.csv", templateCsvTemplate());
+  }
+
+  function exportCsv() {
+    if (!allItems) return;
+    downloadTextFile(`weekday_template_${todayStr()}.csv`, templateItemsToCsv(allItems));
+  }
+
+  async function importCsv(file: File) {
+    const text = await file.text();
+    const { rows, errors } = parseTemplateCsv(text);
+    setImportErrors(errors);
+    if (rows.length === 0) {
+      setImportResult("");
+      return;
+    }
+    const { created, updated } = await upsertTemplateItemsFromCsv(rows);
+    setImportResult(`${created}件を新規追加、${updated}件を更新しました。`);
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {([1, 2, 3, 4, 5] as Weekday[]).map((w) => (
-          <button
-            key={w}
-            onClick={() => setWeekday(w)}
-            className={weekday === w ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-          >
-            {WEEKDAY_LABELS[w]}曜日
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {([1, 2, 3, 4, 5] as Weekday[]).map((w) => (
+            <button
+              key={w}
+              onClick={() => setWeekday(w)}
+              className={weekday === w ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+            >
+              {WEEKDAY_LABELS[w]}曜日
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+            CSVテンプレート
           </button>
-        ))}
+          <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+            CSVエクスポート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+            CSVインポート
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importCsv(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
       </div>
+
+      {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
+      {importErrors.length > 0 && (
+        <div className="panel border border-alert/40 p-3 text-xs text-alert">
+          {importErrors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      )}
 
       <div className="panel p-4">
         <div className="mb-3 flex items-center justify-between">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
@@ -33,6 +33,9 @@ export default function TodaySection() {
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
   const [thresholdMinutesStr, setThresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
   const thresholdMinutes = Math.max(1, Number(thresholdMinutesStr) || 5);
+  const [provisionalEnabledStr, setProvisionalEnabledStr] = useSetting("today.provisionalEnabled", "true");
+  const provisionalEnabled = provisionalEnabledStr === "true";
+  const provisionalNotifiedAtRef = useRef<number | null>(null);
 
   const tasks = useLiveQuery(
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
@@ -141,8 +144,9 @@ export default function TodaySection() {
     [tasks]
   );
 
-  // 誰も計測していない状態が閾値を超えたら、自動で仮計測タスクを立ち上げる
+  // 誰も計測していない状態が閾値を超えたら、自動で仮計測タスクを立ち上げる（オフの場合は何もしない）
   useEffect(() => {
+    if (!provisionalEnabled) return;
     if (!tasks) return;
     if (tasks.some((t) => t.isProvisional)) return;
     if (tasks.some((t) => t.status === "running")) return;
@@ -167,7 +171,24 @@ export default function TodaySection() {
       };
       await db.dailyTasks.add(task);
     })();
-  }, [tasks, now, lastStopTime, thresholdMinutes, date]);
+  }, [provisionalEnabled, tasks, now, lastStopTime, thresholdMinutes, date]);
+
+  // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する
+  useEffect(() => {
+    if (!provisionalTask) {
+      provisionalNotifiedAtRef.current = null;
+      return;
+    }
+    const last = provisionalNotifiedAtRef.current;
+    if (last !== null && now - last < 5 * 60 * 1000) return;
+    const elapsedMs = segmentsAccumulatedMs(provisionalTask, now);
+    notify(
+      "未計測時間を自動計測中",
+      `${provisionalTask.category} / ${provisionalTask.name} ・経過 ${formatMsClock(elapsedMs)}`,
+      "provisional-tracking"
+    );
+    provisionalNotifiedAtRef.current = now;
+  }, [provisionalTask, now]);
 
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
@@ -443,15 +464,25 @@ export default function TodaySection() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-cream/50">
-        <span>未計測が</span>
-        <input
-          type="number"
-          min={1}
-          value={thresholdMinutesStr}
-          onChange={(e) => setThresholdMinutesStr(e.target.value)}
-          className="w-14 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
-        />
-        <span>分以上続いたら、自動で仮計測を開始します</span>
+        <button
+          className={provisionalEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => setProvisionalEnabledStr(provisionalEnabled ? "false" : "true")}
+        >
+          未計測の自動計測: {provisionalEnabled ? "ON" : "OFF"}
+        </button>
+        {provisionalEnabled && (
+          <>
+            <span>未計測が</span>
+            <input
+              type="number"
+              min={1}
+              value={thresholdMinutesStr}
+              onChange={(e) => setThresholdMinutesStr(e.target.value)}
+              className="w-14 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+            />
+            <span>分以上続いたら、自動で仮計測を開始します</span>
+          </>
+        )}
       </div>
 
       {provisionalTask && (

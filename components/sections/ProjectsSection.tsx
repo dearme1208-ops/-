@@ -4,6 +4,9 @@ import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
+import { upsertProjectsFromCsv } from "@/lib/projects";
+import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
+import { downloadTextFile } from "@/lib/report";
 import { daysBetweenDateStrs, formatDateJp, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
@@ -27,10 +30,34 @@ export default function ProjectsSection() {
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [showForm, setShowForm] = useState(true);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importResult, setImportResult] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
   const today = todayStr();
+
+  function downloadTemplate() {
+    downloadTextFile("projects_template.csv", projectsCsvTemplate());
+  }
+
+  function exportCsv() {
+    if (!projects) return;
+    downloadTextFile(`projects_${todayStr()}.csv`, projectsToCsv(projects));
+  }
+
+  async function importCsv(file: File) {
+    const text = await file.text();
+    const { rows, errors } = parseProjectsCsv(text);
+    setImportErrors(errors);
+    if (rows.length === 0) {
+      setImportResult("");
+      return;
+    }
+    const { created, updated } = await upsertProjectsFromCsv(rows);
+    setImportResult(`${created}件を新規追加、${updated}件を更新しました。`);
+  }
 
   async function addProject() {
     if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) return;
@@ -123,6 +150,38 @@ export default function ProjectsSection() {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap justify-end gap-2">
+        <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+          CSVテンプレート
+        </button>
+        <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+          CSVエクスポート
+        </button>
+        <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+          CSVインポート
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) importCsv(file);
+            e.target.value = "";
+          }}
+        />
+      </div>
+
+      {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
+      {importErrors.length > 0 && (
+        <div className="panel border border-alert/40 p-3 text-xs text-alert">
+          {importErrors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      )}
+
       <div className="panel p-4">
         <button
           className="flex w-full items-center justify-between text-left"

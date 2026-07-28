@@ -12,11 +12,11 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
   return Notification.requestPermission();
 }
 
-export function notify(title: string, body: string): void {
+export function notify(title: string, body: string, tag?: string): void {
   if (!isNotificationSupported()) return;
   if (Notification.permission !== "granted") return;
   try {
-    new Notification(title, { body, icon: "/icon-192.png" });
+    new Notification(title, { body, icon: "/icon-192.png", tag });
   } catch {
     // no-op: 一部環境ではService Worker経由でないと生成できない
   }
