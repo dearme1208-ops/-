@@ -135,6 +135,7 @@ export async function upsertTodoFromCsv(
       parentTaskId: row.parentId || undefined,
       title: row.title,
       tag: row.tag,
+      customer: row.customer,
       dueDate: row.dueDate,
       important: row.important,
       completed: row.completed,

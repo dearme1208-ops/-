@@ -7,6 +7,7 @@ const HEADERS = [
   "parentId",
   "title",
   "tag",
+  "customer",
   "dueDate",
   "important",
   "completed",
@@ -34,6 +35,7 @@ export function todoTasksToCsv(tasks: TodoTask[], lists: TodoList[]): string {
         t.parentTaskId ?? "",
         csvEscape(t.title),
         csvEscape(t.tag ?? ""),
+        csvEscape(t.customer ?? ""),
         t.dueDate ?? "",
         String(t.important),
         String(t.completed),
@@ -55,8 +57,8 @@ export function todoCsvTemplate(): string {
   const rows = [
     HEADERS.join(","),
     // 親タスク(id=t1)と、そのサブタスク(parentId=t1)の例
-    ["t1", "タスク", "", "見積書作成", "客先確認中", "2026-08-03", "true", "false", "先方に金額を確認してから提出", "", "", "", "", "", "", ""].join(","),
-    ["t2", "タスク", "t1", "金額を確認する", "", "", "false", "false", "", "", "", "", "", "", "", ""].join(","),
+    ["t1", "タスク", "", "見積書作成", "客先確認中", "〇〇工業", "2026-08-03", "true", "false", "先方に金額を確認してから提出", "", "", "", "", "", "", ""].join(","),
+    ["t2", "タスク", "t1", "金額を確認する", "", "", "", "false", "false", "", "", "", "", "", "", "", ""].join(","),
     // 毎月第4金曜日に繰り返す例
     [
       "t3",
@@ -64,6 +66,7 @@ export function todoCsvTemplate(): string {
       "",
       "月次報告",
       "打ち合わせ",
+      "",
       "2026-07-24",
       "false",
       "false",
@@ -86,6 +89,7 @@ export interface ParsedTodoRow {
   parentId?: string;
   title: string;
   tag?: string;
+  customer?: string;
   dueDate?: string;
   important: boolean;
   completed: boolean;
@@ -147,6 +151,7 @@ export function parseTodoCsv(text: string): ParsedTodoCsvResult {
       parentId: col(cols, "parentId") || undefined,
       title,
       tag: col(cols, "tag") || undefined,
+      customer: col(cols, "customer") || undefined,
       dueDate: col(cols, "dueDate") || undefined,
       important: col(cols, "important") === "true",
       completed: col(cols, "completed") === "true",

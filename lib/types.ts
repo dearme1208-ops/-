@@ -135,6 +135,7 @@ export interface TodoTask {
   parentTaskId?: string; // 設定されていればサブタスク
   title: string;
   tag?: string; // 社内確認中・客先確認中・打ち合わせ など、件名の頭に付けるラベル
+  customer?: string; // 客先名
   notes?: string;
   dueDate?: string; // YYYY-MM-DD
   important: boolean;

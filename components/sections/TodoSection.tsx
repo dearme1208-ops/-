@@ -2,33 +2,61 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
 import { computeNextDueDate, DEFAULT_TAG_PRESETS, upsertTodoFromCsv } from "@/lib/todo";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
-import { todayStr, formatDateJp } from "@/lib/time";
+import { daysBetweenDateStrs, todayStr, formatDateJp } from "@/lib/time";
 import type { ProjectItem, RecurrenceRule, RecurrenceType, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import TodoCalendarView from "@/components/sections/TodoCalendarView";
 
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
 const NO_TAG_VALUE = "";
+const CUSTOM_CUSTOMER_VALUE = "__custom__";
+const NO_CUSTOMER_VALUE = "";
+
+const DEFAULT_PX_PER_DAY = 28;
+const MIN_PX_PER_DAY = 0.3;
+const MAX_PX_PER_DAY = 80;
+const ROW_H = 40;
+const MIN_LABEL_SPACING_PX = 50;
 
 type ViewKey = "myday" | "important" | "planned" | `list:${string}`;
+type DisplayMode = "list" | "gantt" | "calendar";
 
 export default function TodoSection() {
   const [view, setView] = useState<ViewKey>("myday");
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("list");
   const [showNewList, setShowNewList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskTagMode, setNewTaskTagMode] = useState<string>(NO_TAG_VALUE);
   const [newTaskCustomTag, setNewTaskCustomTag] = useState("");
+  const [newTaskCustomerMode, setNewTaskCustomerMode] = useState<string>(NO_CUSTOMER_VALUE);
+  const [newTaskCustomCustomer, setNewTaskCustomCustomer] = useState("");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterTag, setFilterTag] = useState("");
+  const [filterCustomer, setFilterCustomer] = useState("");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
+  const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const today = todayStr();
 
@@ -59,6 +87,20 @@ export default function TodoSection() {
     return [...used];
   }, [allTasks]);
 
+  const customerOptions = useMemo(() => {
+    const used = new Set<string>();
+    for (const t of allTasks ?? []) {
+      if (t.customer) used.add(t.customer);
+    }
+    return [...used].sort();
+  }, [allTasks]);
+
+  const listTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const l of lists ?? []) map.set(l.id, l.title);
+    return map;
+  }, [lists]);
+
   const subtasksByParent = useMemo(() => {
     const map = new Map<string, TodoTask[]>();
     for (const t of allTasks ?? []) {
@@ -74,9 +116,13 @@ export default function TodoSection() {
 
   const currentListId = view.startsWith("list:") ? view.slice(5) : null;
 
+  const searchActive = searchQuery.trim() !== "" || filterTag !== "" || filterCustomer !== "";
+
   const visibleTasks = useMemo(() => {
     let filtered: TodoTask[];
-    if (view === "myday") {
+    if (searchActive) {
+      filtered = topLevelTasks;
+    } else if (view === "myday") {
       filtered = topLevelTasks.filter((t) => t.myDayDate === today);
     } else if (view === "important") {
       filtered = topLevelTasks.filter((t) => t.important);
@@ -87,20 +133,47 @@ export default function TodoSection() {
     } else {
       filtered = [];
     }
+    if (searchActive) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter((t) => {
+        if (q && !t.title.toLowerCase().includes(q) && !(t.notes ?? "").toLowerCase().includes(q)) return false;
+        if (filterTag && t.tag !== filterTag) return false;
+        if (filterCustomer && t.customer !== filterCustomer) return false;
+        return true;
+      });
+    }
     return [...filtered].sort((a, b) => {
       const doneDiff = Number(a.completed) - Number(b.completed);
       if (doneDiff !== 0) return doneDiff;
-      if (view === "planned") {
+      if (view === "planned" && !searchActive) {
         return (a.dueDate ?? "9999-99-99").localeCompare(b.dueDate ?? "9999-99-99");
       }
       return a.order - b.order;
     });
-  }, [view, currentListId, topLevelTasks, today]);
+  }, [view, currentListId, topLevelTasks, today, searchActive, searchQuery, filterTag, filterCustomer]);
 
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
   const completedTasks = visibleTasks.filter((t) => t.completed);
+  const tasksForTimeline = useMemo(() => visibleTasks.filter((t) => !!t.dueDate), [visibleTasks]);
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
+
+  const reorderEnabled = displayMode === "list" && !searchActive && view !== "planned";
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = incompleteTasks.findIndex((t) => t.id === active.id);
+    const newIndex = incompleteTasks.findIndex((t) => t.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(incompleteTasks, oldIndex, newIndex);
+    await db.transaction("rw", db.todoTasks, async () => {
+      for (let i = 0; i < reordered.length; i++) {
+        await db.todoTasks.update(reordered[i].id, { order: i });
+      }
+    });
+  }
 
   async function addList() {
     if (!newListTitle.trim()) return;
@@ -124,6 +197,11 @@ export default function TodoSection() {
     return mode || undefined;
   }
 
+  function resolveCustomer(mode: string, custom: string): string | undefined {
+    if (mode === CUSTOM_CUSTOMER_VALUE) return custom.trim() || undefined;
+    return mode || undefined;
+  }
+
   async function addTask() {
     if (!newTaskTitle.trim()) return;
     const targetListId = currentListId ?? lists?.[0]?.id;
@@ -134,6 +212,7 @@ export default function TodoSection() {
       listId: targetListId,
       title: newTaskTitle.trim(),
       tag: resolveTag(newTaskTagMode, newTaskCustomTag),
+      customer: resolveCustomer(newTaskCustomerMode, newTaskCustomCustomer),
       important: view === "important",
       completed: false,
       order: count,
@@ -144,6 +223,8 @@ export default function TodoSection() {
     setNewTaskTitle("");
     setNewTaskTagMode(NO_TAG_VALUE);
     setNewTaskCustomTag("");
+    setNewTaskCustomerMode(NO_CUSTOMER_VALUE);
+    setNewTaskCustomCustomer("");
   }
 
   async function toggleComplete(task: TodoTask) {
@@ -216,6 +297,49 @@ export default function TodoSection() {
     return lists?.find((l) => l.id === key.slice(5))?.title ?? "";
   };
 
+  const panelTitle = searchActive ? `検索結果（${visibleTasks.length}件）` : listLabel(view);
+
+  // ガントチャート用データ（作成日〜期日のバー）
+  const { ganttStart, ganttTotalDays, ganttRows } = useMemo(() => {
+    const list = tasksForTimeline;
+    if (list.length === 0) return { ganttStart: today, ganttTotalDays: 1, ganttRows: [] as { task: TodoTask; barStart: number; barEnd: number; overdue: boolean }[] };
+    let start = today;
+    let end = today;
+    for (const t of list) {
+      const createdStr = todayStr(new Date(t.createdAt));
+      if (createdStr < start) start = createdStr;
+      if (t.dueDate! < start) start = t.dueDate!;
+      if (t.dueDate! > end) end = t.dueDate!;
+    }
+    end = todayStr(new Date(new Date(end + "T00:00:00").getTime() + 2 * 86400000));
+    const total = Math.max(daysBetweenDateStrs(start, end), 1);
+    const rows = list.map((t) => {
+      const createdStr = todayStr(new Date(t.createdAt));
+      const barStart = daysBetweenDateStrs(start, createdStr);
+      const barEnd = daysBetweenDateStrs(start, t.dueDate!);
+      const overdue = !t.completed && t.dueDate! < today;
+      return { task: t, barStart, barEnd: Math.max(barEnd, barStart), overdue };
+    });
+    return { ganttStart: start, ganttTotalDays: total, ganttRows: rows };
+  }, [tasksForTimeline, today]);
+
+  const ganttTodayIndex = daysBetweenDateStrs(ganttStart, today);
+  const ganttDayMarks = Array.from({ length: ganttTotalDays + 1 }, (_, i) => i);
+  const labelStepDays = Math.max(1, Math.ceil(MIN_LABEL_SPACING_PX / pxPerDay));
+
+  function zoomIn() {
+    setPxPerDay((v) => Math.min(MAX_PX_PER_DAY, +(v * 1.4).toFixed(2)));
+  }
+  function zoomOut() {
+    setPxPerDay((v) => Math.max(MIN_PX_PER_DAY, +(v / 1.4).toFixed(2)));
+  }
+  function fitToView() {
+    const containerWidth = scrollRef.current?.clientWidth ?? 0;
+    if (containerWidth <= 0 || ganttTotalDays <= 0) return;
+    const fit = Math.max(0, containerWidth - 24) / ganttTotalDays;
+    setPxPerDay(Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, +fit.toFixed(3))));
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
@@ -262,6 +386,51 @@ export default function TodoSection() {
         )}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="🔍 タスクを検索"
+          className="min-w-[10rem] flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <select
+          value={filterTag}
+          onChange={(e) => setFilterTag(e.target.value)}
+          className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+        >
+          <option value="">タグ: すべて</option>
+          {tagOptions.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterCustomer}
+          onChange={(e) => setFilterCustomer(e.target.value)}
+          className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+        >
+          <option value="">客先: すべて</option>
+          {customerOptions.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        {searchActive && (
+          <button
+            className="btn-pill-outline text-xs"
+            onClick={() => {
+              setSearchQuery("");
+              setFilterTag("");
+              setFilterCustomer("");
+            }}
+          >
+            クリア
+          </button>
+        )}
+      </div>
+
       <div className="flex flex-wrap justify-end gap-2">
         <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
           CSVテンプレート
@@ -295,13 +464,24 @@ export default function TodoSection() {
       )}
 
       <div className="panel p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold">{listLabel(view)}</h2>
-          {currentListId && (
-            <button className="text-xs text-alert" onClick={() => deleteList(currentListId)}>
-              このリストを削除
-            </button>
-          )}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-display text-lg font-bold">{panelTitle}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {(["list", "gantt", "calendar"] as DisplayMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setDisplayMode(m)}
+                className={displayMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              >
+                {m === "list" ? "リスト" : m === "gantt" ? "ガント" : "カレンダー"}
+              </button>
+            ))}
+            {currentListId && !searchActive && (
+              <button className="text-xs text-alert" onClick={() => deleteList(currentListId)}>
+                このリストを削除
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -333,50 +513,184 @@ export default function TodoSection() {
               className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
             />
           )}
+          <select
+            value={newTaskCustomerMode}
+            onChange={(e) => setNewTaskCustomerMode(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+          >
+            <option value={NO_CUSTOMER_VALUE}>客先なし</option>
+            {customerOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+            <option value={CUSTOM_CUSTOMER_VALUE}>＋ 新しい客先...</option>
+          </select>
+          {newTaskCustomerMode === CUSTOM_CUSTOMER_VALUE && (
+            <input
+              value={newTaskCustomCustomer}
+              onChange={(e) => setNewTaskCustomCustomer(e.target.value)}
+              placeholder="客先名"
+              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+            />
+          )}
           <button className="btn-pill text-sm" onClick={addTask} disabled={!newTaskTitle.trim()}>
             追加
           </button>
         </div>
 
-        <div className="space-y-1.5">
-          {incompleteTasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              subtasks={subtasksByParent.get(task.id) ?? []}
-              onToggleComplete={() => toggleComplete(task)}
-              onToggleImportant={() => toggleImportant(task)}
-              onOpenDetail={() => setDetailTaskId(task.id)}
-            />
-          ))}
-          {incompleteTasks.length === 0 && (
-            <p className="px-1 py-4 text-sm text-cream/50">タスクはありません。</p>
-          )}
-        </div>
-
-        {completedTasks.length > 0 && (
-          <div className="mt-4 border-t border-cream/10 pt-3">
-            <button
-              className="mb-2 text-xs text-cream/50 hover:text-cream/80"
-              onClick={() => setShowCompleted((v) => !v)}
-            >
-              {showCompleted ? "▼" : "▶"} 完了済み（{completedTasks.length}）
-            </button>
-            {showCompleted && (
-              <div className="space-y-1.5">
-                {completedTasks.map((task) => (
+        {displayMode === "calendar" ? (
+          <TodoCalendarView tasks={tasksForTimeline} today={today} />
+        ) : displayMode === "gantt" ? (
+          <div>
+            {ganttRows.length === 0 ? (
+              <p className="px-1 py-4 text-sm text-cream/50">期日が設定されたタスクはありません。</p>
+            ) : (
+              <>
+                <div className="mb-2 flex items-center justify-end gap-1">
+                  <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
+                    －
+                  </button>
+                  <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomIn} aria-label="拡大">
+                    ＋
+                  </button>
+                  <button className="btn-pill-outline text-xs" onClick={fitToView}>
+                    全体表示
+                  </button>
+                </div>
+                <div className="flex">
+                  <div className="w-28 shrink-0 pr-2 sm:w-40">
+                    <div className="mb-2 h-6 border-b border-cream/20" />
+                    {ganttRows.map((r) => (
+                      <div
+                        key={r.task.id}
+                        className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
+                        style={{ height: ROW_H }}
+                        title={r.task.title}
+                      >
+                        {r.task.customer && <span className="truncate text-cream/50">{r.task.customer}</span>}
+                        <span className="truncate">{r.task.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
+                    <div style={{ width: ganttTotalDays * pxPerDay + 24 }}>
+                      <div className="relative mb-2 h-6 border-b border-cream/20 text-xs text-cream/50">
+                        {ganttDayMarks
+                          .filter((d) => d % labelStepDays === 0)
+                          .map((d) => (
+                            <div
+                              key={d}
+                              className="absolute top-0 border-l border-cream/10 pl-1"
+                              style={{ left: d * pxPerDay }}
+                            >
+                              {formatDateJp(
+                                todayStr(new Date(new Date(ganttStart + "T00:00:00").getTime() + d * 86400000))
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                      <div className="relative" style={{ height: ganttRows.length * ROW_H }}>
+                        {ganttDayMarks
+                          .filter((d) => d % labelStepDays === 0)
+                          .map((d) => (
+                            <div
+                              key={d}
+                              className="absolute top-0 bottom-0 border-l border-cream/5"
+                              style={{ left: d * pxPerDay }}
+                            />
+                          ))}
+                        <div
+                          className="absolute top-0 bottom-0 border-l-2 border-alert/70"
+                          style={{ left: ganttTodayIndex * pxPerDay }}
+                        />
+                        {ganttRows.map((r, idx) => {
+                          const top = idx * ROW_H;
+                          const left = r.barStart * pxPerDay;
+                          const width = Math.max((r.barEnd - r.barStart) * pxPerDay, 3);
+                          return (
+                            <div key={r.task.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
+                              <div
+                                className={`absolute rounded ${
+                                  r.task.completed ? "bg-cream/30" : r.overdue ? "bg-alert" : "bg-cream/70"
+                                }`}
+                                style={{ left, width, top: 9, height: 20 }}
+                                title={`${r.task.title}（期日 ${r.task.dueDate}）`}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-cream/40">赤い縦線が本日の位置です。バーは登録日から期日までの猶予を表します。</p>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              {reorderEnabled ? (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={incompleteTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                    {incompleteTasks.map((task) => (
+                      <SortableTaskRow
+                        key={task.id}
+                        task={task}
+                        subtasks={subtasksByParent.get(task.id) ?? []}
+                        listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                        onToggleComplete={() => toggleComplete(task)}
+                        onToggleImportant={() => toggleImportant(task)}
+                        onOpenDetail={() => setDetailTaskId(task.id)}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                incompleteTasks.map((task) => (
                   <TaskRow
                     key={task.id}
                     task={task}
                     subtasks={subtasksByParent.get(task.id) ?? []}
+                    listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
                     onToggleComplete={() => toggleComplete(task)}
                     onToggleImportant={() => toggleImportant(task)}
                     onOpenDetail={() => setDetailTaskId(task.id)}
                   />
-                ))}
+                ))
+              )}
+              {incompleteTasks.length === 0 && (
+                <p className="px-1 py-4 text-sm text-cream/50">タスクはありません。</p>
+              )}
+            </div>
+
+            {completedTasks.length > 0 && (
+              <div className="mt-4 border-t border-cream/10 pt-3">
+                <button
+                  className="mb-2 text-xs text-cream/50 hover:text-cream/80"
+                  onClick={() => setShowCompleted((v) => !v)}
+                >
+                  {showCompleted ? "▼" : "▶"} 完了済み（{completedTasks.length}）
+                </button>
+                {showCompleted && (
+                  <div className="space-y-1.5">
+                    {completedTasks.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        subtasks={subtasksByParent.get(task.id) ?? []}
+                        listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                        onToggleComplete={() => toggleComplete(task)}
+                        onToggleImportant={() => toggleImportant(task)}
+                        onOpenDetail={() => setDetailTaskId(task.id)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
 
@@ -385,6 +699,7 @@ export default function TodoSection() {
           task={detailTask}
           subtasks={subtasksByParent.get(detailTask.id) ?? []}
           tagOptions={tagOptions}
+          customerOptions={customerOptions}
           today={today}
           onClose={() => setDetailTaskId(null)}
           onToggleMyDay={() => toggleMyDay(detailTask)}
@@ -396,15 +711,50 @@ export default function TodoSection() {
   );
 }
 
+function SortableTaskRow(props: {
+  task: TodoTask;
+  subtasks: TodoTask[];
+  listTitle?: string;
+  onToggleComplete: () => void;
+  onToggleImportant: () => void;
+  onOpenDetail: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.task.id,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-1">
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab px-1 text-cream/30 active:cursor-grabbing"
+        aria-label="並び替え"
+      >
+        ⠿
+      </button>
+      <div className="min-w-0 flex-1">
+        <TaskRow {...props} />
+      </div>
+    </div>
+  );
+}
+
 function TaskRow({
   task,
   subtasks,
+  listTitle,
   onToggleComplete,
   onToggleImportant,
   onOpenDetail,
 }: {
   task: TodoTask;
   subtasks: TodoTask[];
+  listTitle?: string;
   onToggleComplete: () => void;
   onToggleImportant: () => void;
   onOpenDetail: () => void;
@@ -421,13 +771,21 @@ function TaskRow({
           task.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
         }`}
       >
-        {task.completed ? "✓" : task.recurrence ? "🔁" : ""}
+        {task.completed ? "✓" : ""}
       </button>
       <button className="min-w-0 flex-1 text-left" onClick={onOpenDetail}>
         <div className="flex flex-wrap items-center gap-1.5">
+          {listTitle && (
+            <span className="rounded-full bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/40">{listTitle}</span>
+          )}
           {task.tag && (
             <span className="rounded-full border border-cream/30 px-1.5 py-0.5 text-[10px] text-cream/70">
               {task.tag}
+            </span>
+          )}
+          {task.customer && (
+            <span className="rounded-full bg-cream/10 px-1.5 py-0.5 text-[10px] text-cream/60">
+              {task.customer}
             </span>
           )}
           <span className={`text-sm text-cream ${task.completed ? "line-through" : ""}`}>{task.title}</span>
@@ -460,6 +818,7 @@ function TaskDetailModal({
   task,
   subtasks,
   tagOptions,
+  customerOptions,
   today,
   onClose,
   onToggleMyDay,
@@ -469,6 +828,7 @@ function TaskDetailModal({
   task: TodoTask;
   subtasks: TodoTask[];
   tagOptions: string[];
+  customerOptions: string[];
   today: string;
   onClose: () => void;
   onToggleMyDay: () => void;
@@ -480,6 +840,12 @@ function TaskDetailModal({
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
   const [tagMode, setTagMode] = useState(task.tag && !tagOptions.includes(task.tag) ? CUSTOM_TAG_VALUE : (task.tag ?? NO_TAG_VALUE));
   const [customTag, setCustomTag] = useState(task.tag && !tagOptions.includes(task.tag) ? task.tag : "");
+  const [customerMode, setCustomerMode] = useState(
+    task.customer && !customerOptions.includes(task.customer) ? CUSTOM_CUSTOMER_VALUE : (task.customer ?? NO_CUSTOMER_VALUE)
+  );
+  const [customCustomer, setCustomCustomer] = useState(
+    task.customer && !customerOptions.includes(task.customer) ? task.customer : ""
+  );
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(!!task.recurrence);
   const [recurrence, setRecurrence] = useState<RecurrenceRule>(
     task.recurrence ?? { type: "weekly", interval: 1, weekdays: [new Date().getDay()] }
@@ -491,6 +857,11 @@ function TaskDetailModal({
     return tagMode || undefined;
   }
 
+  function resolveCustomer(): string | undefined {
+    if (customerMode === CUSTOM_CUSTOMER_VALUE) return customCustomer.trim() || undefined;
+    return customerMode || undefined;
+  }
+
   async function save() {
     if (!title.trim()) return;
     await db.todoTasks.update(task.id, {
@@ -498,6 +869,7 @@ function TaskDetailModal({
       notes: notes.trim() || undefined,
       dueDate: dueDate || undefined,
       tag: resolveTag(),
+      customer: resolveCustomer(),
       recurrence: recurrenceEnabled ? recurrence : undefined,
     });
     onClose();
@@ -556,6 +928,31 @@ function TaskDetailModal({
               value={customTag}
               onChange={(e) => setCustomTag(e.target.value)}
               placeholder="タグ名"
+              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+            />
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-cream/60">客先</label>
+          <select
+            value={customerMode}
+            onChange={(e) => setCustomerMode(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+          >
+            <option value={NO_CUSTOMER_VALUE}>客先なし</option>
+            {customerOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+            <option value={CUSTOM_CUSTOMER_VALUE}>＋ 新しい客先...</option>
+          </select>
+          {customerMode === CUSTOM_CUSTOMER_VALUE && (
+            <input
+              value={customCustomer}
+              onChange={(e) => setCustomCustomer(e.target.value)}
+              placeholder="客先名"
               className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
             />
           )}
@@ -636,7 +1033,13 @@ function TaskDetailModal({
               </div>
 
               {recurrence.type === "weekly" && (
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap items-center gap-1">
+                  <button
+                    onClick={() => setRecurrence({ ...recurrence, weekdays: [1, 2, 3, 4, 5] })}
+                    className="btn-pill-outline text-xs"
+                  >
+                    平日
+                  </button>
                   {WEEKDAY_JP.map((label, w) => {
                     const active = (recurrence.weekdays ?? []).includes(w);
                     return (
