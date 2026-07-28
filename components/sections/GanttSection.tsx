@@ -62,7 +62,7 @@ export default function GanttSection() {
   const rows = useMemo(() => {
     if (!tasks) return [];
     let cursor = 0; // minutes from timelineBase
-    return tasks.map((task) => {
+    const base = tasks.map((task) => {
       const predictedSeconds = task.masterTaskId ? masterMap.get(task.masterTaskId)?.estimatedSeconds ?? task.estimatedSeconds : task.estimatedSeconds;
       const layoutDurationMin = Math.max(task.estimatedSeconds, predictedSeconds) / 60;
       const scheduledStartMin = cursor;
@@ -86,6 +86,28 @@ export default function GanttSection() {
         actualSeconds,
       };
     });
+
+    // 同じ大項目・詳細作業名を同日中に複数回登録した場合、超過判定は個々のインスタンス
+    // 単体ではなく累計で行う。当日最初に登録されたインスタンスの想定時間を基準の
+    // 想定枠とし、登録順に実績を積み上げて、基準を超えた時点以降を超過扱いにする
+    const overPlanByTaskId = new Map<string, boolean>();
+    const groups = new Map<string, typeof base>();
+    for (const r of base) {
+      const key = `${r.task.category}::${r.task.name}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(r);
+    }
+    for (const group of groups.values()) {
+      const sorted = [...group].sort((a, b) => a.task.order - b.task.order);
+      const totalBudget = sorted[0]?.task.estimatedSeconds ?? 0;
+      let cumulative = 0;
+      for (const r of sorted) {
+        cumulative += r.actualSeconds;
+        overPlanByTaskId.set(r.task.id, totalBudget > 0 && cumulative > totalBudget);
+      }
+    }
+
+    return base.map((r) => ({ ...r, overPlan: overPlanByTaskId.get(r.task.id) ?? false }));
   }, [tasks, masterMap, now, timelineBase]);
 
   const autoMinutes = Math.max(
@@ -297,7 +319,6 @@ export default function GanttSection() {
                   {rows
                     .filter((r) => r.actualStartMin !== null && r.actualSeconds > 0)
                     .map((r) => {
-                      const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
                       const actualLeft = r.actualStartMin! * pxPerMin;
                       const actualWidth = Math.max((r.actualSeconds / 60) * pxPerMin, 3);
                       const actualEndMin = r.actualStartMin! + r.actualSeconds / 60;
@@ -311,7 +332,7 @@ export default function GanttSection() {
                             {r.task.name}
                           </div>
                           <div
-                            className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                            className={`absolute rounded ${r.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
                             style={{
                               left: actualLeft,
                               width: actualWidth,
@@ -337,8 +358,7 @@ export default function GanttSection() {
                   const planLeft = r.scheduledStartMin * pxPerMin;
                   const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
                   const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
-                  const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
-                  const hasActual = r.actualStartMin !== null && r.actualSeconds > 0;
+                                    const hasActual = r.actualStartMin !== null && r.actualSeconds > 0;
                   const nameLeft = hasActual ? r.actualStartMin! * pxPerMin : planLeft;
                   const endMin = hasActual ? r.actualStartMin! + r.actualSeconds / 60 : r.scheduledStartMin + r.task.estimatedSeconds / 60;
                   const endLeft = endMin * pxPerMin;
@@ -365,7 +385,7 @@ export default function GanttSection() {
                       {/* 実績バー */}
                       {hasActual && (
                         <div
-                          className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                          className={`absolute rounded ${r.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
                           style={{
                             left: r.actualStartMin! * pxPerMin,
                             width: Math.max((r.actualSeconds / 60) * pxPerMin, 3),

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import { aggregateRecords, type SortMetric } from "@/lib/aggregate";
 import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
@@ -16,6 +17,15 @@ export default function AggregationSection() {
 
   const records = useLiveQuery(() => db.records.toArray(), []);
   const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
+
+  // 今週・今月表示の場合、前週・前月との比較を出す
+  const comparisonLabel = period === "week" ? "前週比" : period === "month" ? "前月比" : null;
+  const previousTotalsByKey = useMemo(() => {
+    if (!records || !comparisonLabel) return null;
+    const prevNow = period === "week" ? subWeeks(new Date(), 1) : subMonths(new Date(), 1);
+    const prevRows = aggregateRecords(records, { type: period, fiscalYear }, sortBy, false, prevNow);
+    return new Map(prevRows.map((r) => [r.key, r.totalSeconds]));
+  }, [records, period, fiscalYear, sortBy, comparisonLabel]);
 
   return (
     <div className="space-y-4">
@@ -62,31 +72,43 @@ export default function AggregationSection() {
       </div>
 
       <div className="panel divide-y divide-cream/10">
-        {rows.map((row, idx) => (
-          <div key={row.key} className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="flex items-center gap-3">
-              <span className="w-8 text-center text-lg">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
-              <div>
-                <div className="text-xs text-cream/50">{row.category}</div>
-                <div className="text-sm text-cream">{row.name}</div>
+        {rows.map((row, idx) => {
+          const prevSeconds = previousTotalsByKey?.get(row.key) ?? 0;
+          const delta = row.totalSeconds - prevSeconds;
+          return (
+            <div key={row.key} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className="w-8 text-center text-lg">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
+                <div>
+                  <div className="text-xs text-cream/50">{row.category}</div>
+                  <div className="text-sm text-cream">{row.name}</div>
+                </div>
+              </div>
+              <div className="flex gap-4 text-right text-sm tabular-nums">
+                <div>
+                  <div className="text-cream/50 text-xs">合計</div>
+                  {formatHms(row.totalSeconds)}
+                </div>
+                <div>
+                  <div className="text-cream/50 text-xs">平均</div>
+                  {formatHms(row.avgSeconds)}
+                </div>
+                <div>
+                  <div className="text-cream/50 text-xs">件数</div>
+                  {row.count}
+                </div>
+                {comparisonLabel && (
+                  <div>
+                    <div className="text-cream/50 text-xs">{comparisonLabel}</div>
+                    <span className={delta === 0 ? "text-cream/50" : delta > 0 ? "text-alert" : "text-cream"}>
+                      {delta === 0 ? "±0" : delta > 0 ? `▲${formatHms(delta)}` : `▼${formatHms(-delta)}`}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="flex gap-4 text-right text-sm tabular-nums">
-              <div>
-                <div className="text-cream/50 text-xs">合計</div>
-                {formatHms(row.totalSeconds)}
-              </div>
-              <div>
-                <div className="text-cream/50 text-xs">平均</div>
-                {formatHms(row.avgSeconds)}
-              </div>
-              <div>
-                <div className="text-cream/50 text-xs">件数</div>
-                {row.count}
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {rows.length === 0 && <p className="px-4 py-6 text-sm text-cream/50">この期間のデータはありません。</p>}
       </div>
       <p className="text-xs text-cream/40">

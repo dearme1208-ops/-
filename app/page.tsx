@@ -39,7 +39,7 @@ export default function HomePage() {
     <div>
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       {active === "today" && <TodaySection />}
-      {active === "projects" && <ProjectsSection />}
+      {active === "projects" && <ProjectsSection onAddedToToday={() => setActive("today")} />}
       {active === "master" && <MasterSection />}
       {active === "template" && <TemplateSection />}
       {active === "gantt" && <GanttSection />}

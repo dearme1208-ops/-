@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
 import { useSetting } from "@/lib/settings";
@@ -61,6 +62,13 @@ export default function TodaySection() {
       map.set(r.projectId, (map.get(r.projectId) ?? 0) + r.seconds);
     }
     return map;
+  }, [projectRecords]);
+
+  // 集計・ランキングで上位（累計時間トップ3）に入っている作業を把握しておく
+  const topRankedKeys = useMemo(() => {
+    if (!projectRecords || projectRecords.length === 0) return new Set<string>();
+    const ranked = aggregateRecords(projectRecords, { type: "all" }, "total");
+    return new Set(ranked.slice(0, 3).map((r) => r.key));
   }, [projectRecords]);
 
   useEffect(() => {
@@ -548,7 +556,10 @@ export default function TodaySection() {
           const elapsedMs = segmentsAccumulatedMs(task, now);
           const estMs = task.estimatedSeconds * 1000;
           const overEstimate = task.estimatedSeconds > 0 && elapsedMs > estMs;
+          const remainingMs = estMs - elapsedMs;
           const isNext = task.id === nextTaskId;
+          const taskRankKey = task.masterTaskId ?? `${task.category}::${task.name}`;
+          const isTopRanked = topRankedKeys.has(taskRankKey);
           const cardClass =
             task.status === "running"
               ? "border-cream ring-2 ring-cream/50 bg-cream/[0.04]"
@@ -602,7 +613,14 @@ export default function TodaySection() {
                       </>
                     )}
                   </div>
-                  <div className="font-display text-base font-bold">{task.name}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-display text-base font-bold">{task.name}</span>
+                    {isTopRanked && (
+                      <span className="rounded-full bg-alert/20 px-2 py-0.5 text-[10px] font-bold text-alert">
+                        🏆 集計ランキング上位
+                      </span>
+                    )}
+                  </div>
                   {task.projectId && projectMap.get(task.projectId) && (
                     <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
                       <span className="rounded-full border border-cream/30 px-2 py-0.5 text-cream/80">
@@ -631,6 +649,11 @@ export default function TodaySection() {
                   <div className={`font-display text-2xl font-bold tabular-nums ${overEstimate ? "text-alert" : "text-cream"}`}>
                     {formatMsClock(elapsedMs)}
                   </div>
+                  {task.estimatedSeconds > 0 && (task.status === "running" || task.status === "paused") && (
+                    <div className={`text-xs tabular-nums ${remainingMs < 0 ? "text-alert" : "text-cream/60"}`}>
+                      {remainingMs >= 0 ? `残り ${formatMsClock(remainingMs)}` : `超過 ${formatMsClock(-remainingMs)}`}
+                    </div>
+                  )}
                   <div className="mt-1 flex flex-wrap justify-end gap-2">
                     {task.status === "pending" && (
                       <>

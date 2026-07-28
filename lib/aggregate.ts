@@ -16,9 +16,10 @@ export function aggregateRecords(
   records: WorkRecord[],
   filter: PeriodFilter,
   sortBy: SortMetric,
-  includeExcluded = false
+  includeExcluded = false,
+  now: Date = new Date()
 ): AggregateRow[] {
-  const range = getPeriodRange(filter);
+  const range = getPeriodRange(filter, now);
   const inPeriod = records.filter(
     (r) => isDateStrInRange(r.date, range) && (includeExcluded || !r.excludedFromStats)
   );

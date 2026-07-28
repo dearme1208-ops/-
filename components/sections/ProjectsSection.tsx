@@ -21,13 +21,12 @@ const MAX_PX_PER_DAY = 80;
 const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
-export default function ProjectsSection() {
+export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: () => void }) {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("");
   const [workName, setWorkName] = useState("");
   const [dueDate, setDueDate] = useState(todayStr());
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
-  const [addedMessage, setAddedMessage] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [showForm, setShowForm] = useState(true);
@@ -124,8 +123,7 @@ export default function ProjectsSection() {
       projectId: item.id,
     };
     await db.dailyTasks.add(task);
-    setAddedMessage(`「${item.workName}」を本日の作業に追加しました。`);
-    setTimeout(() => setAddedMessage(""), 3000);
+    onAddedToToday?.();
   }
 
   const { rangeStartStr, totalDays, rows } = useMemo(() => {
@@ -246,7 +244,6 @@ export default function ProjectsSection() {
         )}
       </div>
 
-      {addedMessage && <p className="text-xs text-cream/70">{addedMessage}</p>}
 
       <div className="panel divide-y divide-cream/10">
         {rows.map(({ project, overdue, daysLeft }) => (
