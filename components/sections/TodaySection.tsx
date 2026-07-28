@@ -35,6 +35,11 @@ export default function TodaySection() {
   const thresholdMinutes = Math.max(1, Number(thresholdMinutesStr) || 5);
   const [provisionalEnabledStr, setProvisionalEnabledStr] = useSetting("today.provisionalEnabled", "true");
   const provisionalEnabled = provisionalEnabledStr === "true";
+  const [provisionalNotifyEnabledStr, setProvisionalNotifyEnabledStr] = useSetting(
+    "today.provisionalNotifyEnabled",
+    "true"
+  );
+  const provisionalNotifyEnabled = provisionalNotifyEnabledStr === "true";
   const provisionalNotifiedAtRef = useRef<number | null>(null);
 
   const tasks = useLiveQuery(
@@ -173,9 +178,9 @@ export default function TodaySection() {
     })();
   }, [provisionalEnabled, tasks, now, lastStopTime, thresholdMinutes, date]);
 
-  // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する
+  // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する（オフの場合は何もしない）
   useEffect(() => {
-    if (!provisionalTask) {
+    if (!provisionalNotifyEnabled || !provisionalTask) {
       provisionalNotifiedAtRef.current = null;
       return;
     }
@@ -188,7 +193,7 @@ export default function TodaySection() {
       "provisional-tracking"
     );
     provisionalNotifiedAtRef.current = now;
-  }, [provisionalTask, now]);
+  }, [provisionalNotifyEnabled, provisionalTask, now]);
 
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
@@ -257,6 +262,7 @@ export default function TodaySection() {
       accumulatedMs,
       startedAt,
       endedAt: nowMs,
+      isProvisional: false,
     });
 
     let masterTaskId = task.masterTaskId;
@@ -481,6 +487,12 @@ export default function TodaySection() {
               className="w-14 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
             />
             <span>分以上続いたら、自動で仮計測を開始します</span>
+            <button
+              className={provisionalNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setProvisionalNotifyEnabledStr(provisionalNotifyEnabled ? "false" : "true")}
+            >
+              仮計測の通知: {provisionalNotifyEnabled ? "ON" : "OFF"}
+            </button>
           </>
         )}
       </div>
@@ -568,12 +580,13 @@ export default function TodaySection() {
                   <div className="mt-1 flex flex-wrap justify-end gap-2">
                     {task.status === "pending" && (
                       <>
-                        <button className="btn-pill text-xs" onClick={() => startTask(task)}>
+                        <button className="btn-pill text-xs" disabled={!!provisionalTask} onClick={() => startTask(task)}>
                           開始
                         </button>
                         {lastStopTime && (
                           <button
                             className="btn-pill-outline text-xs"
+                            disabled={!!provisionalTask}
                             onClick={() => startTask(task, lastStopTime)}
                           >
                             さかのぼって開始
@@ -581,6 +594,7 @@ export default function TodaySection() {
                         )}
                         <button
                           className="btn-pill-outline text-xs"
+                          disabled={!!provisionalTask}
                           onClick={() => setManualFinishTaskTarget(task)}
                         >
                           手動で記録
@@ -589,32 +603,34 @@ export default function TodaySection() {
                     )}
                     {task.status === "running" && (
                       <>
-                        <button className="btn-pill-outline text-xs" onClick={() => pauseTask(task)}>
+                        <button className="btn-pill-outline text-xs" disabled={!!provisionalTask} onClick={() => pauseTask(task)}>
                           一時停止
                         </button>
-                        <button className="btn-pill text-xs" onClick={() => finishTask(task)}>
+                        <button className="btn-pill text-xs" disabled={!!provisionalTask} onClick={() => finishTask(task)}>
                           終了
                         </button>
                       </>
                     )}
                     {task.status === "paused" && (
                       <>
-                        <button className="btn-pill-outline text-xs" onClick={() => startTask(task)}>
+                        <button className="btn-pill-outline text-xs" disabled={!!provisionalTask} onClick={() => startTask(task)}>
                           再開
                         </button>
                         {lastStopTime && (
                           <button
                             className="btn-pill-outline text-xs"
+                            disabled={!!provisionalTask}
                             onClick={() => startTask(task, lastStopTime)}
                           >
                             さかのぼって再開
                           </button>
                         )}
-                        <button className="btn-pill text-xs" onClick={() => finishTask(task)}>
+                        <button className="btn-pill text-xs" disabled={!!provisionalTask} onClick={() => finishTask(task)}>
                           終了
                         </button>
                         <button
                           className="btn-pill-outline text-xs"
+                          disabled={!!provisionalTask}
                           onClick={() => setManualFinishTaskTarget(task)}
                         >
                           手動で記録

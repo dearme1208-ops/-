@@ -9,7 +9,8 @@ import { formatClock, formatHms, todayStr } from "@/lib/time";
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 0.05;
 const MAX_PX_PER_MIN = 24;
-const ROW_H = 46;
+const ROW_H_OVERLAP = 46;
+const ROW_H_STACKED = 64;
 const DAY_MINUTES = 24 * 60;
 
 type RangeMode = "auto" | "24h";
@@ -25,9 +26,17 @@ export default function GanttSection() {
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
   const [startHourStr, setStartHourStr] = useSetting("gantt.startHour", "8");
   const [rangeMode, setRangeMode] = useSetting("gantt.rangeMode", "auto");
+  const [stackBarsStr, setStackBarsStr] = useSetting("gantt.stackBars", "false");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const startHour = Math.min(23, Math.max(0, Number(startHourStr) || 0));
+  const stackBars = stackBarsStr === "true";
+  const ROW_H = stackBars ? ROW_H_STACKED : ROW_H_OVERLAP;
+  const planBarTop = stackBars ? 15 : 14;
+  const planBarHeight = stackBars ? 14 : 20;
+  const actualBarTop = stackBars ? 31 : 14;
+  const actualBarHeight = stackBars ? 14 : 20;
+  const endLabelTop = stackBars ? 47 : 34;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5000);
@@ -162,6 +171,15 @@ export default function GanttSection() {
             24時間表示
           </button>
         </div>
+        <label className="flex items-center gap-2 text-xs text-cream/60">
+          <input
+            type="checkbox"
+            checked={stackBars}
+            onChange={(e) => setStackBarsStr(e.target.checked ? "true" : "false")}
+            className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+          />
+          予定と実績を重ねずに表示
+        </label>
       </div>
 
       <div className="panel flex p-4">
@@ -239,12 +257,12 @@ export default function GanttSection() {
                     {/* 予測枠（点線） */}
                     <div
                       className="absolute rounded border border-dashed border-cream/50"
-                      style={{ left: planLeft, width: predWidth, top: 14, height: 20 }}
+                      style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
                     />
                     {/* 予定バー */}
                     <div
                       className="absolute rounded bg-cream/70"
-                      style={{ left: planLeft, width: planWidth, top: 14, height: 20 }}
+                      style={{ left: planLeft, width: planWidth, top: planBarTop, height: planBarHeight }}
                     />
                     {/* 実績バー */}
                     {hasActual && (
@@ -253,8 +271,8 @@ export default function GanttSection() {
                         style={{
                           left: r.actualStartMin! * pxPerMin,
                           width: Math.max((r.actualSeconds / 60) * pxPerMin, 3),
-                          top: 14,
-                          height: 20,
+                          top: actualBarTop,
+                          height: actualBarHeight,
                           boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
                         }}
                         title={`実績 ${formatHms(r.actualSeconds)}`}
@@ -263,7 +281,7 @@ export default function GanttSection() {
                     {/* 終了時刻ラベル */}
                     <div
                       className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
-                      style={{ left: endLeft + 3, top: 34 }}
+                      style={{ left: endLeft + 3, top: endLabelTop }}
                     >
                       {endLabel}
                     </div>
