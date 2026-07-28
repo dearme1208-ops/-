@@ -8,7 +8,7 @@ import {
   bulkFindOrCreateMasterTasks,
   recomputeEstimatesForMasterTasks,
 } from "@/lib/master";
-import { recomputeOutliersForAll, setManualOverride, clearManualOverride } from "@/lib/outliers";
+import { setManualOverride, clearManualOverride } from "@/lib/outliers";
 import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
 import { downloadTextFile } from "@/lib/report";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
@@ -30,7 +30,6 @@ export default function RecordsSection() {
 
   async function updateRecord(r: WorkRecord, patch: Partial<WorkRecord>) {
     await db.records.update(r.id, patch);
-    await recomputeOutliersForAll();
     if (patch.seconds !== undefined && r.masterTaskId) {
       await recomputeEstimateFromRecords(r.masterTaskId);
     }
@@ -39,7 +38,6 @@ export default function RecordsSection() {
   async function deleteRecord(r: WorkRecord) {
     if (!confirm(`「${r.date} ${r.category}/${r.name}」の実績を削除しますか?`)) return;
     await db.records.delete(r.id);
-    await recomputeOutliersForAll();
     if (r.masterTaskId) await recomputeEstimateFromRecords(r.masterTaskId);
   }
 
@@ -74,7 +72,6 @@ export default function RecordsSection() {
       masterTaskId: masterMap.get(`${r.category}::${r.name}`)!.id,
     }));
     await db.records.bulkPut(fullRecords);
-    await recomputeOutliersForAll();
     await recomputeEstimatesForMasterTasks(Array.from(masterMap.values(), (m) => m.id));
     setImportStatus(`${fullRecords.length}件を取り込みました。`);
   }

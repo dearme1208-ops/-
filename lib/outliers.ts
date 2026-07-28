@@ -47,7 +47,12 @@ export async function setManualOverride(recordId: string, excluded: boolean): Pr
   });
 }
 
+// 集計に復活させる。以後の自動判定（手動で明示的に再計算した場合のみ）でも
+// 上書きされないよう、manualOverrideは立てたままにする
 export async function clearManualOverride(recordId: string): Promise<void> {
-  await db.records.update(recordId, { manualOverride: false });
-  await recomputeOutliersForAll();
+  await db.records.update(recordId, {
+    excludedFromStats: false,
+    excludeReason: undefined,
+    manualOverride: true,
+  });
 }

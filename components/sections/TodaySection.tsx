@@ -4,20 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
-import { recomputeOutliersForAll } from "@/lib/outliers";
 import { formatClock, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
   notify,
   requestNotificationPermission,
 } from "@/lib/notifications";
-import type { DailyTask, Weekday } from "@/lib/types";
+import type { DailyTask, TaskStatus, TimeSegment, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
 import EditTaskDialog from "@/components/sections/EditTaskDialog";
+import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
+const STATUS_ORDER: Record<TaskStatus, number> = { running: 0, paused: 1, pending: 2, done: 3 };
 
 function segmentsAccumulatedMs(task: DailyTask, now: number): number {
   let total = task.accumulatedMs;
@@ -34,6 +35,7 @@ export default function TodaySection() {
   const [notifPermission, setNotifPermission] = useState<string>("default");
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
+  const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
 
   const tasks = useLiveQuery(
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
@@ -106,6 +108,19 @@ export default function TodaySection() {
     return map;
   }, [tasks, now]);
 
+  // 実行中・一時停止中・未着手を先に、完了済みを最後に表示する
+  const sortedTasks = useMemo(() => {
+    if (!tasks) return [];
+    return [...tasks].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.order - b.order);
+  }, [tasks]);
+
+  // 直近に完了した作業の終了時刻（さかのぼって開始する際の起点）
+  const lastCompletedAt = useMemo(() => {
+    if (!tasks) return null;
+    const ends = tasks.filter((t) => t.status === "done" && t.endedAt).map((t) => t.endedAt!);
+    return ends.length > 0 ? Math.max(...ends) : null;
+  }, [tasks]);
+
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
     if (items.length === 0) {
@@ -135,12 +150,12 @@ export default function TodaySection() {
     await db.dailyTasks.bulkAdd(newTasks);
   }
 
-  async function startTask(task: DailyTask) {
-    const segments = [...task.segments, { start: Date.now() }];
+  async function startTask(task: DailyTask, startAt: number = Date.now()) {
+    const segments = [...task.segments, { start: startAt }];
     await db.dailyTasks.update(task.id, {
       segments,
       status: "running",
-      startedAt: task.startedAt ?? Date.now(),
+      startedAt: task.startedAt ?? startAt,
     });
   }
 
@@ -157,20 +172,22 @@ export default function TodaySection() {
     await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs });
   }
 
-  async function finishTask(task: DailyTask) {
-    let segments = task.segments;
-    if (task.status === "running") {
-      segments = task.segments.map((s, i) =>
-        i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
-      );
-    }
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
+  // 作業を完了として確定する。同日・同じマスタの実績が既にあれば合算する
+  async function commitFinish(
+    task: DailyTask,
+    segments: TimeSegment[],
+    accumulatedMs: number,
+    startedAtOverride?: number
+  ) {
     const seconds = Math.round(accumulatedMs / 1000);
+    const nowMs = Date.now();
+    const startedAt = startedAtOverride ?? task.startedAt ?? nowMs;
     await db.dailyTasks.update(task.id, {
       segments,
       status: "done",
       accumulatedMs,
-      endedAt: Date.now(),
+      startedAt,
+      endedAt: nowMs,
     });
 
     let masterTaskId = task.masterTaskId;
@@ -179,21 +196,53 @@ export default function TodaySection() {
       masterTaskId = master.id;
     }
 
-    await db.records.add({
-      id: uid(),
-      date,
-      category: task.category,
-      name: task.name,
-      masterTaskId,
-      seconds,
-      startedAt: task.startedAt ?? Date.now(),
-      endedAt: Date.now(),
-      excludedFromStats: false,
-    });
+    const existing = await db.records
+      .where("date")
+      .equals(date)
+      .filter((r) => r.masterTaskId === masterTaskId)
+      .first();
 
-    await recomputeOutliersForAll();
+    if (existing) {
+      await db.records.update(existing.id, {
+        seconds: existing.seconds + seconds,
+        endedAt: nowMs,
+      });
+    } else {
+      await db.records.add({
+        id: uid(),
+        date,
+        category: task.category,
+        name: task.name,
+        masterTaskId,
+        seconds,
+        startedAt,
+        endedAt: nowMs,
+        excludedFromStats: false,
+      });
+    }
+
     await recomputeEstimateFromRecords(masterTaskId);
     if (overrunTask?.id === task.id) setOverrunTask(null);
+  }
+
+  async function finishTask(task: DailyTask) {
+    let segments = task.segments;
+    if (task.status === "running") {
+      segments = task.segments.map((s, i) =>
+        i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
+      );
+    }
+    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
+    await commitFinish(task, segments, accumulatedMs);
+  }
+
+  // 計測し忘れた場合に、実際の所要時間を直接入力して終了する
+  async function manualFinish(task: DailyTask, manualSeconds: number) {
+    if (manualSeconds <= 0) return;
+    const nowMs = Date.now();
+    const startedAt = nowMs - manualSeconds * 1000;
+    const segments: TimeSegment[] = [{ start: startedAt, end: nowMs }];
+    await commitFinish(task, segments, manualSeconds * 1000, startedAt);
   }
 
   async function addFavoriteAndStart(masterTaskId: string) {
@@ -311,24 +360,37 @@ export default function TodaySection() {
       </div>
 
       <div className="space-y-3">
-        {tasks?.map((task) => {
+        {sortedTasks.map((task) => {
           const elapsedMs = segmentsAccumulatedMs(task, now);
           const estMs = task.estimatedSeconds * 1000;
           const overEstimate = task.estimatedSeconds > 0 && elapsedMs > estMs;
           const isNext = task.id === nextTaskId;
+          const cardClass =
+            task.status === "running"
+              ? "border-cream ring-2 ring-cream/50 bg-cream/[0.04]"
+              : task.status === "paused"
+                ? "border-cream/40"
+                : isNext
+                  ? "border-cream/60 ring-1 ring-cream/40"
+                  : "";
           return (
             <div
               key={task.id}
-              className={`panel p-4 ${isNext ? "border-cream/60 ring-1 ring-cream/40" : ""} ${
-                task.status === "done" ? "opacity-60" : ""
-              }`}
+              className={`panel p-4 ${cardClass} ${task.status === "done" ? "opacity-50" : ""}`}
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 text-xs text-cream/60">
-                    <span>
+                    <span className="flex items-center gap-1">
+                      {task.status === "running" && (
+                        <span className="flex items-center gap-1 font-bold text-cream">
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-alert" />
+                          計測中
+                        </span>
+                      )}
+                      {task.status === "paused" && <span className="text-cream/70">‖ 一時停止中</span>}
                       {task.category} {task.isSpontaneous && <span className="ml-1 text-alert">突発</span>}
-                      {isNext && task.status !== "done" && <span className="ml-2 text-cream">▶ 次の作業</span>}
+                      {isNext && task.status === "pending" && <span className="ml-2 text-cream">▶ 次の作業</span>}
                     </span>
                     {task.status !== "done" && (
                       <>
@@ -363,11 +425,27 @@ export default function TodaySection() {
                   <div className={`font-display text-2xl font-bold tabular-nums ${overEstimate ? "text-alert" : "text-cream"}`}>
                     {formatMsClock(elapsedMs)}
                   </div>
-                  <div className="mt-1 flex gap-2">
+                  <div className="mt-1 flex flex-wrap justify-end gap-2">
                     {task.status === "pending" && (
-                      <button className="btn-pill text-xs" onClick={() => startTask(task)}>
-                        開始
-                      </button>
+                      <>
+                        <button className="btn-pill text-xs" onClick={() => startTask(task)}>
+                          開始
+                        </button>
+                        {lastCompletedAt && (
+                          <button
+                            className="btn-pill-outline text-xs"
+                            onClick={() => startTask(task, lastCompletedAt)}
+                          >
+                            さかのぼって開始
+                          </button>
+                        )}
+                        <button
+                          className="btn-pill-outline text-xs"
+                          onClick={() => setManualFinishTaskTarget(task)}
+                        >
+                          手動で記録
+                        </button>
+                      </>
                     )}
                     {task.status === "running" && (
                       <>
@@ -387,6 +465,12 @@ export default function TodaySection() {
                         <button className="btn-pill text-xs" onClick={() => finishTask(task)}>
                           終了
                         </button>
+                        <button
+                          className="btn-pill-outline text-xs"
+                          onClick={() => setManualFinishTaskTarget(task)}
+                        >
+                          手動で記録
+                        </button>
                       </>
                     )}
                     {task.status === "done" && <span className="text-xs text-cream/50">完了</span>}
@@ -401,6 +485,17 @@ export default function TodaySection() {
       {showAddDialog && <AddTaskDialog date={date} onClose={() => setShowAddDialog(false)} />}
 
       {editingTask && <EditTaskDialog task={editingTask} onClose={() => setEditingTask(null)} />}
+
+      {manualFinishTask && (
+        <ManualFinishDialog
+          taskName={manualFinishTask.name}
+          onClose={() => setManualFinishTaskTarget(null)}
+          onConfirm={async (seconds) => {
+            await manualFinish(manualFinishTask, seconds);
+            setManualFinishTaskTarget(null);
+          }}
+        />
+      )}
 
       {overrunTask && (
         <Modal title="まだこの作業中ですか?">

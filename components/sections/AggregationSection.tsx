@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { recomputeOutliersForAll } from "@/lib/outliers";
 import { aggregateRecords, type SortMetric } from "@/lib/aggregate";
 import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
 import { formatHms } from "@/lib/time";
@@ -14,10 +13,6 @@ export default function AggregationSection() {
   const [period, setPeriod] = useState<PeriodType>("all");
   const [fiscalYear, setFiscalYear] = useState(() => currentFiscalYear());
   const [sortBy, setSortBy] = useState<SortMetric>("total");
-
-  useEffect(() => {
-    recomputeOutliersForAll();
-  }, []);
 
   const records = useLiveQuery(() => db.records.toArray(), []);
   const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
@@ -95,7 +90,7 @@ export default function AggregationSection() {
         {rows.length === 0 && <p className="px-4 py-6 text-sm text-cream/50">この期間のデータはありません。</p>}
       </div>
       <p className="text-xs text-cream/40">
-        ※ 統計的な外れ値（IQR範囲外）は自動的に集計から除外されています。復活させる場合は「実績編集」から操作してください。
+        ※ 実績は基本的にそのまま集計されます。特定の記録を除外したい場合は「実績編集」から手動で操作してください。
       </p>
     </div>
   );
