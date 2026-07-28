@@ -88,3 +88,59 @@ export interface ProjectItem {
   createdAt: number;
   completedAt?: number;
 }
+
+// ---- ToDo ----
+
+export interface TodoList {
+  id: string;
+  title: string;
+  order: number;
+  createdAt: number;
+}
+
+export type RecurrenceType = "daily" | "weekly" | "monthlyDate" | "monthlyWeekday" | "yearly";
+
+export interface RecurrenceRule {
+  type: RecurrenceType;
+  interval: number; // N日ごと/N週ごと/Nヶ月ごと/N年ごと
+  weekdays?: number[]; // weekly用: 0=日..6=土
+  day?: number; // monthlyDate用: 日付(1-31), yearly用: 日付
+  month?: number; // yearly用: 月(1-12)
+  weekday?: number; // monthlyWeekday用: 0=日..6=土
+  ordinal?: 1 | 2 | 3 | 4 | -1; // monthlyWeekday用: 第1..4, -1=最終
+}
+
+export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
+  daily: "毎日",
+  weekly: "毎週",
+  monthlyDate: "毎月（日付指定）",
+  monthlyWeekday: "毎月（第◯曜日）",
+  yearly: "毎年",
+};
+
+export const WEEKDAY_JP = ["日", "月", "火", "水", "木", "金", "土"];
+
+export const ORDINAL_LABELS: Record<1 | 2 | 3 | 4 | -1, string> = {
+  1: "第1",
+  2: "第2",
+  3: "第3",
+  4: "第4",
+  "-1": "最終",
+};
+
+export interface TodoTask {
+  id: string;
+  listId: string;
+  parentTaskId?: string; // 設定されていればサブタスク
+  title: string;
+  tag?: string; // 社内確認中・客先確認中・打ち合わせ など、件名の頭に付けるラベル
+  notes?: string;
+  dueDate?: string; // YYYY-MM-DD
+  important: boolean;
+  completed: boolean;
+  completedAt?: number;
+  myDayDate?: string; // この日付の「マイデイ」に追加されている場合にセット
+  order: number;
+  createdAt: number;
+  recurrence?: RecurrenceRule;
+}

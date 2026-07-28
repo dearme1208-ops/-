@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import TabNav, { TabDef } from "@/components/TabNav";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
+const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
 const MasterSection = dynamic(() => import("@/components/sections/MasterSection"), { ssr: false });
 const TemplateSection = dynamic(() => import("@/components/sections/TemplateSection"), { ssr: false });
@@ -19,6 +20,7 @@ const SettingsSection = dynamic(() => import("@/components/sections/SettingsSect
 
 const TABS: TabDef[] = [
   { key: "today", label: "本日の作業" },
+  { key: "todo", label: "ToDo" },
   { key: "projects", label: "案件" },
   { key: "master", label: "作業マスタ" },
   { key: "template", label: "曜日別テンプレート" },
@@ -39,6 +41,7 @@ export default function HomePage() {
     <div>
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       {active === "today" && <TodaySection />}
+      {active === "todo" && <TodoSection />}
       {active === "projects" && <ProjectsSection onAddedToToday={() => setActive("today")} />}
       {active === "master" && <MasterSection />}
       {active === "template" && <TemplateSection />}
