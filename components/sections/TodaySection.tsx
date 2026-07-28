@@ -117,12 +117,35 @@ export default function TodaySection() {
     });
   }, [tasks]);
 
-  // 直近に完了した作業の終了時刻（さかのぼって開始する際の起点）
-  const lastCompletedAt = useMemo(() => {
+  // 直近の「停止」時刻（完了した作業の終了時刻、または一時停止中の作業が
+  // 一時停止した時刻のうち最新のもの）。さかのぼって開始/再開する際の起点にする
+  const lastStopTime = useMemo(() => {
     if (!tasks) return null;
-    const ends = tasks.filter((t) => t.status === "done" && t.endedAt).map((t) => t.endedAt!);
-    return ends.length > 0 ? Math.max(...ends) : null;
+    const stops: number[] = [];
+    for (const t of tasks) {
+      if (t.status === "done" && t.endedAt) stops.push(t.endedAt);
+      if (t.status === "paused") {
+        const lastSeg = t.segments[t.segments.length - 1];
+        if (lastSeg?.end) stops.push(lastSeg.end);
+      }
+    }
+    return stops.length > 0 ? Math.max(...stops) : null;
   }, [tasks]);
+
+  // 未計測時間: 最初の作業を始めてから今まで(または最後に完了した時刻まで)の
+  // 経過時間から、実際に計測された合計時間を差し引いた「空白」の時間
+  const untrackedSeconds = useMemo(() => {
+    if (!tasks || tasks.length === 0) return 0;
+    const startTimes = tasks.filter((t) => t.startedAt).map((t) => t.startedAt!);
+    if (startTimes.length === 0) return 0;
+    const windowStart = Math.min(...startTimes);
+    const anyActive = tasks.some((t) => t.status === "running" || t.status === "pending" || t.status === "paused");
+    const doneEnds = tasks.filter((t) => t.status === "done" && t.endedAt).map((t) => t.endedAt!);
+    const windowEnd = anyActive ? now : doneEnds.length > 0 ? Math.max(...doneEnds) : now;
+    const trackedMs = tasks.reduce((sum, t) => sum + segmentsAccumulatedMs(t, now), 0);
+    const windowMs = Math.max(0, windowEnd - windowStart);
+    return Math.max(0, Math.round((windowMs - trackedMs) / 1000));
+  }, [tasks, now]);
 
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
@@ -362,6 +385,15 @@ export default function TodaySection() {
         </div>
       </div>
 
+      {untrackedSeconds > 0 && (
+        <div className="panel flex items-center justify-between p-3">
+          <span className="text-sm text-cream/70">未計測時間</span>
+          <span className="font-display text-lg font-bold text-alert tabular-nums">
+            {formatMsClock(untrackedSeconds * 1000)}
+          </span>
+        </div>
+      )}
+
       <div className="space-y-3">
         {sortedTasks.map((task) => {
           const elapsedMs = segmentsAccumulatedMs(task, now);
@@ -434,10 +466,10 @@ export default function TodaySection() {
                         <button className="btn-pill text-xs" onClick={() => startTask(task)}>
                           開始
                         </button>
-                        {lastCompletedAt && (
+                        {lastStopTime && (
                           <button
                             className="btn-pill-outline text-xs"
-                            onClick={() => startTask(task, lastCompletedAt)}
+                            onClick={() => startTask(task, lastStopTime)}
                           >
                             さかのぼって開始
                           </button>
@@ -465,6 +497,14 @@ export default function TodaySection() {
                         <button className="btn-pill-outline text-xs" onClick={() => startTask(task)}>
                           再開
                         </button>
+                        {lastStopTime && (
+                          <button
+                            className="btn-pill-outline text-xs"
+                            onClick={() => startTask(task, lastStopTime)}
+                          >
+                            さかのぼって再開
+                          </button>
+                        )}
                         <button className="btn-pill text-xs" onClick={() => finishTask(task)}>
                           終了
                         </button>

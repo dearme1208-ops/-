@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
-import { formatHms, todayStr } from "@/lib/time";
+import { formatClock, formatHms, todayStr } from "@/lib/time";
 
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 0.05;
@@ -28,6 +28,7 @@ export default function GanttSection() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const startHour = Math.min(23, Math.max(0, Number(startHourStr) || 0));
+  const timelineBase = useMemo(() => baseAtHour(date, startHour), [date, startHour]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5000);
@@ -78,6 +79,15 @@ export default function GanttSection() {
   // ズームアウト時にラベルが重なって読めなくなるのを防ぐため、間引いて表示する
   const MIN_LABEL_SPACING_PX = 34;
   const labelStepHours = Math.max(1, Math.ceil(MIN_LABEL_SPACING_PX / (60 * pxPerMin)));
+  // 時間線が1時間刻みで表示できるくらいズームしている時だけ、10分刻みの補助線を表示する
+  const MIN_GRIDLINE_SPACING_PX = 4;
+  const minuteStep = labelStepHours > 1 ? 0 : pxPerMin * 10 >= MIN_GRIDLINE_SPACING_PX ? 10 : pxPerMin * 30 >= MIN_GRIDLINE_SPACING_PX ? 30 : 0;
+  const minuteMarks: number[] = [];
+  if (minuteStep > 0) {
+    for (let m = 0; m <= totalMinutes; m += minuteStep) {
+      if (m % 60 !== 0) minuteMarks.push(m);
+    }
+  }
 
   function zoomIn() {
     setPxPerMin((v) => Math.min(MAX_PX_PER_MIN, +(v * 1.4).toFixed(2)));
@@ -182,6 +192,13 @@ export default function GanttSection() {
             </div>
 
             <div className="relative" style={{ height: rows.length * ROW_H }}>
+              {minuteMarks.map((m) => (
+                <div
+                  key={`m${m}`}
+                  className="absolute top-0 bottom-0 border-l border-cream/[0.04]"
+                  style={{ left: m * pxPerMin }}
+                />
+              ))}
               {hourMarks
                 .filter((h) => h % labelStepHours === 0)
                 .map((h) => (
@@ -197,8 +214,20 @@ export default function GanttSection() {
                 const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
                 const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
                 const overPlan = r.task.estimatedSeconds > 0 && r.actualSeconds > r.task.estimatedSeconds;
+                const hasActual = r.actualStartMin !== null && r.actualSeconds > 0;
+                const nameLeft = hasActual ? r.actualStartMin! * pxPerMin : planLeft;
+                const endMin = hasActual ? r.actualStartMin! + r.actualSeconds / 60 : r.scheduledStartMin + r.task.estimatedSeconds / 60;
+                const endLeft = endMin * pxPerMin;
+                const endLabel = formatClock(timelineBase + endMin * 60000);
                 return (
                   <div key={r.task.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
+                    {/* 作業名ラベル */}
+                    <div
+                      className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                      style={{ left: nameLeft + 2, top: 1 }}
+                    >
+                      {r.task.name}
+                    </div>
                     {/* 予測枠（点線） */}
                     <div
                       className="absolute rounded border border-dashed border-cream/50"
@@ -210,11 +239,11 @@ export default function GanttSection() {
                       style={{ left: planLeft, width: planWidth, top: 14, height: 20 }}
                     />
                     {/* 実績バー */}
-                    {r.actualStartMin !== null && r.actualSeconds > 0 && (
+                    {hasActual && (
                       <div
                         className={`absolute rounded ${overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
                         style={{
-                          left: r.actualStartMin * pxPerMin,
+                          left: r.actualStartMin! * pxPerMin,
                           width: Math.max((r.actualSeconds / 60) * pxPerMin, 3),
                           top: 14,
                           height: 20,
@@ -223,6 +252,13 @@ export default function GanttSection() {
                         title={`実績 ${formatHms(r.actualSeconds)}`}
                       />
                     )}
+                    {/* 終了時刻ラベル */}
+                    <div
+                      className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
+                      style={{ left: endLeft + 3, top: 34 }}
+                    >
+                      {endLabel}
+                    </div>
                   </div>
                 );
               })}
