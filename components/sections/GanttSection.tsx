@@ -110,6 +110,33 @@ export default function GanttSection() {
     return base.map((r) => ({ ...r, overPlan: overPlanByTaskId.get(r.task.id) ?? false }));
   }, [tasks, masterMap, now, timelineBase]);
 
+  // 「予定・実績を1本ずつの行で表示」時、複数の作業を同時に計測していた場合などに
+  // 実績バーが時間的に重なることがあるため、重なる区間は1本のバーにまとめる
+  const mergedActualIntervals = useMemo(() => {
+    const intervals = rows
+      .filter((r) => r.actualStartMin !== null && r.actualSeconds > 0)
+      .map((r) => ({
+        start: r.actualStartMin!,
+        end: r.actualStartMin! + r.actualSeconds / 60,
+        names: [r.task.name],
+        overPlan: r.overPlan,
+      }))
+      .sort((a, b) => a.start - b.start);
+
+    const merged: typeof intervals = [];
+    for (const iv of intervals) {
+      const last = merged[merged.length - 1];
+      if (last && iv.start <= last.end) {
+        last.end = Math.max(last.end, iv.end);
+        last.overPlan = last.overPlan || iv.overPlan;
+        if (!last.names.includes(iv.names[0])) last.names.push(iv.names[0]);
+      } else {
+        merged.push({ ...iv, names: [...iv.names] });
+      }
+    }
+    return merged;
+  }, [rows]);
+
   const autoMinutes = Math.max(
     ...rows.map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
     (rows.at(-1)?.actualStartMin ?? 0) + (rows.at(-1)?.actualSeconds ?? 0) / 60,
@@ -315,42 +342,41 @@ export default function GanttSection() {
                       </div>
                     );
                   })}
-                  {/* 実績行: 全作業の実績バーを1本の行にまとめて表示 */}
-                  {rows
-                    .filter((r) => r.actualStartMin !== null && r.actualSeconds > 0)
-                    .map((r) => {
-                      const actualLeft = r.actualStartMin! * pxPerMin;
-                      const actualWidth = Math.max((r.actualSeconds / 60) * pxPerMin, 3);
-                      const actualEndMin = r.actualStartMin! + r.actualSeconds / 60;
-                      const actualEndLabel = formatClock(timelineBase + actualEndMin * 60000);
-                      return (
-                        <div key={`actual-${r.task.id}`} className="absolute left-0 right-0" style={{ top: ROW_H, height: ROW_H }}>
-                          <div
-                            className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
-                            style={{ left: actualLeft + 2, top: 1 }}
-                          >
-                            {r.task.name}
-                          </div>
-                          <div
-                            className={`absolute rounded ${r.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
-                            style={{
-                              left: actualLeft,
-                              width: actualWidth,
-                              top: 14,
-                              height: 20,
-                              boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
-                            }}
-                            title={`実績 ${formatHms(r.actualSeconds)}`}
-                          />
-                          <div
-                            className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
-                            style={{ left: actualLeft + actualWidth + 3, top: 34 }}
-                          >
-                            {actualEndLabel}
-                          </div>
+                  {/* 実績行: 全作業の実績バーを1本の行にまとめて表示。
+                      同時に計測していたなどで時間が重なる実績同士は1本のバーに合算する */}
+                  {mergedActualIntervals.map((iv, idx) => {
+                    const actualLeft = iv.start * pxPerMin;
+                    const actualWidth = Math.max((iv.end - iv.start) * pxPerMin, 3);
+                    const actualEndLabel = formatClock(timelineBase + iv.end * 60000);
+                    const label = iv.names.join(" + ");
+                    return (
+                      <div key={`actual-${idx}`} className="absolute left-0 right-0" style={{ top: ROW_H, height: ROW_H }}>
+                        <div
+                          className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                          style={{ left: actualLeft + 2, top: 1 }}
+                        >
+                          {label}
                         </div>
-                      );
-                    })}
+                        <div
+                          className={`absolute rounded ${iv.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                          style={{
+                            left: actualLeft,
+                            width: actualWidth,
+                            top: 14,
+                            height: 20,
+                            boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
+                          }}
+                          title={`${label} 実績 ${formatHms((iv.end - iv.start) * 60)}`}
+                        />
+                        <div
+                          className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
+                          style={{ left: actualLeft + actualWidth + 3, top: 34 }}
+                        >
+                          {actualEndLabel}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </>
               ) : (
                 rows.map((r, idx) => {
