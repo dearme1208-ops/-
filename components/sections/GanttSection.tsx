@@ -71,11 +71,13 @@ export default function GanttSection() {
   const [rangeMode, setRangeMode] = useSetting("gantt.rangeMode", "auto");
   const [stackBarsStr, setStackBarsStr] = useSetting("gantt.stackBars", "false");
   const [compactViewStr, setCompactViewStr] = useSetting("gantt.compactView", "false");
+  const [groupModeStr, setGroupModeStr] = useSetting("gantt.groupMode", "detail");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const startHour = Math.min(23, Math.max(0, Number(startHourStr) || 0));
   const stackBars = stackBarsStr === "true";
   const compactView = compactViewStr === "true";
+  const groupMode: "detail" | "category" = groupModeStr === "category" ? "category" : "detail";
   const ROW_H = compactView ? ROW_H_OVERLAP : stackBars ? ROW_H_STACKED : ROW_H_OVERLAP;
   const planBarTop = stackBars ? 15 : 14;
   const planBarHeight = stackBars ? 14 : 20;
@@ -194,19 +196,29 @@ export default function GanttSection() {
     return merged;
   }, [rows]);
 
-  // 1本化しない通常表示: 1日の流れを上から下へ段々に追えるよう、タスク単位ではなく
-  // 実際の作業区間（一時停止・再開で分かれた区間）単位で1行ずつ、時系列順に並べる。
-  // 同じ作業が間に別の作業を挟まず連続する場合のみ1行にまとめる（mergedActualIntervalsと同じ考え方）。
-  // まだ着手していない作業は、実績のある行の後ろに予定順で並べる
-  const waterfallRows = useMemo(() => {
-    type Row = {
-      key: string;
+  // 1本化しない通常表示: 1日の流れを上から下へ段々に追えるよう、実際の作業区間
+  // （一時停止・再開で分かれた区間）単位で並べる。同じ作業が間に別の作業を挟まず
+  // 連続する場合のみ1つのブロックにまとめる（mergedActualIntervalsと同じ考え方）。
+  // 「詳細作業別」ではブロックごとに1行、「大項目別」では同じ大項目のブロックを
+  // 同じ行（レーン）にまとめて表示する。まだ着手していない作業は予定順で末尾に並べる
+  const ganttRows = useMemo(() => {
+    type GanttItem = {
       task: DailyTask;
       scheduledStartMin: number;
       predictedSeconds: number;
       overPlan: boolean;
       block: { start: number; end: number; ongoing: boolean } | null;
       showPlan: boolean; // 同じ作業の2回目以降のブロックでは予定バーを重複表示しない
+    };
+    type GanttRow = { key: string; label: string; sublabel: string; items: GanttItem[] };
+    type Block = {
+      task: DailyTask;
+      start: number;
+      end: number;
+      ongoing: boolean;
+      overPlan: boolean;
+      scheduledStartMin: number;
+      predictedSeconds: number;
     };
 
     const flat: { start: number; end: number; ongoing: boolean; r: (typeof rows)[number] }[] = [];
@@ -217,63 +229,138 @@ export default function GanttSection() {
     }
     flat.sort((a, b) => a.start - b.start);
 
-    const blockRows: Row[] = [];
-    const seenTaskIds = new Set<string>();
+    const blocks: Block[] = [];
     for (const iv of flat) {
-      const last = blockRows[blockRows.length - 1];
-      if (last && last.block && last.task.category === iv.r.task.category && last.task.name === iv.r.task.name) {
-        last.block.end = Math.max(last.block.end, iv.end);
-        last.block.ongoing = iv.ongoing;
+      const last = blocks[blocks.length - 1];
+      if (last && last.task.category === iv.r.task.category && last.task.name === iv.r.task.name) {
+        last.end = Math.max(last.end, iv.end);
+        last.ongoing = iv.ongoing;
         last.overPlan = last.overPlan || iv.r.overPlan;
         continue;
       }
-      blockRows.push({
-        key: `block-${blockRows.length}`,
+      blocks.push({
         task: iv.r.task,
+        start: iv.start,
+        end: iv.end,
+        ongoing: iv.ongoing,
+        overPlan: iv.r.overPlan,
         scheduledStartMin: iv.r.scheduledStartMin,
         predictedSeconds: iv.r.predictedSeconds,
-        overPlan: iv.r.overPlan,
-        block: { start: iv.start, end: iv.end, ongoing: iv.ongoing },
-        showPlan: !seenTaskIds.has(iv.r.task.id),
       });
-      seenTaskIds.add(iv.r.task.id);
     }
 
-    const pendingRows: Row[] = rows
+    const pendingTasksSorted = rows
       .filter((r) => r.actualSegments.length === 0)
-      .sort((a, b) => a.scheduledStartMin - b.scheduledStartMin)
-      .map((r) => ({
-        key: `pending-${r.task.id}`,
-        task: r.task,
-        scheduledStartMin: r.scheduledStartMin,
-        predictedSeconds: r.predictedSeconds,
-        overPlan: r.overPlan,
-        block: null,
-        showPlan: true,
-      }));
+      .sort((a, b) => a.scheduledStartMin - b.scheduledStartMin);
 
-    const combined = [...blockRows, ...pendingRows];
-
-    // 予定バーは、段々表示の並び順で直前の予定バーの直後から積み上がるように
-    // 位置を計算し直す（同じ作業の2回目以降のブロックは予定バーを表示しないため、
-    // その分は積み上げに加算しない）
-    let planCursor = 0;
-    for (const row of combined) {
-      if (!row.showPlan) continue;
-      row.scheduledStartMin = planCursor;
-      const layoutDurationMin = Math.max(row.task.estimatedSeconds, row.predictedSeconds) / 60;
-      planCursor += Math.max(layoutDurationMin, 1);
+    function stackPlans(items: GanttItem[]) {
+      let cursor = 0;
+      for (const item of items) {
+        if (!item.showPlan) continue;
+        item.scheduledStartMin = cursor;
+        cursor += Math.max(Math.max(item.task.estimatedSeconds, item.predictedSeconds) / 60, 1);
+      }
     }
 
-    return combined;
-  }, [rows]);
+    if (groupMode === "detail") {
+      const seenTaskIds = new Set<string>();
+      const blockRows: GanttRow[] = blocks.map((b, i) => {
+        const showPlan = !seenTaskIds.has(b.task.id);
+        seenTaskIds.add(b.task.id);
+        return {
+          key: `block-${i}`,
+          label: b.task.name,
+          sublabel: b.task.category,
+          items: [
+            {
+              task: b.task,
+              scheduledStartMin: b.scheduledStartMin,
+              predictedSeconds: b.predictedSeconds,
+              overPlan: b.overPlan,
+              block: { start: b.start, end: b.end, ongoing: b.ongoing },
+              showPlan,
+            },
+          ],
+        };
+      });
+      const pendingRows: GanttRow[] = pendingTasksSorted.map((r) => ({
+        key: `pending-${r.task.id}`,
+        label: r.task.name,
+        sublabel: r.task.category,
+        items: [
+          {
+            task: r.task,
+            scheduledStartMin: r.scheduledStartMin,
+            predictedSeconds: r.predictedSeconds,
+            overPlan: r.overPlan,
+            block: null,
+            showPlan: true,
+          },
+        ],
+      }));
+      const combined = [...blockRows, ...pendingRows];
+      // 詳細作業別では、上から下への並び順どおりにグローバルに予定バーを積み上げる
+      stackPlans(combined.flatMap((row) => row.items));
+      return combined;
+    }
+
+    // 大項目別: 同じ大項目のブロック・未着手タスクを1つの行（レーン）にまとめる
+    const order: string[] = [];
+    const byCategory = new Map<string, { blocks: Block[]; pending: (typeof rows)[number][] }>();
+    for (const b of blocks) {
+      if (!byCategory.has(b.task.category)) {
+        byCategory.set(b.task.category, { blocks: [], pending: [] });
+        order.push(b.task.category);
+      }
+      byCategory.get(b.task.category)!.blocks.push(b);
+    }
+    for (const r of pendingTasksSorted) {
+      if (!byCategory.has(r.task.category)) {
+        byCategory.set(r.task.category, { blocks: [], pending: [] });
+        order.push(r.task.category);
+      }
+      byCategory.get(r.task.category)!.pending.push(r);
+    }
+
+    return order.map((category) => {
+      const entry = byCategory.get(category)!;
+      const seenTaskIds = new Set<string>();
+      const items: GanttItem[] = entry.blocks.map((b) => {
+        const showPlan = !seenTaskIds.has(b.task.id);
+        seenTaskIds.add(b.task.id);
+        return {
+          task: b.task,
+          scheduledStartMin: b.scheduledStartMin,
+          predictedSeconds: b.predictedSeconds,
+          overPlan: b.overPlan,
+          block: { start: b.start, end: b.end, ongoing: b.ongoing },
+          showPlan,
+        };
+      });
+      for (const r of entry.pending) {
+        items.push({
+          task: r.task,
+          scheduledStartMin: r.scheduledStartMin,
+          predictedSeconds: r.predictedSeconds,
+          overPlan: r.overPlan,
+          block: null,
+          showPlan: !seenTaskIds.has(r.task.id),
+        });
+        seenTaskIds.add(r.task.id);
+      }
+      // 大項目別では、行（レーン）ごとに独立して予定バーを積み上げる
+      stackPlans(items);
+      return { key: `cat-${category}`, label: category, sublabel: "", items };
+    });
+  }, [rows, groupMode]);
 
   const autoMinutes = Math.max(
     ...rows.map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
     ...rows.flatMap((r) => r.actualSegments.map((s) => s.endMin)),
-    ...waterfallRows
-      .filter((r) => r.showPlan)
-      .map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
+    ...ganttRows
+      .flatMap((row) => row.items)
+      .filter((item) => item.showPlan)
+      .map((item) => item.scheduledStartMin + Math.max(item.task.estimatedSeconds, item.predictedSeconds) / 60),
     480
   );
   const totalMinutes = rangeMode === "24h" ? Math.max(DAY_MINUTES, autoMinutes) : autoMinutes;
@@ -367,6 +454,17 @@ export default function GanttSection() {
             予定と実績を重ねずに表示
           </label>
         )}
+        {!compactView && (
+          <label className="flex items-center gap-2 text-xs text-cream/60">
+            <input
+              type="checkbox"
+              checked={groupMode === "category"}
+              onChange={(e) => setGroupModeStr(e.target.checked ? "category" : "detail")}
+              className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+            />
+            大項目でまとめて表示
+          </label>
+        )}
         <label className="flex items-center gap-2 text-xs text-cream/60">
           <input
             type="checkbox"
@@ -392,15 +490,15 @@ export default function GanttSection() {
               </div>
             </>
           ) : (
-            waterfallRows.map((row) => (
+            ganttRows.map((row) => (
               <div
                 key={row.key}
                 className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
                 style={{ height: ROW_H }}
-                title={`${row.task.category} / ${row.task.name}`}
+                title={row.sublabel ? `${row.sublabel} / ${row.label}` : row.label}
               >
-                <span className="truncate text-cream/50">{row.task.category}</span>
-                <span className="truncate">{row.task.name}</span>
+                {row.sublabel && <span className="truncate text-cream/50">{row.sublabel}</span>}
+                <span className="truncate">{row.label}</span>
               </div>
             ))
           )}
@@ -424,7 +522,7 @@ export default function GanttSection() {
                 ))}
             </div>
 
-            <div className="relative" style={{ height: (compactView ? 2 : waterfallRows.length) * ROW_H }}>
+            <div className="relative" style={{ height: (compactView ? 2 : ganttRows.length) * ROW_H }}>
               {minuteMarks.map((m) => (
                 <div
                   key={`m${m}`}
@@ -529,72 +627,78 @@ export default function GanttSection() {
                   })}
                 </>
               ) : (
-                waterfallRows.map((row, idx) => {
+                ganttRows.map((row, idx) => {
                   const top = idx * ROW_H;
-                  const planLeft = row.scheduledStartMin * pxPerMin;
-                  const planWidth = Math.max((row.task.estimatedSeconds / 60) * pxPerMin, 3);
-                  const predWidth = Math.max((row.predictedSeconds / 60) * pxPerMin, 3);
-                  const planEndMin = row.scheduledStartMin + row.task.estimatedSeconds / 60;
-                  const hasActual = row.block !== null;
-                  const nameLeft = hasActual ? row.block!.start * pxPerMin : planLeft;
-                  const endMin = hasActual ? row.block!.end : planEndMin;
-                  const endLeft = endMin * pxPerMin;
-                  const endLabel = formatClock(timelineBase + endMin * 60000);
                   return (
                     <div key={row.key} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
-                      {/* 作業名ラベル */}
-                      <div
-                        className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
-                        style={{ left: nameLeft + 2, top: 1 }}
-                      >
-                        {row.task.name}
-                      </div>
-                      {/* 予測枠（点線）・予定バー: 同じ作業の2回目以降のブロックでは重複表示しない */}
-                      {row.showPlan && (
-                        <>
-                          <div
-                            className="absolute rounded border border-dashed border-cream/50"
-                            style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
-                          />
-                          <HoverBar
-                            left={planLeft}
-                            width={planWidth}
-                            top={planBarTop}
-                            height={planBarHeight}
-                            className="rounded bg-cream/70"
-                            tooltip={planTooltip(
-                              row.task.name,
-                              timelineBase + row.scheduledStartMin * 60000,
-                              timelineBase + planEndMin * 60000,
-                              row.task.estimatedSeconds
+                      {row.items.map((item, itemIdx) => {
+                        const planLeft = item.scheduledStartMin * pxPerMin;
+                        const planWidth = Math.max((item.task.estimatedSeconds / 60) * pxPerMin, 3);
+                        const predWidth = Math.max((item.predictedSeconds / 60) * pxPerMin, 3);
+                        const planEndMin = item.scheduledStartMin + item.task.estimatedSeconds / 60;
+                        const hasActual = item.block !== null;
+                        const nameLeft = hasActual ? item.block!.start * pxPerMin : planLeft;
+                        const endMin = hasActual ? item.block!.end : planEndMin;
+                        const endLeft = endMin * pxPerMin;
+                        const endLabel = formatClock(timelineBase + endMin * 60000);
+                        return (
+                          <div key={itemIdx}>
+                            {/* 作業名ラベル */}
+                            <div
+                              className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                              style={{ left: nameLeft + 2, top: 1 }}
+                            >
+                              {item.task.name}
+                            </div>
+                            {/* 予測枠（点線）・予定バー: 同じ作業の2回目以降のブロックでは重複表示しない */}
+                            {item.showPlan && (
+                              <>
+                                <div
+                                  className="absolute rounded border border-dashed border-cream/50"
+                                  style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
+                                />
+                                <HoverBar
+                                  left={planLeft}
+                                  width={planWidth}
+                                  top={planBarTop}
+                                  height={planBarHeight}
+                                  className="rounded bg-cream/70"
+                                  tooltip={planTooltip(
+                                    item.task.name,
+                                    timelineBase + item.scheduledStartMin * 60000,
+                                    timelineBase + planEndMin * 60000,
+                                    item.task.estimatedSeconds
+                                  )}
+                                />
+                              </>
                             )}
-                          />
-                        </>
-                      )}
-                      {/* 実績バー: 一時停止・再開で区切られた区間ごとに1行として描画される */}
-                      {row.block && (
-                        <HoverBar
-                          left={row.block.start * pxPerMin}
-                          width={Math.max((row.block.end - row.block.start) * pxPerMin, 3)}
-                          top={actualBarTop}
-                          height={actualBarHeight}
-                          className={`rounded ${row.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
-                          style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
-                          tooltip={segmentTooltip(
-                            row.task.name,
-                            timelineBase + row.block.start * 60000,
-                            timelineBase + row.block.end * 60000,
-                            row.block.ongoing
-                          )}
-                        />
-                      )}
-                      {/* 終了時刻ラベル */}
-                      <div
-                        className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
-                        style={{ left: endLeft + 3, top: endLabelTop }}
-                      >
-                        {endLabel}
-                      </div>
+                            {/* 実績バー: 一時停止・再開で区切られた区間ごとに描画される */}
+                            {item.block && (
+                              <HoverBar
+                                left={item.block.start * pxPerMin}
+                                width={Math.max((item.block.end - item.block.start) * pxPerMin, 3)}
+                                top={actualBarTop}
+                                height={actualBarHeight}
+                                className={`rounded ${item.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                                style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
+                                tooltip={segmentTooltip(
+                                  item.task.name,
+                                  timelineBase + item.block.start * 60000,
+                                  timelineBase + item.block.end * 60000,
+                                  item.block.ongoing
+                                )}
+                              />
+                            )}
+                            {/* 終了時刻ラベル */}
+                            <div
+                              className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
+                              style={{ left: endLeft + 3, top: endLabelTop }}
+                            >
+                              {endLabel}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })
