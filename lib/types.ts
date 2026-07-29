@@ -140,6 +140,7 @@ export interface TodoTask {
   listId: string;
   parentTaskId?: string; // 設定されていればサブタスク
   title: string;
+  action?: string; // 次にすべき具体的な行動。件名(title)とは別に記録する
   tag?: string; // 社内確認中・客先確認中・打ち合わせ など、件名の頭に付けるラベル
   customer?: string; // 客先名
   notes?: string;

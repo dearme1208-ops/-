@@ -44,6 +44,7 @@ export default function TodoSection() {
   const [showNewList, setShowNewList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskAction, setNewTaskAction] = useState("");
   const [newTaskTagMode, setNewTaskTagMode] = useState<string>(NO_TAG_VALUE);
   const [newTaskCustomTag, setNewTaskCustomTag] = useState("");
   const [newTaskCustomerMode, setNewTaskCustomerMode] = useState<string>(NO_CUSTOMER_VALUE);
@@ -137,7 +138,13 @@ export default function TodoSection() {
     if (searchActive) {
       const q = searchQuery.trim().toLowerCase();
       filtered = filtered.filter((t) => {
-        if (q && !t.title.toLowerCase().includes(q) && !(t.notes ?? "").toLowerCase().includes(q)) return false;
+        if (
+          q &&
+          !t.title.toLowerCase().includes(q) &&
+          !(t.action ?? "").toLowerCase().includes(q) &&
+          !(t.notes ?? "").toLowerCase().includes(q)
+        )
+          return false;
         if (filterTag && t.tag !== filterTag) return false;
         if (filterCustomer && t.customer !== filterCustomer) return false;
         return true;
@@ -212,6 +219,7 @@ export default function TodoSection() {
       id: uid(),
       listId: targetListId,
       title: newTaskTitle.trim(),
+      action: newTaskAction.trim() || undefined,
       tag: resolveTag(newTaskTagMode, newTaskCustomTag),
       customer: resolveCustomer(newTaskCustomerMode, newTaskCustomCustomer),
       important: view === "important",
@@ -222,6 +230,7 @@ export default function TodoSection() {
     };
     await db.todoTasks.add(task);
     setNewTaskTitle("");
+    setNewTaskAction("");
     setNewTaskTagMode(NO_TAG_VALUE);
     setNewTaskCustomTag("");
     setNewTaskCustomerMode(NO_CUSTOMER_VALUE);
@@ -499,6 +508,13 @@ export default function TodoSection() {
             onKeyDown={(e) => e.key === "Enter" && addTask()}
             placeholder="+ タスクを追加"
             className="min-w-[10rem] flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+          <input
+            value={newTaskAction}
+            onChange={(e) => setNewTaskAction(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTask()}
+            placeholder="アクション（任意）"
+            className="min-w-[8rem] flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
           <select
             value={newTaskTagMode}
@@ -863,6 +879,9 @@ function TaskRow({
             </span>
           )}
         </div>
+        {task.action && (
+          <div className="text-[11px] text-cream/50">▶ {task.action}</div>
+        )}
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           {task.dueDate && (
             <span className={overdue ? "font-bold text-alert" : "text-cream/50"}>
@@ -906,6 +925,7 @@ function TaskDetailModal({
 }) {
   const [showReflectDialog, setShowReflectDialog] = useState(false);
   const [title, setTitle] = useState(task.title);
+  const [action, setAction] = useState(task.action ?? "");
   const [notes, setNotes] = useState(task.notes ?? "");
   const [startDate, setStartDate] = useState(task.startDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
@@ -937,6 +957,7 @@ function TaskDetailModal({
     if (!title.trim()) return;
     const updates: Partial<TodoTask> = {
       title: title.trim(),
+      action: action.trim() || undefined,
       notes: notes.trim() || undefined,
       startDate: startDate || undefined,
       dueDate: dueDate || undefined,
@@ -988,6 +1009,13 @@ function TaskDetailModal({
           onChange={(e) => setTitle(e.target.value)}
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           placeholder="タイトル"
+        />
+
+        <input
+          value={action}
+          onChange={(e) => setAction(e.target.value)}
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          placeholder="アクション（次にすべき行動）"
         />
 
         <div className="flex flex-wrap items-center gap-2">
