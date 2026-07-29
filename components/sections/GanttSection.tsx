@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { formatClock, formatHms, todayStr } from "@/lib/time";
+import type { DailyTask } from "@/lib/types";
 
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 0.05;
@@ -31,6 +32,35 @@ function segmentTooltip(name: string, startMs: number, endMs: number, ongoing: b
 
 function planTooltip(name: string, startMs: number, endMs: number, estimatedSeconds: number): string {
   return `${name}\n予定 ${formatClock(startMs)} 〜 ${formatClock(endMs)}\n想定時間 ${formatHms(estimatedSeconds)}`;
+}
+
+// バー自体が数pxしかないことがあり、ブラウザ標準のtitleツールチップは狙ってホバーしにくく
+// 表示されないことがあるため、CSSのgroup-hoverで即座に確実に出る独自ツールチップを使う
+function HoverBar({
+  left,
+  width,
+  top,
+  height,
+  className,
+  style,
+  tooltip,
+}: {
+  left: number;
+  width: number;
+  top: number;
+  height: number;
+  className: string;
+  style?: CSSProperties;
+  tooltip: string;
+}) {
+  return (
+    <div className="group absolute" style={{ left, width, top, height }}>
+      <div className={`h-full w-full ${className}`} style={style} />
+      <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
+        {tooltip}
+      </div>
+    </div>
+  );
 }
 
 export default function GanttSection() {
@@ -164,10 +194,65 @@ export default function GanttSection() {
     return merged;
   }, [rows]);
 
-  // 1本化しない通常表示では、登録順ではなく実際に作業を開始した順（未着手なら予定順）に
-  // 並べることで、上から下に見ていくだけで1日の流れが分かるようにする
-  const displayRows = useMemo(() => {
-    return [...rows].sort((a, b) => (a.actualStartMin ?? a.scheduledStartMin) - (b.actualStartMin ?? b.scheduledStartMin));
+  // 1本化しない通常表示: 1日の流れを上から下へ段々に追えるよう、タスク単位ではなく
+  // 実際の作業区間（一時停止・再開で分かれた区間）単位で1行ずつ、時系列順に並べる。
+  // 同じ作業が間に別の作業を挟まず連続する場合のみ1行にまとめる（mergedActualIntervalsと同じ考え方）。
+  // まだ着手していない作業は、実績のある行の後ろに予定順で並べる
+  const waterfallRows = useMemo(() => {
+    type Row = {
+      key: string;
+      task: DailyTask;
+      scheduledStartMin: number;
+      predictedSeconds: number;
+      overPlan: boolean;
+      block: { start: number; end: number; ongoing: boolean } | null;
+      showPlan: boolean; // 同じ作業の2回目以降のブロックでは予定バーを重複表示しない
+    };
+
+    const flat: { start: number; end: number; ongoing: boolean; r: (typeof rows)[number] }[] = [];
+    for (const r of rows) {
+      for (const seg of r.actualSegments) {
+        flat.push({ start: seg.startMin, end: seg.endMin, ongoing: seg.ongoing, r });
+      }
+    }
+    flat.sort((a, b) => a.start - b.start);
+
+    const blockRows: Row[] = [];
+    const seenTaskIds = new Set<string>();
+    for (const iv of flat) {
+      const last = blockRows[blockRows.length - 1];
+      if (last && last.block && last.task.category === iv.r.task.category && last.task.name === iv.r.task.name) {
+        last.block.end = Math.max(last.block.end, iv.end);
+        last.block.ongoing = iv.ongoing;
+        last.overPlan = last.overPlan || iv.r.overPlan;
+        continue;
+      }
+      blockRows.push({
+        key: `block-${blockRows.length}`,
+        task: iv.r.task,
+        scheduledStartMin: iv.r.scheduledStartMin,
+        predictedSeconds: iv.r.predictedSeconds,
+        overPlan: iv.r.overPlan,
+        block: { start: iv.start, end: iv.end, ongoing: iv.ongoing },
+        showPlan: !seenTaskIds.has(iv.r.task.id),
+      });
+      seenTaskIds.add(iv.r.task.id);
+    }
+
+    const pendingRows: Row[] = rows
+      .filter((r) => r.actualSegments.length === 0)
+      .sort((a, b) => a.scheduledStartMin - b.scheduledStartMin)
+      .map((r) => ({
+        key: `pending-${r.task.id}`,
+        task: r.task,
+        scheduledStartMin: r.scheduledStartMin,
+        predictedSeconds: r.predictedSeconds,
+        overPlan: r.overPlan,
+        block: null,
+        showPlan: true,
+      }));
+
+    return [...blockRows, ...pendingRows];
   }, [rows]);
 
   const autoMinutes = Math.max(
@@ -291,15 +376,15 @@ export default function GanttSection() {
               </div>
             </>
           ) : (
-            displayRows.map((r) => (
+            waterfallRows.map((row) => (
               <div
-                key={r.task.id}
+                key={row.key}
                 className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
                 style={{ height: ROW_H }}
-                title={`${r.task.category} / ${r.task.name}`}
+                title={`${row.task.category} / ${row.task.name}`}
               >
-                <span className="truncate text-cream/50">{r.task.category}</span>
-                <span className="truncate">{r.task.name}</span>
+                <span className="truncate text-cream/50">{row.task.category}</span>
+                <span className="truncate">{row.task.name}</span>
               </div>
             ))
           )}
@@ -323,7 +408,7 @@ export default function GanttSection() {
                 ))}
             </div>
 
-            <div className="relative" style={{ height: (compactView ? 2 : rows.length) * ROW_H }}>
+            <div className="relative" style={{ height: (compactView ? 2 : waterfallRows.length) * ROW_H }}>
               {minuteMarks.map((m) => (
                 <div
                   key={`m${m}`}
@@ -364,10 +449,13 @@ export default function GanttSection() {
                           className="absolute rounded border border-dashed border-cream/50"
                           style={{ left: gapLeft, width: gapPredWidth, top: 14, height: 20 }}
                         />
-                        <div
-                          className="absolute rounded bg-cream/70"
-                          style={{ left: gapLeft, width: gapPlanWidth, top: 14, height: 20 }}
-                          title={planTooltip(
+                        <HoverBar
+                          left={gapLeft}
+                          width={gapPlanWidth}
+                          top={14}
+                          height={20}
+                          className="rounded bg-cream/70"
+                          tooltip={planTooltip(
                             r.task.name,
                             timelineBase + r.scheduledStartMin * 60000,
                             timelineBase + planEndMin * 60000,
@@ -400,16 +488,14 @@ export default function GanttSection() {
                         >
                           {label}
                         </div>
-                        <div
-                          className={`absolute rounded ${iv.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
-                          style={{
-                            left: gapLeft,
-                            width: gapWidth,
-                            top: 14,
-                            height: 20,
-                            boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
-                          }}
-                          title={segmentTooltip(
+                        <HoverBar
+                          left={gapLeft}
+                          width={gapWidth}
+                          top={14}
+                          height={20}
+                          className={`rounded ${iv.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                          style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
+                          tooltip={segmentTooltip(
                             label,
                             timelineBase + iv.start * 60000,
                             timelineBase + iv.end * 60000,
@@ -427,63 +513,65 @@ export default function GanttSection() {
                   })}
                 </>
               ) : (
-                displayRows.map((r, idx) => {
+                waterfallRows.map((row, idx) => {
                   const top = idx * ROW_H;
-                  const planLeft = r.scheduledStartMin * pxPerMin;
-                  const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
-                  const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
-                  const hasActual = r.actualSegments.length > 0;
-                  const nameLeft = hasActual ? r.actualSegments[0].startMin * pxPerMin : planLeft;
-                  const endMin = hasActual
-                    ? Math.max(...r.actualSegments.map((s) => s.endMin))
-                    : r.scheduledStartMin + r.task.estimatedSeconds / 60;
+                  const planLeft = row.scheduledStartMin * pxPerMin;
+                  const planWidth = Math.max((row.task.estimatedSeconds / 60) * pxPerMin, 3);
+                  const predWidth = Math.max((row.predictedSeconds / 60) * pxPerMin, 3);
+                  const planEndMin = row.scheduledStartMin + row.task.estimatedSeconds / 60;
+                  const hasActual = row.block !== null;
+                  const nameLeft = hasActual ? row.block!.start * pxPerMin : planLeft;
+                  const endMin = hasActual ? row.block!.end : planEndMin;
                   const endLeft = endMin * pxPerMin;
                   const endLabel = formatClock(timelineBase + endMin * 60000);
                   return (
-                    <div key={r.task.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
+                    <div key={row.key} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
                       {/* 作業名ラベル */}
                       <div
                         className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
                         style={{ left: nameLeft + 2, top: 1 }}
                       >
-                        {r.task.name}
+                        {row.task.name}
                       </div>
-                      {/* 予測枠（点線） */}
-                      <div
-                        className="absolute rounded border border-dashed border-cream/50"
-                        style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
-                      />
-                      {/* 予定バー */}
-                      <div
-                        className="absolute rounded bg-cream/70"
-                        style={{ left: planLeft, width: planWidth, top: planBarTop, height: planBarHeight }}
-                        title={planTooltip(
-                          r.task.name,
-                          timelineBase + r.scheduledStartMin * 60000,
-                          timelineBase + (r.scheduledStartMin + r.task.estimatedSeconds / 60) * 60000,
-                          r.task.estimatedSeconds
-                        )}
-                      />
-                      {/* 実績バー: 一時停止・再開があればセグメントごとに分けて描画する */}
-                      {r.actualSegments.map((seg, segIdx) => (
-                        <div
-                          key={segIdx}
-                          className={`absolute rounded ${r.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
-                          style={{
-                            left: seg.startMin * pxPerMin,
-                            width: Math.max((seg.endMin - seg.startMin) * pxPerMin, 3),
-                            top: actualBarTop,
-                            height: actualBarHeight,
-                            boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
-                          }}
-                          title={segmentTooltip(
-                            r.task.name,
-                            timelineBase + seg.startMin * 60000,
-                            timelineBase + seg.endMin * 60000,
-                            seg.ongoing
+                      {/* 予測枠（点線）・予定バー: 同じ作業の2回目以降のブロックでは重複表示しない */}
+                      {row.showPlan && (
+                        <>
+                          <div
+                            className="absolute rounded border border-dashed border-cream/50"
+                            style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
+                          />
+                          <HoverBar
+                            left={planLeft}
+                            width={planWidth}
+                            top={planBarTop}
+                            height={planBarHeight}
+                            className="rounded bg-cream/70"
+                            tooltip={planTooltip(
+                              row.task.name,
+                              timelineBase + row.scheduledStartMin * 60000,
+                              timelineBase + planEndMin * 60000,
+                              row.task.estimatedSeconds
+                            )}
+                          />
+                        </>
+                      )}
+                      {/* 実績バー: 一時停止・再開で区切られた区間ごとに1行として描画される */}
+                      {row.block && (
+                        <HoverBar
+                          left={row.block.start * pxPerMin}
+                          width={Math.max((row.block.end - row.block.start) * pxPerMin, 3)}
+                          top={actualBarTop}
+                          height={actualBarHeight}
+                          className={`rounded ${row.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
+                          style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
+                          tooltip={segmentTooltip(
+                            row.task.name,
+                            timelineBase + row.block.start * 60000,
+                            timelineBase + row.block.end * 60000,
+                            row.block.ongoing
                           )}
                         />
-                      ))}
+                      )}
                       {/* 終了時刻ラベル */}
                       <div
                         className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
