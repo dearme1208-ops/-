@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { breakdownByCategory, breakdownByProject, computeMonthlyOvertime, formatHoursJp } from "@/lib/overtime";
 import RankingBarChart from "@/components/charts/RankingBarChart";
+import DiffLineChart from "@/components/charts/DiffLineChart";
 
 type BreakdownMode = "category" | "project";
 
@@ -56,6 +57,19 @@ export default function OvertimeSection() {
       ? breakdownByCategory(currentMonthRecords)
       : breakdownByProject(currentMonthRecords, projectTitleById);
   }, [currentMonthRecords, breakdownMode, projectTitleById]);
+
+  // 手入力残業が登録されている月について、手入力と概算の差（手入力－概算）を古い月から新しい月へ並べる
+  const diffPoints = useMemo(() => {
+    return [...manualOverrides.entries()]
+      .filter(([month]) => monthlyMap.has(month))
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, manualHours]) => {
+        const { year, m } = monthLabel(month);
+        const autoSeconds = monthlyMap.get(month)!.autoOvertimeSeconds;
+        const diffHours = manualHours - autoSeconds / 3600;
+        return { key: month, label: `${year.slice(2)}/${m}`, value: diffHours };
+      });
+  }, [manualOverrides, monthlyMap]);
 
   async function saveManualOverride(month: string, hoursStr: string) {
     const key = `overtime.manual.${month}`;
@@ -125,6 +139,14 @@ export default function OvertimeSection() {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-cream/70">
                     {row ? formatHoursJp(row.autoOvertimeSeconds) : "-"}
+                    {row && row.excludedOutlierDays > 0 && (
+                      <span
+                        className="ml-1 text-[10px] text-cream/40"
+                        title="タイマーの消し忘れなどで突出して長い日を外れ値として概算から除外しています"
+                      >
+                        （外れ値{row.excludedOutlierDays}日除外）
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     <input
@@ -174,12 +196,22 @@ export default function OvertimeSection() {
           </div>
           <div className="panel p-4">
             <RankingBarChart
-              data={breakdownRows.map((r) => ({ label: r.label, value: r.seconds }))}
+              data={breakdownRows.map((r) => ({ label: r.label, sublabel: r.sublabel, value: r.seconds }))}
               formatValue={formatHoursJp}
             />
           </div>
         </div>
       )}
+
+      <div>
+        <h3 className="mb-2 font-display text-base font-bold">手入力残業と概算の差の推移</h3>
+        <p className="mb-2 text-xs text-cream/40">
+          「手入力残業 − 概算残業（自動）」を月ごとに表示します。プラスなら実際の残業が概算より多く、マイナスなら概算が実際を上回っています。
+        </p>
+        <div className="panel p-4">
+          <DiffLineChart points={diffPoints} formatValue={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)} 時間`} />
+        </div>
+      </div>
     </div>
   );
 }
