@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import {
+  findOrCreateMasterTask,
   recomputeEstimateFromRecords,
   bulkFindOrCreateMasterTasks,
   recomputeEstimatesForMasterTasks,
@@ -11,6 +12,7 @@ import {
 import { setManualOverride, clearManualOverride } from "@/lib/outliers";
 import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
 import { downloadTextFile } from "@/lib/report";
+import { useSetting } from "@/lib/settings";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
 
@@ -19,6 +21,7 @@ export default function RecordsSection() {
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importStatus, setImportStatus] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [masterEditMode] = useSetting("records.masterEditMode", "relink");
 
   const records = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
 
@@ -28,10 +31,41 @@ export default function RecordsSection() {
     return records.filter((r) => r.category.includes(search) || r.name.includes(search) || r.date.includes(search));
   }, [records, search]);
 
+  // 名称・区分を変更した場合、設定に応じて紐づく作業マスタもリネームするか、
+  // 新しい名称・区分のマスタ（既存 or 新規）に繋ぎ変える。時間変更時は紐づくマスタの想定時間を再計算する
   async function updateRecord(r: WorkRecord, patch: Partial<WorkRecord>) {
-    await db.records.update(r.id, patch);
-    if (patch.seconds !== undefined && r.masterTaskId) {
-      await recomputeEstimateFromRecords(r.masterTaskId);
+    const nameChanged = patch.name !== undefined && patch.name !== r.name;
+    const categoryChanged = patch.category !== undefined && patch.category !== r.category;
+    const finalPatch: Partial<WorkRecord> = { ...patch };
+    let oldMasterId: string | undefined;
+    let newMasterId: string | undefined;
+
+    if ((nameChanged || categoryChanged) && r.masterTaskId) {
+      const newCategory = (patch.category ?? r.category).trim();
+      const newName = (patch.name ?? r.name).trim();
+      if (masterEditMode === "rename") {
+        await db.masterTasks.update(r.masterTaskId, { category: newCategory, name: newName, updatedAt: Date.now() });
+      } else {
+        const master = await findOrCreateMasterTask(newCategory, newName, 0);
+        if (master.id !== r.masterTaskId) {
+          finalPatch.masterTaskId = master.id;
+          oldMasterId = r.masterTaskId;
+          newMasterId = master.id;
+        }
+      }
+    }
+
+    await db.records.update(r.id, finalPatch);
+
+    const affected = new Set<string>();
+    if (patch.seconds !== undefined) {
+      const id = finalPatch.masterTaskId ?? r.masterTaskId;
+      if (id) affected.add(id);
+    }
+    if (oldMasterId) affected.add(oldMasterId);
+    if (newMasterId) affected.add(newMasterId);
+    for (const id of affected) {
+      await recomputeEstimateFromRecords(id);
     }
   }
 

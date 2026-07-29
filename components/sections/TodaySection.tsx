@@ -44,6 +44,11 @@ export default function TodaySection() {
   const provisionalNotifiedAtRef = useRef<number | null>(null);
   const [emphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
+  const [provisionalIdleHoursStr] = useSetting("today.provisionalIdleThresholdHours", "3");
+  const provisionalIdleMs = Math.max(0.5, Number(provisionalIdleHoursStr) || 3) * 3600000;
+  // 直近でマウス/キーボード操作があった時刻。放置検知で未計測を打ち切る起点に使う
+  const lastActivityRef = useRef(Date.now());
+  const idleFinishInFlightRef = useRef(false);
 
   const tasks = useLiveQuery(
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
@@ -81,6 +86,25 @@ export default function TodaySection() {
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
+  }, []);
+
+  // マウス/キーボード操作を監視し、放置検知（未計測の自動打ち切り）の起点として使う
+  useEffect(() => {
+    function markActivity() {
+      lastActivityRef.current = Date.now();
+    }
+    const events: (keyof WindowEventMap)[] = ["mousemove", "mousedown", "keydown", "touchstart", "wheel", "scroll"];
+    events.forEach((ev) => window.addEventListener(ev, markActivity, { passive: true }));
+    return () => events.forEach((ev) => window.removeEventListener(ev, markActivity));
+  }, []);
+
+  // タブがバックグラウンドから復帰した瞬間に、放置判定を取りこぼさないよう即座にチェックし直す
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === "visible") setNow(Date.now());
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
   // 予定超過チェック（通知 + 20分超過の画面確認）
@@ -231,6 +255,31 @@ export default function TodaySection() {
       await db.dailyTasks.add(task);
     })();
   }, [provisionalEnabled, tasks, now, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
+
+  // 放置検知: マウス/キーボード操作もタブの表示もない状態が一定時間続いたら、
+  // 未計測の計測を「最後に操作していた時刻」で自動的に打ち切る。定時後・休日に
+  // PCを開いたまま放置しても、際限なく計測され続けないようにするための保険
+  useEffect(() => {
+    if (!provisionalTask || provisionalTask.status !== "running") return;
+    const idleMs = now - lastActivityRef.current;
+    if (idleMs < provisionalIdleMs) return;
+    if (idleFinishInFlightRef.current) return;
+    idleFinishInFlightRef.current = true;
+    const cutoff = Math.max(lastActivityRef.current, provisionalTask.segments[0]?.start ?? lastActivityRef.current);
+    const segments = provisionalTask.segments.map((s, i) =>
+      i === provisionalTask.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(cutoff, s.start) } : s
+    );
+    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? cutoff) - s.start), 0);
+    commitFinish(provisionalTask, segments, accumulatedMs).then(() => {
+      idleFinishInFlightRef.current = false;
+      const hoursLabel = Math.round((provisionalIdleMs / 3600000) * 10) / 10;
+      notify(
+        "未計測を自動的に打ち切りました",
+        `${hoursLabel}時間以上操作がなかったため、最後の操作時刻で計測を終了しました`,
+        "provisional-idle-stop"
+      );
+    });
+  }, [now, provisionalTask, provisionalIdleMs]);
 
   // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する
   // （オフの場合や、トラブル対応などで一時停止中の場合は何もしない）

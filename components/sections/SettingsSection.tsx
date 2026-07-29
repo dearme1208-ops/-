@@ -15,8 +15,10 @@ export default function SettingsSection() {
   const provisionalNotifyEnabled = provisionalNotifyEnabledStr === "true";
   const [breakRangesStr, setBreakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
   const breakRanges = parseBreakRanges(breakRangesStr);
+  const [provisionalIdleHoursStr, setProvisionalIdleHoursStr] = useSetting("today.provisionalIdleThresholdHours", "3");
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
+  const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
 
   function addBreakRange() {
     setBreakRangesStr(serializeBreakRanges([...breakRanges, { start: "12:00", end: "13:00" }]));
@@ -93,6 +95,26 @@ export default function SettingsSection() {
             </button>
           </div>
         )}
+
+        {provisionalEnabled && (
+          <div className="space-y-2 border-t border-cream/10 pt-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+              <span>放置</span>
+              <input
+                type="number"
+                min={0.5}
+                step={0.5}
+                value={provisionalIdleHoursStr}
+                onChange={(e) => setProvisionalIdleHoursStr(e.target.value)}
+                className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+              />
+              <span>時間以上マウス/キーボード操作がなければ、未計測の計測を最後に操作していた時刻で自動的に打ち切ります</span>
+            </div>
+            <p className="text-[10px] text-cream/40">
+              定時後・休日にPCを開いたまま放置しても、際限なく計測され続けないようにするための保険です。
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="panel space-y-3 p-4">
@@ -107,6 +129,29 @@ export default function SettingsSection() {
         </div>
         <p className="text-xs text-cream/50">
           ONにすると、計測中の作業がある間は他の作業が薄く表示され、ボタンも操作できなくなります（仮計測中と同様の見せ方です）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">実績編集で名称・区分を変更した時の挙動</h3>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={masterEditModeStr === "relink" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setMasterEditModeStr("relink")}
+          >
+            別のマスタに繋ぎ変える
+          </button>
+          <button
+            className={masterEditModeStr === "rename" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setMasterEditModeStr("rename")}
+          >
+            マスタ自体もリネームする
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          {masterEditModeStr === "rename"
+            ? "この実績が紐づく作業マスタの名称・区分もそのまま書き換えます。同じマスタに紐づく他の日の実績の表示も一緒に変わります。"
+            : "新しい名称・区分の作業マスタが既にあればそこに繋ぎ変え、なければ新規作成して繋ぎ変えます。元のマスタや、それに紐づく他の実績には影響しません。"}
         </p>
       </div>
     </div>
