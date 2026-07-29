@@ -252,12 +252,28 @@ export default function GanttSection() {
         showPlan: true,
       }));
 
-    return [...blockRows, ...pendingRows];
+    const combined = [...blockRows, ...pendingRows];
+
+    // 予定バーは、段々表示の並び順で直前の予定バーの直後から積み上がるように
+    // 位置を計算し直す（同じ作業の2回目以降のブロックは予定バーを表示しないため、
+    // その分は積み上げに加算しない）
+    let planCursor = 0;
+    for (const row of combined) {
+      if (!row.showPlan) continue;
+      row.scheduledStartMin = planCursor;
+      const layoutDurationMin = Math.max(row.task.estimatedSeconds, row.predictedSeconds) / 60;
+      planCursor += Math.max(layoutDurationMin, 1);
+    }
+
+    return combined;
   }, [rows]);
 
   const autoMinutes = Math.max(
     ...rows.map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
     ...rows.flatMap((r) => r.actualSegments.map((s) => s.endMin)),
+    ...waterfallRows
+      .filter((r) => r.showPlan)
+      .map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
     480
   );
   const totalMinutes = rangeMode === "24h" ? Math.max(DAY_MINUTES, autoMinutes) : autoMinutes;
