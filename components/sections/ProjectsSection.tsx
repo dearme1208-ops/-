@@ -12,6 +12,7 @@ import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/ti
 import type { DailyTask, ProjectItem } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
+import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 
 type ViewMode = "gantt" | "calendar";
 
@@ -29,6 +30,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
+  const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
   const [showForm, setShowForm] = useState(true);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
@@ -97,14 +99,12 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     await db.projects.update(item.id, { completedAt: item.completedAt ? undefined : Date.now() });
   }
 
-  async function addToToday(item: ProjectItem) {
-    // 旧データ(業務区分未登録)との互換のため、未設定なら件名にフォールバックする
-    const taskCategory = item.category || item.title;
-    const master = await findOrCreateMasterTask(taskCategory, item.workName, 0);
+  async function addToToday(item: ProjectItem, category: string, workName: string) {
+    const master = await findOrCreateMasterTask(category, workName, 0);
     const estimatedSeconds = await computeRemainingEstimatedSeconds(
       today,
-      taskCategory,
-      item.workName,
+      category,
+      workName,
       master.estimatedSeconds
     );
     const count = (await db.dailyTasks.where("date").equals(today).toArray()).length;
@@ -113,8 +113,8 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
       date: today,
       order: count,
       masterTaskId: master.id,
-      category: taskCategory,
-      name: item.workName,
+      category,
+      name: workName,
       estimatedSeconds,
       status: "pending",
       segments: [],
@@ -264,7 +264,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
               )}
             </div>
             <div className="flex items-center gap-2">
-              <button className="btn-pill-outline text-xs" onClick={() => addToToday(project)}>
+              <button className="btn-pill-outline text-xs" onClick={() => setAddToTodayTarget(project)}>
                 本日の作業に追加
               </button>
               <button className="btn-pill-outline text-xs" onClick={() => toggleComplete(project)}>
@@ -396,6 +396,20 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
       )}
 
       {editingProject && <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
+
+      {addToTodayTarget && (
+        <CategoryWorkNameDialog
+          title="本日の作業に追加"
+          confirmLabel="追加する"
+          defaultCategory={addToTodayTarget.category || addToTodayTarget.title}
+          defaultWorkName={addToTodayTarget.workName}
+          onConfirm={(category, workName) => {
+            addToToday(addToTodayTarget, category, workName);
+            setAddToTodayTarget(null);
+          }}
+          onClose={() => setAddToTodayTarget(null)}
+        />
+      )}
     </div>
   );
 }

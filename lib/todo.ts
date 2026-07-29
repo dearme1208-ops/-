@@ -74,7 +74,7 @@ export function computeNextDueDate(rule: RecurrenceRule, fromDateStr: string): s
       let month0 = base.getMonth() + interval;
       year += Math.floor(month0 / 12);
       month0 = ((month0 % 12) + 12) % 12;
-      const clampedDay = Math.min(day, daysInMonth(year, month0));
+      const clampedDay = day === -1 ? daysInMonth(year, month0) : Math.min(day, daysInMonth(year, month0));
       return fromDate(new Date(year, month0, clampedDay));
     }
     case "monthlyWeekday": {

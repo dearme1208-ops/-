@@ -105,7 +105,7 @@ export interface RecurrenceRule {
   type: RecurrenceType;
   interval: number; // N日ごと/N週ごと/Nヶ月ごと/N年ごと
   weekdays?: number[]; // weekly用: 0=日..6=土
-  day?: number; // monthlyDate用: 日付(1-31), yearly用: 日付
+  day?: number; // monthlyDate用: 日付(1-31, -1=月末), yearly用: 日付
   month?: number; // yearly用: 月(1-12)
   weekday?: number; // monthlyWeekday用: 0=日..6=土
   ordinal?: RecurrenceOrdinal;

@@ -21,6 +21,7 @@ import type { ProjectItem, RecurrenceRule, RecurrenceType, TodoTask } from "@/li
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
+import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
@@ -254,14 +255,18 @@ export default function TodoSection() {
     if (detailTaskId === task.id) setDetailTaskId(null);
   }
 
+  async function toggleSubtaskComplete(sub: TodoTask) {
+    await db.todoTasks.update(sub.id, { completed: !sub.completed, completedAt: !sub.completed ? Date.now() : undefined });
+  }
+
   // タスクの内容を案件タブに反映する（1度反映すると同じタスクからは再反映しない）
-  async function reflectToProject(task: TodoTask) {
+  async function reflectToProject(task: TodoTask, category: string, workName: string) {
     if (task.projectId) return;
     const item: ProjectItem = {
       id: uid(),
       title: task.title,
-      category: task.tag ?? "未分類",
-      workName: task.title,
+      category,
+      workName,
       dueDate: task.dueDate ?? today,
       createdAt: Date.now(),
     };
@@ -635,7 +640,7 @@ export default function TodoSection() {
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={incompleteTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                     {incompleteTasks.map((task) => (
-                      <SortableTaskRow
+                      <SortableTaskBlock
                         key={task.id}
                         task={task}
                         subtasks={subtasksByParent.get(task.id) ?? []}
@@ -643,13 +648,14 @@ export default function TodoSection() {
                         onToggleComplete={() => toggleComplete(task)}
                         onToggleImportant={() => toggleImportant(task)}
                         onOpenDetail={() => setDetailTaskId(task.id)}
+                        onToggleSubtask={toggleSubtaskComplete}
                       />
                     ))}
                   </SortableContext>
                 </DndContext>
               ) : (
                 incompleteTasks.map((task) => (
-                  <TaskRow
+                  <TaskBlock
                     key={task.id}
                     task={task}
                     subtasks={subtasksByParent.get(task.id) ?? []}
@@ -657,6 +663,7 @@ export default function TodoSection() {
                     onToggleComplete={() => toggleComplete(task)}
                     onToggleImportant={() => toggleImportant(task)}
                     onOpenDetail={() => setDetailTaskId(task.id)}
+                    onToggleSubtask={toggleSubtaskComplete}
                   />
                 ))
               )}
@@ -676,7 +683,7 @@ export default function TodoSection() {
                 {showCompleted && (
                   <div className="space-y-1.5">
                     {completedTasks.map((task) => (
-                      <TaskRow
+                      <TaskBlock
                         key={task.id}
                         task={task}
                         subtasks={subtasksByParent.get(task.id) ?? []}
@@ -684,6 +691,7 @@ export default function TodoSection() {
                         onToggleComplete={() => toggleComplete(task)}
                         onToggleImportant={() => toggleImportant(task)}
                         onOpenDetail={() => setDetailTaskId(task.id)}
+                        onToggleSubtask={toggleSubtaskComplete}
                       />
                     ))}
                   </div>
@@ -704,20 +712,76 @@ export default function TodoSection() {
           onClose={() => setDetailTaskId(null)}
           onToggleMyDay={() => toggleMyDay(detailTask)}
           onDelete={() => deleteTask(detailTask)}
-          onReflectToProject={() => reflectToProject(detailTask)}
+          onReflectToProject={(category, workName) => reflectToProject(detailTask, category, workName)}
         />
       )}
     </div>
   );
 }
 
-function SortableTaskRow(props: {
+// メインタスクの下にサブタスクを一段ずらして表示する（Todoist風）
+function TaskBlock({
+  task,
+  subtasks,
+  listTitle,
+  onToggleComplete,
+  onToggleImportant,
+  onOpenDetail,
+  onToggleSubtask,
+}: {
   task: TodoTask;
   subtasks: TodoTask[];
   listTitle?: string;
   onToggleComplete: () => void;
   onToggleImportant: () => void;
   onOpenDetail: () => void;
+  onToggleSubtask: (sub: TodoTask) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <TaskRow
+        task={task}
+        subtasks={subtasks}
+        listTitle={listTitle}
+        onToggleComplete={onToggleComplete}
+        onToggleImportant={onToggleImportant}
+        onOpenDetail={onOpenDetail}
+      />
+      {subtasks.length > 0 && (
+        <div className="ml-7 space-y-1 border-l border-cream/10 pl-3">
+          {subtasks.map((sub) => (
+            <div
+              key={sub.id}
+              className={`flex items-center gap-2 rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""}`}
+            >
+              <button
+                onClick={() => onToggleSubtask(sub)}
+                aria-label="完了"
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+                  sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+                }`}
+              >
+                {sub.completed ? "✓" : ""}
+              </button>
+              <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
+                {sub.title}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SortableTaskBlock(props: {
+  task: TodoTask;
+  subtasks: TodoTask[];
+  listTitle?: string;
+  onToggleComplete: () => void;
+  onToggleImportant: () => void;
+  onOpenDetail: () => void;
+  onToggleSubtask: (sub: TodoTask) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.task.id,
@@ -728,17 +792,17 @@ function SortableTaskRow(props: {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-1">
+    <div ref={setNodeRef} style={style} className="flex items-start gap-1">
       <button
         {...attributes}
         {...listeners}
-        className="cursor-grab px-1 text-cream/30 active:cursor-grabbing"
+        className="mt-2 cursor-grab px-1 text-cream/30 active:cursor-grabbing"
         aria-label="並び替え"
       >
         ⠿
       </button>
       <div className="min-w-0 flex-1">
-        <TaskRow {...props} />
+        <TaskBlock {...props} />
       </div>
     </div>
   );
@@ -833,8 +897,9 @@ function TaskDetailModal({
   onClose: () => void;
   onToggleMyDay: () => void;
   onDelete: () => void;
-  onReflectToProject: () => void;
+  onReflectToProject: (category: string, workName: string) => void;
 }) {
+  const [showReflectDialog, setShowReflectDialog] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
@@ -982,12 +1047,26 @@ function TaskDetailModal({
           </button>
           <button
             className={task.projectId ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={onReflectToProject}
+            onClick={() => setShowReflectDialog(true)}
             disabled={!!task.projectId}
           >
             📁 {task.projectId ? "案件に反映済み" : "案件に反映"}
           </button>
         </div>
+
+        {showReflectDialog && (
+          <CategoryWorkNameDialog
+            title="案件に反映"
+            confirmLabel="反映する"
+            defaultCategory={task.tag ?? ""}
+            defaultWorkName={task.title}
+            onConfirm={(category, workName) => {
+              onReflectToProject(category, workName);
+              setShowReflectDialog(false);
+            }}
+            onClose={() => setShowReflectDialog(false)}
+          />
+        )}
 
         <textarea
           value={notes}
@@ -1060,17 +1139,33 @@ function TaskDetailModal({
               )}
 
               {recurrence.type === "monthlyDate" && (
-                <div className="flex items-center gap-2 text-xs text-cream/60">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
                   <span>毎月</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={recurrence.day ?? 1}
-                    onChange={(e) => setRecurrence({ ...recurrence, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
-                    className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
-                  />
-                  <span>日</span>
+                  <button
+                    onClick={() => setRecurrence({ ...recurrence, day: 1 })}
+                    className={(recurrence.day ?? 1) === 1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  >
+                    月初
+                  </button>
+                  <button
+                    onClick={() => setRecurrence({ ...recurrence, day: -1 })}
+                    className={recurrence.day === -1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  >
+                    月末
+                  </button>
+                  {recurrence.day !== -1 && (
+                    <>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={recurrence.day ?? 1}
+                        onChange={(e) => setRecurrence({ ...recurrence, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+                        className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
+                      />
+                      <span>日</span>
+                    </>
+                  )}
                 </div>
               )}
 
