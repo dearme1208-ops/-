@@ -70,21 +70,26 @@ export default function GanttSection() {
       const scheduledStartMin = cursor;
       cursor += Math.max(layoutDurationMin, 1);
 
-      let actualStartMin: number | null = null;
-      let actualSeconds = 0;
-      if (task.startedAt) {
-        actualStartMin = (task.startedAt - timelineBase) / 60000;
-        actualSeconds =
-          task.status === "running"
-            ? task.accumulatedMs / 1000 + (task.segments.find((s) => s.end === undefined) ? (now - task.segments[task.segments.length - 1].start) / 1000 : 0)
-            : task.accumulatedMs / 1000;
-      }
+      // 一時停止・再開を挟んだ場合、区間ごとに実際の開始/終了を保持する。
+      // 間に別の作業を挟んで後から再開したことが分かるよう、1本にまとめずセグメント単位で扱う
+      const actualSegments = task.segments
+        .map((s) => ({
+          startMin: (s.start - timelineBase) / 60000,
+          endMin: ((s.end ?? now) - timelineBase) / 60000,
+        }))
+        .filter((s) => s.endMin > s.startMin);
+
+      const actualSeconds =
+        task.status === "running"
+          ? task.accumulatedMs / 1000 + (task.segments.find((s) => s.end === undefined) ? (now - task.segments[task.segments.length - 1].start) / 1000 : 0)
+          : task.accumulatedMs / 1000;
 
       return {
         task,
         predictedSeconds,
         scheduledStartMin,
-        actualStartMin,
+        actualSegments,
+        actualStartMin: actualSegments.length > 0 ? actualSegments[0].startMin : null,
         actualSeconds,
       };
     });
@@ -114,20 +119,26 @@ export default function GanttSection() {
 
   // 「予定・実績を1本ずつの行で表示」時、違う作業まで1本にまとめてしまうと
   // どれをどこまで行ったか分からなくなるため、異なる作業のバーは分けたまま表示する。
-  // ただし「作業A→作業A→作業B」のように同じ大項目・作業名が連続する場合のみ、
-  // その連続区間はまとめて1本のバーにする（間に別の作業を挟む場合はまとめない）
+  // 一時停止・再開で同じ作業に何度も戻ってきた場合も、間に別の作業を挟んでいれば
+  // 区別できるよう、タスク単位ではなく実際の作業セグメント単位で時系列に並べてから
+  // 直前と完全に同じ大項目・作業名が連続する場合のみまとめる
   const mergedActualIntervals = useMemo(() => {
-    const withActual = rows.filter((r) => r.actualStartMin !== null && r.actualSeconds > 0);
-    const merged: { start: number; end: number; category: string; name: string; overPlan: boolean }[] = [];
-    for (const r of withActual) {
-      const start = r.actualStartMin!;
-      const end = start + r.actualSeconds / 60;
+    const flat: { start: number; end: number; category: string; name: string; overPlan: boolean }[] = [];
+    for (const r of rows) {
+      for (const seg of r.actualSegments) {
+        flat.push({ start: seg.startMin, end: seg.endMin, category: r.task.category, name: r.task.name, overPlan: r.overPlan });
+      }
+    }
+    flat.sort((a, b) => a.start - b.start);
+
+    const merged: typeof flat = [];
+    for (const iv of flat) {
       const last = merged[merged.length - 1];
-      if (last && last.category === r.task.category && last.name === r.task.name) {
-        last.end = Math.max(last.end, end);
-        last.overPlan = last.overPlan || r.overPlan;
+      if (last && last.category === iv.category && last.name === iv.name) {
+        last.end = Math.max(last.end, iv.end);
+        last.overPlan = last.overPlan || iv.overPlan;
       } else {
-        merged.push({ start, end, category: r.task.category, name: r.task.name, overPlan: r.overPlan });
+        merged.push({ ...iv });
       }
     }
     return merged;
@@ -141,7 +152,7 @@ export default function GanttSection() {
 
   const autoMinutes = Math.max(
     ...rows.map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
-    (rows.at(-1)?.actualStartMin ?? 0) + (rows.at(-1)?.actualSeconds ?? 0) / 60,
+    ...rows.flatMap((r) => r.actualSegments.map((s) => s.endMin)),
     480
   );
   const totalMinutes = rangeMode === "24h" ? Math.max(DAY_MINUTES, autoMinutes) : autoMinutes;
@@ -391,9 +402,11 @@ export default function GanttSection() {
                   const planLeft = r.scheduledStartMin * pxPerMin;
                   const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
                   const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
-                                    const hasActual = r.actualStartMin !== null && r.actualSeconds > 0;
-                  const nameLeft = hasActual ? r.actualStartMin! * pxPerMin : planLeft;
-                  const endMin = hasActual ? r.actualStartMin! + r.actualSeconds / 60 : r.scheduledStartMin + r.task.estimatedSeconds / 60;
+                  const hasActual = r.actualSegments.length > 0;
+                  const nameLeft = hasActual ? r.actualSegments[0].startMin * pxPerMin : planLeft;
+                  const endMin = hasActual
+                    ? Math.max(...r.actualSegments.map((s) => s.endMin))
+                    : r.scheduledStartMin + r.task.estimatedSeconds / 60;
                   const endLeft = endMin * pxPerMin;
                   const endLabel = formatClock(timelineBase + endMin * 60000);
                   return (
@@ -415,20 +428,21 @@ export default function GanttSection() {
                         className="absolute rounded bg-cream/70"
                         style={{ left: planLeft, width: planWidth, top: planBarTop, height: planBarHeight }}
                       />
-                      {/* 実績バー */}
-                      {hasActual && (
+                      {/* 実績バー: 一時停止・再開があればセグメントごとに分けて描画する */}
+                      {r.actualSegments.map((seg, segIdx) => (
                         <div
+                          key={segIdx}
                           className={`absolute rounded ${r.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
                           style={{
-                            left: r.actualStartMin! * pxPerMin,
-                            width: Math.max((r.actualSeconds / 60) * pxPerMin, 3),
+                            left: seg.startMin * pxPerMin,
+                            width: Math.max((seg.endMin - seg.startMin) * pxPerMin, 3),
                             top: actualBarTop,
                             height: actualBarHeight,
                             boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
                           }}
-                          title={`実績 ${formatHms(r.actualSeconds)}`}
+                          title={`実績 ${formatHms((seg.endMin - seg.startMin) * 60)}`}
                         />
-                      )}
+                      ))}
                       {/* 終了時刻ラベル */}
                       <div
                         className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
