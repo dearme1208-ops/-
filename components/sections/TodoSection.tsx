@@ -231,7 +231,10 @@ export default function TodoSection() {
   async function toggleComplete(task: TodoTask) {
     if (!task.completed && task.recurrence) {
       const nextDue = computeNextDueDate(task.recurrence, task.dueDate ?? today);
-      await db.todoTasks.update(task.id, { dueDate: nextDue });
+      const updates: Partial<TodoTask> = { dueDate: nextDue };
+      // 繰り返しタスクは完了扱いにならず次回の期日に進むだけだが、その日のマイデイからは外す
+      if (task.myDayDate === today) updates.myDayDate = undefined;
+      await db.todoTasks.update(task.id, updates);
       return;
     }
     await db.todoTasks.update(task.id, {
