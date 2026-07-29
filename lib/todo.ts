@@ -5,6 +5,13 @@ import { todayStr } from "./time";
 
 export const DEFAULT_TAG_PRESETS = ["社内確認中", "客先確認中", "打ち合わせ", "対応中", "保留"];
 
+// タスク全体の期日を、自分自身の期日とサブタスクの期日の中で最も早いものとして算出する
+export function effectiveDueDate(task: TodoTask, subtasks: TodoTask[]): string | undefined {
+  const dates = [task.dueDate, ...subtasks.map((s) => s.dueDate)].filter((d): d is string => !!d);
+  if (dates.length === 0) return undefined;
+  return dates.reduce((min, d) => (d < min ? d : min));
+}
+
 function toDate(dateStr: string): Date {
   return new Date(dateStr + "T00:00:00");
 }

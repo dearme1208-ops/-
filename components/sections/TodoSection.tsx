@@ -13,7 +13,7 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
-import { computeDateOrderedPosition, computeNextDueDate, DEFAULT_TAG_PRESETS, upsertTodoFromCsv } from "@/lib/todo";
+import { computeDateOrderedPosition, computeNextDueDate, DEFAULT_TAG_PRESETS, effectiveDueDate, upsertTodoFromCsv } from "@/lib/todo";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { daysBetweenDateStrs, todayStr, formatDateJp } from "@/lib/time";
@@ -129,7 +129,7 @@ export default function TodoSection() {
     } else if (view === "important") {
       filtered = topLevelTasks.filter((t) => t.important);
     } else if (view === "planned") {
-      filtered = topLevelTasks.filter((t) => !!t.dueDate);
+      filtered = topLevelTasks.filter((t) => !!effectiveDueDate(t, subtasksByParent.get(t.id) ?? []));
     } else if (currentListId) {
       filtered = topLevelTasks.filter((t) => t.listId === currentListId);
     } else {
@@ -154,11 +154,13 @@ export default function TodoSection() {
       const doneDiff = Number(a.completed) - Number(b.completed);
       if (doneDiff !== 0) return doneDiff;
       if (view === "planned" && !searchActive) {
-        return (a.dueDate ?? "9999-99-99").localeCompare(b.dueDate ?? "9999-99-99");
+        const dueA = effectiveDueDate(a, subtasksByParent.get(a.id) ?? []) ?? "9999-99-99";
+        const dueB = effectiveDueDate(b, subtasksByParent.get(b.id) ?? []) ?? "9999-99-99";
+        return dueA.localeCompare(dueB);
       }
       return a.order - b.order;
     });
-  }, [view, currentListId, topLevelTasks, today, searchActive, searchQuery, filterTag, filterCustomer]);
+  }, [view, currentListId, topLevelTasks, today, searchActive, searchQuery, filterTag, filterCustomer, subtasksByParent]);
 
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
   const completedTasks = visibleTasks.filter((t) => t.completed);
@@ -785,6 +787,15 @@ function TaskBlock({
               <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
                 {sub.title}
               </span>
+              {sub.dueDate && (
+                <span
+                  className={`shrink-0 text-[10px] ${
+                    !sub.completed && sub.dueDate < todayStr() ? "font-bold text-alert" : "text-cream/40"
+                  }`}
+                >
+                  {formatDateJp(sub.dueDate)}
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -843,7 +854,8 @@ function TaskRow({
   onOpenDetail: () => void;
 }) {
   const today = todayStr();
-  const overdue = !task.completed && !!task.dueDate && task.dueDate < today;
+  const dueDate = effectiveDueDate(task, subtasks);
+  const overdue = !task.completed && !!dueDate && dueDate < today;
   const doneCount = subtasks.filter((s) => s.completed).length;
   return (
     <div className={`flex items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 ${task.completed ? "opacity-50" : ""}`}>
@@ -872,6 +884,7 @@ function TaskRow({
             </span>
           )}
           <span className={`text-sm text-cream ${task.completed ? "line-through" : ""}`}>{task.title}</span>
+          {task.action && <span className="text-xs text-cream/50">→ {task.action}</span>}
           {task.recurrence && !task.completed && <span className="text-xs text-cream/40">🔁</span>}
           {task.projectId && (
             <span className="text-xs text-cream/40" title="案件に反映済み">
@@ -879,13 +892,13 @@ function TaskRow({
             </span>
           )}
         </div>
-        {task.action && (
-          <div className="text-[11px] text-cream/50">▶ {task.action}</div>
-        )}
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          {task.dueDate && (
+          {dueDate && (
             <span className={overdue ? "font-bold text-alert" : "text-cream/50"}>
-              {task.startDate ? `${formatDateJp(task.startDate)} → ${formatDateJp(task.dueDate)}` : formatDateJp(task.dueDate)}
+              {task.startDate && task.dueDate
+                ? `${formatDateJp(task.startDate)} → ${formatDateJp(task.dueDate)}`
+                : formatDateJp(dueDate)}
+              {!task.dueDate && <span className="ml-1 text-cream/30">(サブタスク)</span>}
             </span>
           )}
           {subtasks.length > 0 && (
@@ -999,6 +1012,10 @@ function TaskDetailModal({
 
   async function deleteSubtask(sub: TodoTask) {
     await db.todoTasks.delete(sub.id);
+  }
+
+  async function updateSubtaskDueDate(sub: TodoTask, dueDate: string) {
+    await db.todoTasks.update(sub.id, { dueDate: dueDate || undefined });
   }
 
   return (
@@ -1305,6 +1322,12 @@ function TaskDetailModal({
                 <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
                   {sub.title}
                 </span>
+                <input
+                  type="date"
+                  defaultValue={sub.dueDate ?? ""}
+                  onBlur={(e) => updateSubtaskDueDate(sub, e.target.value)}
+                  className="w-32 shrink-0 rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
+                />
                 <button className="text-cream/40 hover:text-alert" onClick={() => deleteSubtask(sub)} aria-label="削除">
                   ✕
                 </button>
