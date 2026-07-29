@@ -835,7 +835,7 @@ function TaskRow({
         onClick={onToggleComplete}
         aria-label="完了"
         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-          task.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+          task.completed ? "border-cream bg-cream text-ink" : task.important ? "border-alert" : "border-cream/40"
         }`}
       >
         {task.completed ? "✓" : ""}
