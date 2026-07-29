@@ -8,7 +8,7 @@ import { formatClock, formatHms, todayStr } from "@/lib/time";
 
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 0.05;
-const MAX_PX_PER_MIN = 24;
+const MAX_PX_PER_MIN = 160;
 const ROW_H_OVERLAP = 46;
 const ROW_H_STACKED = 64;
 const DAY_MINUTES = 24 * 60;
@@ -20,6 +20,17 @@ type RangeMode = "auto" | "24h";
 function baseAtHour(dateStr: string, hour: number): number {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(y, m - 1, d, hour, 0, 0).getTime();
+}
+
+// バーにカーソルを合わせた際、作業名・開始/終了時刻・作業時間をまとめて表示する
+function segmentTooltip(name: string, startMs: number, endMs: number, ongoing: boolean): string {
+  const durSec = Math.max(0, (endMs - startMs) / 1000);
+  const endLabel = ongoing ? "計測中" : formatClock(endMs);
+  return `${name}（実績）\n開始 ${formatClock(startMs)} 〜 終了 ${endLabel}\n作業時間 ${formatHms(durSec)}`;
+}
+
+function planTooltip(name: string, startMs: number, endMs: number, estimatedSeconds: number): string {
+  return `${name}\n予定 ${formatClock(startMs)} 〜 ${formatClock(endMs)}\n想定時間 ${formatHms(estimatedSeconds)}`;
 }
 
 export default function GanttSection() {
@@ -76,6 +87,7 @@ export default function GanttSection() {
         .map((s) => ({
           startMin: (s.start - timelineBase) / 60000,
           endMin: ((s.end ?? now) - timelineBase) / 60000,
+          ongoing: s.end === undefined,
         }))
         .filter((s) => s.endMin > s.startMin);
 
@@ -123,10 +135,17 @@ export default function GanttSection() {
   // 区別できるよう、タスク単位ではなく実際の作業セグメント単位で時系列に並べてから
   // 直前と完全に同じ大項目・作業名が連続する場合のみまとめる
   const mergedActualIntervals = useMemo(() => {
-    const flat: { start: number; end: number; category: string; name: string; overPlan: boolean }[] = [];
+    const flat: { start: number; end: number; category: string; name: string; overPlan: boolean; ongoing: boolean }[] = [];
     for (const r of rows) {
       for (const seg of r.actualSegments) {
-        flat.push({ start: seg.startMin, end: seg.endMin, category: r.task.category, name: r.task.name, overPlan: r.overPlan });
+        flat.push({
+          start: seg.startMin,
+          end: seg.endMin,
+          category: r.task.category,
+          name: r.task.name,
+          overPlan: r.overPlan,
+          ongoing: seg.ongoing,
+        });
       }
     }
     flat.sort((a, b) => a.start - b.start);
@@ -137,6 +156,7 @@ export default function GanttSection() {
       if (last && last.category === iv.category && last.name === iv.name) {
         last.end = Math.max(last.end, iv.end);
         last.overPlan = last.overPlan || iv.overPlan;
+        last.ongoing = iv.ongoing;
       } else {
         merged.push({ ...iv });
       }
@@ -347,7 +367,12 @@ export default function GanttSection() {
                         <div
                           className="absolute rounded bg-cream/70"
                           style={{ left: gapLeft, width: gapPlanWidth, top: 14, height: 20 }}
-                          title={`${r.task.name} 予定 ${formatHms(r.task.estimatedSeconds)}`}
+                          title={planTooltip(
+                            r.task.name,
+                            timelineBase + r.scheduledStartMin * 60000,
+                            timelineBase + planEndMin * 60000,
+                            r.task.estimatedSeconds
+                          )}
                         />
                         <div
                           className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
@@ -384,7 +409,12 @@ export default function GanttSection() {
                             height: 20,
                             boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
                           }}
-                          title={`${label} 実績 ${formatHms((iv.end - iv.start) * 60)}`}
+                          title={segmentTooltip(
+                            label,
+                            timelineBase + iv.start * 60000,
+                            timelineBase + iv.end * 60000,
+                            iv.ongoing
+                          )}
                         />
                         <div
                           className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
@@ -427,6 +457,12 @@ export default function GanttSection() {
                       <div
                         className="absolute rounded bg-cream/70"
                         style={{ left: planLeft, width: planWidth, top: planBarTop, height: planBarHeight }}
+                        title={planTooltip(
+                          r.task.name,
+                          timelineBase + r.scheduledStartMin * 60000,
+                          timelineBase + (r.scheduledStartMin + r.task.estimatedSeconds / 60) * 60000,
+                          r.task.estimatedSeconds
+                        )}
                       />
                       {/* 実績バー: 一時停止・再開があればセグメントごとに分けて描画する */}
                       {r.actualSegments.map((seg, segIdx) => (
@@ -440,7 +476,12 @@ export default function GanttSection() {
                             height: actualBarHeight,
                             boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
                           }}
-                          title={`実績 ${formatHms((seg.endMin - seg.startMin) * 60)}`}
+                          title={segmentTooltip(
+                            r.task.name,
+                            timelineBase + seg.startMin * 60000,
+                            timelineBase + seg.endMin * 60000,
+                            seg.ongoing
+                          )}
                         />
                       ))}
                       {/* 終了時刻ラベル */}
