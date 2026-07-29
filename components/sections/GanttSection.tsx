@@ -110,31 +110,31 @@ export default function GanttSection() {
     return base.map((r) => ({ ...r, overPlan: overPlanByTaskId.get(r.task.id) ?? false }));
   }, [tasks, masterMap, now, timelineBase]);
 
-  // 「予定・実績を1本ずつの行で表示」時、複数の作業を同時に計測していた場合などに
-  // 実績バーが時間的に重なることがあるため、重なる区間は1本のバーにまとめる
+  // 「予定・実績を1本ずつの行で表示」時、違う作業まで1本にまとめてしまうと
+  // どれをどこまで行ったか分からなくなるため、異なる作業のバーは分けたまま表示する。
+  // ただし「作業A→作業A→作業B」のように同じ大項目・作業名が連続する場合のみ、
+  // その連続区間はまとめて1本のバーにする（間に別の作業を挟む場合はまとめない）
   const mergedActualIntervals = useMemo(() => {
-    const intervals = rows
-      .filter((r) => r.actualStartMin !== null && r.actualSeconds > 0)
-      .map((r) => ({
-        start: r.actualStartMin!,
-        end: r.actualStartMin! + r.actualSeconds / 60,
-        names: [r.task.name],
-        overPlan: r.overPlan,
-      }))
-      .sort((a, b) => a.start - b.start);
-
-    const merged: typeof intervals = [];
-    for (const iv of intervals) {
+    const withActual = rows.filter((r) => r.actualStartMin !== null && r.actualSeconds > 0);
+    const merged: { start: number; end: number; category: string; name: string; overPlan: boolean }[] = [];
+    for (const r of withActual) {
+      const start = r.actualStartMin!;
+      const end = start + r.actualSeconds / 60;
       const last = merged[merged.length - 1];
-      if (last && iv.start <= last.end) {
-        last.end = Math.max(last.end, iv.end);
-        last.overPlan = last.overPlan || iv.overPlan;
-        if (!last.names.includes(iv.names[0])) last.names.push(iv.names[0]);
+      if (last && last.category === r.task.category && last.name === r.task.name) {
+        last.end = Math.max(last.end, end);
+        last.overPlan = last.overPlan || r.overPlan;
       } else {
-        merged.push({ ...iv, names: [...iv.names] });
+        merged.push({ start, end, category: r.task.category, name: r.task.name, overPlan: r.overPlan });
       }
     }
     return merged;
+  }, [rows]);
+
+  // 1本化しない通常表示では、登録順ではなく実際に作業を開始した順（未着手なら予定順）に
+  // 並べることで、上から下に見ていくだけで1日の流れが分かるようにする
+  const displayRows = useMemo(() => {
+    return [...rows].sort((a, b) => (a.actualStartMin ?? a.scheduledStartMin) - (b.actualStartMin ?? b.scheduledStartMin));
   }, [rows]);
 
   const autoMinutes = Math.max(
@@ -258,7 +258,7 @@ export default function GanttSection() {
               </div>
             </>
           ) : (
-            rows.map((r) => (
+            displayRows.map((r) => (
               <div
                 key={r.task.id}
                 className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
@@ -343,12 +343,12 @@ export default function GanttSection() {
                     );
                   })}
                   {/* 実績行: 全作業の実績バーを1本の行にまとめて表示。
-                      同時に計測していたなどで時間が重なる実績同士は1本のバーに合算する */}
+                      異なる作業は分けたまま、同じ作業が連続する場合のみ1本のバーにまとめる */}
                   {mergedActualIntervals.map((iv, idx) => {
                     const actualLeft = iv.start * pxPerMin;
                     const actualWidth = Math.max((iv.end - iv.start) * pxPerMin, 3);
                     const actualEndLabel = formatClock(timelineBase + iv.end * 60000);
-                    const label = iv.names.join(" + ");
+                    const label = iv.name;
                     return (
                       <div key={`actual-${idx}`} className="absolute left-0 right-0" style={{ top: ROW_H, height: ROW_H }}>
                         <div
@@ -379,7 +379,7 @@ export default function GanttSection() {
                   })}
                 </>
               ) : (
-                rows.map((r, idx) => {
+                displayRows.map((r, idx) => {
                   const top = idx * ROW_H;
                   const planLeft = r.scheduledStartMin * pxPerMin;
                   const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
