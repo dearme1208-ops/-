@@ -370,11 +370,13 @@ export default function TodaySection() {
     }
     const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
     await commitFinish(task, segments, accumulatedMs);
-    // トラブル対応を完了した場合、それによって中断していた作業（仮計測含む）を自動的に再開する
-    if (task.isTrouble && task.resumeTaskId) {
-      const target = await db.dailyTasks.get(task.resumeTaskId);
-      if (target && target.status === "paused") {
-        await startTask(target);
+    // トラブル対応を完了した場合、それによって中断していた作業（仮計測含む、複数ある場合も全て）を自動的に再開する
+    if (task.isTrouble && task.resumeTaskIds && task.resumeTaskIds.length > 0) {
+      for (const id of task.resumeTaskIds) {
+        const target = await db.dailyTasks.get(id);
+        if (target && target.status === "paused") {
+          await startTask(target);
+        }
       }
     }
   }
@@ -454,9 +456,10 @@ export default function TodaySection() {
 
   // 作業名を入力せずにすぐ計測を開始し、内容は後から編集する
   // どんな状態でもトラブル対応を最優先で開始する。仮計測を含め、計測中の作業が
-  // あればまず一時停止し、トラブル対応が終わったら自動的に再開できるよう覚えておく
+  // （複数同時に計測中であっても全て）あればまず一時停止し、トラブル対応が
+  // 終わったら自動的に再開できるよう覚えておく
   async function startTrouble() {
-    const running = tasks?.find((t) => t.status === "running");
+    const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
     const nowMs = Date.now();
     const task: DailyTask = {
@@ -472,10 +475,10 @@ export default function TodaySection() {
       startedAt: nowMs,
       isSpontaneous: true,
       isTrouble: true,
-      resumeTaskId: running?.id,
+      resumeTaskIds: runningTasks.map((t) => t.id),
     };
     await db.transaction("rw", db.dailyTasks, async () => {
-      if (running) await pauseTask(running);
+      for (const r of runningTasks) await pauseTask(r);
       await db.dailyTasks.add(task);
     });
   }
