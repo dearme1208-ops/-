@@ -1,6 +1,8 @@
 "use client";
 
 import { useSetting } from "@/lib/settings";
+import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
+import type { BreakRange } from "@/lib/types";
 
 export default function SettingsSection() {
   const [thresholdMinutesStr, setThresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
@@ -11,8 +13,21 @@ export default function SettingsSection() {
     "true"
   );
   const provisionalNotifyEnabled = provisionalNotifyEnabledStr === "true";
+  const [breakRangesStr, setBreakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
+  const breakRanges = parseBreakRanges(breakRangesStr);
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
+
+  function addBreakRange() {
+    setBreakRangesStr(serializeBreakRanges([...breakRanges, { start: "12:00", end: "13:00" }]));
+  }
+  function updateBreakRange(index: number, patch: Partial<BreakRange>) {
+    const next = breakRanges.map((r, i) => (i === index ? { ...r, ...patch } : r));
+    setBreakRangesStr(serializeBreakRanges(next));
+  }
+  function removeBreakRange(index: number) {
+    setBreakRangesStr(serializeBreakRanges(breakRanges.filter((_, i) => i !== index)));
+  }
 
   return (
     <div className="space-y-4">
@@ -44,6 +59,37 @@ export default function SettingsSection() {
               onClick={() => setProvisionalNotifyEnabledStr(provisionalNotifyEnabled ? "false" : "true")}
             >
               仮計測の通知: {provisionalNotifyEnabled ? "ON" : "OFF"}
+            </button>
+          </div>
+        )}
+
+        {provisionalEnabled && (
+          <div className="space-y-2 border-t border-cream/10 pt-3">
+            <p className="text-xs text-cream/60">
+              除外する時間帯（休憩など）。この時間帯は未計測の自動開始が始まらず、「さかのぼって開始/再開」でも対象に含まれません。
+            </p>
+            {breakRanges.map((r, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+                <input
+                  type="time"
+                  value={r.start}
+                  onChange={(e) => updateBreakRange(i, { start: e.target.value })}
+                  className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+                <span>〜</span>
+                <input
+                  type="time"
+                  value={r.end}
+                  onChange={(e) => updateBreakRange(i, { end: e.target.value })}
+                  className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+                <button className="text-alert" onClick={() => removeBreakRange(i)} aria-label="削除">
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button className="btn-pill-outline text-xs" onClick={addBreakRange}>
+              + 時間帯を追加
             </button>
           </div>
         )}

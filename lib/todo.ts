@@ -136,6 +136,7 @@ export async function upsertTodoFromCsv(
       title: row.title,
       tag: row.tag,
       customer: row.customer,
+      startDate: row.startDate,
       dueDate: row.dueDate,
       important: row.important,
       completed: row.completed,
@@ -153,4 +154,35 @@ export async function upsertTodoFromCsv(
   }
 
   return { created, updated, listsCreated };
+}
+
+// 開始日(優先)または期日が設定されたタスクを、同じリスト内で日付順になる位置に挿入する。
+// 日付未設定の既存タスクは常に日付ありのタスクより後ろとして扱う。
+// 挿入位置より後ろの既存タスクのorderは1つずつ後ろにずらす（後で手動並び替え可能なため、以後は維持しない）
+export async function computeDateOrderedPosition(
+  listId: string,
+  taskId: string,
+  sortDate: string
+): Promise<number> {
+  const siblings = (await db.todoTasks.where("listId").equals(listId).sortBy("order")).filter(
+    (t) => !t.parentTaskId && t.id !== taskId
+  );
+
+  let insertIndex = siblings.length;
+  for (let i = 0; i < siblings.length; i++) {
+    const s = siblings[i];
+    const sDate = s.startDate || s.dueDate;
+    if (!sDate || sDate > sortDate) {
+      insertIndex = i;
+      break;
+    }
+  }
+
+  await db.transaction("rw", db.todoTasks, async () => {
+    for (let i = siblings.length - 1; i >= insertIndex; i--) {
+      await db.todoTasks.update(siblings[i].id, { order: i + 1 });
+    }
+  });
+
+  return insertIndex;
 }

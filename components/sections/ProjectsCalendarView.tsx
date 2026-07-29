@@ -104,7 +104,7 @@ export default function ProjectsCalendarView({ projects, today }: { projects: Pr
                               : "bg-cream/80 text-ink"
                         }`}
                       >
-                        {p.workName}
+                        {p.title}
                       </div>
                     );
                   })}

@@ -329,8 +329,8 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                   style={{ height: ROW_H }}
                   title={`${r.project.title} / ${r.project.workName}`}
                 >
-                  <span className="truncate text-cream/50">{r.project.title}</span>
-                  <span className="truncate">{r.project.workName}</span>
+                  <span className="truncate">{r.project.title}</span>
+                  <span className="truncate text-cream/50">{r.project.workName}</span>
                 </div>
               ))}
             </div>

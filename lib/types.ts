@@ -79,6 +79,12 @@ export interface AppSetting {
   value: string;
 }
 
+// 未計測の自動計測から除外する時間帯（休憩など）。日付を問わず毎日この時刻範囲に適用する
+export interface BreakRange {
+  start: string; // HH:MM
+  end: string; // HH:MM
+}
+
 export interface ProjectItem {
   id: string;
   title: string; // 件名
@@ -137,6 +143,7 @@ export interface TodoTask {
   tag?: string; // 社内確認中・客先確認中・打ち合わせ など、件名の頭に付けるラベル
   customer?: string; // 客先名
   notes?: string;
+  startDate?: string; // 開始日 YYYY-MM-DD。設定されていれば期日よりこちらを優先してリスト順に反映する
   dueDate?: string; // YYYY-MM-DD
   important: boolean;
   completed: boolean;

@@ -1,4 +1,5 @@
-import { db } from "./db";
+import { db, uid } from "./db";
+import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
 import type { DailyTask } from "./types";
 
 export function segmentsAccumulatedMs(task: DailyTask, now: number): number {
@@ -31,4 +32,59 @@ export async function computeRemainingEstimatedSeconds(
   const last = sameDay.reduce((a, b) => (b.order > a.order ? b : a));
   const spentSeconds = Math.round(last.accumulatedMs / 1000);
   return Math.max(0, last.estimatedSeconds - spentSeconds);
+}
+
+// 実行中/一時停止中の作業をその場で完了として確定する（アプリを閉じる際の一括完了などに使用）。
+// TodaySection内のcommitFinishと同じ内容だが、UI状態を持たない箇所からも呼べるよう独立させたもの
+export async function finishDailyTask(task: DailyTask): Promise<void> {
+  let segments = task.segments;
+  if (task.status === "running") {
+    segments = task.segments.map((s, i) =>
+      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
+    );
+  }
+  const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
+  const seconds = Math.round(accumulatedMs / 1000);
+  const nowMs = Date.now();
+  const startedAt = task.startedAt ?? nowMs;
+
+  await db.dailyTasks.update(task.id, {
+    segments,
+    status: "done",
+    accumulatedMs,
+    startedAt,
+    endedAt: nowMs,
+    isProvisional: false,
+  });
+
+  let masterTaskId = task.masterTaskId;
+  if (!masterTaskId) {
+    const master = await findOrCreateMasterTask(task.category, task.name, task.estimatedSeconds);
+    masterTaskId = master.id;
+  }
+
+  const existing = await db.records
+    .where("date")
+    .equals(task.date)
+    .filter((r) => r.masterTaskId === masterTaskId && r.projectId === task.projectId)
+    .first();
+
+  if (existing) {
+    await db.records.update(existing.id, { seconds: existing.seconds + seconds, endedAt: nowMs });
+  } else {
+    await db.records.add({
+      id: uid(),
+      date: task.date,
+      category: task.category,
+      name: task.name,
+      masterTaskId,
+      seconds,
+      startedAt,
+      endedAt: nowMs,
+      excludedFromStats: false,
+      projectId: task.projectId,
+    });
+  }
+
+  await recomputeEstimateFromRecords(masterTaskId);
 }

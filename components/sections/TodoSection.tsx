@@ -13,7 +13,7 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
-import { computeNextDueDate, DEFAULT_TAG_PRESETS, upsertTodoFromCsv } from "@/lib/todo";
+import { computeDateOrderedPosition, computeNextDueDate, DEFAULT_TAG_PRESETS, upsertTodoFromCsv } from "@/lib/todo";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { daysBetweenDateStrs, todayStr, formatDateJp } from "@/lib/time";
@@ -304,23 +304,23 @@ export default function TodoSection() {
 
   const panelTitle = searchActive ? `検索結果（${visibleTasks.length}件）` : listLabel(view);
 
-  // ガントチャート用データ（作成日〜期日のバー）
+  // ガントチャート用データ（開始日があればそこから、なければ作成日〜期日のバー）
   const { ganttStart, ganttTotalDays, ganttRows } = useMemo(() => {
     const list = tasksForTimeline;
     if (list.length === 0) return { ganttStart: today, ganttTotalDays: 1, ganttRows: [] as { task: TodoTask; barStart: number; barEnd: number; overdue: boolean }[] };
     let start = today;
     let end = today;
     for (const t of list) {
-      const createdStr = todayStr(new Date(t.createdAt));
-      if (createdStr < start) start = createdStr;
+      const barStartStr = t.startDate ?? todayStr(new Date(t.createdAt));
+      if (barStartStr < start) start = barStartStr;
       if (t.dueDate! < start) start = t.dueDate!;
       if (t.dueDate! > end) end = t.dueDate!;
     }
     end = todayStr(new Date(new Date(end + "T00:00:00").getTime() + 2 * 86400000));
     const total = Math.max(daysBetweenDateStrs(start, end), 1);
     const rows = list.map((t) => {
-      const createdStr = todayStr(new Date(t.createdAt));
-      const barStart = daysBetweenDateStrs(start, createdStr);
+      const barStartStr = t.startDate ?? todayStr(new Date(t.createdAt));
+      const barStart = daysBetweenDateStrs(start, barStartStr);
       const barEnd = daysBetweenDateStrs(start, t.dueDate!);
       const overdue = !t.completed && t.dueDate! < today;
       return { task: t, barStart, barEnd: Math.max(barEnd, barStart), overdue };
@@ -629,7 +629,7 @@ export default function TodoSection() {
                     </div>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-cream/40">赤い縦線が本日の位置です。バーは登録日から期日までの猶予を表します。</p>
+                <p className="mt-2 text-xs text-cream/40">赤い縦線が本日の位置です。バーは開始日（未設定の場合は登録日）から期日までの期間を表します。</p>
               </>
             )}
           </div>
@@ -862,7 +862,9 @@ function TaskRow({
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           {task.dueDate && (
-            <span className={overdue ? "font-bold text-alert" : "text-cream/50"}>{formatDateJp(task.dueDate)}</span>
+            <span className={overdue ? "font-bold text-alert" : "text-cream/50"}>
+              {task.startDate ? `${formatDateJp(task.startDate)} → ${formatDateJp(task.dueDate)}` : formatDateJp(task.dueDate)}
+            </span>
           )}
           {subtasks.length > 0 && (
             <span className="text-cream/40">
@@ -902,6 +904,7 @@ function TaskDetailModal({
   const [showReflectDialog, setShowReflectDialog] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes ?? "");
+  const [startDate, setStartDate] = useState(task.startDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
   const [tagMode, setTagMode] = useState(task.tag && !tagOptions.includes(task.tag) ? CUSTOM_TAG_VALUE : (task.tag ?? NO_TAG_VALUE));
   const [customTag, setCustomTag] = useState(task.tag && !tagOptions.includes(task.tag) ? task.tag : "");
@@ -929,14 +932,25 @@ function TaskDetailModal({
 
   async function save() {
     if (!title.trim()) return;
-    await db.todoTasks.update(task.id, {
+    const updates: Partial<TodoTask> = {
       title: title.trim(),
       notes: notes.trim() || undefined,
+      startDate: startDate || undefined,
       dueDate: dueDate || undefined,
       tag: resolveTag(),
       customer: resolveCustomer(),
       recurrence: recurrenceEnabled ? recurrence : undefined,
-    });
+    };
+    // 期日を今日にした場合はマイデイに自動反映する
+    if (dueDate === today) {
+      updates.myDayDate = today;
+    }
+    // 開始日(優先)または期日が設定されていれば、リスト内で日付順の位置に並べ替える
+    const sortDate = startDate || dueDate;
+    if (sortDate && !task.parentTaskId) {
+      updates.order = await computeDateOrderedPosition(task.listId, task.id, sortDate);
+    }
+    await db.todoTasks.update(task.id, updates);
     onClose();
   }
 
@@ -1024,6 +1038,21 @@ function TaskDetailModal({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-cream/60">開始日</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+          />
+          {startDate && (
+            <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setStartDate("")}>
+              クリア
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-cream/60">期日</label>
           <input
             type="date"
@@ -1037,6 +1066,9 @@ function TaskDetailModal({
             </button>
           )}
         </div>
+        <p className="text-[10px] text-cream/40">
+          開始日を設定した場合、リスト内の並び順は期日ではなく開始日が優先されます。
+        </p>
 
         <div className="flex flex-wrap gap-2">
           <button

@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
+import { adjustStopTimeForBreaks, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
 import { useSetting } from "@/lib/settings";
 import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
@@ -38,6 +39,8 @@ export default function TodaySection() {
   const provisionalEnabled = provisionalEnabledStr === "true";
   const [provisionalNotifyEnabledStr] = useSetting("today.provisionalNotifyEnabled", "true");
   const provisionalNotifyEnabled = provisionalNotifyEnabledStr === "true";
+  const [breakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
+  const breakRanges = useMemo(() => parseBreakRanges(breakRangesStr), [breakRangesStr]);
   const provisionalNotifiedAtRef = useRef<number | null>(null);
   const [emphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
@@ -160,6 +163,13 @@ export default function TodaySection() {
     return stops.length > 0 ? Math.max(...stops) : null;
   }, [tasks]);
 
+  // 休憩などの除外時間帯を差し引いた「実質的な」直近停止時刻。未計測の自動開始や
+  // 「さかのぼって開始/再開」で使う起点はこちらを使い、休憩時間を計測対象から除く
+  const effectiveLastStopTime = useMemo(() => {
+    if (lastStopTime === null) return null;
+    return adjustStopTimeForBreaks(lastStopTime, now, date, breakRanges);
+  }, [lastStopTime, now, date, breakRanges]);
+
   // 未割り当ての仮計測タスク（未計測時間が閾値を超えた際に自動生成される）
   const provisionalTask = useMemo(() => tasks?.find((t) => t.isProvisional) ?? null, [tasks]);
   // トラブル対応などで仮計測自体が一時停止中の場合は「計測中」ではないため、
@@ -191,15 +201,17 @@ export default function TodaySection() {
     return ids;
   }, [tasks]);
 
-  // 誰も計測していない状態が閾値を超えたら、自動で仮計測タスクを立ち上げる（オフの場合は何もしない）
+  // 誰も計測していない状態が閾値を超えたら、自動で仮計測タスクを立ち上げる（オフの場合は何もしない）。
+  // 除外時間帯（休憩など）の最中は開始せず、起点も休憩時間を除いた実質的な停止時刻を使う
   useEffect(() => {
     if (!provisionalEnabled) return;
     if (!tasks) return;
     if (tasks.some((t) => t.isProvisional)) return;
     if (tasks.some((t) => t.status === "running")) return;
-    if (lastStopTime === null) return;
-    if (now - lastStopTime < thresholdMinutes * 60000) return;
-    const gapStart = lastStopTime;
+    if (effectiveLastStopTime === null) return;
+    if (isWithinBreak(now, date, breakRanges)) return;
+    if (now - effectiveLastStopTime < thresholdMinutes * 60000) return;
+    const gapStart = effectiveLastStopTime;
     (async () => {
       const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
       const task: DailyTask = {
@@ -218,7 +230,7 @@ export default function TodaySection() {
       };
       await db.dailyTasks.add(task);
     })();
-  }, [provisionalEnabled, tasks, now, lastStopTime, thresholdMinutes, date]);
+  }, [provisionalEnabled, tasks, now, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
 
   // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する
   // （オフの場合や、トラブル対応などで一時停止中の場合は何もしない）
@@ -664,11 +676,11 @@ export default function TodaySection() {
                         >
                           開始
                         </button>
-                        {lastStopTime && (
+                        {effectiveLastStopTime && (
                           <button
                             className="btn-pill-outline text-xs"
                             disabled={controlsDisabled || duplicateRunning}
-                            onClick={() => startTask(task, lastStopTime)}
+                            onClick={() => startTask(task, effectiveLastStopTime)}
                           >
                             さかのぼって開始
                           </button>
@@ -701,11 +713,11 @@ export default function TodaySection() {
                         >
                           再開
                         </button>
-                        {lastStopTime && (
+                        {effectiveLastStopTime && (
                           <button
                             className="btn-pill-outline text-xs"
                             disabled={controlsDisabled || duplicateRunning}
-                            onClick={() => startTask(task, lastStopTime)}
+                            onClick={() => startTask(task, effectiveLastStopTime)}
                           >
                             さかのぼって再開
                           </button>
