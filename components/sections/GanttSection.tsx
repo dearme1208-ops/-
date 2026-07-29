@@ -12,6 +12,8 @@ const MAX_PX_PER_MIN = 24;
 const ROW_H_OVERLAP = 46;
 const ROW_H_STACKED = 64;
 const DAY_MINUTES = 24 * 60;
+// 1本化表示で隣り合う別々のバーが視覚的に1本に繋がって見えないよう、間に隙間を空ける
+const COMPACT_BAR_GAP_PX = 2;
 
 type RangeMode = "auto" | "24h";
 
@@ -316,6 +318,9 @@ export default function GanttSection() {
                     const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
                     const planEndMin = r.scheduledStartMin + r.task.estimatedSeconds / 60;
                     const planEndLabel = formatClock(timelineBase + planEndMin * 60000);
+                    const gapLeft = planLeft + COMPACT_BAR_GAP_PX / 2;
+                    const gapPredWidth = Math.max(predWidth - COMPACT_BAR_GAP_PX, 3);
+                    const gapPlanWidth = Math.max(planWidth - COMPACT_BAR_GAP_PX, 3);
                     return (
                       <div key={`plan-${r.task.id}`} className="absolute left-0 right-0" style={{ top: 0, height: ROW_H }}>
                         <div
@@ -326,11 +331,11 @@ export default function GanttSection() {
                         </div>
                         <div
                           className="absolute rounded border border-dashed border-cream/50"
-                          style={{ left: planLeft, width: predWidth, top: 14, height: 20 }}
+                          style={{ left: gapLeft, width: gapPredWidth, top: 14, height: 20 }}
                         />
                         <div
                           className="absolute rounded bg-cream/70"
-                          style={{ left: planLeft, width: planWidth, top: 14, height: 20 }}
+                          style={{ left: gapLeft, width: gapPlanWidth, top: 14, height: 20 }}
                           title={`${r.task.name} 予定 ${formatHms(r.task.estimatedSeconds)}`}
                         />
                         <div
@@ -349,6 +354,8 @@ export default function GanttSection() {
                     const actualWidth = Math.max((iv.end - iv.start) * pxPerMin, 3);
                     const actualEndLabel = formatClock(timelineBase + iv.end * 60000);
                     const label = iv.name;
+                    const gapLeft = actualLeft + COMPACT_BAR_GAP_PX / 2;
+                    const gapWidth = Math.max(actualWidth - COMPACT_BAR_GAP_PX, 3);
                     return (
                       <div key={`actual-${idx}`} className="absolute left-0 right-0" style={{ top: ROW_H, height: ROW_H }}>
                         <div
@@ -360,8 +367,8 @@ export default function GanttSection() {
                         <div
                           className={`absolute rounded ${iv.overPlan ? "bg-alert" : "bg-cream"} opacity-90`}
                           style={{
-                            left: actualLeft,
-                            width: actualWidth,
+                            left: gapLeft,
+                            width: gapWidth,
                             top: 14,
                             height: 20,
                             boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
