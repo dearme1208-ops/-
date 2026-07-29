@@ -1,0 +1,185 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db";
+import { useSetting } from "@/lib/settings";
+import { breakdownByCategory, breakdownByProject, computeMonthlyOvertime, formatHoursJp } from "@/lib/overtime";
+import RankingBarChart from "@/components/charts/RankingBarChart";
+
+type BreakdownMode = "category" | "project";
+
+export default function OvertimeSection() {
+  const [standardHoursStr, setStandardHoursStr] = useSetting("overtime.standardDailyHours", "8");
+  const standardDailySeconds = Math.max(0, Number(standardHoursStr) || 0) * 3600;
+
+  const records = useLiveQuery(() => db.records.toArray(), []);
+  const projects = useLiveQuery(() => db.projects.toArray(), []);
+  const settings = useLiveQuery(() => db.settings.toArray(), []);
+
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>("category");
+
+  const projectTitleById = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.title])), [projects]);
+
+  const manualOverrides = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of settings ?? []) {
+      if (s.key.startsWith("overtime.manual.")) {
+        const month = s.key.slice("overtime.manual.".length);
+        const v = Number(s.value);
+        if (!Number.isNaN(v)) map.set(month, v);
+      }
+    }
+    return map;
+  }, [settings]);
+
+  const monthlyMap = useMemo(
+    () => computeMonthlyOvertime(records ?? [], standardDailySeconds),
+    [records, standardDailySeconds]
+  );
+
+  const months = useMemo(() => {
+    const set = new Set<string>([...monthlyMap.keys(), ...manualOverrides.keys()]);
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [monthlyMap, manualOverrides]);
+
+  const currentMonth = selectedMonth ?? months[0] ?? null;
+
+  const currentMonthRecords = useMemo(() => {
+    if (!currentMonth) return [];
+    return (records ?? []).filter((r) => r.date.startsWith(currentMonth));
+  }, [records, currentMonth]);
+
+  const breakdownRows = useMemo(() => {
+    return breakdownMode === "category"
+      ? breakdownByCategory(currentMonthRecords)
+      : breakdownByProject(currentMonthRecords, projectTitleById);
+  }, [currentMonthRecords, breakdownMode, projectTitleById]);
+
+  async function saveManualOverride(month: string, hoursStr: string) {
+    const key = `overtime.manual.${month}`;
+    if (hoursStr.trim() === "") {
+      await db.settings.delete(key);
+      return;
+    }
+    const v = Number(hoursStr);
+    if (Number.isNaN(v)) return;
+    await db.settings.put({ key, value: String(v) });
+  }
+
+  function monthLabel(month: string): { year: string; m: string } {
+    const [y, m] = month.split("-");
+    return { year: y, m: String(Number(m)) };
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="font-display text-lg font-bold">残業分析</h2>
+
+      <div className="panel flex flex-wrap items-center gap-2 p-4">
+        <label className="text-xs text-cream/60">1日の所定労働時間</label>
+        <input
+          type="number"
+          min={0}
+          step={0.5}
+          value={standardHoursStr}
+          onChange={(e) => setStandardHoursStr(e.target.value)}
+          className="w-16 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-sm text-cream"
+        />
+        <span className="text-xs text-cream/60">時間</span>
+        <p className="ml-2 text-xs text-cream/40">
+          概算残業は、実績（作業記録）から日ごとにこの時間を超えた分を積み上げて計算します。実際の残業時間が分かる場合は「手入力残業」に入力すると、そちらが優先して表示されます。
+        </p>
+      </div>
+
+      <div className="panel overflow-x-auto p-0">
+        <table className="w-full min-w-[560px] text-sm">
+          <thead>
+            <tr className="border-b border-cream/10 text-xs text-cream/50">
+              <th className="px-3 py-2 text-left">対象年</th>
+              <th className="px-3 py-2 text-left">対象月</th>
+              <th className="px-3 py-2 text-right">実績合計</th>
+              <th className="px-3 py-2 text-right">概算残業（自動）</th>
+              <th className="px-3 py-2 text-right">手入力残業</th>
+            </tr>
+          </thead>
+          <tbody>
+            {months.map((month) => {
+              const row = monthlyMap.get(month);
+              const { year, m } = monthLabel(month);
+              const manual = manualOverrides.get(month);
+              const isSelected = month === currentMonth;
+              return (
+                <tr
+                  key={month}
+                  onClick={() => setSelectedMonth(month)}
+                  className={`cursor-pointer border-b border-cream/5 ${
+                    isSelected ? "bg-cream/10" : "hover:bg-cream/5"
+                  }`}
+                >
+                  <td className="px-3 py-2">{year} 年</td>
+                  <td className="px-3 py-2">{m} 月</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-cream/70">
+                    {row ? formatHoursJp(row.totalTrackedSeconds) : "-"}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-cream/70">
+                    {row ? formatHoursJp(row.autoOvertimeSeconds) : "-"}
+                  </td>
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      defaultValue={manual ?? ""}
+                      placeholder="未入力"
+                      onBlur={(e) => saveManualOverride(month, e.target.value)}
+                      className="w-20 rounded-lg border border-cream/20 bg-ink px-2 py-1 text-right text-sm text-cream"
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+            {months.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-sm text-cream/50">
+                  実績データがありません。
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {currentMonth && (
+        <div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-display text-base font-bold">
+              {monthLabel(currentMonth).year}年{monthLabel(currentMonth).m}月の内訳
+            </h3>
+            <div className="flex gap-2">
+              <button
+                className={breakdownMode === "category" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setBreakdownMode("category")}
+              >
+                業務区分別
+              </button>
+              <button
+                className={breakdownMode === "project" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setBreakdownMode("project")}
+              >
+                案件別
+              </button>
+            </div>
+          </div>
+          <div className="panel p-4">
+            <RankingBarChart
+              data={breakdownRows.map((r) => ({ label: r.label, value: r.seconds }))}
+              formatValue={formatHoursJp}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

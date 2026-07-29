@@ -23,6 +23,7 @@ const AttentionSection = dynamic(() => import("@/components/sections/AttentionSe
 const ReportSection = dynamic(() => import("@/components/sections/ReportSection"), { ssr: false });
 const RecordsSection = dynamic(() => import("@/components/sections/RecordsSection"), { ssr: false });
 const SettingsSection = dynamic(() => import("@/components/sections/SettingsSection"), { ssr: false });
+const OvertimeSection = dynamic(() => import("@/components/sections/OvertimeSection"), { ssr: false });
 
 const TABS: TabDef[] = [
   { key: "today", label: "本日の作業" },
@@ -35,6 +36,7 @@ const TABS: TabDef[] = [
   { key: "charts", label: "グラフ" },
   { key: "heatmap", label: "ヒートマップ" },
   { key: "attention", label: "要注意リスト" },
+  { key: "overtime", label: "残業分析" },
   { key: "report", label: "週報・月報" },
   { key: "records", label: "実績編集" },
   { key: "settings", label: "設定" },
@@ -92,6 +94,7 @@ export default function HomePage() {
       {active === "charts" && <ChartsSection />}
       {active === "heatmap" && <HeatmapSection />}
       {active === "attention" && <AttentionSection />}
+      {active === "overtime" && <OvertimeSection />}
       {active === "report" && <ReportSection />}
       {active === "records" && <RecordsSection />}
       {active === "settings" && <SettingsSection />}
