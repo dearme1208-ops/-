@@ -38,6 +38,11 @@ const MIN_LABEL_SPACING_PX = 50;
 type ViewKey = "myday" | "important" | "planned" | `list:${string}`;
 type DisplayMode = "list" | "gantt" | "calendar";
 
+// スキームなしで貼られたURL（例: example.com）もリンクボタンから開けるよう補う
+function normalizeUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
 export default function TodoSection() {
   const [view, setView] = useState<ViewKey>("myday");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("list");
@@ -908,6 +913,16 @@ function TaskRow({
           )}
         </div>
       </button>
+      {task.url && (
+        <button
+          onClick={() => window.open(normalizeUrl(task.url!), "_blank", "noopener,noreferrer")}
+          aria-label="リンクを開く"
+          title={task.url}
+          className="shrink-0 text-lg text-cream/50 hover:text-cream"
+        >
+          🔗
+        </button>
+      )}
       <button onClick={onToggleImportant} aria-label="重要" className="shrink-0 text-lg">
         {task.important ? <span className="text-alert">★</span> : <span className="text-cream/30">☆</span>}
       </button>
@@ -939,6 +954,7 @@ function TaskDetailModal({
   const [showReflectDialog, setShowReflectDialog] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [action, setAction] = useState(task.action ?? "");
+  const [url, setUrl] = useState(task.url ?? "");
   const [notes, setNotes] = useState(task.notes ?? "");
   const [startDate, setStartDate] = useState(task.startDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
@@ -971,6 +987,7 @@ function TaskDetailModal({
     const updates: Partial<TodoTask> = {
       title: title.trim(),
       action: action.trim() || undefined,
+      url: url.trim() || undefined,
       notes: notes.trim() || undefined,
       startDate: startDate || undefined,
       dueDate: dueDate || undefined,
@@ -1034,6 +1051,24 @@ function TaskDetailModal({
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           placeholder="アクション（次にすべき行動）"
         />
+
+        <div className="flex items-center gap-2">
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            placeholder="URL（一覧のリンクボタンから開けます）"
+          />
+          {url.trim() && (
+            <button
+              onClick={() => window.open(normalizeUrl(url.trim()), "_blank", "noopener,noreferrer")}
+              aria-label="リンクを開く"
+              className="shrink-0 text-lg text-cream/50 hover:text-cream"
+            >
+              🔗
+            </button>
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-cream/60">タグ</label>
