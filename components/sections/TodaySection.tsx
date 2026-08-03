@@ -49,6 +49,7 @@ export default function TodaySection() {
   const emphasizeRunning = emphasizeRunningStr === "true";
   const [provisionalIdleHoursStr] = useSetting("today.provisionalIdleThresholdHours", "3");
   const provisionalIdleMs = Math.max(0.5, Number(provisionalIdleHoursStr) || 3) * 3600000;
+  const [masterEditMode] = useSetting("records.masterEditMode", "relink");
   // 直近でマウス/キーボード操作があった時刻。放置検知で未計測を打ち切る起点に使う
   const lastActivityRef = useRef(Date.now());
   const idleFinishInFlightRef = useRef(false);
@@ -403,6 +404,102 @@ export default function TodaySection() {
     setPendingStart(null);
   }
 
+  // 作業内容の編集を保存する。完了済み(done)の場合は、既に作成済みの実績(WorkRecord)にも反映する。
+  // 同じ区分/作業名の実績は日付ごとに1件へ合算されているため、実績時間の変更は差分(delta)を
+  // その実績にそのまま加減することで、他の作業から合算された分にも影響を与えず正しく反映できる。
+  // 区分/作業名の変更は設定(records.masterEditMode)に従い、マスタ自体をリネームするか、
+  // 別マスタ(既存 or 新規)に実績ごと繋ぎ変える
+  async function applyTaskEdit(task: DailyTask, category: string, name: string, actualSeconds?: number) {
+    const renamed = category !== task.category || name !== task.name;
+
+    if (task.status !== "done") {
+      await db.dailyTasks.update(task.id, {
+        category,
+        name,
+        ...(renamed ? { masterTaskId: undefined } : {}),
+      });
+      return;
+    }
+
+    const oldSeconds = Math.round(task.accumulatedMs / 1000);
+    const newSeconds = actualSeconds ?? oldSeconds;
+    const delta = newSeconds - oldSeconds;
+
+    const taskUpdates: Partial<DailyTask> = { category, name };
+    if (delta !== 0) {
+      const lastEnd = (task.segments[task.segments.length - 1]?.end ?? task.endedAt ?? Date.now()) + delta * 1000;
+      taskUpdates.accumulatedMs = newSeconds * 1000;
+      taskUpdates.segments = task.segments.map((s, i) =>
+        i === task.segments.length - 1 ? { ...s, end: lastEnd } : s
+      );
+      taskUpdates.endedAt = lastEnd;
+    }
+
+    const oldMasterId = task.masterTaskId;
+    const existingOld = oldMasterId
+      ? await db.records
+          .where("date")
+          .equals(task.date)
+          .filter((r) => r.masterTaskId === oldMasterId && r.projectId === task.projectId)
+          .first()
+      : undefined;
+
+    if (!renamed) {
+      if (delta !== 0 && existingOld) {
+        await db.records.update(existingOld.id, { seconds: Math.max(0, existingOld.seconds + delta) });
+      }
+      await db.dailyTasks.update(task.id, taskUpdates);
+      if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
+      return;
+    }
+
+    if (masterEditMode === "rename") {
+      if (oldMasterId) {
+        await db.masterTasks.update(oldMasterId, { category, name, updatedAt: Date.now() });
+      }
+      if (delta !== 0 && existingOld) {
+        await db.records.update(existingOld.id, { seconds: Math.max(0, existingOld.seconds + delta) });
+      }
+      await db.dailyTasks.update(task.id, taskUpdates);
+      if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
+      return;
+    }
+
+    // relink: 実績ごと別マスタ(既存 or 新規)へ繋ぎ変える
+    const newMaster = await findOrCreateMasterTask(category, name, task.estimatedSeconds);
+    const newEndedAt = taskUpdates.endedAt ?? task.endedAt ?? Date.now();
+    if (existingOld) {
+      const remaining = existingOld.seconds - oldSeconds;
+      if (remaining <= 0) await db.records.delete(existingOld.id);
+      else await db.records.update(existingOld.id, { seconds: remaining });
+    }
+    const existingNew = await db.records
+      .where("date")
+      .equals(task.date)
+      .filter((r) => r.masterTaskId === newMaster.id && r.projectId === task.projectId)
+      .first();
+    if (existingNew) {
+      await db.records.update(existingNew.id, { seconds: existingNew.seconds + newSeconds, endedAt: newEndedAt });
+    } else {
+      await db.records.add({
+        id: uid(),
+        date: task.date,
+        category,
+        name,
+        masterTaskId: newMaster.id,
+        seconds: newSeconds,
+        startedAt: task.startedAt ?? Date.now(),
+        endedAt: newEndedAt,
+        excludedFromStats: false,
+        projectId: task.projectId,
+      });
+    }
+    taskUpdates.masterTaskId = newMaster.id;
+    await db.dailyTasks.update(task.id, taskUpdates);
+    if (oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
+    await recomputeEstimateFromRecords(newMaster.id);
+  }
+
   async function deleteTask(task: DailyTask) {
     if (!confirm(`「${task.name}」を本日の作業リストから削除しますか?`)) return;
     await db.dailyTasks.delete(task.id);
@@ -703,23 +800,21 @@ export default function TodaySection() {
                       {task.category} {task.isSpontaneous && <span className="ml-1 text-alert">突発</span>}
                       {isNext && task.status === "pending" && <span className="ml-2 text-cream">▶ 次の作業</span>}
                     </span>
+                    <button
+                      onClick={() => setEditingTask(task)}
+                      className="text-cream/40 hover:text-cream"
+                      aria-label="編集"
+                    >
+                      ✎
+                    </button>
                     {task.status !== "done" && (
-                      <>
-                        <button
-                          onClick={() => setEditingTask(task)}
-                          className="text-cream/40 hover:text-cream"
-                          aria-label="編集"
-                        >
-                          ✎
-                        </button>
-                        <button
-                          onClick={() => deleteTask(task)}
-                          className="text-cream/40 hover:text-alert"
-                          aria-label="削除"
-                        >
-                          ✕
-                        </button>
-                      </>
+                      <button
+                        onClick={() => deleteTask(task)}
+                        className="text-cream/40 hover:text-alert"
+                        aria-label="削除"
+                      >
+                        ✕
+                      </button>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -869,7 +964,13 @@ export default function TodaySection() {
         </Modal>
       )}
 
-      {editingTask && <EditTaskDialog task={editingTask} onClose={() => setEditingTask(null)} />}
+      {editingTask && (
+        <EditTaskDialog
+          task={editingTask}
+          onSave={(category, name, actualSeconds) => applyTaskEdit(editingTask, category, name, actualSeconds)}
+          onClose={() => setEditingTask(null)}
+        />
+      )}
 
       {manualFinishTask && (
         <ManualFinishDialog
