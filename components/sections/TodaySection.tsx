@@ -37,7 +37,9 @@ export default function TodaySection() {
     { category: string; name: string; estimatedSeconds: number; masterTaskId: string | undefined } | null
   >(null);
   const [thresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
-  const thresholdMinutes = Math.max(1, Number(thresholdMinutesStr) || 5);
+  // "0" は「無操作を検知し次第すぐ開始」を意味する有効な値なので、falsyでも5分にフォールバックしない
+  const thresholdMinutesNum = Number(thresholdMinutesStr);
+  const thresholdMinutes = Number.isFinite(thresholdMinutesNum) ? Math.max(0, thresholdMinutesNum) : 5;
   const [provisionalEnabledStr] = useSetting("today.provisionalEnabled", "false");
   const provisionalEnabled = provisionalEnabledStr === "true";
   const [provisionalNotifyEnabledStr] = useSetting("today.provisionalNotifyEnabled", "true");

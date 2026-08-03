@@ -52,7 +52,7 @@ export default function SettingsSection() {
             <span>未計測が</span>
             <input
               type="number"
-              min={1}
+              min={0}
               value={thresholdMinutesStr}
               onChange={(e) => setThresholdMinutesStr(e.target.value)}
               className="w-14 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
