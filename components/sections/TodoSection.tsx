@@ -16,6 +16,7 @@ import { db, uid } from "@/lib/db";
 import { computeDateOrderedPosition, computeNextDueDate, DEFAULT_TAG_PRESETS, effectiveDueDate, upsertTodoFromCsv } from "@/lib/todo";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
+import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, todayStr, formatDateJp } from "@/lib/time";
 import type { ProjectItem, RecurrenceRule, RecurrenceType, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
@@ -26,7 +27,6 @@ import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
 const NO_TAG_VALUE = "";
-const DEFAULT_NEW_TASK_TAG = "対応中";
 const CUSTOM_CUSTOMER_VALUE = "__custom__";
 const NO_CUSTOMER_VALUE = "";
 
@@ -51,7 +51,7 @@ export default function TodoSection() {
   const [newListTitle, setNewListTitle] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskAction, setNewTaskAction] = useState("");
-  const [newTaskTagMode, setNewTaskTagMode] = useState<string>(DEFAULT_NEW_TASK_TAG);
+  const [newTaskTagMode, setNewTaskTagMode] = useState<string>(NO_TAG_VALUE);
   const [newTaskCustomTag, setNewTaskCustomTag] = useState("");
   const [newTaskCustomerMode, setNewTaskCustomerMode] = useState<string>(NO_CUSTOMER_VALUE);
   const [newTaskCustomCustomer, setNewTaskCustomCustomer] = useState("");
@@ -65,6 +65,8 @@ export default function TodoSection() {
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // このタグが選択されたタスクは自動的に重要にする（設定タブで変更可能。空なら無効）
+  const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
 
   const today = todayStr();
 
@@ -245,8 +247,8 @@ export default function TodoSection() {
       action: newTaskAction.trim() || undefined,
       tag,
       customer: resolveCustomer(newTaskCustomerMode, newTaskCustomCustomer),
-      // タグが選択されていれば自動的に重要にする（無選択の場合のみ、閲覧中のビューに従う）
-      important: view === "important" || tag !== undefined,
+      // 設定で指定したタグが選択されていれば自動的に重要にする（それ以外は閲覧中のビューに従う）
+      important: view === "important" || (!!autoImportantTag && tag === autoImportantTag),
       completed: false,
       order: count,
       createdAt: Date.now(),
@@ -255,7 +257,7 @@ export default function TodoSection() {
     await db.todoTasks.add(task);
     setNewTaskTitle("");
     setNewTaskAction("");
-    setNewTaskTagMode(DEFAULT_NEW_TASK_TAG);
+    setNewTaskTagMode(NO_TAG_VALUE);
     setNewTaskCustomTag("");
     setNewTaskCustomerMode(NO_CUSTOMER_VALUE);
     setNewTaskCustomCustomer("");
@@ -876,6 +878,7 @@ function TaskRow({
   onOpenDetail: () => void;
 }) {
   const today = todayStr();
+  const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const dueDate = effectiveDueDate(task, subtasks);
   const overdue = !task.completed && !!dueDate && dueDate < today;
   const doneCount = subtasks.filter((s) => s.completed).length;
@@ -898,7 +901,7 @@ function TaskRow({
           {task.tag && (
             <span
               className={`rounded-full border px-1.5 py-0.5 text-[10px] ${
-                task.tag === "対応中"
+                !!autoImportantTag && task.tag === autoImportantTag
                   ? "border-alert/50 bg-alert/15 font-bold text-alert"
                   : "border-cream/30 text-cream/80"
               }`}
@@ -974,6 +977,7 @@ function TaskDetailModal({
   onDelete: () => void;
   onReflectToProject: (category: string, workName: string) => void;
 }) {
+  const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [showReflectDialog, setShowReflectDialog] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [action, setAction] = useState(task.action ?? "");
@@ -1019,8 +1023,8 @@ function TaskDetailModal({
       customer: resolveCustomer(),
       recurrence: recurrenceEnabled ? recurrence : undefined,
     };
-    // タグが選択されていれば自動的に重要にする（タグを外しても重要フラグは自動では解除しない）
-    if (tag !== undefined) {
+    // 設定で指定したタグが選択されていれば自動的に重要にする（タグを外しても重要フラグは自動では解除しない）
+    if (autoImportantTag && tag === autoImportantTag) {
       updates.important = true;
     }
     // 期日を今日にした場合はマイデイに自動反映する

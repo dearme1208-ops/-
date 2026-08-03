@@ -2,6 +2,7 @@
 
 import { useSetting } from "@/lib/settings";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
+import { DEFAULT_TAG_PRESETS } from "@/lib/todo";
 import type { BreakRange } from "@/lib/types";
 
 export default function SettingsSection() {
@@ -19,6 +20,7 @@ export default function SettingsSection() {
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
+  const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
 
   function addBreakRange() {
     setBreakRangesStr(serializeBreakRanges([...breakRanges, { start: "12:00", end: "13:00" }]));
@@ -152,6 +154,32 @@ export default function SettingsSection() {
           {masterEditModeStr === "rename"
             ? "この実績が紐づく作業マスタの名称・区分もそのまま書き換えます。同じマスタに紐づく他の日の実績の表示も一緒に変わります。"
             : "新しい名称・区分の作業マスタが既にあればそこに繋ぎ変え、なければ新規作成して繋ぎ変えます。元のマスタや、それに紐づく他の実績には影響しません。"}
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">ToDoのタグによる自動重要化</h3>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={!autoImportantTag ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setAutoImportantTag("")}
+          >
+            なし
+          </button>
+          {DEFAULT_TAG_PRESETS.map((t) => (
+            <button
+              key={t}
+              className={autoImportantTag === t ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setAutoImportantTag(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-cream/50">
+          {autoImportantTag
+            ? `ToDoのタスク登録・編集時にタグ「${autoImportantTag}」を選ぶと、自動的に★重要にします（タグを外しても重要フラグは自動では解除しません）。`
+            : "自動重要化は無効です。タグを選んでも★重要は自動では変わりません。"}
         </p>
       </div>
     </div>
