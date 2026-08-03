@@ -26,6 +26,7 @@ import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
 const NO_TAG_VALUE = "";
+const DEFAULT_NEW_TASK_TAG = "対応中";
 const CUSTOM_CUSTOMER_VALUE = "__custom__";
 const NO_CUSTOMER_VALUE = "";
 
@@ -50,7 +51,7 @@ export default function TodoSection() {
   const [newListTitle, setNewListTitle] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskAction, setNewTaskAction] = useState("");
-  const [newTaskTagMode, setNewTaskTagMode] = useState<string>(NO_TAG_VALUE);
+  const [newTaskTagMode, setNewTaskTagMode] = useState<string>(DEFAULT_NEW_TASK_TAG);
   const [newTaskCustomTag, setNewTaskCustomTag] = useState("");
   const [newTaskCustomerMode, setNewTaskCustomerMode] = useState<string>(NO_CUSTOMER_VALUE);
   const [newTaskCustomCustomer, setNewTaskCustomCustomer] = useState("");
@@ -236,14 +237,16 @@ export default function TodoSection() {
     const targetListId = currentListId ?? lists?.[0]?.id;
     if (!targetListId) return;
     const count = (allTasks ?? []).filter((t) => t.listId === targetListId && !t.parentTaskId).length;
+    const tag = resolveTag(newTaskTagMode, newTaskCustomTag);
     const task: TodoTask = {
       id: uid(),
       listId: targetListId,
       title: newTaskTitle.trim(),
       action: newTaskAction.trim() || undefined,
-      tag: resolveTag(newTaskTagMode, newTaskCustomTag),
+      tag,
       customer: resolveCustomer(newTaskCustomerMode, newTaskCustomCustomer),
-      important: view === "important",
+      // タグが選択されていれば自動的に重要にする（無選択の場合のみ、閲覧中のビューに従う）
+      important: view === "important" || tag !== undefined,
       completed: false,
       order: count,
       createdAt: Date.now(),
@@ -252,7 +255,7 @@ export default function TodoSection() {
     await db.todoTasks.add(task);
     setNewTaskTitle("");
     setNewTaskAction("");
-    setNewTaskTagMode(NO_TAG_VALUE);
+    setNewTaskTagMode(DEFAULT_NEW_TASK_TAG);
     setNewTaskCustomTag("");
     setNewTaskCustomerMode(NO_CUSTOMER_VALUE);
     setNewTaskCustomCustomer("");
@@ -893,7 +896,13 @@ function TaskRow({
             <span className="rounded-full bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/40">{listTitle}</span>
           )}
           {task.tag && (
-            <span className="rounded-full border border-cream/30 px-1.5 py-0.5 text-[10px] text-cream/70">
+            <span
+              className={`rounded-full border px-1.5 py-0.5 text-[10px] ${
+                task.tag === "対応中"
+                  ? "border-alert/50 bg-alert/15 font-bold text-alert"
+                  : "border-cream/30 text-cream/80"
+              }`}
+            >
               {task.tag}
             </span>
           )}
@@ -998,6 +1007,7 @@ function TaskDetailModal({
 
   async function save() {
     if (!title.trim()) return;
+    const tag = resolveTag();
     const updates: Partial<TodoTask> = {
       title: title.trim(),
       action: action.trim() || undefined,
@@ -1005,10 +1015,14 @@ function TaskDetailModal({
       notes: notes.trim() || undefined,
       startDate: startDate || undefined,
       dueDate: dueDate || undefined,
-      tag: resolveTag(),
+      tag,
       customer: resolveCustomer(),
       recurrence: recurrenceEnabled ? recurrence : undefined,
     };
+    // タグが選択されていれば自動的に重要にする（タグを外しても重要フラグは自動では解除しない）
+    if (tag !== undefined) {
+      updates.important = true;
+    }
     // 期日を今日にした場合はマイデイに自動反映する
     if (dueDate === today) {
       updates.myDayDate = today;
