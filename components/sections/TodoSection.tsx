@@ -121,6 +121,20 @@ export default function TodoSection() {
 
   const topLevelTasks = useMemo(() => (allTasks ?? []).filter((t) => !t.parentTaskId), [allTasks]);
 
+  // 期日（サブタスクの期日を含む）が本日になったタスクは、繰り返しの有無に関わらず自動的にマイデイへ反映する
+  useEffect(() => {
+    if (!allTasks) return;
+    const toAdd = topLevelTasks.filter(
+      (t) => !t.completed && t.myDayDate !== today && effectiveDueDate(t, subtasksByParent.get(t.id) ?? []) === today
+    );
+    if (toAdd.length === 0) return;
+    db.transaction("rw", db.todoTasks, async () => {
+      for (const t of toAdd) {
+        await db.todoTasks.update(t.id, { myDayDate: today });
+      }
+    });
+  }, [allTasks, topLevelTasks, subtasksByParent, today]);
+
   const currentListId = view.startsWith("list:") ? view.slice(5) : null;
 
   const searchActive = searchQuery.trim() !== "" || filterTag !== "" || filterCustomer !== "";
