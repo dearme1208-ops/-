@@ -33,6 +33,9 @@ export default function TodaySection() {
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
+  const [pendingStart, setPendingStart] = useState<
+    { category: string; name: string; estimatedSeconds: number; masterTaskId: string | undefined } | null
+  >(null);
   const [thresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
   const thresholdMinutes = Math.max(1, Number(thresholdMinutesStr) || 5);
   const [provisionalEnabledStr] = useSetting("today.provisionalEnabled", "false");
@@ -342,6 +345,64 @@ export default function TodaySection() {
     });
   }
 
+  async function insertRunningTask(
+    category: string,
+    name: string,
+    estimatedSeconds: number,
+    masterTaskId: string | undefined,
+    startAt: number
+  ) {
+    const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
+    const task: DailyTask = {
+      id: uid(),
+      date,
+      order: count,
+      masterTaskId,
+      category,
+      name,
+      estimatedSeconds,
+      status: "running",
+      segments: [{ start: startAt }],
+      accumulatedMs: 0,
+      startedAt: startAt,
+      isSpontaneous: true,
+    };
+    await db.dailyTasks.add(task);
+  }
+
+  // 新規作業（突発作業の追加・お気に入り）をすぐ開始しようとした際、未計測(仮計測)が
+  // 計測中なら二重に計測が進行してしまうため、先に判断を仰ぐ
+  function requestStartNew(category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) {
+    if (provisionalActive) {
+      setPendingStart({ category, name, estimatedSeconds, masterTaskId });
+      return;
+    }
+    insertRunningTask(category, name, estimatedSeconds, masterTaskId, Date.now());
+  }
+
+  // 未計測(仮計測)分を、これから開始する作業に合算する（未計測の開始時刻からそのまま続けて計測）
+  async function resolvePendingStartMerge() {
+    if (!pendingStart || !provisionalTask) return;
+    const provisionalId = provisionalTask.id;
+    const mergeStartAt = provisionalTask.startedAt ?? Date.now();
+    await db.transaction("rw", db.dailyTasks, async () => {
+      await insertRunningTask(pendingStart.category, pendingStart.name, pendingStart.estimatedSeconds, pendingStart.masterTaskId, mergeStartAt);
+      await db.dailyTasks.delete(provisionalId);
+    });
+    setPendingStart(null);
+  }
+
+  // 未計測(仮計測)分は記録せずに打ち切り、これから開始する作業は今の時刻から新たに計測する
+  async function resolvePendingStartDiscard() {
+    if (!pendingStart || !provisionalTask) return;
+    const provisionalId = provisionalTask.id;
+    await db.transaction("rw", db.dailyTasks, async () => {
+      await insertRunningTask(pendingStart.category, pendingStart.name, pendingStart.estimatedSeconds, pendingStart.masterTaskId, Date.now());
+      await db.dailyTasks.delete(provisionalId);
+    });
+    setPendingStart(null);
+  }
+
   async function deleteTask(task: DailyTask) {
     if (!confirm(`「${task.name}」を本日の作業リストから削除しますか?`)) return;
     await db.dailyTasks.delete(task.id);
@@ -484,23 +545,7 @@ export default function TodaySection() {
     const master = await db.masterTasks.get(masterTaskId);
     if (!master) return;
     const estimatedSeconds = await computeRemainingEstimatedSeconds(date, master.category, master.name, master.estimatedSeconds);
-    const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
-    const id = uid();
-    const task: DailyTask = {
-      id,
-      date,
-      order: count,
-      masterTaskId: master.id,
-      category: master.category,
-      name: master.name,
-      estimatedSeconds,
-      status: "running",
-      segments: [{ start: Date.now() }],
-      accumulatedMs: 0,
-      startedAt: Date.now(),
-      isSpontaneous: true,
-    };
-    await db.dailyTasks.add(task);
+    requestStartNew(master.category, master.name, estimatedSeconds, master.id);
   }
 
   // 作業名を入力せずにすぐ計測を開始し、内容は後から編集する
@@ -795,7 +840,34 @@ export default function TodaySection() {
         })}
       </div>
 
-      {showAddDialog && <AddTaskDialog date={date} onClose={() => setShowAddDialog(false)} />}
+      {showAddDialog && (
+        <AddTaskDialog
+          date={date}
+          provisionalRunning={provisionalActive}
+          onRequestConflictStart={requestStartNew}
+          onClose={() => setShowAddDialog(false)}
+        />
+      )}
+
+      {pendingStart && provisionalTask && (
+        <Modal title="未計測(仮計測)が計測中です" onClose={() => setPendingStart(null)}>
+          <p className="mb-4 text-sm text-cream/80">
+            「{provisionalTask.category} / {provisionalTask.name}」として未計測の自動計測が現在進行中です。
+            このまま新しい作業を開始すると二重に計測されてしまいます。どうしますか？
+          </p>
+          <div className="flex flex-col gap-2">
+            <button className="btn-pill text-sm" onClick={resolvePendingStartMerge}>
+              今回の作業に合算する（未計測の開始時刻から続けて計測）
+            </button>
+            <button className="btn-pill-outline text-sm" onClick={resolvePendingStartDiscard}>
+              自動計測をやめる（未計測分は記録せず、今から計測開始）
+            </button>
+            <button className="text-xs text-cream/50" onClick={() => setPendingStart(null)}>
+              キャンセル
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {editingTask && <EditTaskDialog task={editingTask} onClose={() => setEditingTask(null)} />}
 

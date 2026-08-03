@@ -9,7 +9,17 @@ import type { DailyTask, MasterTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 
-export default function AddTaskDialog({ date, onClose }: { date: string; onClose: () => void }) {
+export default function AddTaskDialog({
+  date,
+  provisionalRunning,
+  onRequestConflictStart,
+  onClose,
+}: {
+  date: string;
+  provisionalRunning: boolean;
+  onRequestConflictStart: (category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) => void;
+  onClose: () => void;
+}) {
   const [mode, setMode] = useState<"master" | "free">("master");
   const [selectedMaster, setSelectedMaster] = useState<MasterTask | null>(null);
   const [category, setCategory] = useState("");
@@ -23,6 +33,13 @@ export default function AddTaskDialog({ date, onClose }: { date: string; onClose
     masterTaskId: string | undefined,
     start: boolean
   ) {
+    // 未計測(仮計測)が既に計測中の状態ですぐ開始しようとした場合、二重計測になって
+    // しまうため、ここでは追加せず、呼び出し元（本日タブ）に判断を委ねる
+    if (start && provisionalRunning) {
+      onRequestConflictStart(taskCategory, taskName, estimatedSeconds, masterTaskId);
+      onClose();
+      return;
+    }
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
     const now = Date.now();
     const task: DailyTask = {
