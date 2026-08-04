@@ -93,6 +93,8 @@ export interface ProjectItem {
   dueDate: string; // 期日 YYYY-MM-DD
   createdAt: number;
   completedAt?: number;
+  fromImport?: boolean; // CSVインポートで作成/更新された案件かどうか。次回インポートで
+  // 行が見当たらなくなった場合の自動完了判定はこのフラグが立っている案件だけに適用する
 }
 
 // ---- ToDo ----

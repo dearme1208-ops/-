@@ -32,6 +32,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
   const [showForm, setShowForm] = useState(true);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -68,9 +69,10 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
       setImportResult("");
       return;
     }
-    const { created, updated, skipped } = await upsertProjectsFromCsv(rows);
-    const skippedText = skipped > 0 ? `、${skipped}件を重複のためスキップしました（同じ客先・機種・期日の登録が既にあります）` : "";
-    setImportResult(`${created}件を新規追加、${updated}件を更新しました${skippedText}。`);
+    const { created, updated, autoCompleted } = await upsertProjectsFromCsv(rows);
+    const autoCompletedText =
+      autoCompleted > 0 ? `、${autoCompleted}件を今回のインポートに含まれなかったため自動的に完了にしました` : "";
+    setImportResult(`${created}件を新規追加、${updated}件を更新しました${autoCompletedText}。`);
   }
 
   async function addProject() {
@@ -148,6 +150,9 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     });
     return { rangeStartStr: start, totalDays: total, rows: computedRows };
   }, [projects, today]);
+
+  const activeRows = useMemo(() => rows.filter((r) => !r.project.completedAt), [rows]);
+  const completedRows = useMemo(() => rows.filter((r) => !!r.project.completedAt), [rows]);
 
   const todayIndex = daysBetweenDateStrs(rangeStartStr, today);
   const dayMarks = Array.from({ length: totalDays + 1 }, (_, i) => i);
@@ -246,41 +251,54 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
 
 
       <div className="panel divide-y divide-cream/10">
-        {rows.map(({ project, overdue, daysLeft }) => (
-          <div key={project.id} className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""}`}>
-            <div>
-              <div className="text-xs text-cream/50">
-                {project.title}
-                {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
-              </div>
-              <div className="text-sm text-cream">{project.workName}</div>
-              <div className={`text-xs ${overdue ? "text-alert font-bold" : "text-cream/60"}`}>
-                期日 {project.dueDate} {project.completedAt ? "（完了）" : overdue ? `（${-daysLeft}日超過）` : `（残り${daysLeft}日）`}
-              </div>
-              {(projectTotalSeconds.get(project.id) ?? 0) > 0 && (
-                <div className="text-xs text-cream/70">
-                  累計作業時間 <span className="font-bold tabular-nums text-cream">{formatHms(projectTotalSeconds.get(project.id)!)}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="btn-pill-outline text-xs" onClick={() => setAddToTodayTarget(project)}>
-                本日の作業に追加
-              </button>
-              <button className="btn-pill-outline text-xs" onClick={() => toggleComplete(project)}>
-                {project.completedAt ? "未完了に戻す" : "完了"}
-              </button>
-              <button className="text-xs text-cream/60 hover:text-cream" onClick={() => setEditingProject(project)}>
-                編集
-              </button>
-              <button className="text-xs text-alert" onClick={() => deleteProject(project)}>
-                削除
-              </button>
-            </div>
-          </div>
+        {activeRows.map(({ project, overdue, daysLeft }) => (
+          <ProjectRow
+            key={project.id}
+            project={project}
+            overdue={overdue}
+            daysLeft={daysLeft}
+            totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
+            onAddToToday={() => setAddToTodayTarget(project)}
+            onToggleComplete={() => toggleComplete(project)}
+            onEdit={() => setEditingProject(project)}
+            onDelete={() => deleteProject(project)}
+          />
         ))}
-        {rows.length === 0 && <p className="px-4 py-6 text-sm text-cream/50">案件はまだ登録されていません。</p>}
+        {activeRows.length === 0 && completedRows.length === 0 && (
+          <p className="px-4 py-6 text-sm text-cream/50">案件はまだ登録されていません。</p>
+        )}
+        {activeRows.length === 0 && completedRows.length > 0 && (
+          <p className="px-4 py-6 text-sm text-cream/50">未完了の案件はありません。</p>
+        )}
       </div>
+
+      {completedRows.length > 0 && (
+        <div>
+          <button
+            className="mb-2 text-xs text-cream/50 hover:text-cream/80"
+            onClick={() => setShowCompleted((v) => !v)}
+          >
+            {showCompleted ? "▼" : "▶"} 完了済み（{completedRows.length}）
+          </button>
+          {showCompleted && (
+            <div className="panel divide-y divide-cream/10">
+              {completedRows.map(({ project, overdue, daysLeft }) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  overdue={overdue}
+                  daysLeft={daysLeft}
+                  totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
+                  onAddToToday={() => setAddToTodayTarget(project)}
+                  onToggleComplete={() => toggleComplete(project)}
+                  onEdit={() => setEditingProject(project)}
+                  onDelete={() => deleteProject(project)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {rows.length > 0 && (
         <div>
@@ -410,6 +428,60 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
           onClose={() => setAddToTodayTarget(null)}
         />
       )}
+    </div>
+  );
+}
+
+function ProjectRow({
+  project,
+  overdue,
+  daysLeft,
+  totalSeconds,
+  onAddToToday,
+  onToggleComplete,
+  onEdit,
+  onDelete,
+}: {
+  project: ProjectItem;
+  overdue: boolean;
+  daysLeft: number;
+  totalSeconds: number;
+  onAddToToday: () => void;
+  onToggleComplete: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""}`}>
+      <div>
+        <div className="text-xs text-cream/50">
+          {project.title}
+          {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
+        </div>
+        <div className="text-sm text-cream">{project.workName}</div>
+        <div className={`text-xs ${overdue ? "text-alert font-bold" : "text-cream/60"}`}>
+          期日 {project.dueDate} {project.completedAt ? "（完了）" : overdue ? `（${-daysLeft}日超過）` : `（残り${daysLeft}日）`}
+        </div>
+        {totalSeconds > 0 && (
+          <div className="text-xs text-cream/70">
+            累計作業時間 <span className="font-bold tabular-nums text-cream">{formatHms(totalSeconds)}</span>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <button className="btn-pill-outline text-xs" onClick={onAddToToday}>
+          本日の作業に追加
+        </button>
+        <button className="btn-pill-outline text-xs" onClick={onToggleComplete}>
+          {project.completedAt ? "未完了に戻す" : "完了"}
+        </button>
+        <button className="text-xs text-cream/60 hover:text-cream" onClick={onEdit}>
+          編集
+        </button>
+        <button className="text-xs text-alert" onClick={onDelete}>
+          削除
+        </button>
+      </div>
     </div>
   );
 }
