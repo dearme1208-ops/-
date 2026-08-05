@@ -23,12 +23,26 @@ import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
+const TROUBLE_DETAIL_OPTIONS = [
+  "キャタピラー",
+  "コマツ",
+  "塗装出荷",
+  "営業企画",
+  "生産管理",
+  "品質保証",
+  "溶接組立",
+  "部品製造",
+  "一般",
+  "生産技術",
+  "技術開発",
+];
 
 export default function TodaySection() {
   const date = todayStr();
   const [now, setNow] = useState(() => Date.now());
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showTroubleDialog, setShowTroubleDialog] = useState(false);
   const [notifPermission, setNotifPermission] = useState<string>("default");
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
@@ -651,7 +665,7 @@ export default function TodaySection() {
   // どんな状態でもトラブル対応を最優先で開始する。仮計測を含め、計測中の作業が
   // （複数同時に計測中であっても全て）あればまず一時停止し、トラブル対応が
   // 終わったら自動的に再開できるよう覚えておく
-  async function startTrouble() {
+  async function startTrouble(detailName: string) {
     const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
     const nowMs = Date.now();
@@ -660,7 +674,7 @@ export default function TodaySection() {
       date,
       order: count,
       category: "トラブル対応",
-      name: `トラブル ${formatClock(nowMs)}`,
+      name: `${detailName} トラブル ${formatClock(nowMs)}`,
       estimatedSeconds: 0,
       status: "running",
       segments: [{ start: nowMs }],
@@ -674,6 +688,7 @@ export default function TodaySection() {
       for (const r of runningTasks) await pauseTask(r);
       await db.dailyTasks.add(task);
     });
+    setShowTroubleDialog(false);
   }
 
   async function enableNotifications() {
@@ -734,7 +749,7 @@ export default function TodaySection() {
       <div className="flex items-center justify-between">
         <h2 className="font-display text-lg font-bold">{date} の作業リスト</h2>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-pill-danger text-sm" onClick={startTrouble}>
+          <button className="btn-pill-danger text-sm" onClick={() => setShowTroubleDialog(true)}>
             ⚡ トラブル発生
           </button>
           <button className="btn-pill-outline text-sm" onClick={() => setShowAddDialog(true)}>
@@ -944,6 +959,18 @@ export default function TodaySection() {
           onRequestConflictStart={requestStartNew}
           onClose={() => setShowAddDialog(false)}
         />
+      )}
+
+      {showTroubleDialog && (
+        <Modal title="トラブル発生：詳細作業名を選択" onClose={() => setShowTroubleDialog(false)}>
+          <div className="flex flex-wrap gap-2">
+            {TROUBLE_DETAIL_OPTIONS.map((opt) => (
+              <button key={opt} className="btn-pill-outline text-sm" onClick={() => startTrouble(opt)}>
+                {opt}
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {pendingStart && provisionalTask && (
