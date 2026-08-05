@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import { aggregateRecords } from "@/lib/aggregate";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
@@ -9,10 +10,13 @@ import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { generateReportText, downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { formatHms, todayStr } from "@/lib/time";
+import { effectiveDueDate } from "@/lib/todo";
+import { daysBetweenDateStrs, formatHms, todayStr } from "@/lib/time";
+import type { TodoTask } from "@/lib/types";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 
 const TOP_N = 10;
+const MEDALS = ["🥇", "🥈", "🥉"];
 
 export default function ReportSection() {
   const [kind, setKind] = useState<"week" | "month">("week");
@@ -20,9 +24,21 @@ export default function ReportSection() {
 
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const dailyTasks = useLiveQuery(() => db.dailyTasks.toArray(), []);
+  const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
 
   const title = kind === "week" ? "週報" : "月報";
+  const periodLabel = kind === "week" ? "週" : "月";
   const filter: PeriodFilter = { type: kind };
+  const today = todayStr();
+
+  // 今週/今月の一言メモ。期間の開始日をキーにして保存する
+  const periodKey = useMemo(() => {
+    const range = getPeriodRange(filter);
+    if (!range) return "all";
+    return kind === "week" ? range.start.toISOString().slice(0, 10) : range.start.toISOString().slice(0, 7);
+  }, [kind]);
+  const [note, setNote] = useSetting(`report.note.${kind}.${periodKey}`, "");
 
   const data = useMemo(() => {
     if (!records || !masterTasks) return null;
@@ -36,13 +52,56 @@ export default function ReportSection() {
     const afterHours = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
     const totalSeconds = ranking.reduce((s, r) => s + r.totalSeconds, 0);
     const totalCount = ranking.reduce((s, r) => s + r.count, 0);
-    return { rangeLabel, ranking, attention, afterHours, totalSeconds, totalCount };
+
+    // 前週/前月との比較（自動サマリー文章用）
+    const prevNow = kind === "week" ? subWeeks(new Date(), 1) : subMonths(new Date(), 1);
+    const prevRanking = aggregateRecords(records, filter, "total", false, prevNow);
+    const prevTotalSeconds = prevRanking.reduce((s, r) => s + r.totalSeconds, 0);
+    const prevByKey = new Map(prevRanking.map((r) => [r.key, r.totalSeconds]));
+    let topGainer: { category: string; name: string; deltaSeconds: number } | null = null;
+    for (const r of ranking) {
+      const delta = r.totalSeconds - (prevByKey.get(r.key) ?? 0);
+      if (!topGainer || delta > topGainer.deltaSeconds) {
+        topGainer = { category: r.category, name: r.name, deltaSeconds: delta };
+      }
+    }
+
+    // トラブル対応（今期間中に発生した件数・時間）
+    const troubleTasks = (dailyTasks ?? []).filter((t) => t.isTrouble && isDateStrInRange(t.date, range));
+    const troubleTotalSeconds = troubleTasks.reduce((s, t) => s + t.accumulatedMs / 1000, 0);
+
+    // ToDoの期限超過タスク（現時点で超過しているもの。サブタスクの期日も考慮）
+    const subtasksByParent = new Map<string, TodoTask[]>();
+    for (const t of todoTasks ?? []) {
+      if (!t.parentTaskId) continue;
+      if (!subtasksByParent.has(t.parentTaskId)) subtasksByParent.set(t.parentTaskId, []);
+      subtasksByParent.get(t.parentTaskId)!.push(t);
+    }
+    const overdueTodos = (todoTasks ?? [])
+      .filter((t) => !t.parentTaskId && !t.completed)
+      .map((t) => ({ task: t, due: effectiveDueDate(t, subtasksByParent.get(t.id) ?? []) }))
+      .filter((x): x is { task: TodoTask; due: string } => !!x.due && x.due < today)
+      .sort((a, b) => a.due.localeCompare(b.due));
+
+    return {
+      rangeLabel,
+      ranking,
+      attention,
+      afterHours,
+      totalSeconds,
+      totalCount,
+      prevTotalSeconds,
+      topGainer,
+      troubleCount: troubleTasks.length,
+      troubleTotalSeconds,
+      overdueTodos,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, masterTasks, kind, afterHoursCutoff]);
+  }, [records, masterTasks, dailyTasks, todoTasks, kind, afterHoursCutoff, today]);
 
   function download() {
     if (!records || !masterTasks) return;
-    const text = generateReportText(title, filter, records, masterTasks, afterHoursCutoff);
+    const text = generateReportText(title, filter, records, masterTasks, afterHoursCutoff, note);
     const label = kind === "week" ? "weekly" : "monthly";
     downloadTextFile(`report_${label}_${todayStr()}.txt`, text);
   }
@@ -85,6 +144,21 @@ export default function ReportSection() {
                 {new Date().toLocaleString("ja-JP")}
               </p>
             </div>
+            {(data.prevTotalSeconds > 0 || data.totalSeconds > 0) && (
+              <p className="mt-3 border-t border-cream/10 pt-3 text-sm text-cream/80">
+                前{periodLabel}比{" "}
+                <span className={data.totalSeconds - data.prevTotalSeconds >= 0 ? "font-bold text-alert" : "font-bold text-cream"}>
+                  {data.totalSeconds - data.prevTotalSeconds >= 0 ? "+" : "-"}
+                  {formatHms(Math.abs(data.totalSeconds - data.prevTotalSeconds))}
+                </span>
+                {data.topGainer && data.topGainer.deltaSeconds > 0 && (
+                  <>
+                    。特に「{data.topGainer.category} / {data.topGainer.name}」が前{periodLabel}より
+                    <span className="font-bold text-cream">{formatHms(data.topGainer.deltaSeconds)}</span>増えました。
+                  </>
+                )}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -102,6 +176,23 @@ export default function ReportSection() {
               accent={data.attention.length > 0}
             />
           </div>
+
+          {data.ranking.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {data.ranking.slice(0, 3).map((r, i) => (
+                <div key={r.key} className="panel flex items-center gap-3 p-4">
+                  <span className="text-3xl">{MEDALS[i]}</span>
+                  <div className="min-w-0">
+                    <div className="truncate text-xs text-cream/50">{r.category}</div>
+                    <div className="truncate text-sm font-bold text-cream">{r.name}</div>
+                    <div className="font-display text-lg font-bold tabular-nums text-cream">
+                      {formatHms(r.totalSeconds)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="panel p-4">
             <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
@@ -164,6 +255,51 @@ export default function ReportSection() {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="panel p-4">
+            <h3 className="mb-3 font-display text-sm font-bold text-cream/80">⚡ トラブル対応</h3>
+            {data.troubleCount === 0 ? (
+              <p className="text-sm text-cream/50">この期間、トラブル対応の発生はありませんでした。</p>
+            ) : (
+              <p className="text-sm text-cream/70">
+                発生 <span className="font-display text-lg font-bold text-alert">{data.troubleCount}件</span>
+                　合計対応時間 <span className="font-bold text-cream">{formatHms(data.troubleTotalSeconds)}</span>
+                　平均 <span className="font-bold text-cream">{formatHms(data.troubleTotalSeconds / data.troubleCount)}</span>
+                /件
+              </p>
+            )}
+          </div>
+
+          <div className="panel p-4">
+            <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
+              📅 ToDoの期限超過タスク（{data.overdueTodos.length}件）
+            </h3>
+            {data.overdueTodos.length === 0 ? (
+              <p className="text-sm text-cream/50">期限超過のタスクはありません。</p>
+            ) : (
+              <div className="space-y-1.5">
+                {data.overdueTodos.map(({ task, due }) => (
+                  <div key={task.id} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                    <span className="truncate text-sm text-cream">{task.title}</span>
+                    <span className="shrink-0 text-xs font-bold text-alert">
+                      {due} （{daysBetweenDateStrs(due, today)}日超過）
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="panel space-y-2 p-4">
+            <h3 className="font-display text-sm font-bold text-cream/80">📝 今{periodLabel}の一言</h3>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={`今${periodLabel}の振り返りを自由に書けます（この期間ごとに保存されます）`}
+              rows={3}
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
           </div>
         </div>
       )}

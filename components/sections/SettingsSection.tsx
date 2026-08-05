@@ -1,11 +1,17 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { useSetting } from "@/lib/settings";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS } from "@/lib/todo";
+import { exportBackup, importBackup, type BackupFile } from "@/lib/backup";
+import { downloadTextFile } from "@/lib/report";
+import { todayStr } from "@/lib/time";
 import type { BreakRange } from "@/lib/types";
 
 export default function SettingsSection() {
+  const [backupStatus, setBackupStatus] = useState("");
+  const restoreInputRef = useRef<HTMLInputElement>(null);
   const [thresholdMinutesStr, setThresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
   const [provisionalEnabledStr, setProvisionalEnabledStr] = useSetting("today.provisionalEnabled", "false");
   const provisionalEnabled = provisionalEnabledStr === "true";
@@ -32,6 +38,36 @@ export default function SettingsSection() {
   }
   function removeBreakRange(index: number) {
     setBreakRangesStr(serializeBreakRanges(breakRanges.filter((_, i) => i !== index)));
+  }
+
+  async function downloadBackup() {
+    const data = await exportBackup();
+    downloadTextFile(`koutei-hyo_backup_${todayStr()}.json`, JSON.stringify(data, null, 2));
+    setBackupStatus("バックアップをダウンロードしました。");
+  }
+
+  async function restoreBackup(file: File) {
+    const text = await file.text();
+    let data: BackupFile;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      setBackupStatus("ファイルの読み込みに失敗しました（JSON形式ではありません）。");
+      return;
+    }
+    if (data.app !== "koutei-hyo" || !data.tables) {
+      setBackupStatus("このアプリのバックアップファイルではないようです。");
+      return;
+    }
+    if (
+      !confirm(
+        "現在のすべてのデータをこのバックアップの内容で置き換えます。この操作は元に戻せません。よろしいですか?"
+      )
+    ) {
+      return;
+    }
+    const { restoredRows } = await importBackup(data);
+    setBackupStatus(`復元しました（${restoredRows}件のデータ）。エクスポート日時: ${data.exportedAt}`);
   }
 
   return (
@@ -197,6 +233,33 @@ export default function SettingsSection() {
         </div>
         <p className="text-xs text-cream/50">
           週報・月報で、この時刻より後にかかった実績時間を「定時以降の業務」として集計します（所定労働時間による概算残業とは別の、実際の時刻ベースの集計です）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">全データのバックアップ・復元</h3>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-pill-outline text-sm" onClick={downloadBackup}>
+            バックアップをダウンロード
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={() => restoreInputRef.current?.click()}>
+            バックアップから復元
+          </button>
+          <input
+            ref={restoreInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) restoreBackup(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        {backupStatus && <p className="text-xs text-cream/70">{backupStatus}</p>}
+        <p className="text-xs text-cream/50">
+          このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は現在のデータを全て上書きします。
         </p>
       </div>
     </div>

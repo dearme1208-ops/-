@@ -8,6 +8,7 @@ import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/mast
 import { adjustStopTimeForBreaks, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
 import { useSetting } from "@/lib/settings";
 import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs } from "@/lib/tasks";
+import { computeStreakDays } from "@/lib/streak";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -23,6 +24,13 @@ import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
+export const CONDITION_LEVELS = [
+  { level: "5", emoji: "😀", label: "とても良い" },
+  { level: "4", emoji: "🙂", label: "良い" },
+  { level: "3", emoji: "😐", label: "ふつう" },
+  { level: "2", emoji: "🙁", label: "やや悪い" },
+  { level: "1", emoji: "😣", label: "悪い" },
+];
 const TROUBLE_DETAIL_OPTIONS = [
   "キャタピラー",
   "コマツ",
@@ -40,6 +48,7 @@ const TROUBLE_DETAIL_OPTIONS = [
 export default function TodaySection() {
   const date = todayStr();
   const [now, setNow] = useState(() => Date.now());
+  const [conditionLevel, setConditionLevel] = useSetting(`condition.${date}`, "");
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showTroubleDialog, setShowTroubleDialog] = useState(false);
@@ -696,8 +705,39 @@ export default function TodaySection() {
     setNotifPermission(perm);
   }
 
+  // 体調は8:00〜17:00の間だけ入力・変更できるようにする（入力済みの内容はその後も表示のみ可能）
+  const nowHour = new Date(now).getHours() + new Date(now).getMinutes() / 60;
+  const conditionWindowOpen = nowHour >= 8 && nowHour < 17;
+  const selectedCondition = CONDITION_LEVELS.find((c) => c.level === conditionLevel);
+  const streakDays = useMemo(() => computeStreakDays(projectRecords ?? [], date), [projectRecords, date]);
+
   return (
     <div className="space-y-4">
+      <div className="panel p-4">
+        <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今日の体調</h3>
+        {selectedCondition ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-2xl">{selectedCondition.emoji}</span>
+            <span className="text-sm text-cream/70">{selectedCondition.label}</span>
+            {conditionWindowOpen && (
+              <button className="ml-auto text-xs text-cream/40 hover:text-cream" onClick={() => setConditionLevel("")}>
+                変更する
+              </button>
+            )}
+          </div>
+        ) : conditionWindowOpen ? (
+          <div className="flex flex-wrap gap-2">
+            {CONDITION_LEVELS.map((c) => (
+              <button key={c.level} className="btn-pill-outline text-sm" onClick={() => setConditionLevel(c.level)}>
+                {c.emoji} {c.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-cream/40">8:00〜17:00の間に入力できます。</p>
+        )}
+      </div>
+
       {(!tasks || tasks.length === 0) && (
         <div className="panel p-5">
           <h2 className="mb-3 font-display text-lg font-bold">本日の作業リストを生成</h2>
@@ -747,7 +787,17 @@ export default function TodaySection() {
       )}
 
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg font-bold">{date} の作業リスト</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-display text-lg font-bold">{date} の作業リスト</h2>
+          {streakDays > 0 && (
+            <span
+              className="rounded-full bg-alert/15 px-2 py-0.5 text-xs font-bold text-alert"
+              title="実績が記録されている連続日数"
+            >
+              🔥 連続{streakDays}日
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn-pill-danger text-sm" onClick={() => setShowTroubleDialog(true)}>
             ⚡ トラブル発生

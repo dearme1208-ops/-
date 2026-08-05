@@ -10,7 +10,8 @@ export function generateReportText(
   filter: PeriodFilter,
   records: WorkRecord[],
   masterTasks: MasterTask[],
-  afterHoursCutoff = "18:00"
+  afterHoursCutoff = "18:00",
+  note = ""
 ): string {
   const range = getPeriodRange(filter);
   const rangeLabel = range
@@ -59,6 +60,11 @@ export function generateReportText(
         )} (+${Math.round(a.overRatio * 100)}%)`
       );
     });
+  }
+  if (note.trim()) {
+    lines.push("");
+    lines.push(`【今${title === "週報" ? "週" : "月"}の一言】`);
+    lines.push(note.trim());
   }
   lines.push("");
   lines.push(`生成日時: ${new Date().toLocaleString("ja-JP")}`);
