@@ -7,8 +7,10 @@ import { useSetting } from "@/lib/settings";
 import { breakdownByCategory, breakdownByProject, computeMonthlyOvertime, formatHoursJp } from "@/lib/overtime";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import DiffLineChart from "@/components/charts/DiffLineChart";
+import DonutChart from "@/components/charts/DonutChart";
 
 type BreakdownMode = "category" | "project";
+type BreakdownStyle = "bar" | "donut";
 
 export default function OvertimeSection() {
   const [standardHoursStr, setStandardHoursStr] = useSetting("overtime.standardDailyHours", "8");
@@ -20,6 +22,7 @@ export default function OvertimeSection() {
 
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>("category");
+  const [breakdownStyle, setBreakdownStyle] = useState<BreakdownStyle>("bar");
 
   const projectTitleById = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.title])), [projects]);
 
@@ -192,13 +195,33 @@ export default function OvertimeSection() {
               >
                 案件別
               </button>
+              <span className="mx-1 text-cream/20">|</span>
+              <button
+                className={breakdownStyle === "bar" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setBreakdownStyle("bar")}
+              >
+                棒グラフ
+              </button>
+              <button
+                className={breakdownStyle === "donut" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setBreakdownStyle("donut")}
+              >
+                円グラフ
+              </button>
             </div>
           </div>
           <div className="panel p-4">
-            <RankingBarChart
-              data={breakdownRows.map((r) => ({ label: r.label, sublabel: r.sublabel, value: r.seconds }))}
-              formatValue={formatHoursJp}
-            />
+            {breakdownStyle === "bar" ? (
+              <RankingBarChart
+                data={breakdownRows.map((r) => ({ label: r.label, sublabel: r.sublabel, value: r.seconds }))}
+                formatValue={formatHoursJp}
+              />
+            ) : (
+              <DonutChart
+                data={breakdownRows.map((r) => ({ label: r.label, value: r.seconds }))}
+                formatValue={formatHoursJp}
+              />
+            )}
           </div>
         </div>
       )}

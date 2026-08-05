@@ -5,6 +5,7 @@ import { useSetting } from "@/lib/settings";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS } from "@/lib/todo";
 import { exportBackup, importBackup, type BackupFile } from "@/lib/backup";
+import { buildArchive, deleteArchivedRange } from "@/lib/archive";
 import { downloadTextFile } from "@/lib/report";
 import { todayStr } from "@/lib/time";
 import type { BreakRange } from "@/lib/types";
@@ -12,6 +13,9 @@ import type { BreakRange } from "@/lib/types";
 export default function SettingsSection() {
   const [backupStatus, setBackupStatus] = useState("");
   const restoreInputRef = useRef<HTMLInputElement>(null);
+  const [archiveBeforeMonth, setArchiveBeforeMonth] = useState(() => todayStr().slice(0, 7));
+  const [archiveStatus, setArchiveStatus] = useState("");
+  const [archiveExported, setArchiveExported] = useState(false);
   const [thresholdMinutesStr, setThresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
   const [provisionalEnabledStr, setProvisionalEnabledStr] = useSetting("today.provisionalEnabled", "false");
   const provisionalEnabled = provisionalEnabledStr === "true";
@@ -28,6 +32,15 @@ export default function SettingsSection() {
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [afterHoursCutoff, setAfterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
+  const [weeklyAfterHoursNotifyEnabledStr, setWeeklyAfterHoursNotifyEnabledStr] = useSetting(
+    "notify.afterHoursWeeklyEnabled",
+    "false"
+  );
+  const weeklyAfterHoursNotifyEnabled = weeklyAfterHoursNotifyEnabledStr === "true";
+  const [weeklyAfterHoursThresholdStr, setWeeklyAfterHoursThresholdStr] = useSetting(
+    "notify.afterHoursWeeklyThresholdHours",
+    "5"
+  );
 
   function addBreakRange() {
     setBreakRangesStr(serializeBreakRanges([...breakRanges, { start: "12:00", end: "13:00" }]));
@@ -68,6 +81,35 @@ export default function SettingsSection() {
     }
     const { restoredRows } = await importBackup(data);
     setBackupStatus(`復元しました（${restoredRows}件のデータ）。エクスポート日時: ${data.exportedAt}`);
+  }
+
+  async function exportArchive() {
+    const beforeDate = `${archiveBeforeMonth}-01`;
+    const data = await buildArchive(beforeDate);
+    if (data.records.length === 0 && data.dailyTasks.length === 0) {
+      setArchiveStatus("対象期間のデータはありません。");
+      setArchiveExported(false);
+      return;
+    }
+    downloadTextFile(`koutei-hyo_archive_before-${archiveBeforeMonth}.json`, JSON.stringify(data, null, 2));
+    setArchiveStatus(
+      `実績${data.records.length}件、日次タスク${data.dailyTasks.length}件をダウンロードしました。内容を確認してから削除を実行してください。`
+    );
+    setArchiveExported(true);
+  }
+
+  async function deleteArchive() {
+    const beforeDate = `${archiveBeforeMonth}-01`;
+    if (
+      !confirm(
+        `${archiveBeforeMonth}より前の実績・日次タスクを削除します。ダウンロードしたアーカイブファイルは保存済みですか？この操作は元に戻せません。`
+      )
+    ) {
+      return;
+    }
+    const { deletedRecords, deletedDailyTasks } = await deleteArchivedRange(beforeDate);
+    setArchiveStatus(`削除しました（実績${deletedRecords}件、日次タスク${deletedDailyTasks}件）。`);
+    setArchiveExported(false);
   }
 
   return (
@@ -234,6 +276,28 @@ export default function SettingsSection() {
         <p className="text-xs text-cream/50">
           週報・月報で、この時刻より後にかかった実績時間を「定時以降の業務」として集計します（所定労働時間による概算残業とは別の、実際の時刻ベースの集計です）。
         </p>
+        <div className="space-y-2 border-t border-cream/10 pt-3">
+          <button
+            className={weeklyAfterHoursNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setWeeklyAfterHoursNotifyEnabledStr(weeklyAfterHoursNotifyEnabled ? "false" : "true")}
+          >
+            週次の基準超え通知: {weeklyAfterHoursNotifyEnabled ? "ON" : "OFF"}
+          </button>
+          {weeklyAfterHoursNotifyEnabled && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+              <span>今週の定時以降の業務が</span>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={weeklyAfterHoursThresholdStr}
+                onChange={(e) => setWeeklyAfterHoursThresholdStr(e.target.value)}
+                className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+              />
+              <span>時間を超えたら通知します（週1回）</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="panel space-y-3 p-4">
@@ -260,6 +324,39 @@ export default function SettingsSection() {
         {backupStatus && <p className="text-xs text-cream/70">{backupStatus}</p>}
         <p className="text-xs text-cream/50">
           このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は現在のデータを全て上書きします。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">実績データの月次アーカイブ</h3>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+          <input
+            type="month"
+            value={archiveBeforeMonth}
+            onChange={(e) => {
+              setArchiveBeforeMonth(e.target.value);
+              setArchiveExported(false);
+              setArchiveStatus("");
+            }}
+            className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+          />
+          <span>より前の実績・日次タスクをアーカイブ</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-pill-outline text-sm" onClick={exportArchive}>
+            アーカイブをダウンロード
+          </button>
+          <button
+            className="btn-pill-outline text-sm disabled:opacity-30"
+            onClick={deleteArchive}
+            disabled={!archiveExported}
+          >
+            ダウンロード済みデータを削除
+          </button>
+        </div>
+        {archiveStatus && <p className="text-xs text-cream/70">{archiveStatus}</p>}
+        <p className="text-xs text-cream/50">
+          データが増えすぎて動作が重くなってきた場合などに使います。まずダウンロードしてバックアップし、内容を確認してから削除を実行してください（削除ボタンは同じ期間でダウンロードするまで押せません）。作業マスタや案件、ToDoは削除されません。
         </p>
       </div>
     </div>

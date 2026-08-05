@@ -9,6 +9,9 @@ import { adjustStopTimeForBreaks, isWithinBreak, parseBreakRanges } from "@/lib/
 import { useSetting } from "@/lib/settings";
 import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeStreakDays } from "@/lib/streak";
+import { computeAfterHoursBreakdown } from "@/lib/overtime";
+import { getPeriodRange, isDateStrInRange } from "@/lib/period";
+import { computeSuggestedTask } from "@/lib/suggest";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -75,6 +78,14 @@ export default function TodaySection() {
   const [provisionalIdleHoursStr] = useSetting("today.provisionalIdleThresholdHours", "3");
   const provisionalIdleMs = Math.max(0.5, Number(provisionalIdleHoursStr) || 3) * 3600000;
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
+  const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
+  const [weeklyAfterHoursNotifyEnabledStr] = useSetting("notify.afterHoursWeeklyEnabled", "false");
+  const weeklyAfterHoursNotifyEnabled = weeklyAfterHoursNotifyEnabledStr === "true";
+  const [weeklyAfterHoursThresholdStr] = useSetting("notify.afterHoursWeeklyThresholdHours", "5");
+  const [weeklyAfterHoursNotifiedWeek, setWeeklyAfterHoursNotifiedWeek] = useSetting(
+    "notify.afterHoursWeeklyNotifiedWeek",
+    ""
+  );
   // 直近でマウス/キーボード操作があった時刻。放置検知で未計測を打ち切る起点に使う
   const lastActivityRef = useRef(Date.now());
   const idleFinishInFlightRef = useRef(false);
@@ -108,6 +119,18 @@ export default function TodaySection() {
     return new Set(ranked.slice(0, 3).map((r) => r.key));
   }, [projectRecords]);
 
+  // 同じ曜日・近い時間帯によく行っている作業を、過去の実績からワンタップ提案する
+  const nowMinuteBucket = Math.floor(now / 60000);
+  const suggestedTask = useMemo(() => {
+    if (!projectRecords) return null;
+    const nowDate = new Date(nowMinuteBucket * 60000);
+    const suggestion = computeSuggestedTask(projectRecords, nowDate.getDay(), nowDate.getHours());
+    if (!suggestion) return null;
+    const alreadyToday = (tasks ?? []).some((t) => t.category === suggestion.category && t.name === suggestion.name);
+    return alreadyToday ? null : suggestion;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectRecords, nowMinuteBucket, tasks]);
+
   useEffect(() => {
     setNotifPermission(getNotificationPermission());
   }, []);
@@ -135,6 +158,30 @@ export default function TodaySection() {
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
+
+  // 今週の「定時以降の業務」合計が週次基準を超えたら通知する（週ごとに1回だけ）
+  useEffect(() => {
+    if (!weeklyAfterHoursNotifyEnabled || !projectRecords) return;
+    const thresholdSeconds = Math.max(0, Number(weeklyAfterHoursThresholdStr) || 0) * 3600;
+    if (thresholdSeconds <= 0) return;
+    const range = getPeriodRange({ type: "week" });
+    if (!range) return;
+    const weekKey = range.start.toISOString().slice(0, 10);
+    if (weeklyAfterHoursNotifiedWeek === weekKey) return;
+    const periodRecords = projectRecords.filter((r) => isDateStrInRange(r.date, range));
+    const { totalSeconds } = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
+    if (totalSeconds >= thresholdSeconds) {
+      notify("定時以降の業務が週次基準を超えました", `今週の定時以降の業務が ${formatHms(totalSeconds)} になりました`);
+      setWeeklyAfterHoursNotifiedWeek(weekKey);
+    }
+  }, [
+    weeklyAfterHoursNotifyEnabled,
+    projectRecords,
+    afterHoursCutoff,
+    weeklyAfterHoursThresholdStr,
+    weeklyAfterHoursNotifiedWeek,
+    setWeeklyAfterHoursNotifiedWeek,
+  ]);
 
   // 予定超過チェック（通知 + 20分超過の画面確認）
   useEffect(() => {
@@ -670,6 +717,18 @@ export default function TodaySection() {
     requestStartNew(master.category, master.name, estimatedSeconds, master.id);
   }
 
+  async function startSuggested() {
+    if (!suggestedTask) return;
+    const master = await findOrCreateMasterTask(suggestedTask.category, suggestedTask.name, 0);
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(
+      date,
+      suggestedTask.category,
+      suggestedTask.name,
+      master.estimatedSeconds
+    );
+    requestStartNew(suggestedTask.category, suggestedTask.name, estimatedSeconds, master.id);
+  }
+
   // 作業名を入力せずにすぐ計測を開始し、内容は後から編集する
   // どんな状態でもトラブル対応を最優先で開始する。仮計測を含め、計測中の作業が
   // （複数同時に計測中であっても全て）あればまず一時停止し、トラブル対応が
@@ -765,6 +824,23 @@ export default function TodaySection() {
           <p className="text-sm text-cream/80">予定超過を通知でお知らせできます。</p>
           <button className="btn-pill-outline text-sm" onClick={enableNotifications}>
             通知を許可
+          </button>
+        </div>
+      )}
+
+      {suggestedTask && (
+        <div className="panel flex flex-wrap items-center justify-between gap-2 p-4">
+          <div>
+            <h3 className="font-display text-sm font-bold text-cream/80">💡 そろそろこの作業では?</h3>
+            <p className="text-xs text-cream/50">
+              同じ曜日のこの時間帯によく行っている作業です（{suggestedTask.count}回）
+            </p>
+            <p className="mt-1 text-sm text-cream">
+              {suggestedTask.category} / {suggestedTask.name}
+            </p>
+          </div>
+          <button className="btn-pill text-sm" onClick={startSuggested}>
+            ワンタップで開始
           </button>
         </div>
       )}

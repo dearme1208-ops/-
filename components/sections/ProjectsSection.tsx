@@ -13,6 +13,7 @@ import type { DailyTask, ProjectItem } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
+import Modal from "@/components/ui/Modal";
 
 type ViewMode = "gantt" | "calendar";
 
@@ -31,6 +32,13 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
+  const [completionReport, setCompletionReport] = useState<{
+    project: ProjectItem;
+    totalSeconds: number;
+    recordCount: number;
+    daysTaken: number;
+    onTime: boolean;
+  } | null>(null);
   const [showForm, setShowForm] = useState(true);
   const [showCompleted, setShowCompleted] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
@@ -48,6 +56,17 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     for (const r of records ?? []) {
       if (!r.projectId) continue;
       map.set(r.projectId, (map.get(r.projectId) ?? 0) + r.seconds);
+    }
+    return map;
+  }, [records]);
+
+  // 案件ごとに実績が記録されている日数（消化ペースの簡易指標に使う）
+  const projectWorkDays = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const r of records ?? []) {
+      if (!r.projectId) continue;
+      if (!map.has(r.projectId)) map.set(r.projectId, new Set());
+      map.get(r.projectId)!.add(r.date);
     }
     return map;
   }, [records]);
@@ -98,7 +117,22 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   }
 
   async function toggleComplete(item: ProjectItem) {
-    await db.projects.update(item.id, { completedAt: item.completedAt ? undefined : Date.now() });
+    const nowCompleting = !item.completedAt;
+    const completedAt = nowCompleting ? Date.now() : undefined;
+    await db.projects.update(item.id, { completedAt });
+    if (nowCompleting) {
+      const projectRecords = (records ?? []).filter((r) => r.projectId === item.id);
+      const totalSeconds = projectRecords.reduce((s, r) => s + r.seconds, 0);
+      const createdStr = todayStr(new Date(item.createdAt));
+      const completedStr = todayStr(new Date(completedAt!));
+      setCompletionReport({
+        project: item,
+        totalSeconds,
+        recordCount: projectRecords.length,
+        daysTaken: Math.max(1, daysBetweenDateStrs(createdStr, completedStr) + 1),
+        onTime: completedStr <= item.dueDate,
+      });
+    }
   }
 
   async function addToToday(item: ProjectItem, category: string, workName: string) {
@@ -146,10 +180,15 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
       const barEnd = daysBetweenDateStrs(start, p.dueDate);
       const overdue = !p.completedAt && p.dueDate < today;
       const daysLeft = daysBetweenDateStrs(today, p.dueDate);
-      return { project: p, barStart, barEnd: Math.max(barEnd, barStart), overdue, daysLeft };
+      // 消化ペースの簡易判定: 想定工数が無いため「経過日数のうち何割の日に着手できているか」で代用する
+      // (残り日数が僅かなのに、これまでほとんど着手できていない場合に注意を促す)
+      const daysElapsed = Math.max(1, daysBetweenDateStrs(createdStr, today) + 1);
+      const workDays = projectWorkDays.get(p.id)?.size ?? 0;
+      const paceWarning = !p.completedAt && daysLeft <= 3 && daysLeft >= 0 && workDays / daysElapsed < 0.3;
+      return { project: p, barStart, barEnd: Math.max(barEnd, barStart), overdue, daysLeft, paceWarning };
     });
     return { rangeStartStr: start, totalDays: total, rows: computedRows };
-  }, [projects, today]);
+  }, [projects, today, projectWorkDays]);
 
   const activeRows = useMemo(() => rows.filter((r) => !r.project.completedAt), [rows]);
   const completedRows = useMemo(() => rows.filter((r) => !!r.project.completedAt), [rows]);
@@ -251,12 +290,13 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
 
 
       <div className="panel divide-y divide-cream/10">
-        {activeRows.map(({ project, overdue, daysLeft }) => (
+        {activeRows.map(({ project, overdue, daysLeft, paceWarning }) => (
           <ProjectRow
             key={project.id}
             project={project}
             overdue={overdue}
             daysLeft={daysLeft}
+            paceWarning={paceWarning}
             totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
             onAddToToday={() => setAddToTodayTarget(project)}
             onToggleComplete={() => toggleComplete(project)}
@@ -428,6 +468,53 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
           onClose={() => setAddToTodayTarget(null)}
         />
       )}
+
+      {completionReport && (
+        <Modal title="🎉 案件完了レポート" onClose={() => setCompletionReport(null)}>
+          <div className="space-y-3 text-sm">
+            <div>
+              <div className="text-xs text-cream/50">
+                {completionReport.project.title}
+                {completionReport.project.category && (
+                  <span className="ml-2 text-cream/40">［{completionReport.project.category}］</span>
+                )}
+              </div>
+              <div className="font-display text-base font-bold text-cream">{completionReport.project.workName}</div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-ink px-3 py-2">
+                <div className="text-[10px] text-cream/40">累計作業時間</div>
+                <div className="font-display text-lg font-bold tabular-nums text-cream">
+                  {formatHms(completionReport.totalSeconds)}
+                </div>
+              </div>
+              <div className="rounded-lg bg-ink px-3 py-2">
+                <div className="text-[10px] text-cream/40">着手から完了まで</div>
+                <div className="font-display text-lg font-bold tabular-nums text-cream">
+                  {completionReport.daysTaken}日
+                </div>
+              </div>
+              <div className="rounded-lg bg-ink px-3 py-2">
+                <div className="text-[10px] text-cream/40">作業記録件数</div>
+                <div className="font-display text-lg font-bold tabular-nums text-cream">
+                  {completionReport.recordCount}件
+                </div>
+              </div>
+              <div className="rounded-lg bg-ink px-3 py-2">
+                <div className="text-[10px] text-cream/40">期日</div>
+                <div className={`font-display text-lg font-bold ${completionReport.onTime ? "text-cream" : "text-alert"}`}>
+                  {completionReport.onTime ? "期日内" : "期日超過"}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button className="btn-pill text-sm" onClick={() => setCompletionReport(null)}>
+              閉じる
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -436,6 +523,7 @@ function ProjectRow({
   project,
   overdue,
   daysLeft,
+  paceWarning,
   totalSeconds,
   onAddToToday,
   onToggleComplete,
@@ -445,6 +533,7 @@ function ProjectRow({
   project: ProjectItem;
   overdue: boolean;
   daysLeft: number;
+  paceWarning?: boolean;
   totalSeconds: number;
   onAddToToday: () => void;
   onToggleComplete: () => void;
@@ -462,6 +551,11 @@ function ProjectRow({
         <div className={`text-xs ${overdue ? "text-alert font-bold" : "text-cream/60"}`}>
           期日 {project.dueDate} {project.completedAt ? "（完了）" : overdue ? `（${-daysLeft}日超過）` : `（残り${daysLeft}日）`}
         </div>
+        {paceWarning && (
+          <div className="text-xs font-bold text-alert" title="残り日数が少ないですが、これまであまり着手できていないようです">
+            ⚠ ペースに遅れの可能性
+          </div>
+        )}
         {totalSeconds > 0 && (
           <div className="text-xs text-cream/70">
             累計作業時間 <span className="font-bold tabular-nums text-cream">{formatHms(totalSeconds)}</span>

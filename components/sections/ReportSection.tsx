@@ -21,6 +21,8 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 export default function ReportSection() {
   const [kind, setKind] = useState<"week" | "month">("week");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
+  const [standardHoursStr] = useSetting("overtime.standardDailyHours", "8");
+  const standardDailySeconds = Math.max(0, Number(standardHoursStr) || 0) * 3600;
 
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -83,6 +85,19 @@ export default function ReportSection() {
       .filter((x): x is { task: TodoTask; due: string } => !!x.due && x.due < today)
       .sort((a, b) => a.due.localeCompare(b.due));
 
+    // 週報かつ週後半（木・金）の場合、これまでの経過営業日数から見て進捗が遅れていないか警告する
+    let paceWarning: { expectedSeconds: number; actualSeconds: number } | null = null;
+    if (kind === "week" && standardDailySeconds > 0) {
+      const dow = new Date().getDay(); // 0=日 ... 6=土
+      if (dow === 4 || dow === 5) {
+        const elapsedWeekdays = Math.min(dow, 5);
+        const expectedSeconds = standardDailySeconds * elapsedWeekdays * 0.7;
+        if (totalSeconds < expectedSeconds) {
+          paceWarning = { expectedSeconds: standardDailySeconds * elapsedWeekdays, actualSeconds: totalSeconds };
+        }
+      }
+    }
+
     return {
       rangeLabel,
       ranking,
@@ -95,9 +110,10 @@ export default function ReportSection() {
       troubleCount: troubleTasks.length,
       troubleTotalSeconds,
       overdueTodos,
+      paceWarning,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, masterTasks, dailyTasks, todoTasks, kind, afterHoursCutoff, today]);
+  }, [records, masterTasks, dailyTasks, todoTasks, kind, afterHoursCutoff, standardDailySeconds, today]);
 
   function download() {
     if (!records || !masterTasks) return;
@@ -160,6 +176,17 @@ export default function ReportSection() {
               </p>
             )}
           </div>
+
+          {data.paceWarning && (
+            <div className="panel border border-alert/40 p-4">
+              <h3 className="mb-1 font-display text-sm font-bold text-alert">⏰ 週後半の進捗遅れ警告</h3>
+              <p className="text-sm text-cream/80">
+                週の残りが少なくなってきましたが、ここまでの実績は
+                <span className="mx-1 font-bold tabular-nums text-alert">{formatHms(data.paceWarning.actualSeconds)}</span>
+                です（目安 {formatHms(data.paceWarning.expectedSeconds)}）。ペースに遅れがないか確認しましょう。
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <StatTile label="合計作業時間" value={formatHms(data.totalSeconds)} />

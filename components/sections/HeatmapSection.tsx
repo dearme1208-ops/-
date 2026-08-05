@@ -4,10 +4,12 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { formatHms } from "@/lib/time";
+import { computeHourDowMatrix } from "@/lib/heatmap";
 
 const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
 type SortKey = "name" | "total" | "count";
+type ViewMode = "category" | "hour";
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "name", label: "名前順" },
@@ -16,8 +18,20 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 ];
 
 export default function HeatmapSection() {
+  const [viewMode, setViewMode] = useState<ViewMode>("category");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const records = useLiveQuery(() => db.records.toArray(), []);
+
+  const hourMatrix = useMemo(
+    () => computeHourDowMatrix((records ?? []).filter((r) => !r.excludedFromStats)),
+    [records]
+  );
+
+  function hourCellColor(value: number): string {
+    if (hourMatrix.max === 0 || value === 0) return "rgba(233,230,189,0.04)";
+    const ratio = Math.min(1, value / hourMatrix.max);
+    return `rgba(194,59,59,${0.08 + ratio * 0.72})`;
+  }
 
   const { categories, matrix, totals, counts, max } = useMemo(() => {
     const cats = new Set<string>();
@@ -55,18 +69,76 @@ export default function HeatmapSection() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-cream/50">並び替え:</span>
-        {SORT_OPTIONS.map((opt) => (
-          <button
-            key={opt.key}
-            onClick={() => setSortKey(opt.key)}
-            className={sortKey === opt.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-          >
-            {opt.label}
-          </button>
-        ))}
+        <button
+          className={viewMode === "category" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => setViewMode("category")}
+        >
+          区分×曜日
+        </button>
+        <button
+          className={viewMode === "hour" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => setViewMode("hour")}
+        >
+          時間帯×曜日
+        </button>
       </div>
 
+      {viewMode === "category" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-cream/50">並び替え:</span>
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setSortKey(opt.key)}
+              className={sortKey === opt.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {viewMode === "hour" && (
+        <div className="panel overflow-x-auto p-4">
+          <table className="w-full min-w-[560px] border-separate border-spacing-1 text-sm">
+            <thead>
+              <tr>
+                <th className="text-left text-xs text-cream/50">時間帯 ＼ 曜日</th>
+                {DOW_LABELS.map((d) => (
+                  <th key={d} className="w-14 text-center text-xs text-cream/50">
+                    {d}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 24 }, (_, hour) => hour).map((hour) => (
+                <tr key={hour}>
+                  <td className="whitespace-nowrap pr-2 text-xs text-cream/70">
+                    {String(hour).padStart(2, "0")}:00
+                  </td>
+                  {DOW_LABELS.map((_, dow) => {
+                    const v = hourMatrix.matrix[dow][hour];
+                    return (
+                      <td
+                        key={dow}
+                        className="rounded-md text-center text-[10px] tabular-nums text-cream/90"
+                        style={{ backgroundColor: hourCellColor(v), height: 26 }}
+                        title={formatHms(v)}
+                      >
+                        {v > 0 ? formatHms(v) : ""}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {hourMatrix.max === 0 && <p className="py-6 text-sm text-cream/50">データがありません。</p>}
+        </div>
+      )}
+
+      {viewMode === "category" && (
       <div className="panel overflow-x-auto p-4">
         <table className="w-full min-w-[640px] border-separate border-spacing-1 text-sm">
           <thead>
@@ -103,6 +175,7 @@ export default function HeatmapSection() {
         </table>
         {categories.length === 0 && <p className="py-6 text-sm text-cream/50">データがありません。</p>}
       </div>
+      )}
     </div>
   );
 }
