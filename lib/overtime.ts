@@ -78,3 +78,40 @@ export function breakdownByProject(records: WorkRecord[], projectTitleById: Map<
 export function formatHoursJp(seconds: number): string {
   return `${(seconds / 3600).toFixed(2)} 時間`;
 }
+
+export interface AfterHoursResult {
+  totalSeconds: number;
+  byTask: BreakdownRow[];
+}
+
+// 各実績(startedAt〜endedAt)のうち、その日の「定時(cutoffTime)」より後にかかっている時間だけを積み上げる。
+// 所定労働時間による概算残業（computeMonthlyOvertime）とは異なり、実際に働いていた時刻ベースで判定する
+export function computeAfterHoursBreakdown(records: WorkRecord[], cutoffTime: string): AfterHoursResult {
+  const [hh, mm] = cutoffTime.split(":").map((v) => Number(v));
+  const cutoffMinutes = (Number.isFinite(hh) ? hh : 18) * 60 + (Number.isFinite(mm) ? mm : 0);
+
+  let totalSeconds = 0;
+  const byKey = new Map<string, { category: string; name: string; seconds: number }>();
+
+  for (const r of records) {
+    if (!r.startedAt || !r.endedAt || r.endedAt <= r.startedAt) continue;
+    const dayStart = new Date(r.date + "T00:00:00").getTime();
+    const cutoffMs = dayStart + cutoffMinutes * 60000;
+    const dayEndMs = dayStart + 86400000;
+    const overlapStart = Math.max(r.startedAt, cutoffMs);
+    const overlapEnd = Math.min(r.endedAt, dayEndMs);
+    const overlapSeconds = Math.max(0, (overlapEnd - overlapStart) / 1000);
+    if (overlapSeconds <= 0) continue;
+
+    totalSeconds += overlapSeconds;
+    const key = `${r.category}::${r.name}`;
+    if (!byKey.has(key)) byKey.set(key, { category: r.category, name: r.name, seconds: 0 });
+    byKey.get(key)!.seconds += overlapSeconds;
+  }
+
+  const byTask = [...byKey.values()]
+    .map((v) => ({ key: `${v.category}::${v.name}`, label: v.name, sublabel: v.category, seconds: v.seconds }))
+    .sort((a, b) => b.seconds - a.seconds);
+
+  return { totalSeconds, byTask };
+}

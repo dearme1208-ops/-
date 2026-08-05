@@ -5,8 +5,10 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { aggregateRecords } from "@/lib/aggregate";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
+import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { generateReportText, downloadTextFile } from "@/lib/report";
+import { useSetting } from "@/lib/settings";
 import { formatHms, todayStr } from "@/lib/time";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 
@@ -14,6 +16,7 @@ const TOP_N = 10;
 
 export default function ReportSection() {
   const [kind, setKind] = useState<"week" | "month">("week");
+  const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
 
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -30,15 +33,16 @@ export default function ReportSection() {
     const ranking = aggregateRecords(records, filter, "total");
     const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));
     const attention = computeAttentionList(masterTasks, periodRecords);
+    const afterHours = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
     const totalSeconds = ranking.reduce((s, r) => s + r.totalSeconds, 0);
     const totalCount = ranking.reduce((s, r) => s + r.count, 0);
-    return { rangeLabel, ranking, attention, totalSeconds, totalCount };
+    return { rangeLabel, ranking, attention, afterHours, totalSeconds, totalCount };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, masterTasks, kind]);
+  }, [records, masterTasks, kind, afterHoursCutoff]);
 
   function download() {
     if (!records || !masterTasks) return;
-    const text = generateReportText(title, filter, records, masterTasks);
+    const text = generateReportText(title, filter, records, masterTasks, afterHoursCutoff);
     const label = kind === "week" ? "weekly" : "monthly";
     downloadTextFile(`report_${label}_${todayStr()}.txt`, text);
   }
@@ -83,10 +87,15 @@ export default function ReportSection() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <StatTile label="合計作業時間" value={formatHms(data.totalSeconds)} />
             <StatTile label="記録件数" value={`${data.totalCount}件`} />
             <StatTile label="対象タスク数" value={`${data.ranking.length}種類`} />
+            <StatTile
+              label={`${afterHoursCutoff}以降`}
+              value={formatHms(data.afterHours.totalSeconds)}
+              accent={data.afterHours.totalSeconds > 0}
+            />
             <StatTile
               label="要注意項目"
               value={`${data.attention.length}件`}
@@ -108,6 +117,37 @@ export default function ReportSection() {
             />
             {data.ranking.length > TOP_N && (
               <p className="mt-3 text-[10px] text-cream/40">他{data.ranking.length - TOP_N}件（.txtダウンロードで全件確認できます）</p>
+            )}
+          </div>
+
+          <div className="panel p-4">
+            <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
+              🌙 定時（{afterHoursCutoff}）以降の業務
+            </h3>
+            {data.afterHours.totalSeconds === 0 ? (
+              <p className="text-sm text-cream/50">定時以降の実績はありません。</p>
+            ) : (
+              <>
+                <p className="mb-3 text-sm text-cream/70">
+                  合計 <span className="font-display text-lg font-bold text-alert">{formatHms(data.afterHours.totalSeconds)}</span>
+                  {data.totalSeconds > 0 && (
+                    <span className="ml-2 text-xs text-cream/50">
+                      （全体の{Math.round((data.afterHours.totalSeconds / data.totalSeconds) * 100)}%）
+                    </span>
+                  )}
+                </p>
+                <RankingBarChart
+                  data={data.afterHours.byTask.slice(0, TOP_N).map((r) => ({
+                    label: r.label,
+                    sublabel: r.sublabel,
+                    value: r.seconds,
+                  }))}
+                  formatValue={formatHms}
+                />
+                {data.afterHours.byTask.length > TOP_N && (
+                  <p className="mt-3 text-[10px] text-cream/40">他{data.afterHours.byTask.length - TOP_N}件</p>
+                )}
+              </>
             )}
           </div>
 

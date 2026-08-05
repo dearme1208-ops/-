@@ -1,6 +1,7 @@
 import type { MasterTask, WorkRecord } from "./types";
 import { aggregateRecords } from "./aggregate";
 import { computeAttentionList } from "./attention";
+import { computeAfterHoursBreakdown } from "./overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "./period";
 import { formatHms } from "./time";
 
@@ -8,7 +9,8 @@ export function generateReportText(
   title: string,
   filter: PeriodFilter,
   records: WorkRecord[],
-  masterTasks: MasterTask[]
+  masterTasks: MasterTask[],
+  afterHoursCutoff = "18:00"
 ): string {
   const range = getPeriodRange(filter);
   const rangeLabel = range
@@ -18,6 +20,7 @@ export function generateReportText(
   const ranking = aggregateRecords(records, filter, "total");
   const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));
   const attention = computeAttentionList(masterTasks, periodRecords);
+  const afterHours = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
 
   const lines: string[] = [];
   lines.push(`===== ${title} (${rangeLabel}) =====`);
@@ -32,6 +35,16 @@ export function generateReportText(
           r.avgSeconds
         )}, ${r.count}件)`
       );
+    });
+  }
+  lines.push("");
+  lines.push(`【定時（${afterHoursCutoff}）以降の業務】`);
+  if (afterHours.totalSeconds === 0) {
+    lines.push("（該当なし）");
+  } else {
+    lines.push(`合計 ${formatHms(afterHours.totalSeconds)}`);
+    afterHours.byTask.slice(0, 20).forEach((r, i) => {
+      lines.push(`${i + 1}. ${r.sublabel} / ${r.label} - ${formatHms(r.seconds)}`);
     });
   }
   lines.push("");

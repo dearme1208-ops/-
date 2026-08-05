@@ -21,6 +21,7 @@ export default function SettingsSection() {
   const emphasizeRunning = emphasizeRunningStr === "true";
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
+  const [afterHoursCutoff, setAfterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
 
   function addBreakRange() {
     setBreakRangesStr(serializeBreakRanges([...breakRanges, { start: "12:00", end: "13:00" }]));
@@ -180,6 +181,22 @@ export default function SettingsSection() {
           {autoImportantTag
             ? `ToDoのタスク登録・編集時にタグ「${autoImportantTag}」を選ぶと、自動的に★重要にします（タグを外しても重要フラグは自動では解除しません）。`
             : "自動重要化は無効です。タグを選んでも★重要は自動では変わりません。"}
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">週報・月報の「定時以降の業務」判定基準</h3>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+          <span>定時（終業時刻）</span>
+          <input
+            type="time"
+            value={afterHoursCutoff}
+            onChange={(e) => setAfterHoursCutoff(e.target.value)}
+            className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+          />
+        </div>
+        <p className="text-xs text-cream/50">
+          週報・月報で、この時刻より後にかかった実績時間を「定時以降の業務」として集計します（所定労働時間による概算残業とは別の、実際の時刻ベースの集計です）。
         </p>
       </div>
     </div>
