@@ -72,6 +72,8 @@ export interface WorkRecord {
   excludeReason?: "auto-iqr" | "manual";
   manualOverride?: boolean; // true = ユーザーが除外/復活を手動指定済み。自動IQR判定の対象外
   projectId?: string; // 案件から追加された作業の場合、その案件のID
+  isTrouble?: boolean; // トラブル対応の実績かどうか。詳細作業名が実績ごとに異なるため、
+  // ランキング等の集計では詳細作業名を無視し、大項目でひとつにまとめて集計する
 }
 
 export interface AppSetting {

@@ -12,6 +12,7 @@ import { computeStreakDays } from "@/lib/streak";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
+import { CONDITION_LEVELS } from "@/lib/condition";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -27,13 +28,6 @@ import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
-export const CONDITION_LEVELS = [
-  { level: "5", emoji: "😀", label: "とても良い" },
-  { level: "4", emoji: "🙂", label: "良い" },
-  { level: "3", emoji: "😐", label: "ふつう" },
-  { level: "2", emoji: "🙁", label: "やや悪い" },
-  { level: "1", emoji: "😣", label: "悪い" },
-];
 const TROUBLE_DETAIL_OPTIONS = [
   "キャタピラー",
   "コマツ",
@@ -576,6 +570,7 @@ export default function TodaySection() {
         endedAt: newEndedAt,
         excludedFromStats: false,
         projectId: task.projectId,
+        isTrouble: task.isTrouble,
       });
     }
     taskUpdates.masterTaskId = newMaster.id;
@@ -632,6 +627,7 @@ export default function TodaySection() {
       await db.records.update(existing.id, {
         seconds: existing.seconds + seconds,
         endedAt: nowMs,
+        isTrouble: existing.isTrouble || task.isTrouble,
       });
     } else {
       await db.records.add({
@@ -645,6 +641,7 @@ export default function TodaySection() {
         endedAt: nowMs,
         excludedFromStats: false,
         projectId: task.projectId,
+        isTrouble: task.isTrouble,
       });
     }
 
@@ -795,6 +792,8 @@ export default function TodaySection() {
   const nowHour = new Date(now).getHours() + new Date(now).getMinutes() / 60;
   const conditionWindowOpen = nowHour >= 8 && nowHour < 17;
   const streakDays = useMemo(() => computeStreakDays(projectRecords ?? [], date), [projectRecords, date]);
+  const latestConditionLevel =
+    conditionLogs && conditionLogs.length > 0 ? conditionLogs[conditionLogs.length - 1].level : null;
 
   return (
     <div className="space-y-4">
@@ -803,7 +802,11 @@ export default function TodaySection() {
         {conditionWindowOpen ? (
           <div className="flex flex-wrap gap-2">
             {CONDITION_LEVELS.map((c) => (
-              <button key={c.level} className="btn-pill-outline text-sm" onClick={() => logCondition(c.level)}>
+              <button
+                key={c.level}
+                className={c.level === latestConditionLevel ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+                onClick={() => logCondition(c.level)}
+              >
                 {c.emoji} {c.label}
               </button>
             ))}

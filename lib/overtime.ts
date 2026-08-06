@@ -46,12 +46,13 @@ export interface BreakdownRow {
   seconds: number;
 }
 
-// 業務区分別: 大項目（category）と詳細作業名（name）の組み合わせごとに内訳を出す
+// 業務区分別: 大項目（category）と詳細作業名（name）の組み合わせごとに内訳を出す。
+// トラブル対応など「ポイント」が付いた実績は、詳細作業名が実績ごとに異なっていても大項目でまとめる
 export function breakdownByCategory(records: WorkRecord[]): BreakdownRow[] {
   const map = new Map<string, { category: string; name: string; seconds: number }>();
   for (const r of records) {
-    const key = `${r.category}::${r.name}`;
-    if (!map.has(key)) map.set(key, { category: r.category, name: r.name, seconds: 0 });
+    const key = r.isTrouble ? `__trouble__::${r.category}` : `${r.category}::${r.name}`;
+    if (!map.has(key)) map.set(key, { category: r.category, name: r.isTrouble ? "（全件合計）" : r.name, seconds: 0 });
     map.get(key)!.seconds += r.seconds;
   }
   return [...map.values()]

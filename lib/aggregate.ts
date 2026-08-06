@@ -25,9 +25,18 @@ export function aggregateRecords(
   );
   const map = new Map<string, AggregateRow>();
   for (const r of inPeriod) {
-    const key = r.masterTaskId ?? `${r.category}::${r.name}`;
+    // トラブル対応など「ポイント」が付いた実績は、実績ごとに詳細作業名が異なっていても
+    // 大項目（category）でひとつにまとめて集計する
+    const key = r.isTrouble ? `__trouble__::${r.category}` : (r.masterTaskId ?? `${r.category}::${r.name}`);
     if (!map.has(key)) {
-      map.set(key, { key, category: r.category, name: r.name, totalSeconds: 0, avgSeconds: 0, count: 0 });
+      map.set(key, {
+        key,
+        category: r.category,
+        name: r.isTrouble ? "（全件合計）" : r.name,
+        totalSeconds: 0,
+        avgSeconds: 0,
+        count: 0,
+      });
     }
     const row = map.get(key)!;
     row.totalSeconds += r.seconds;

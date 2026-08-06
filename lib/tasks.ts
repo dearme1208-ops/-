@@ -70,7 +70,11 @@ export async function finishDailyTask(task: DailyTask): Promise<void> {
     .first();
 
   if (existing) {
-    await db.records.update(existing.id, { seconds: existing.seconds + seconds, endedAt: nowMs });
+    await db.records.update(existing.id, {
+      seconds: existing.seconds + seconds,
+      endedAt: nowMs,
+      isTrouble: existing.isTrouble || task.isTrouble,
+    });
   } else {
     await db.records.add({
       id: uid(),
@@ -83,6 +87,7 @@ export async function finishDailyTask(task: DailyTask): Promise<void> {
       endedAt: nowMs,
       excludedFromStats: false,
       projectId: task.projectId,
+      isTrouble: task.isTrouble,
     });
   }
 
