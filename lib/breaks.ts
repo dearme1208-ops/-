@@ -49,3 +49,22 @@ export function adjustStopTimeForBreaks(stopMs: number, nowMs: number, dateStr: 
   }
   return Math.min(adjusted, nowMs);
 }
+
+// stopMsからnowMsまでの間で、休憩帯と重なっている時間の合計(ms)
+function totalBreakOverlapMs(stopMs: number, nowMs: number, dateStr: string, ranges: BreakRange[]): number {
+  let overlap = 0;
+  for (const [s, e] of breakRangesToMs(dateStr, ranges)) {
+    const overlapStart = Math.max(s, stopMs);
+    const overlapEnd = Math.min(e, nowMs);
+    if (overlapEnd > overlapStart) overlap += overlapEnd - overlapStart;
+  }
+  return overlap;
+}
+
+// stopMsからnowMsまでの経過時間から休憩帯と重なる時間を差し引いた、正味の経過時間(ms)。
+// 未計測の自動開始のしきい値判定に使う。休憩をまたいでも、休憩前に既に経過していた
+// 待ち時間を無駄にせず、休憩が終わった時点で正しく閾値超過を判定できるようにする
+export function computeEffectiveElapsedMs(stopMs: number, nowMs: number, dateStr: string, ranges: BreakRange[]): number {
+  const raw = Math.max(0, nowMs - stopMs);
+  return Math.max(0, raw - totalBreakOverlapMs(stopMs, nowMs, dateStr, ranges));
+}

@@ -85,6 +85,17 @@ export interface BreakRange {
   end: string; // HH:MM
 }
 
+// 体調記録。1日の中で何度でも記録でき、記録時点で計測中だった作業を紐付ける
+export interface ConditionLog {
+  id: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM（記録した時刻の表示用）
+  loggedAt: number;
+  level: string; // CONDITION_LEVELSのlevelと対応
+  category?: string; // 記録時点で計測中だった作業の大項目（なければ未記録）
+  name?: string; // 記録時点で計測中だった作業の詳細作業名
+}
+
 export interface ProjectItem {
   id: string;
   title: string; // 件名

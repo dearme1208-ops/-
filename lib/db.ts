@@ -1,5 +1,15 @@
 import Dexie, { type Table } from "dexie";
-import type { MasterTask, TemplateItem, DailyTask, WorkRecord, AppSetting, ProjectItem, TodoList, TodoTask } from "./types";
+import type {
+  MasterTask,
+  TemplateItem,
+  DailyTask,
+  WorkRecord,
+  AppSetting,
+  ProjectItem,
+  TodoList,
+  TodoTask,
+  ConditionLog,
+} from "./types";
 
 export class KouteiDB extends Dexie {
   masterTasks!: Table<MasterTask, string>;
@@ -10,6 +20,7 @@ export class KouteiDB extends Dexie {
   projects!: Table<ProjectItem, string>;
   todoLists!: Table<TodoList, string>;
   todoTasks!: Table<TodoTask, string>;
+  conditionLogs!: Table<ConditionLog, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -37,6 +48,17 @@ export class KouteiDB extends Dexie {
       projects: "id, dueDate, createdAt",
       todoLists: "id, order",
       todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+    });
+    this.version(4).stores({
+      masterTasks: "id, category, name, isFavorite",
+      templateItems: "id, weekday, order",
+      dailyTasks: "id, date, status, order",
+      records: "id, date, category, name, masterTaskId, excludedFromStats",
+      settings: "key",
+      projects: "id, dueDate, createdAt",
+      todoLists: "id, order",
+      todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+      conditionLogs: "id, date, loggedAt",
     });
   }
 }

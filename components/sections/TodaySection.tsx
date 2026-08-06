@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
-import { adjustStopTimeForBreaks, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
+import { adjustStopTimeForBreaks, computeEffectiveElapsedMs, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
 import { useSetting } from "@/lib/settings";
 import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeStreakDays } from "@/lib/streak";
@@ -51,7 +51,6 @@ const TROUBLE_DETAIL_OPTIONS = [
 export default function TodaySection() {
   const date = todayStr();
   const [now, setNow] = useState(() => Date.now());
-  const [conditionLevel, setConditionLevel] = useSetting(`condition.${date}`, "");
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showTroubleDialog, setShowTroubleDialog] = useState(false);
@@ -89,6 +88,11 @@ export default function TodaySection() {
   // 直近でマウス/キーボード操作があった時刻。放置検知で未計測を打ち切る起点に使う
   const lastActivityRef = useRef(Date.now());
   const idleFinishInFlightRef = useRef(false);
+  // 本日まだ一度も作業を停止していない場合の未計測起点。ページを開いた/日付が変わった時刻を仮の起点とする
+  const sessionAnchorRef = useRef(Date.now());
+  useEffect(() => {
+    sessionAnchorRef.current = Date.now();
+  }, [date]);
 
   const tasks = useLiveQuery(
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
@@ -100,6 +104,10 @@ export default function TodaySection() {
   );
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const projectRecords = useLiveQuery(() => db.records.toArray(), []);
+  const conditionLogs = useLiveQuery(
+    () => db.conditionLogs.where("date").equals(date).sortBy("loggedAt"),
+    [date]
+  );
 
   const projectMap = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p])), [projects]);
   // 案件ごとの累計作業時間（全期間の実績を合算）。案件から追加した作業のモチベーション表示に使う
@@ -249,7 +257,9 @@ export default function TodaySection() {
   }, [tasks]);
 
   // 直近の「停止」時刻（完了した作業の終了時刻、または一時停止中の作業が
-  // 一時停止した時刻のうち最新のもの）。さかのぼって開始/再開する際の起点にする
+  // 一時停止した時刻のうち最新のもの）。さかのぼって開始/再開する際の起点にする。
+  // 本日まだ一度も停止していなければ、ページを開いた時刻を仮の起点として扱う
+  // （そうしないと、初回の作業を始める前は未計測の自動開始が永遠に判定できないため）
   const lastStopTime = useMemo(() => {
     if (!tasks) return null;
     const stops: number[] = [];
@@ -260,7 +270,7 @@ export default function TodaySection() {
         if (lastSeg?.end) stops.push(lastSeg.end);
       }
     }
-    return stops.length > 0 ? Math.max(...stops) : null;
+    return stops.length > 0 ? Math.max(...stops) : sessionAnchorRef.current;
   }, [tasks]);
 
   // 休憩などの除外時間帯を差し引いた「実質的な」直近停止時刻。未計測の自動開始や
@@ -302,15 +312,17 @@ export default function TodaySection() {
   }, [tasks]);
 
   // 誰も計測していない状態が閾値を超えたら、自動で仮計測タスクを立ち上げる（オフの場合は何もしない）。
-  // 除外時間帯（休憩など）の最中は開始せず、起点も休憩時間を除いた実質的な停止時刻を使う
+  // 除外時間帯（休憩など）の最中は開始しない。しきい値の判定は休憩時間を差し引いた正味の経過時間で行うため、
+  // 休憩をまたいでも休憩前に経過していた時間が無駄にならず、休憩が終わった時点で正しく超過を判定できる
   useEffect(() => {
     if (!provisionalEnabled) return;
     if (!tasks) return;
     if (tasks.some((t) => t.isProvisional)) return;
     if (tasks.some((t) => t.status === "running")) return;
-    if (effectiveLastStopTime === null) return;
+    if (lastStopTime === null || effectiveLastStopTime === null) return;
     if (isWithinBreak(now, date, breakRanges)) return;
-    if (now - effectiveLastStopTime < thresholdMinutes * 60000) return;
+    const realElapsedMs = computeEffectiveElapsedMs(lastStopTime, now, date, breakRanges);
+    if (realElapsedMs < thresholdMinutes * 60000) return;
     const gapStart = effectiveLastStopTime;
     (async () => {
       const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
@@ -330,7 +342,7 @@ export default function TodaySection() {
       };
       await db.dailyTasks.add(task);
     })();
-  }, [provisionalEnabled, tasks, now, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
+  }, [provisionalEnabled, tasks, now, lastStopTime, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
 
   // 放置検知: マウス/キーボード操作もタブの表示もない状態が一定時間続いたら、
   // 未計測の計測を「最後に操作していた時刻」で自動的に打ち切る。定時後・休日に
@@ -710,6 +722,21 @@ export default function TodaySection() {
     await commitFinish(task, segments, manualSeconds * 1000, startedAt);
   }
 
+  // 体調を記録する。その時点で計測中の作業があれば一緒に紐付けて残す
+  async function logCondition(level: string) {
+    const runningTask = (tasks ?? []).find((t) => t.status === "running");
+    const nowMs = Date.now();
+    await db.conditionLogs.add({
+      id: uid(),
+      date,
+      time: formatClock(nowMs),
+      loggedAt: nowMs,
+      level,
+      category: runningTask?.category,
+      name: runningTask?.name,
+    });
+  }
+
   async function addFavoriteAndStart(masterTaskId: string) {
     const master = await db.masterTasks.get(masterTaskId);
     if (!master) return;
@@ -764,36 +791,44 @@ export default function TodaySection() {
     setNotifPermission(perm);
   }
 
-  // 体調は8:00〜17:00の間だけ入力・変更できるようにする（入力済みの内容はその後も表示のみ可能）
+  // 体調は8:00〜17:00の間、何度でも記録できる。記録のたびにその時点で計測中の作業と時刻を紐付けて残す
   const nowHour = new Date(now).getHours() + new Date(now).getMinutes() / 60;
   const conditionWindowOpen = nowHour >= 8 && nowHour < 17;
-  const selectedCondition = CONDITION_LEVELS.find((c) => c.level === conditionLevel);
   const streakDays = useMemo(() => computeStreakDays(projectRecords ?? [], date), [projectRecords, date]);
 
   return (
     <div className="space-y-4">
       <div className="panel p-4">
         <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今日の体調</h3>
-        {selectedCondition ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-2xl">{selectedCondition.emoji}</span>
-            <span className="text-sm text-cream/70">{selectedCondition.label}</span>
-            {conditionWindowOpen && (
-              <button className="ml-auto text-xs text-cream/40 hover:text-cream" onClick={() => setConditionLevel("")}>
-                変更する
-              </button>
-            )}
-          </div>
-        ) : conditionWindowOpen ? (
+        {conditionWindowOpen ? (
           <div className="flex flex-wrap gap-2">
             {CONDITION_LEVELS.map((c) => (
-              <button key={c.level} className="btn-pill-outline text-sm" onClick={() => setConditionLevel(c.level)}>
+              <button key={c.level} className="btn-pill-outline text-sm" onClick={() => logCondition(c.level)}>
                 {c.emoji} {c.label}
               </button>
             ))}
           </div>
         ) : (
-          <p className="text-xs text-cream/40">8:00〜17:00の間に入力できます。</p>
+          <p className="text-xs text-cream/40">8:00〜17:00の間に記録できます。</p>
+        )}
+        {conditionLogs && conditionLogs.length > 0 && (
+          <div className="mt-3 space-y-1.5 border-t border-cream/10 pt-3">
+            {[...conditionLogs].reverse().map((log) => {
+              const c = CONDITION_LEVELS.find((c) => c.level === log.level);
+              return (
+                <div key={log.id} className="flex items-center gap-2 text-xs">
+                  <span className="w-11 shrink-0 tabular-nums text-cream/50">{log.time}</span>
+                  <span className="text-base">{c?.emoji}</span>
+                  <span className="shrink-0 text-cream/70">{c?.label}</span>
+                  {log.category && (
+                    <span className="truncate text-cream/40">
+                      ・{log.category} / {log.name}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
