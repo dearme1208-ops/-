@@ -13,7 +13,7 @@ import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
 import { CONDITION_LEVELS } from "@/lib/condition";
-import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, todayStr } from "@/lib/time";
+import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
   notify,
@@ -72,6 +72,8 @@ export default function TodaySection() {
   const provisionalIdleMs = Math.max(0.5, Number(provisionalIdleHoursStr) || 3) * 3600000;
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
+  const [conditionWindowStart] = useSetting("condition.windowStart", "08:00");
+  const [conditionWindowEnd] = useSetting("condition.windowEnd", "17:00");
   const [weeklyAfterHoursNotifyEnabledStr] = useSetting("notify.afterHoursWeeklyEnabled", "false");
   const weeklyAfterHoursNotifyEnabled = weeklyAfterHoursNotifyEnabledStr === "true";
   const [weeklyAfterHoursThresholdStr] = useSetting("notify.afterHoursWeeklyThresholdHours", "5");
@@ -788,9 +790,12 @@ export default function TodaySection() {
     setNotifPermission(perm);
   }
 
-  // 体調は8:00〜17:00の間、何度でも記録できる。記録のたびにその時点で計測中の作業と時刻を紐付けて残す
+  // 体調は設定した時間帯の間、何度でも記録できる（デフォルト8:00〜17:00）。
+  // 記録のたびにその時点で計測中の作業と時刻を紐付けて残す
   const nowHour = new Date(now).getHours() + new Date(now).getMinutes() / 60;
-  const conditionWindowOpen = nowHour >= 8 && nowHour < 17;
+  const conditionWindowStartHour = parseHourStr(conditionWindowStart, 8);
+  const conditionWindowEndHour = parseHourStr(conditionWindowEnd, 17);
+  const conditionWindowOpen = nowHour >= conditionWindowStartHour && nowHour < conditionWindowEndHour;
   const streakDays = useMemo(() => computeStreakDays(projectRecords ?? [], date), [projectRecords, date]);
   const latestConditionLevel =
     conditionLogs && conditionLogs.length > 0 ? conditionLogs[conditionLogs.length - 1].level : null;
@@ -812,7 +817,9 @@ export default function TodaySection() {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-cream/40">8:00〜17:00の間に記録できます。</p>
+          <p className="text-xs text-cream/40">
+            {conditionWindowStart}〜{conditionWindowEnd}の間に記録できます。
+          </p>
         )}
         {conditionLogs && conditionLogs.length > 0 && (
           <div className="mt-3 space-y-1.5 border-t border-cream/10 pt-3">

@@ -17,6 +17,13 @@ export function formatMsClock(totalMs: number): string {
   return formatHms(totalMs / 1000);
 }
 
+// "HH:MM" を小数の時（例: "08:30" → 8.5）に変換する。不正な値はfallbackを返す
+export function parseHourStr(hhmm: string, fallback: number): number {
+  const [h, m] = hhmm.split(":").map((v) => Number(v));
+  if (!Number.isFinite(h)) return fallback;
+  return h + (Number.isFinite(m) ? m : 0) / 60;
+}
+
 // 時刻表示 (hh:mm) 例: 15:42
 export function formatClock(epochMs: number): string {
   const d = new Date(epochMs);
