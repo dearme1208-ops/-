@@ -13,6 +13,7 @@ import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
 import { CONDITION_LEVELS } from "@/lib/condition";
+import { computeWeekdayAverages } from "@/lib/weekday";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -81,6 +82,12 @@ export default function TodaySection() {
     "notify.afterHoursWeeklyNotifiedWeek",
     ""
   );
+  const [dailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
+  const dailySummaryEnabled = dailySummaryEnabledStr === "true";
+  const [dailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
+  const [dailySummaryNotifiedDate, setDailySummaryNotifiedDate] = useSetting("notify.dailySummaryNotifiedDate", "");
+  const [shortcutsEnabledStr] = useSetting("today.shortcutsEnabled", "true");
+  const shortcutsEnabled = shortcutsEnabledStr === "true";
   // 直近でマウス/キーボード操作があった時刻。放置検知で未計測を打ち切る起点に使う
   const lastActivityRef = useRef(Date.now());
   const idleFinishInFlightRef = useRef(false);
@@ -95,7 +102,7 @@ export default function TodaySection() {
     [date]
   );
   const favorites = useLiveQuery(
-    () => db.masterTasks.filter((t) => t.isFavorite).toArray(),
+    () => db.masterTasks.filter((t) => t.isFavorite && !t.archived).toArray(),
     []
   );
   const projects = useLiveQuery(() => db.projects.toArray(), []);
@@ -163,6 +170,41 @@ export default function TodaySection() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
+  // キーボードショートカット: Space=計測中の作業を一時停止/一番上の一時停止中の作業を再開、
+  // N=突発作業を追加、T=トラブル発生。入力欄にフォーカスしている時や修飾キー使用時は無効
+  useEffect(() => {
+    if (!shortcutsEnabled) return;
+    function handleKeydown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.code === "Space") {
+        const running = (tasks ?? []).find((t) => t.status === "running" && !t.isProvisional);
+        if (running) {
+          e.preventDefault();
+          pauseTask(running);
+          return;
+        }
+        const paused = (tasks ?? []).find((t) => t.status === "paused");
+        if (paused) {
+          e.preventDefault();
+          startTask(paused);
+        }
+        return;
+      }
+      if (e.key === "n" || e.key === "N") {
+        setShowAddDialog(true);
+      }
+      if (e.key === "t" || e.key === "T") {
+        setShowTroubleDialog(true);
+      }
+    }
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [shortcutsEnabled, tasks]);
+
   // 今週の「定時以降の業務」合計が週次基準を超えたら通知する（週ごとに1回だけ）
   useEffect(() => {
     if (!weeklyAfterHoursNotifyEnabled || !projectRecords) return;
@@ -185,6 +227,33 @@ export default function TodaySection() {
     weeklyAfterHoursThresholdStr,
     weeklyAfterHoursNotifiedWeek,
     setWeeklyAfterHoursNotifiedWeek,
+  ]);
+
+  // 1日の終わりに、その日の合計作業時間（と体調記録があればその内容）を通知する（1日1回）
+  useEffect(() => {
+    if (!dailySummaryEnabled || !projectRecords) return;
+    if (dailySummaryNotifiedDate === date) return;
+    const summaryHour = parseHourStr(dailySummaryTime, 18);
+    const nowHourNum = new Date(now).getHours() + new Date(now).getMinutes() / 60;
+    if (nowHourNum < summaryHour) return;
+    const totalSeconds = projectRecords
+      .filter((r) => r.date === date && !r.excludedFromStats)
+      .reduce((s, r) => s + r.seconds, 0);
+    const conditionPart =
+      conditionLogs && conditionLogs.length > 0
+        ? `・体調 ${CONDITION_LEVELS.find((c) => c.level === conditionLogs[conditionLogs.length - 1].level)?.emoji ?? ""}`
+        : "";
+    notify("今日の作業サマリー", `合計 ${formatHms(totalSeconds)}${conditionPart}`, "daily-summary");
+    setDailySummaryNotifiedDate(date);
+  }, [
+    dailySummaryEnabled,
+    dailySummaryNotifiedDate,
+    dailySummaryTime,
+    projectRecords,
+    conditionLogs,
+    date,
+    now,
+    setDailySummaryNotifiedDate,
   ]);
 
   // 予定超過チェック（通知 + 20分超過の画面確認）
@@ -489,13 +558,14 @@ export default function TodaySection() {
   // その実績にそのまま加減することで、他の作業から合算された分にも影響を与えず正しく反映できる。
   // 区分/作業名の変更は設定(records.masterEditMode)に従い、マスタ自体をリネームするか、
   // 別マスタ(既存 or 新規)に実績ごと繋ぎ変える
-  async function applyTaskEdit(task: DailyTask, category: string, name: string, actualSeconds?: number) {
+  async function applyTaskEdit(task: DailyTask, category: string, name: string, actualSeconds?: number, note?: string) {
     const renamed = category !== task.category || name !== task.name;
 
     if (task.status !== "done") {
       await db.dailyTasks.update(task.id, {
         category,
         name,
+        note,
         ...(renamed ? { masterTaskId: undefined } : {}),
       });
       return;
@@ -505,7 +575,7 @@ export default function TodaySection() {
     const newSeconds = actualSeconds ?? oldSeconds;
     const delta = newSeconds - oldSeconds;
 
-    const taskUpdates: Partial<DailyTask> = { category, name };
+    const taskUpdates: Partial<DailyTask> = { category, name, note };
     if (delta !== 0) {
       const lastEnd = (task.segments[task.segments.length - 1]?.end ?? task.endedAt ?? Date.now()) + delta * 1000;
       taskUpdates.accumulatedMs = newSeconds * 1000;
@@ -525,8 +595,11 @@ export default function TodaySection() {
       : undefined;
 
     if (!renamed) {
-      if (delta !== 0 && existingOld) {
-        await db.records.update(existingOld.id, { seconds: Math.max(0, existingOld.seconds + delta) });
+      if (existingOld) {
+        await db.records.update(existingOld.id, {
+          ...(delta !== 0 ? { seconds: Math.max(0, existingOld.seconds + delta) } : {}),
+          note,
+        });
       }
       await db.dailyTasks.update(task.id, taskUpdates);
       if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
@@ -537,8 +610,11 @@ export default function TodaySection() {
       if (oldMasterId) {
         await db.masterTasks.update(oldMasterId, { category, name, updatedAt: Date.now() });
       }
-      if (delta !== 0 && existingOld) {
-        await db.records.update(existingOld.id, { seconds: Math.max(0, existingOld.seconds + delta) });
+      if (existingOld) {
+        await db.records.update(existingOld.id, {
+          ...(delta !== 0 ? { seconds: Math.max(0, existingOld.seconds + delta) } : {}),
+          note,
+        });
       }
       await db.dailyTasks.update(task.id, taskUpdates);
       if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
@@ -559,7 +635,11 @@ export default function TodaySection() {
       .filter((r) => r.masterTaskId === newMaster.id && r.projectId === task.projectId)
       .first();
     if (existingNew) {
-      await db.records.update(existingNew.id, { seconds: existingNew.seconds + newSeconds, endedAt: newEndedAt });
+      await db.records.update(existingNew.id, {
+        seconds: existingNew.seconds + newSeconds,
+        endedAt: newEndedAt,
+        note,
+      });
     } else {
       await db.records.add({
         id: uid(),
@@ -573,6 +653,7 @@ export default function TodaySection() {
         excludedFromStats: false,
         projectId: task.projectId,
         isTrouble: task.isTrouble,
+        note,
       });
     }
     taskUpdates.masterTaskId = newMaster.id;
@@ -797,6 +878,17 @@ export default function TodaySection() {
   const conditionWindowEndHour = parseHourStr(conditionWindowEnd, 17);
   const conditionWindowOpen = nowHour >= conditionWindowStartHour && nowHour < conditionWindowEndHour;
   const streakDays = useMemo(() => computeStreakDays(projectRecords ?? [], date), [projectRecords, date]);
+
+  // 同曜日比較: 本日の実績合計を、過去の同じ曜日の平均と比べる
+  const todayTotalSeconds = useMemo(
+    () => (projectRecords ?? []).filter((r) => r.date === date && !r.excludedFromStats).reduce((s, r) => s + r.seconds, 0),
+    [projectRecords, date]
+  );
+  const sameWeekdayAvg = useMemo(() => {
+    const averages = computeWeekdayAverages((projectRecords ?? []).filter((r) => r.date !== date));
+    const dow = new Date(date + "T12:00:00").getDay();
+    return averages.find((w) => w.dow === dow) ?? null;
+  }, [projectRecords, date]);
   const latestConditionLevel =
     conditionLogs && conditionLogs.length > 0 ? conditionLogs[conditionLogs.length - 1].level : null;
 
@@ -918,6 +1010,16 @@ export default function TodaySection() {
               🔥 連続{streakDays}日
             </span>
           )}
+          {todayTotalSeconds > 0 && sameWeekdayAvg && sameWeekdayAvg.dayCount >= 2 && (
+            <span
+              className="rounded-full bg-cream/10 px-2 py-0.5 text-xs text-cream/70"
+              title={`過去の${sameWeekdayAvg.label}曜日${sameWeekdayAvg.dayCount}日分の平均との比較`}
+            >
+              {sameWeekdayAvg.label}曜平均比{" "}
+              {todayTotalSeconds >= sameWeekdayAvg.avgSeconds ? "+" : "-"}
+              {Math.round((Math.abs(todayTotalSeconds - sameWeekdayAvg.avgSeconds) / sameWeekdayAvg.avgSeconds) * 100)}%
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn-pill-danger text-sm" onClick={() => setShowTroubleDialog(true)}>
@@ -1033,6 +1135,7 @@ export default function TodaySection() {
                       </span>
                     )}
                   </div>
+                  {task.note && <div className="mt-0.5 text-xs italic text-cream/50">📝 {task.note}</div>}
                   {duplicateRunning && (
                     <div className="text-xs text-alert">同じ作業を計測中のため開始できません</div>
                   )}
@@ -1167,7 +1270,7 @@ export default function TodaySection() {
       {editingTask && (
         <EditTaskDialog
           task={editingTask}
-          onSave={(category, name, actualSeconds) => applyTaskEdit(editingTask, category, name, actualSeconds)}
+          onSave={(category, name, actualSeconds, note) => applyTaskEdit(editingTask, category, name, actualSeconds, note)}
           onClose={() => setEditingTask(null)}
         />
       )}

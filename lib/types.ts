@@ -17,6 +17,8 @@ export interface MasterTask {
   sampleCount: number; // 実績平均の算出に使ったサンプル数（表示用）
   createdAt: number;
   updatedAt: number;
+  tags?: string[]; // タグ別の作業時間集計に使う自由入力タグ
+  archived?: boolean; // 使用頻度の低いマスタをアーカイブした際にtrue。一覧・ピッカーの既定表示から除外する
 }
 
 export interface TemplateItem {
@@ -57,6 +59,7 @@ export interface DailyTask {
   projectId?: string; // 案件から追加された場合、その案件のID
   isTrouble?: boolean; // トラブル対応タスクかどうか
   resumeTaskIds?: string[]; // トラブル対応で中断した（一時停止させられた）作業のID一覧。トラブル完了時にまとめて再開する
+  note?: string; // 完了時の一言メモ
 }
 
 export interface WorkRecord {
@@ -74,6 +77,7 @@ export interface WorkRecord {
   projectId?: string; // 案件から追加された作業の場合、その案件のID
   isTrouble?: boolean; // トラブル対応の実績かどうか。詳細作業名が実績ごとに異なるため、
   // ランキング等の集計では詳細作業名を無視し、大項目でひとつにまとめて集計する
+  note?: string; // 作業完了時の一言メモ（複数の実績が合算された場合は最後に編集したメモで上書きされる）
 }
 
 export interface AppSetting {

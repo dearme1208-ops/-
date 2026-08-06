@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
@@ -9,6 +9,7 @@ import { computeAttentionList, type AttentionRow } from "@/lib/attention";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { generateReportText, downloadTextFile } from "@/lib/report";
+import { exportElementToPdf } from "@/lib/pdfExport";
 import { useSetting } from "@/lib/settings";
 import { effectiveDueDate } from "@/lib/todo";
 import { daysBetweenDateStrs, formatHms, todayStr } from "@/lib/time";
@@ -23,6 +24,10 @@ export default function ReportSection() {
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [standardHoursStr] = useSetting("overtime.standardDailyHours", "8");
   const standardDailySeconds = Math.max(0, Number(standardHoursStr) || 0) * 3600;
+  const [weeklyGoalHoursStr] = useSetting("report.weeklyGoalHours", "");
+  const [monthlyGoalHoursStr] = useSetting("report.monthlyGoalHours", "");
+  const goalHoursStr = kind === "week" ? weeklyGoalHoursStr : monthlyGoalHoursStr;
+  const goalSeconds = Number(goalHoursStr) > 0 ? Number(goalHoursStr) * 3600 : null;
 
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -122,6 +127,20 @@ export default function ReportSection() {
     downloadTextFile(`report_${label}_${todayStr()}.txt`, text);
   }
 
+  const reportRef = useRef<HTMLDivElement>(null);
+  const [pdfExporting, setPdfExporting] = useState(false);
+
+  async function downloadPdf() {
+    if (!reportRef.current) return;
+    setPdfExporting(true);
+    try {
+      const label = kind === "week" ? "weekly" : "monthly";
+      await exportElementToPdf(reportRef.current, `report_${label}_${todayStr()}.pdf`);
+    } finally {
+      setPdfExporting(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -140,6 +159,9 @@ export default function ReportSection() {
         <button className="btn-pill-outline text-sm" onClick={download} disabled={!data}>
           ダウンロード (.txt)
         </button>
+        <button className="btn-pill-outline text-sm" onClick={downloadPdf} disabled={!data || pdfExporting}>
+          {pdfExporting ? "PDF作成中..." : "ダウンロード (.pdf)"}
+        </button>
       </div>
 
       {!data ? (
@@ -147,7 +169,7 @@ export default function ReportSection() {
       ) : data.ranking.length === 0 ? (
         <div className="panel p-6 text-center text-sm text-cream/50">この期間の実績データはまだありません。</div>
       ) : (
-        <div className="space-y-4">
+        <div ref={reportRef} className="space-y-4">
           <div className="panel p-5">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
@@ -176,6 +198,30 @@ export default function ReportSection() {
               </p>
             )}
           </div>
+
+          {goalSeconds && (
+            <div className="panel p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="font-display text-sm font-bold text-cream/80">🎯 今{periodLabel}の目標達成率</h3>
+                <span className="text-sm tabular-nums text-cream/70">
+                  {formatHms(data.totalSeconds)} / {formatHms(goalSeconds)}
+                </span>
+              </div>
+              <div className="h-3 w-full overflow-hidden rounded-full bg-cream/5">
+                <div
+                  className={data.totalSeconds >= goalSeconds ? "h-3 rounded-full bg-cream" : "h-3 rounded-full bg-alert"}
+                  style={{ width: `${Math.min(100, (data.totalSeconds / goalSeconds) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-cream/50">
+                {data.totalSeconds >= goalSeconds
+                  ? "目標を達成しています。"
+                  : `達成率 ${Math.round((data.totalSeconds / goalSeconds) * 100)}%（残り ${formatHms(
+                      goalSeconds - data.totalSeconds
+                    )}）`}
+              </p>
+            </div>
+          )}
 
           {data.paceWarning && (
             <div className="panel border border-alert/40 p-4">

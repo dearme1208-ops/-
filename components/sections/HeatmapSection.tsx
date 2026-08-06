@@ -5,11 +5,13 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { formatHms } from "@/lib/time";
 import { computeHourDowMatrix } from "@/lib/heatmap";
+import { computeCalendarHeatmap, heatLevel } from "@/lib/calendarHeatmap";
 
 const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
+const CALENDAR_LEVEL_OPACITY = [0.04, 0.22, 0.42, 0.64, 0.9];
 
 type SortKey = "name" | "total" | "count";
-type ViewMode = "category" | "hour";
+type ViewMode = "category" | "hour" | "calendar";
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "name", label: "名前順" },
@@ -30,8 +32,18 @@ export default function HeatmapSection() {
   function hourCellColor(value: number): string {
     if (hourMatrix.max === 0 || value === 0) return "rgba(233,230,189,0.04)";
     const ratio = Math.min(1, value / hourMatrix.max);
-    return `rgba(194,59,59,${0.08 + ratio * 0.72})`;
+    return `rgb(var(--accent-rgb) / ${0.08 + ratio * 0.72})`;
   }
+
+  const calendarData = useMemo(
+    () => computeCalendarHeatmap((records ?? []).filter((r) => !r.excludedFromStats)),
+    [records]
+  );
+  const calendarByWeek = useMemo(() => {
+    const weeks: (typeof calendarData.days)[number][][] = Array.from({ length: calendarData.weekCount }, () => []);
+    for (const d of calendarData.days) weeks[d.weekIndex].push(d);
+    return weeks;
+  }, [calendarData]);
 
   const { categories, matrix, totals, counts, max } = useMemo(() => {
     const cats = new Set<string>();
@@ -63,7 +75,7 @@ export default function HeatmapSection() {
   function cellColor(value: number): string {
     if (max === 0 || value === 0) return "rgba(233,230,189,0.04)";
     const ratio = Math.min(1, value / max);
-    return `rgba(194,59,59,${0.08 + ratio * 0.72})`;
+    return `rgb(var(--accent-rgb) / ${0.08 + ratio * 0.72})`;
   }
 
   return (
@@ -80,6 +92,12 @@ export default function HeatmapSection() {
           onClick={() => setViewMode("hour")}
         >
           時間帯×曜日
+        </button>
+        <button
+          className={viewMode === "calendar" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => setViewMode("calendar")}
+        >
+          年間カレンダー
         </button>
       </div>
 
@@ -135,6 +153,41 @@ export default function HeatmapSection() {
             </tbody>
           </table>
           {hourMatrix.max === 0 && <p className="py-6 text-sm text-cream/50">データがありません。</p>}
+        </div>
+      )}
+
+      {viewMode === "calendar" && (
+        <div className="panel overflow-x-auto p-4">
+          <div className="inline-flex gap-[3px]">
+            {calendarByWeek.map((week, wi) => (
+              <div key={wi} className="flex flex-col gap-[3px]">
+                {week.map((d) => (
+                  <div
+                    key={d.date}
+                    className="h-[11px] w-[11px] rounded-sm"
+                    style={{
+                      backgroundColor:
+                        d.seconds > 0
+                          ? `rgb(var(--accent-rgb) / ${CALENDAR_LEVEL_OPACITY[heatLevel(d.seconds, calendarData.maxSeconds)]})`
+                          : "rgba(233,230,189,0.06)",
+                    }}
+                    title={`${d.date}: ${formatHms(d.seconds)}`}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-1.5 text-[10px] text-cream/40">
+            少ない
+            {CALENDAR_LEVEL_OPACITY.map((op, i) => (
+              <div
+                key={i}
+                className="h-[11px] w-[11px] rounded-sm"
+                style={{ backgroundColor: i === 0 ? "rgba(233,230,189,0.06)" : `rgb(var(--accent-rgb) / ${op})` }}
+              />
+            ))}
+            多い
+          </div>
         </div>
       )}
 

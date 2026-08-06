@@ -7,7 +7,7 @@ const config: Config = {
       colors: {
         ink: "#0B0B0C",
         cream: "#E9E6BD",
-        alert: "#C23B3B",
+        alert: "rgb(var(--accent-rgb) / <alpha-value>)",
         panel: "#151517",
       },
       fontFamily: {

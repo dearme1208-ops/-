@@ -7,6 +7,10 @@ import { db } from "@/lib/db";
 import { aggregateRecords, type SortMetric } from "@/lib/aggregate";
 import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
 import { formatHms } from "@/lib/time";
+import { computeWeekdayAverages } from "@/lib/weekday";
+import { computeSwitchCostAnalysis } from "@/lib/switchcost";
+import { computeTimeByTag } from "@/lib/tags";
+import RankingBarChart from "@/components/charts/RankingBarChart";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -16,7 +20,11 @@ export default function AggregationSection() {
   const [sortBy, setSortBy] = useState<SortMetric>("total");
 
   const records = useLiveQuery(() => db.records.toArray(), []);
+  const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
+  const weekdayAverages = useMemo(() => computeWeekdayAverages(records ?? []), [records]);
+  const switchCost = useMemo(() => computeSwitchCostAnalysis(records ?? []), [records]);
+  const tagRows = useMemo(() => computeTimeByTag(records ?? [], masterTasks ?? []), [records, masterTasks]);
 
   // 今週・今月表示の場合、前週・前月との比較を出す
   const comparisonLabel = period === "week" ? "前週比" : period === "month" ? "前月比" : null;
@@ -70,6 +78,65 @@ export default function AggregationSection() {
           </button>
         ))}
       </div>
+
+      <div className="panel p-4">
+        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">曜日別の平均稼働時間</h3>
+        <RankingBarChart
+          data={weekdayAverages
+            .filter((w) => w.dayCount > 0)
+            .map((w) => ({ label: w.label, sublabel: `${w.dayCount}日分の平均`, value: w.avgSeconds }))}
+          formatValue={formatHms}
+        />
+        {weekdayAverages.every((w) => w.dayCount === 0) && (
+          <p className="text-sm text-cream/50">データがありません。</p>
+        )}
+      </div>
+
+      {(switchCost.low || switchCost.high) && (
+        <div className="panel p-4">
+          <h3 className="mb-3 font-display text-sm font-bold text-cream/80">作業の切り替えコスト分析</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {[switchCost.low, switchCost.high].map(
+              (b) =>
+                b && (
+                  <div key={b.label} className="rounded-lg bg-ink/50 p-3">
+                    <div className="text-xs text-cream/50">
+                      {b.label}（{b.dayCount}日、平均{b.avgTaskCount.toFixed(1)}件/日）
+                    </div>
+                    <div className="mt-1 text-sm text-cream/70">
+                      1件あたり平均{" "}
+                      <span className="font-display text-base font-bold text-cream">
+                        {formatHms(b.avgPerTaskSeconds)}
+                      </span>
+                    </div>
+                    <div className="text-sm text-cream/70">
+                      1日の合計{" "}
+                      <span className="font-display text-base font-bold text-cream">
+                        {formatHms(b.avgDailyTotalSeconds)}
+                      </span>
+                    </div>
+                  </div>
+                )
+            )}
+          </div>
+          <p className="mt-3 text-xs text-cream/40">
+            1日に取り組んだ作業の種類数を目安に、切り替えが少ない日と多い日を比較しています。1件あたりの平均時間が短いほど、細切れになっている可能性があります。
+          </p>
+        </div>
+      )}
+
+      {tagRows.length > 0 && (
+        <div className="panel p-4">
+          <h3 className="mb-3 font-display text-sm font-bold text-cream/80">タグ別の作業時間</h3>
+          <RankingBarChart
+            data={tagRows.map((r) => ({ label: r.tag, value: r.totalSeconds }))}
+            formatValue={formatHms}
+          />
+          <p className="mt-3 text-xs text-cream/40">
+            作業マスタタブでタグを設定した作業に紐づく実績を、タグごとに合計しています。
+          </p>
+        </div>
+      )}
 
       <div className="panel divide-y divide-cream/10">
         {rows.map((row, idx) => {

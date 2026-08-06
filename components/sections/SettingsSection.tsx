@@ -8,6 +8,7 @@ import { exportBackup, importBackup, type BackupFile } from "@/lib/backup";
 import { buildArchive, deleteArchivedRange } from "@/lib/archive";
 import { downloadTextFile } from "@/lib/report";
 import { todayStr } from "@/lib/time";
+import { ACCENT_PRESETS, DEFAULT_ACCENT_RGB } from "@/lib/theme";
 import type { BreakRange } from "@/lib/types";
 
 export default function SettingsSection() {
@@ -43,6 +44,15 @@ export default function SettingsSection() {
     "notify.afterHoursWeeklyThresholdHours",
     "5"
   );
+  const [accentRgb, setAccentRgb] = useSetting("theme.accentRgb", DEFAULT_ACCENT_RGB);
+  const [dailySummaryEnabledStr, setDailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
+  const dailySummaryEnabled = dailySummaryEnabledStr === "true";
+  const [dailySummaryTime, setDailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
+  const [shortcutsEnabledStr, setShortcutsEnabledStr] = useSetting("today.shortcutsEnabled", "true");
+  const shortcutsEnabled = shortcutsEnabledStr === "true";
+  const [weeklyGoalHoursStr, setWeeklyGoalHoursStr] = useSetting("report.weeklyGoalHours", "");
+  const [monthlyGoalHoursStr, setMonthlyGoalHoursStr] = useSetting("report.monthlyGoalHours", "");
+  const [staleMasterDaysStr, setStaleMasterDaysStr] = useSetting("master.staleDays", "90");
 
   function addBreakRange() {
     setBreakRangesStr(serializeBreakRanges([...breakRanges, { start: "12:00", end: "13:00" }]));
@@ -209,10 +219,121 @@ export default function SettingsSection() {
           >
             計測中の作業を強調表示: {emphasizeRunning ? "ON" : "OFF"}
           </button>
+          <button
+            className={shortcutsEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShortcutsEnabledStr(shortcutsEnabled ? "false" : "true")}
+          >
+            キーボードショートカット: {shortcutsEnabled ? "ON" : "OFF"}
+          </button>
         </div>
         <p className="text-xs text-cream/50">
           ONにすると、計測中の作業がある間は他の作業が薄く表示され、ボタンも操作できなくなります（仮計測中と同様の見せ方です）。
         </p>
+        {shortcutsEnabled && (
+          <p className="text-xs text-cream/50">
+            キーボードショートカット（入力欄にフォーカスしていない時のみ有効）: <b className="text-cream">Space</b>
+            = 計測中の作業を一時停止/一番上の一時停止中の作業を再開、<b className="text-cream">N</b> = 突発作業を追加、
+            <b className="text-cream">T</b> = トラブル発生
+          </p>
+        )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">アクセントカラー</h3>
+        <div className="flex flex-wrap gap-2">
+          {ACCENT_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setAccentRgb(p.rgb)}
+              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs ${
+                accentRgb === p.rgb ? "border-cream bg-cream/10 text-cream" : "border-cream/20 text-cream/60"
+              }`}
+            >
+              <span
+                className="h-3 w-3 rounded-full"
+                style={{ backgroundColor: `rgb(${p.rgb.split(" ").join(",")})` }}
+              />
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-cream/50">
+          警告・重要・強調表示に使う単色アクセントの色相を変更します（配色方針自体は単色のまま維持されます）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">週・月の目標時間</h3>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+          <span>週の目標</span>
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            placeholder="未設定"
+            value={weeklyGoalHoursStr}
+            onChange={(e) => setWeeklyGoalHoursStr(e.target.value)}
+            className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+          />
+          <span>時間</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+          <span>月の目標</span>
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            placeholder="未設定"
+            value={monthlyGoalHoursStr}
+            onChange={(e) => setMonthlyGoalHoursStr(e.target.value)}
+            className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+          />
+          <span>時間</span>
+        </div>
+        <p className="text-xs text-cream/50">
+          週報・月報に達成率を表示します。空欄のままなら目標表示は行いません。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">1日の終わりの自動サマリー通知</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={dailySummaryEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setDailySummaryEnabledStr(dailySummaryEnabled ? "false" : "true")}
+          >
+            自動サマリー通知: {dailySummaryEnabled ? "ON" : "OFF"}
+          </button>
+          {dailySummaryEnabled && (
+            <>
+              <span className="text-xs text-cream/60">時刻</span>
+              <input
+                type="time"
+                value={dailySummaryTime}
+                onChange={(e) => setDailySummaryTime(e.target.value)}
+                className="rounded border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+              />
+            </>
+          )}
+        </div>
+        <p className="text-xs text-cream/50">
+          指定した時刻になったら、その日の合計作業時間（と体調を記録していればその内容）を通知します（1日1回）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">使用頻度の低い作業マスタの検出基準</h3>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+          <span>最終実績から</span>
+          <input
+            type="number"
+            min={1}
+            value={staleMasterDaysStr}
+            onChange={(e) => setStaleMasterDaysStr(e.target.value)}
+            className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+          />
+          <span>日以上経過した作業マスタを、作業マスタタブでアーカイブ候補として表示します</span>
+        </div>
       </div>
 
       <div className="panel space-y-3 p-4">

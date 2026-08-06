@@ -9,7 +9,7 @@ export interface DonutDatum {
 function segmentColor(index: number, count: number): string {
   const t = count > 1 ? index / (count - 1) : 0;
   const opacity = 0.9 - t * 0.6;
-  return `rgba(194,59,59,${opacity.toFixed(2)})`;
+  return `rgb(var(--accent-rgb) / ${opacity.toFixed(2)})`;
 }
 
 export default function DonutChart({

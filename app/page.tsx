@@ -9,6 +9,7 @@ import { useSetting } from "@/lib/settings";
 import { finishDailyTask } from "@/lib/tasks";
 import { todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
+import ThemeInit from "@/components/ThemeInit";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
@@ -83,6 +84,7 @@ export default function HomePage() {
 
   return (
     <div>
+      <ThemeInit />
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       {active === "today" && <TodaySection />}
       {active === "todo" && <TodoSection />}

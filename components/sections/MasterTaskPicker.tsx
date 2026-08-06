@@ -25,6 +25,7 @@ export default function MasterTaskPicker({
   const grouped = useMemo(() => {
     if (!allTasks) return [];
     const filtered = allTasks.filter((t) => {
+      if (t.archived) return false;
       if (categoryFilter && t.category !== categoryFilter) return false;
       if (search.trim() === "") return true;
       return t.category.includes(search) || t.name.includes(search);

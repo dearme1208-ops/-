@@ -11,17 +11,18 @@ export default function EditTaskDialog({
   onClose,
 }: {
   task: DailyTask;
-  onSave: (category: string, name: string, actualSeconds?: number) => void;
+  onSave: (category: string, name: string, actualSeconds?: number, note?: string) => void;
   onClose: () => void;
 }) {
   const [category, setCategory] = useState(task.category);
   const [name, setName] = useState(task.name);
   const [actualTime, setActualTime] = useState(formatHms(Math.round(task.accumulatedMs / 1000)));
+  const [note, setNote] = useState(task.note ?? "");
   const isDone = task.status === "done";
 
   function save() {
     if (!category.trim() || !name.trim()) return;
-    onSave(category.trim(), name.trim(), isDone ? parseHmsToSeconds(actualTime) : undefined);
+    onSave(category.trim(), name.trim(), isDone ? parseHmsToSeconds(actualTime) : undefined, note.trim() || undefined);
     onClose();
   }
 
@@ -55,6 +56,16 @@ export default function EditTaskDialog({
             </p>
           </div>
         )}
+        <div>
+          <label className="mb-1 block text-xs text-cream/60">一言メモ</label>
+          <textarea
+            placeholder="振り返りなど自由に（任意）"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+        </div>
       </div>
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn-pill text-sm" onClick={save}>
