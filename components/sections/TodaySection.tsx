@@ -901,10 +901,16 @@ export default function TodaySection() {
             {CONDITION_LEVELS.map((c) => (
               <button
                 key={c.level}
-                className={c.level === latestConditionLevel ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+                className={
+                  c.level === latestConditionLevel
+                    ? "btn-pill px-4 text-lg"
+                    : "btn-pill-outline px-4 text-lg"
+                }
                 onClick={() => logCondition(c.level)}
+                aria-label={c.label}
+                title={c.label}
               >
-                {c.emoji} {c.label}
+                {c.emoji}
               </button>
             ))}
           </div>
