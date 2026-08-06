@@ -242,13 +242,13 @@ export default function TodaySection() {
     return map;
   }, [tasks, now]);
 
-  // 完了済みだけを最後に沈める。実行中/一時停止中/未着手はもとの順番のまま
-  // （開始・一時停止のたびにカードが並び替わって誤タップを誘発しないようにするため）
+  // 計測中の作業を一番上に、完了済みを一番下に沈める。それ以外（一時停止中/未着手）はもとの順番のまま
   const sortedTasks = useMemo(() => {
     if (!tasks) return [];
+    const statusRank = (t: DailyTask) => (t.status === "running" ? 0 : t.status === "done" ? 2 : 1);
     return [...tasks].sort((a, b) => {
-      const doneDiff = Number(a.status === "done") - Number(b.status === "done");
-      return doneDiff || a.order - b.order;
+      const rankDiff = statusRank(a) - statusRank(b);
+      return rankDiff || a.order - b.order;
     });
   }, [tasks]);
 
