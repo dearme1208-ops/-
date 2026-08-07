@@ -23,7 +23,7 @@ import {
 import type { DailyTask, TimeSegment, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
-import ConditionIcon from "@/components/ui/ConditionIcon";
+import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
 import EditTaskDialog from "@/components/sections/EditTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
@@ -911,7 +911,7 @@ export default function TodaySection() {
                 aria-label={c.label}
                 title={c.label}
               >
-                <ConditionIcon level={c.level} size={28} />
+                <ConditionGlyph level={c.level} size={28} />
               </button>
             ))}
           </div>
@@ -919,25 +919,6 @@ export default function TodaySection() {
           <p className="text-xs text-cream/40">
             {conditionWindowStart}〜{conditionWindowEnd}の間に記録できます。
           </p>
-        )}
-        {conditionLogs && conditionLogs.length > 0 && (
-          <div className="mt-3 space-y-1.5 border-t border-cream/10 pt-3">
-            {[...conditionLogs].reverse().map((log) => {
-              const c = CONDITION_LEVELS.find((c) => c.level === log.level);
-              return (
-                <div key={log.id} className="flex items-center gap-2 text-xs">
-                  <span className="w-11 shrink-0 tabular-nums text-cream/50">{log.time}</span>
-                  <ConditionIcon level={log.level} size={18} />
-                  <span className="shrink-0 text-cream/70">{c?.label}</span>
-                  {log.category && (
-                    <span className="truncate text-cream/40">
-                      ・{log.category} / {log.name}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         )}
       </div>
 

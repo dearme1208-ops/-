@@ -6,7 +6,7 @@ import { computeAttentionList, computeEstimationAccuracyTrend } from "@/lib/atte
 import { computeProductivityByCondition, CONDITION_LEVELS } from "@/lib/condition";
 import { formatHms } from "@/lib/time";
 import DiffLineChart from "@/components/charts/DiffLineChart";
-import ConditionIcon from "@/components/ui/ConditionIcon";
+import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
 export default function AttentionSection() {
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -36,7 +36,7 @@ export default function AttentionSection() {
               return (
                 <div key={row.level} className="flex items-center gap-2">
                   <div className="flex w-24 shrink-0 items-center gap-1.5 text-sm text-cream/80">
-                    <ConditionIcon level={row.level} size={18} />
+                    <ConditionGlyph level={row.level} size={18} />
                     {c?.label}
                   </div>
                   <div className="h-5 min-w-0 flex-1 rounded bg-cream/5">

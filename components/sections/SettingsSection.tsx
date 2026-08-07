@@ -9,6 +9,8 @@ import { buildArchive, deleteArchivedRange } from "@/lib/archive";
 import { downloadTextFile } from "@/lib/report";
 import { todayStr } from "@/lib/time";
 import { ACCENT_PRESETS, DEFAULT_ACCENT_RGB } from "@/lib/theme";
+import ConditionGlyph from "@/components/ui/ConditionGlyph";
+import { CONDITION_LEVELS } from "@/lib/condition";
 import type { BreakRange } from "@/lib/types";
 
 export default function SettingsSection() {
@@ -33,6 +35,7 @@ export default function SettingsSection() {
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
   const [conditionWindowStart, setConditionWindowStart] = useSetting("condition.windowStart", "08:00");
   const [conditionWindowEnd, setConditionWindowEnd] = useSetting("condition.windowEnd", "17:00");
+  const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [afterHoursCutoff, setAfterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [weeklyAfterHoursNotifyEnabledStr, setWeeklyAfterHoursNotifyEnabledStr] = useSetting(
@@ -356,6 +359,27 @@ export default function SettingsSection() {
         <p className="text-xs text-cream/50">
           本日タブで「今日の体調」を記録できる時間帯です。この時間帯の外では入力欄が表示されません。
         </p>
+        <div className="space-y-2 border-t border-cream/10 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className={conditionIconStyle === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setConditionIconStyle("custom")}
+            >
+              オリジナルアイコン
+            </button>
+            <button
+              className={conditionIconStyle === "emoji" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setConditionIconStyle("emoji")}
+            >
+              絵文字
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {CONDITION_LEVELS.map((c) => (
+              <ConditionGlyph key={c.level} level={c.level} size={24} />
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="panel space-y-3 p-4">
