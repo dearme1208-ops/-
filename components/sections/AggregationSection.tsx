@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
-import { aggregateRecords, type SortMetric } from "@/lib/aggregate";
-import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
+import { aggregateRecords, computeHalfYearComparison, type SortMetric } from "@/lib/aggregate";
+import { currentFiscalYear, PERIOD_LABELS, type PeriodFilter, type PeriodType } from "@/lib/period";
 import { formatHms } from "@/lib/time";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeSwitchCostAnalysis } from "@/lib/switchcost";
@@ -25,11 +25,22 @@ export default function AggregationSection() {
   const weekdayAverages = useMemo(() => computeWeekdayAverages(records ?? []), [records]);
   const switchCost = useMemo(() => computeSwitchCostAnalysis(records ?? []), [records]);
   const tagRows = useMemo(() => computeTimeByTag(records ?? [], masterTasks ?? []), [records, masterTasks]);
+  const halfYearComparison = useMemo(() => {
+    if (!records || (period !== "h1" && period !== "h2")) return null;
+    return computeHalfYearComparison(records, period, fiscalYear);
+  }, [records, period, fiscalYear]);
 
-  // 今週・今月表示の場合、前週・前月との比較を出す
-  const comparisonLabel = period === "week" ? "前週比" : period === "month" ? "前月比" : null;
+  // 今週・今月・半期表示の場合、前週・前月・前期との比較を出す
+  const comparisonLabel =
+    period === "week" ? "前週比" : period === "month" ? "前月比" : period === "h1" || period === "h2" ? "前期比" : null;
   const previousTotalsByKey = useMemo(() => {
     if (!records || !comparisonLabel) return null;
+    if (period === "h1" || period === "h2") {
+      const prevFilter: PeriodFilter =
+        period === "h1" ? { type: "h2", fiscalYear: fiscalYear - 1 } : { type: "h1", fiscalYear };
+      const prevRows = aggregateRecords(records, prevFilter, sortBy);
+      return new Map(prevRows.map((r) => [r.key, r.totalSeconds]));
+    }
     const prevNow = period === "week" ? subWeeks(new Date(), 1) : subMonths(new Date(), 1);
     const prevRows = aggregateRecords(records, { type: period, fiscalYear }, sortBy, false, prevNow);
     return new Map(prevRows.map((r) => [r.key, r.totalSeconds]));
@@ -78,6 +89,68 @@ export default function AggregationSection() {
           </button>
         ))}
       </div>
+
+      {halfYearComparison && (
+        <>
+          <div className="panel p-4">
+            <h3 className="mb-1 font-display text-sm font-bold text-cream/80">
+              ⚠️ 増加ランキング（前期より実績が増えた・ボトルネック候補）
+            </h3>
+            <p className="mb-3 text-xs text-cream/40">前期にも実績があった業務のみが対象です（母数1件未満は対象外）。</p>
+            {halfYearComparison.increased.length === 0 ? (
+              <p className="text-sm text-cream/50">該当する業務はありません。</p>
+            ) : (
+              <div className="space-y-2">
+                {halfYearComparison.increased.map((row, idx) => (
+                  <div key={row.key} className="flex items-center justify-between gap-3 rounded-lg bg-ink/50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 shrink-0 text-center text-xs text-cream/40">{idx + 1}</span>
+                      <div>
+                        <div className="text-xs text-cream/50">{row.category}</div>
+                        <div className="text-sm text-cream">{row.name}</div>
+                      </div>
+                    </div>
+                    <div className="text-right text-xs tabular-nums">
+                      <div className="font-display text-base font-bold text-alert">+{formatHms(row.delta)}</div>
+                      <div className="text-cream/40">
+                        {formatHms(row.prevTotalSeconds)} → {formatHms(row.totalSeconds)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="panel p-4">
+            <h3 className="mb-1 font-display text-sm font-bold text-cream/80">✅ 改善ランキング（前期より実績が減った）</h3>
+            <p className="mb-3 text-xs text-cream/40">前期にも実績があった業務のみが対象です（母数1件未満は対象外）。</p>
+            {halfYearComparison.decreased.length === 0 ? (
+              <p className="text-sm text-cream/50">該当する業務はありません。</p>
+            ) : (
+              <div className="space-y-2">
+                {halfYearComparison.decreased.map((row, idx) => (
+                  <div key={row.key} className="flex items-center justify-between gap-3 rounded-lg bg-ink/50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 shrink-0 text-center text-xs text-cream/40">{idx + 1}</span>
+                      <div>
+                        <div className="text-xs text-cream/50">{row.category}</div>
+                        <div className="text-sm text-cream">{row.name}</div>
+                      </div>
+                    </div>
+                    <div className="text-right text-xs tabular-nums">
+                      <div className="font-display text-base font-bold text-cream">-{formatHms(-row.delta)}</div>
+                      <div className="text-cream/40">
+                        {formatHms(row.prevTotalSeconds)} → {formatHms(row.totalSeconds)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="panel p-4">
         <h3 className="mb-3 font-display text-sm font-bold text-cream/80">曜日別の平均稼働時間</h3>

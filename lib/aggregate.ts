@@ -51,3 +51,34 @@ export function aggregateRecords(
   rows.sort((a, b) => (b[metricKey[sortBy]] as number) - (a[metricKey[sortBy]] as number));
   return rows;
 }
+
+export interface HalfYearComparisonRow extends AggregateRow {
+  prevTotalSeconds: number;
+  delta: number;
+}
+
+// 半期ごとの実績を前期と比較し、増加/減少しているものをランキングする。
+// 前期にも実績（母数1件以上）がある業務だけを対象にする（新規に始めた/やめた業務は対象外）
+export function computeHalfYearComparison(
+  records: WorkRecord[],
+  period: "h1" | "h2",
+  fiscalYear: number
+): { increased: HalfYearComparisonRow[]; decreased: HalfYearComparisonRow[] } {
+  const currentRows = aggregateRecords(records, { type: period, fiscalYear }, "total");
+  const prevFilter: PeriodFilter =
+    period === "h1" ? { type: "h2", fiscalYear: fiscalYear - 1 } : { type: "h1", fiscalYear };
+  const previousRows = aggregateRecords(records, prevFilter, "total");
+  const previousByKey = new Map(previousRows.map((r) => [r.key, r.totalSeconds]));
+
+  const comparisonRows: HalfYearComparisonRow[] = currentRows
+    .filter((r) => previousByKey.has(r.key))
+    .map((r) => {
+      const prevTotalSeconds = previousByKey.get(r.key)!;
+      return { ...r, prevTotalSeconds, delta: r.totalSeconds - prevTotalSeconds };
+    });
+
+  return {
+    increased: comparisonRows.filter((r) => r.delta > 0).sort((a, b) => b.delta - a.delta),
+    decreased: comparisonRows.filter((r) => r.delta < 0).sort((a, b) => a.delta - b.delta),
+  };
+}
