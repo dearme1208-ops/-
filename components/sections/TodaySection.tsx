@@ -23,6 +23,7 @@ import {
 import type { DailyTask, TimeSegment, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import ConditionIcon from "@/components/ui/ConditionIcon";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
 import EditTaskDialog from "@/components/sections/EditTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
@@ -903,14 +904,14 @@ export default function TodaySection() {
                 key={c.level}
                 className={
                   c.level === latestConditionLevel
-                    ? "btn-pill px-4 text-lg"
-                    : "btn-pill-outline px-4 text-lg"
+                    ? "btn-pill p-1.5"
+                    : "btn-pill-outline p-1.5"
                 }
                 onClick={() => logCondition(c.level)}
                 aria-label={c.label}
                 title={c.label}
               >
-                {c.emoji}
+                <ConditionIcon level={c.level} size={28} />
               </button>
             ))}
           </div>
@@ -926,7 +927,7 @@ export default function TodaySection() {
               return (
                 <div key={log.id} className="flex items-center gap-2 text-xs">
                   <span className="w-11 shrink-0 tabular-nums text-cream/50">{log.time}</span>
-                  <span className="text-base">{c?.emoji}</span>
+                  <ConditionIcon level={log.level} size={18} />
                   <span className="shrink-0 text-cream/70">{c?.label}</span>
                   {log.category && (
                     <span className="truncate text-cream/40">
