@@ -14,8 +14,9 @@ export interface ConditionProductivityRow {
   sampleCount: number;
 }
 
-// 体調記録に紐付いた作業（記録時点で計測中だった作業）について、その日の実績時間を
-// 想定時間と比較し、体調レベルごとの平均達成度（生産性）を算出する
+// 体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱う。
+// 各実績(WorkRecord)は、その開始時刻(startedAt)の時点で有効だった体調レベルに割り当てられ、
+// 想定時間との比較（想定÷実績）を体調レベルごとに平均して生産性の目安とする
 export function computeProductivityByCondition(
   conditionLogs: ConditionLog[],
   records: WorkRecord[],
@@ -25,23 +26,35 @@ export function computeProductivityByCondition(
   for (const m of masterTasks) {
     if (m.estimatedSeconds > 0) estimatedByKey.set(`${m.category}::${m.name}`, m.estimatedSeconds);
   }
-  const actualByDateKey = new Map<string, number>();
-  for (const r of records) {
-    if (r.excludedFromStats) continue;
-    const key = `${r.date}::${r.category}::${r.name}`;
-    actualByDateKey.set(key, (actualByDateKey.get(key) ?? 0) + r.seconds);
+
+  const logsByDate = new Map<string, ConditionLog[]>();
+  for (const log of conditionLogs) {
+    if (!logsByDate.has(log.date)) logsByDate.set(log.date, []);
+    logsByDate.get(log.date)!.push(log);
+  }
+  for (const logs of logsByDate.values()) logs.sort((a, b) => a.loggedAt - b.loggedAt);
+
+  function levelActiveAt(date: string, ms: number): string | null {
+    const logs = logsByDate.get(date);
+    if (!logs) return null;
+    let active: string | null = null;
+    for (const log of logs) {
+      if (log.loggedAt > ms) break;
+      active = log.level;
+    }
+    return active;
   }
 
   const byLevel = new Map<string, { sumPct: number; count: number }>();
-  for (const log of conditionLogs) {
-    if (!log.category || !log.name) continue;
-    const estimatedSeconds = estimatedByKey.get(`${log.category}::${log.name}`);
+  for (const r of records) {
+    if (r.excludedFromStats || !r.startedAt || r.seconds <= 0) continue;
+    const estimatedSeconds = estimatedByKey.get(`${r.category}::${r.name}`);
     if (!estimatedSeconds) continue;
-    const actualSeconds = actualByDateKey.get(`${log.date}::${log.category}::${log.name}`);
-    if (!actualSeconds) continue;
-    const pct = (estimatedSeconds / actualSeconds) * 100;
-    if (!byLevel.has(log.level)) byLevel.set(log.level, { sumPct: 0, count: 0 });
-    const entry = byLevel.get(log.level)!;
+    const level = levelActiveAt(r.date, r.startedAt);
+    if (!level) continue;
+    const pct = (estimatedSeconds / r.seconds) * 100;
+    if (!byLevel.has(level)) byLevel.set(level, { sumPct: 0, count: 0 });
+    const entry = byLevel.get(level)!;
     entry.sumPct += pct;
     entry.count += 1;
   }

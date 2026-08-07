@@ -25,7 +25,7 @@ export default function AttentionSection() {
         <h3 className="mb-3 font-display text-sm font-bold text-cream/80">体調別の生産性（想定時間に対する達成度）</h3>
         {productivityRows.length === 0 ? (
           <p className="text-sm text-cream/50">
-            体調を記録した時点で計測中だった作業に、想定時間と実績が両方揃っているデータがまだありません。
+            体調を記録している間に行った作業に、想定時間と実績が両方揃っているデータがまだありません。
           </p>
         ) : (
           <div className="space-y-2">
@@ -52,7 +52,7 @@ export default function AttentionSection() {
           </div>
         )}
         <p className="mt-3 text-xs text-cream/40">
-          体調を記録した時点で計測中だった作業について、想定時間÷実績時間を算出し、体調レベルごとに平均したものです。100%が想定通り、100%を超えるほど想定より速く終えられている傾向を表します。
+          体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱い、その間に開始した作業を対象に想定時間÷実績時間を算出し、体調レベルごとに平均したものです。100%が想定通り、100%を超えるほど想定より速く終えられている傾向を表します。
         </p>
       </div>
 
