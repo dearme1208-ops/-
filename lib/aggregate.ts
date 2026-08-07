@@ -57,17 +57,27 @@ export interface HalfYearComparisonRow extends AggregateRow {
   delta: number;
 }
 
-// 半期ごとの実績を前期と比較し、増加/減少しているものをランキングする。
-// 前期にも実績（母数1件以上）がある業務だけを対象にする（新規に始めた/やめた業務は対象外）
+export interface HalfYearPeriod {
+  type: "h1" | "h2";
+  fiscalYear: number;
+}
+
+// 指定した半期どうしを自然な「前期」として決める（例: 2026年度上期 の前期は 2025年度下期）
+export function defaultComparePeriod(period: HalfYearPeriod): HalfYearPeriod {
+  return period.type === "h1"
+    ? { type: "h2", fiscalYear: period.fiscalYear - 1 }
+    : { type: "h1", fiscalYear: period.fiscalYear };
+}
+
+// 任意の2つの半期を比較し、増加/減少しているものをランキングする。
+// 比較先の期にも実績（母数1件以上）がある業務だけを対象にする（新規に始めた/やめた業務は対象外）
 export function computeHalfYearComparison(
   records: WorkRecord[],
-  period: "h1" | "h2",
-  fiscalYear: number
+  current: HalfYearPeriod,
+  compareTo: HalfYearPeriod
 ): { increased: HalfYearComparisonRow[]; decreased: HalfYearComparisonRow[] } {
-  const currentRows = aggregateRecords(records, { type: period, fiscalYear }, "total");
-  const prevFilter: PeriodFilter =
-    period === "h1" ? { type: "h2", fiscalYear: fiscalYear - 1 } : { type: "h1", fiscalYear };
-  const previousRows = aggregateRecords(records, prevFilter, "total");
+  const currentRows = aggregateRecords(records, { type: current.type, fiscalYear: current.fiscalYear }, "total");
+  const previousRows = aggregateRecords(records, { type: compareTo.type, fiscalYear: compareTo.fiscalYear }, "total");
   const previousByKey = new Map(previousRows.map((r) => [r.key, r.totalSeconds]));
 
   const comparisonRows: HalfYearComparisonRow[] = currentRows
