@@ -36,8 +36,9 @@ export default function ConditionIcon({ level, size = 24 }: { level: string; siz
       )}
       {style.eyes === "worried" && (
         <>
-          <path d="M28 38 Q35 32 42 37" stroke="#2a1245" strokeWidth="4" fill="none" strokeLinecap="round" />
-          <path d="M58 37 Q65 32 72 38" stroke="#2a1245" strokeWidth="4" fill="none" strokeLinecap="round" />
+          {/* 内側（鼻に近い側）が吊り上がった、困り眉（八の字眉） */}
+          <path d="M24 44 Q34 34 44 30" stroke="#2a1245" strokeWidth="5" fill="none" strokeLinecap="round" />
+          <path d="M56 30 Q66 34 76 44" stroke="#2a1245" strokeWidth="5" fill="none" strokeLinecap="round" />
         </>
       )}
       {style.eyes === "line" && (
@@ -49,8 +50,9 @@ export default function ConditionIcon({ level, size = 24 }: { level: string; siz
 
       {style.mouth === "biggrin" && (
         <>
-          <path d="M26 58 Q50 66 74 58 Q50 88 26 58 Z" fill="#2a1245" />
-          <path d="M35 64 Q50 70 65 64" stroke={style.from} strokeWidth="3.5" fill="none" strokeLinecap="round" />
+          <path d="M20 56 Q50 96 80 56" stroke="#2a1245" strokeWidth="8" fill="none" strokeLinecap="round" />
+          <circle cx="18" cy="58" r="7" fill={style.from} opacity="0.55" />
+          <circle cx="82" cy="58" r="7" fill={style.from} opacity="0.55" />
         </>
       )}
       {style.mouth === "smile" && (
