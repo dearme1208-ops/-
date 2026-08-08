@@ -3,21 +3,23 @@ import type { RecurrenceRule, TodoList, TodoTask } from "./types";
 import type { ParsedTodoRow } from "./todoCsv";
 import { todayStr } from "./time";
 
+// 対応状況の初期値（設定タブ「todo.tagPresets」の初期シード値。以後は設定タブで自由に増減できる）
 export const DEFAULT_TAG_PRESETS = ["社内確認中", "客先確認中", "打ち合わせ", "対応中", "保留"];
 
-export const DEFAULT_CATEGORY_PRESETS = [
-  "見積",
-  "生産性検討",
-  "VT1回答",
-  "単価改定",
-  "品質不具合",
-  "出荷/荷姿",
-  "図面",
-  "塗装",
-  "支給品",
-  "請求",
-  "その他",
-];
+// 選択肢リスト（対応状況・分類）は設定タブでJSON配列の文字列として保持する。
+// 分類は既定値を持たず、設定タブで登録したものだけが選択肢・かんばんの列になる
+export function parsePresetList(json: string): string[] {
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function serializePresetList(list: string[]): string {
+  return JSON.stringify(list);
+}
 
 // タスク全体の期日を、自分自身の期日とサブタスクの期日の中で最も早いものとして算出する
 export function effectiveDueDate(task: TodoTask, subtasks: TodoTask[]): string | undefined {

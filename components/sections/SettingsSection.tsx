@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useSetting } from "@/lib/settings";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
-import { DEFAULT_TAG_PRESETS } from "@/lib/todo";
+import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib/todo";
 import { exportBackup, importBackup, type BackupFile } from "@/lib/backup";
 import { buildArchive, deleteArchivedRange } from "@/lib/archive";
 import { downloadTextFile } from "@/lib/report";
@@ -39,6 +39,26 @@ export default function SettingsSection() {
   const [conditionWindowEnd, setConditionWindowEnd] = useSetting("condition.windowEnd", "17:00");
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
+  const [tagPresetsJson, setTagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const tagPresets = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
+  const [categoryPresetsJson, setCategoryPresetsJson] = useSetting("todo.categoryPresets", "[]");
+  const categoryPresets = useMemo(() => parsePresetList(categoryPresetsJson), [categoryPresetsJson]);
+
+  function addTagPreset(value: string) {
+    if (tagPresets.includes(value)) return;
+    setTagPresetsJson(serializePresetList([...tagPresets, value]));
+  }
+  function removeTagPreset(value: string) {
+    setTagPresetsJson(serializePresetList(tagPresets.filter((v) => v !== value)));
+    if (autoImportantTag === value) setAutoImportantTag("");
+  }
+  function addCategoryPreset(value: string) {
+    if (categoryPresets.includes(value)) return;
+    setCategoryPresetsJson(serializePresetList([...categoryPresets, value]));
+  }
+  function removeCategoryPreset(value: string) {
+    setCategoryPresetsJson(serializePresetList(categoryPresets.filter((v) => v !== value)));
+  }
   const [afterHoursCutoff, setAfterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [weeklyAfterHoursNotifyEnabledStr, setWeeklyAfterHoursNotifyEnabledStr] = useSetting(
     "notify.afterHoursWeeklyEnabled",
@@ -431,7 +451,24 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">ToDoのタグによる自動重要化</h3>
+        <h3 className="font-display text-sm font-bold text-cream/80">ToDoの対応状況の選択肢</h3>
+        <PresetListEditor presets={tagPresets} onAdd={addTagPreset} onRemove={removeTagPreset} placeholder="対応状況名" />
+        <p className="text-xs text-cream/50">
+          ToDoの「対応状況」ドロップダウン・かんばんの列に出てくる選択肢です。ここでの増減とは別に、ToDo登録・編集時は自由入力（「＋
+          新しい対応状況...」）も引き続きできます。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">ToDoの分類の選択肢</h3>
+        <PresetListEditor presets={categoryPresets} onAdd={addCategoryPreset} onRemove={removeCategoryPreset} placeholder="分類名" />
+        <p className="text-xs text-cream/50">
+          分類には既定値はありません。ここで登録したものだけがドロップダウン・かんばんの列に出てきます（自由入力でタスクに設定はできますが、ここで登録するまで選択肢やかんばんの列にはなりません）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">ToDoの対応状況による自動重要化</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={!autoImportantTag ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -439,7 +476,7 @@ export default function SettingsSection() {
           >
             なし
           </button>
-          {DEFAULT_TAG_PRESETS.map((t) => (
+          {tagPresets.map((t) => (
             <button
               key={t}
               className={autoImportantTag === t ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -451,8 +488,8 @@ export default function SettingsSection() {
         </div>
         <p className="text-xs text-cream/50">
           {autoImportantTag
-            ? `ToDoのタスク登録・編集時にタグ「${autoImportantTag}」を選ぶと、自動的に★重要にします（タグを外しても重要フラグは自動では解除しません）。`
-            : "自動重要化は無効です。タグを選んでも★重要は自動では変わりません。"}
+            ? `ToDoのタスク登録・編集時に対応状況「${autoImportantTag}」を選ぶと、自動的に★重要にします（対応状況を外しても重要フラグは自動では解除しません）。`
+            : "自動重要化は無効です。対応状況を選んでも★重要は自動では変わりません。"}
         </p>
       </div>
 
@@ -552,6 +589,59 @@ export default function SettingsSection() {
         <p className="text-xs text-cream/50">
           データが増えすぎて動作が重くなってきた場合などに使います。まずダウンロードしてバックアップし、内容を確認してから削除を実行してください（削除ボタンは同じ期間でダウンロードするまで押せません）。作業マスタや案件、ToDoは削除されません。
         </p>
+      </div>
+    </div>
+  );
+}
+
+// チップ形式の選択肢リストを増減編集する小さな汎用エディタ（対応状況・分類の両方で使う）
+function PresetListEditor({
+  presets,
+  onAdd,
+  onRemove,
+  placeholder,
+}: {
+  presets: string[];
+  onAdd: (value: string) => void;
+  onRemove: (value: string) => void;
+  placeholder: string;
+}) {
+  const [newValue, setNewValue] = useState("");
+
+  function add() {
+    const v = newValue.trim();
+    if (!v) return;
+    onAdd(v);
+    setNewValue("");
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {presets.length === 0 && <p className="text-xs text-cream/40">まだ何も登録されていません。</p>}
+        {presets.map((p) => (
+          <span
+            key={p}
+            className="flex items-center gap-1.5 rounded-full border border-cream/20 bg-ink px-2.5 py-1 text-xs text-cream"
+          >
+            {p}
+            <button onClick={() => onRemove(p)} aria-label={`${p}を削除`} className="text-cream/40 hover:text-alert">
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          value={newValue}
+          onChange={(e) => setNewValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder={placeholder}
+          className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+        />
+        <button className="btn-pill-outline text-xs" onClick={add}>
+          追加
+        </button>
       </div>
     </div>
   );

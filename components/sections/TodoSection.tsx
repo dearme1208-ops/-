@@ -18,9 +18,9 @@ import { db, uid } from "@/lib/db";
 import {
   computeDateOrderedPosition,
   computeNextDueDate,
-  DEFAULT_CATEGORY_PRESETS,
   DEFAULT_TAG_PRESETS,
   effectiveDueDate,
+  parsePresetList,
   upsertTodoFromCsv,
 } from "@/lib/todo";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
@@ -106,21 +106,11 @@ export default function TodoSection() {
     }
   }, [view, lists]);
 
-  const tagOptions = useMemo(() => {
-    const used = new Set<string>(DEFAULT_TAG_PRESETS);
-    for (const t of allTasks ?? []) {
-      if (t.tag) used.add(t.tag);
-    }
-    return [...used];
-  }, [allTasks]);
-
-  const categoryOptions = useMemo(() => {
-    const used = new Set<string>(DEFAULT_CATEGORY_PRESETS);
-    for (const t of allTasks ?? []) {
-      if (t.category) used.add(t.category);
-    }
-    return [...used];
-  }, [allTasks]);
+  // 対応状況・分類の選択肢は設定タブで管理する（分類は既定値を持たず、設定したものだけが選択肢になる）
+  const [tagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const tagOptions = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
+  const [categoryPresetsJson] = useSetting("todo.categoryPresets", "[]");
+  const categoryOptions = useMemo(() => parsePresetList(categoryPresetsJson), [categoryPresetsJson]);
 
   const customerOptions = useMemo(() => {
     const used = new Set<string>();
