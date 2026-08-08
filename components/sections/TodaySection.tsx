@@ -1228,8 +1228,9 @@ export default function TodaySection() {
                             className="btn-pill-outline text-xs"
                             disabled={controlsDisabled || duplicateRunning}
                             onClick={() => startTask(task, effectiveLastStopTime)}
+                            title="前の作業が終了/一時停止した時刻から、この作業が始まっていたことにします"
                           >
-                            さかのぼって開始
+                            {formatClock(effectiveLastStopTime)}から開始
                           </button>
                         )}
                         <button
@@ -1272,8 +1273,9 @@ export default function TodaySection() {
                             className="btn-pill-outline text-xs"
                             disabled={controlsDisabled || duplicateRunning}
                             onClick={() => startTask(task, effectiveLastStopTime)}
+                            title="前の作業が終了/一時停止した時刻から、この作業が再開していたことにします"
                           >
-                            さかのぼって再開
+                            {formatClock(effectiveLastStopTime)}から再開
                           </button>
                         )}
                         <button
