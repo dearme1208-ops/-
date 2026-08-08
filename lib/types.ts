@@ -58,8 +58,10 @@ export interface DailyTask {
   isProvisional?: boolean; // 未計測時間の自動仮計測タスク（作業未割り当て）
   projectId?: string; // 案件から追加された場合、その案件のID
   isTrouble?: boolean; // トラブル対応タスクかどうか
-  resumeTaskIds?: string[]; // トラブル対応で中断した（一時停止させられた）作業のID一覧。トラブル完了時にまとめて再開する
+  resumeTaskIds?: string[]; // 中断した（一時停止させられた）作業のID一覧。この作業の完了時にまとめて再開する
   note?: string; // 完了時の一言メモ
+  scheduledTime?: string; // HH:MM。カレンダー予定インポート等で設定され、その時刻になったら自動的に差し込み開始する
+  autoStartNotified?: boolean; // scheduledTimeによる自動開始・通知をすでに行ったか（二重発火防止）
 }
 
 export interface WorkRecord {

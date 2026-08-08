@@ -1,6 +1,8 @@
 import { db, uid } from "./db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
+import { diffHmToSeconds } from "./time";
 import type { DailyTask } from "./types";
+import type { ScheduleRow } from "./scheduleCsv";
 
 export function segmentsAccumulatedMs(task: DailyTask, now: number): number {
   let total = task.accumulatedMs;
@@ -92,4 +94,39 @@ export async function finishDailyTask(task: DailyTask): Promise<void> {
   }
 
   await recomputeEstimateFromRecords(masterTaskId);
+}
+
+// カレンダー予定などをCSVから「本日の作業」に取り込む。scheduledTimeを持つ
+// 未着手タスクとして登録し、その時刻になったら自動的に差し込み開始される
+export async function importScheduleRows(rows: ScheduleRow[]): Promise<{ created: number }> {
+  let created = 0;
+  const countByDate = new Map<string, number>();
+  for (const row of rows) {
+    if (!countByDate.has(row.date)) {
+      countByDate.set(row.date, (await db.dailyTasks.where("date").equals(row.date).toArray()).length);
+    }
+    const order = countByDate.get(row.date)!;
+    countByDate.set(row.date, order + 1);
+
+    const estimatedSeconds = row.endTime ? diffHmToSeconds(row.startTime, row.endTime) : 0;
+    const master = await findOrCreateMasterTask(row.category, row.name, estimatedSeconds);
+    const task: DailyTask = {
+      id: uid(),
+      date: row.date,
+      order,
+      masterTaskId: master.id,
+      category: row.category,
+      name: row.name,
+      estimatedSeconds,
+      status: "pending",
+      segments: [],
+      accumulatedMs: 0,
+      isSpontaneous: true,
+      scheduledTime: row.startTime,
+      note: row.notes,
+    };
+    await db.dailyTasks.add(task);
+    created++;
+  }
+  return { created };
 }

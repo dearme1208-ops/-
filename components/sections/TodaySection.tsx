@@ -7,7 +7,9 @@ import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
 import { adjustStopTimeForBreaks, computeEffectiveElapsedMs, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
 import { useSetting } from "@/lib/settings";
-import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs } from "@/lib/tasks";
+import { computeRemainingEstimatedSeconds, importScheduleRows, segmentsAccumulatedMs } from "@/lib/tasks";
+import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
+import { downloadTextFile } from "@/lib/report";
 import { computeStreakDays } from "@/lib/streak";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
@@ -50,6 +52,9 @@ export default function TodaySection() {
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showTroubleDialog, setShowTroubleDialog] = useState(false);
+  const [scheduleImportErrors, setScheduleImportErrors] = useState<string[]>([]);
+  const [scheduleImportResult, setScheduleImportResult] = useState("");
+  const scheduleFileInputRef = useRef<HTMLInputElement>(null);
   const [notifPermission, setNotifPermission] = useState<string>("default");
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
@@ -278,6 +283,20 @@ export default function TodaySection() {
       }
     }
   }, [now, tasks, overrunTask]);
+
+  // 予定インポートで登録した作業(scheduledTime)が指定時刻になったら自動的に差し込み開始する
+  useEffect(() => {
+    if (!tasks) return;
+    for (const task of tasks) {
+      if (task.status !== "pending" || !task.scheduledTime || task.autoStartNotified) continue;
+      const [h, m] = task.scheduledTime.split(":").map(Number);
+      if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
+      const scheduledMs = new Date(date + "T00:00:00").getTime() + (h * 60 + m) * 60000;
+      if (now < scheduledMs) continue;
+      autoStartScheduledTask(task);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now, tasks, date]);
 
   const nextTaskId = useMemo(() => {
     if (!tasks) return null;
@@ -742,8 +761,8 @@ export default function TodaySection() {
     }
     const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
     await commitFinish(task, segments, accumulatedMs);
-    // トラブル対応を完了した場合、それによって中断していた作業（仮計測含む、複数ある場合も全て）を自動的に再開する
-    if (task.isTrouble && task.resumeTaskIds && task.resumeTaskIds.length > 0) {
+    // トラブル対応・予定の自動差し込みなどで中断した作業（仮計測含む、複数ある場合も全て）を自動的に再開する
+    if (task.resumeTaskIds && task.resumeTaskIds.length > 0) {
       for (const id of task.resumeTaskIds) {
         const target = await db.dailyTasks.get(id);
         if (target && target.status === "paused") {
@@ -865,6 +884,40 @@ export default function TodaySection() {
       await db.dailyTasks.add(task);
     });
     setShowTroubleDialog(false);
+  }
+
+  // 予定インポートで登録した作業(scheduledTime)がその時刻になったら、計測中の作業を
+  // すべて一時停止して差し込み開始する。トラブル対応と同様、完了時に自動的に再開される
+  async function autoStartScheduledTask(task: DailyTask) {
+    const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
+    const nowMs = Date.now();
+    notify("予定の時刻になりました", `${task.category} / ${task.name}`, `schedule-${task.id}`);
+    await db.transaction("rw", db.dailyTasks, async () => {
+      for (const r of runningTasks) await pauseTask(r);
+      await db.dailyTasks.update(task.id, {
+        status: "running",
+        segments: [{ start: nowMs }],
+        startedAt: nowMs,
+        autoStartNotified: true,
+        resumeTaskIds: runningTasks.map((t) => t.id),
+      });
+    });
+  }
+
+  function downloadScheduleTemplate() {
+    downloadTextFile("schedule_template.csv", scheduleCsvTemplate());
+  }
+
+  async function importScheduleCsv(file: File) {
+    const text = await file.text();
+    const { rows, errors } = parseScheduleCsv(text);
+    setScheduleImportErrors(errors);
+    if (rows.length === 0) {
+      setScheduleImportResult("");
+      return;
+    }
+    const { created } = await importScheduleRows(rows);
+    setScheduleImportResult(`${created}件の予定を取り込みました。`);
   }
 
   async function enableNotifications() {
@@ -1016,6 +1069,23 @@ export default function TodaySection() {
           <button className="btn-pill-outline text-sm" onClick={() => setShowAddDialog(true)}>
             + 突発作業を追加
           </button>
+          <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
+            予定CSVテンプレート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={() => scheduleFileInputRef.current?.click()}>
+            予定インポート
+          </button>
+          <input
+            ref={scheduleFileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importScheduleCsv(file);
+              e.target.value = "";
+            }}
+          />
           {tasks && tasks.length > 0 && (
             <button className="btn-pill-outline text-sm" onClick={generateFromTemplate}>
               再生成
@@ -1023,6 +1093,15 @@ export default function TodaySection() {
           )}
         </div>
       </div>
+
+      {scheduleImportResult && <p className="text-xs text-cream/70">{scheduleImportResult}</p>}
+      {scheduleImportErrors.length > 0 && (
+        <div className="panel border border-alert/40 p-3 text-xs text-alert">
+          {scheduleImportErrors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      )}
 
       {provisionalTask && (
         <ProvisionalTaskCard
@@ -1113,6 +1192,11 @@ export default function TodaySection() {
                           この案件の累計 {formatHms(projectTotalSeconds.get(task.projectId)!)}
                         </span>
                       )}
+                    </div>
+                  )}
+                  {task.scheduledTime && task.status === "pending" && (
+                    <div className="text-xs font-bold text-alert" title="この時刻になったら自動的に差し込み開始されます">
+                      ⏰ {task.scheduledTime} に自動開始
                     </div>
                   )}
                   <div className="text-xs text-cream/50">

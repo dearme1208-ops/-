@@ -24,6 +24,14 @@ export function parseHourStr(hhmm: string, fallback: number): number {
   return h + (Number.isFinite(m) ? m : 0) / 60;
 }
 
+// 同日内の "HH:MM" 同士の差を秒で返す（endがstart以前の場合は0）
+export function diffHmToSeconds(startHm: string, endHm: string): number {
+  const [sh, sm] = startHm.split(":").map(Number);
+  const [eh, em] = endHm.split(":").map(Number);
+  if (![sh, sm, eh, em].every(Number.isFinite)) return 0;
+  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) * 60);
+}
+
 // 時刻表示 (hh:mm) 例: 15:42
 export function formatClock(epochMs: number): string {
   const d = new Date(epochMs);
