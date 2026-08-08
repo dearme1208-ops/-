@@ -33,7 +33,7 @@ export default function TaskTrendDialog({
   );
 
   return (
-    <Modal title="作業時間・件数の推移" onClose={onClose}>
+    <Modal title="作業時間・平均・件数の推移" onClose={onClose}>
       <div className="mb-3">
         <div className="text-xs text-cream/50">{category}</div>
         <div className="text-sm font-bold text-cream">{name}</div>
@@ -56,8 +56,15 @@ export default function TaskTrendDialog({
       ) : (
         <div className="max-h-[55vh] space-y-5 overflow-y-auto pr-1">
           <div>
-            <h4 className="mb-2 text-xs font-bold text-cream/70">作業時間</h4>
+            <h4 className="mb-2 text-xs font-bold text-cream/70">合計時間</h4>
             <RankingBarChart data={points.map((p) => ({ label: p.label, value: p.totalSeconds }))} formatValue={formatHms} />
+          </div>
+          <div>
+            <h4 className="mb-2 text-xs font-bold text-cream/70">平均時間（1件あたり）</h4>
+            <RankingBarChart
+              data={points.map((p) => ({ label: p.label, value: p.totalSeconds / p.count }))}
+              formatValue={formatHms}
+            />
           </div>
           <div>
             <h4 className="mb-2 text-xs font-bold text-cream/70">作業件数</h4>

@@ -708,6 +708,9 @@ export default function TodaySection() {
       segments,
       status: "done",
       accumulatedMs,
+      // 手動加算分は既にaccumulatedMsへ織り込み済みのため、完了時にクリアしておく
+      // （残したままだとbaseAccumulatedMs/segmentsAccumulatedMsで二重に加算されてしまう）
+      manualAdjustmentMs: 0,
       startedAt,
       endedAt: nowMs,
       isProvisional: false,
