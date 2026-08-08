@@ -7,10 +7,12 @@ import { db } from "@/lib/db";
 import {
   aggregateRecords,
   computeHalfYearComparison,
+  computeTotalTimeTrend,
   defaultComparePeriod,
   type AggregateRow,
   type HalfYearPeriod,
   type SortMetric,
+  type TrendGranularity,
 } from "@/lib/aggregate";
 import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
 import { formatHms } from "@/lib/time";
@@ -18,11 +20,17 @@ import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeSwitchCostAnalysis } from "@/lib/switchcost";
 import { computeTimeByTag } from "@/lib/tags";
 import RankingBarChart from "@/components/charts/RankingBarChart";
+import LineChart from "@/components/charts/LineChart";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 const HALF_LABELS: Record<"h1" | "h2", string> = { h1: "上期", h2: "下期" };
+const TREND_GRANULARITY_LABELS: Record<TrendGranularity, string> = {
+  year: "年度ごと",
+  half: "半期ごと",
+  month: "1ヶ月ごと",
+};
 
 export default function AggregationSection() {
   const [period, setPeriod] = useState<PeriodType>("all");
@@ -30,6 +38,8 @@ export default function AggregationSection() {
   const [sortBy, setSortBy] = useState<SortMetric>("total");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [trendRow, setTrendRow] = useState<AggregateRow | null>(null);
+  const [totalTrendGranularity, setTotalTrendGranularity] = useState<TrendGranularity>("half");
+  const [totalTrendChartType, setTotalTrendChartType] = useState<"bar" | "line">("bar");
   const [compareTarget, setCompareTarget] = useState<HalfYearPeriod>(() =>
     defaultComparePeriod({ type: "h1", fiscalYear: currentFiscalYear() })
   );
@@ -52,6 +62,10 @@ export default function AggregationSection() {
   const weekdayAverages = useMemo(() => computeWeekdayAverages(records ?? []), [records]);
   const switchCost = useMemo(() => computeSwitchCostAnalysis(records ?? []), [records]);
   const tagRows = useMemo(() => computeTimeByTag(records ?? [], masterTasks ?? []), [records, masterTasks]);
+  const totalTrendPoints = useMemo(
+    () => computeTotalTimeTrend(records ?? [], totalTrendGranularity),
+    [records, totalTrendGranularity]
+  );
   const halfYearComparison = useMemo(() => {
     if (!records || (period !== "h1" && period !== "h2")) return null;
     return computeHalfYearComparison(records, { type: period, fiscalYear }, compareTarget);
@@ -170,7 +184,7 @@ export default function AggregationSection() {
                 {halfYearComparison.increased.map((row, idx) => (
                   <div key={row.key} className="flex items-center justify-between gap-3 rounded-lg bg-ink/50 px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="w-5 shrink-0 text-center text-xs text-cream/40">{idx + 1}</span>
+                      <span className="w-5 shrink-0 text-center text-sm">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
                       <div>
                         <div className="text-xs text-cream/50">{row.category}</div>
                         <div className="text-sm text-cream">{row.name}</div>
@@ -201,7 +215,7 @@ export default function AggregationSection() {
                 {halfYearComparison.decreased.map((row, idx) => (
                   <div key={row.key} className="flex items-center justify-between gap-3 rounded-lg bg-ink/50 px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="w-5 shrink-0 text-center text-xs text-cream/40">{idx + 1}</span>
+                      <span className="w-5 shrink-0 text-center text-sm">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
                       <div>
                         <div className="text-xs text-cream/50">{row.category}</div>
                         <div className="text-sm text-cream">{row.name}</div>
@@ -220,6 +234,49 @@ export default function AggregationSection() {
           </CollapsiblePanel>
         </>
       )}
+
+      <CollapsiblePanel
+        title="累計作業時間の推移"
+        collapsed={!!collapsed.totalTrend}
+        onToggle={() => toggleSection("totalTrend")}
+      >
+        <div className="mb-2 flex flex-wrap gap-2">
+          {(Object.keys(TREND_GRANULARITY_LABELS) as TrendGranularity[]).map((g) => (
+            <button
+              key={g}
+              className={totalTrendGranularity === g ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setTotalTrendGranularity(g)}
+            >
+              {TREND_GRANULARITY_LABELS[g]}
+            </button>
+          ))}
+        </div>
+        <div className="mb-3 flex flex-wrap gap-2">
+          {([
+            ["bar", "棒グラフ"],
+            ["line", "折れ線グラフ"],
+          ] as ["bar" | "line", string][]).map(([t, label]) => (
+            <button
+              key={t}
+              className={totalTrendChartType === t ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setTotalTrendChartType(t)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {totalTrendChartType === "bar" ? (
+          <RankingBarChart
+            data={totalTrendPoints.map((p) => ({ label: p.label, value: p.totalSeconds }))}
+            formatValue={formatHms}
+          />
+        ) : (
+          <LineChart
+            points={totalTrendPoints.map((p) => ({ key: p.sortKey, label: p.label, value: p.totalSeconds }))}
+            formatValue={formatHms}
+          />
+        )}
+      </CollapsiblePanel>
 
       <CollapsiblePanel
         title="曜日別の平均稼働時間"

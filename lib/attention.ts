@@ -1,4 +1,5 @@
 import type { MasterTask, WorkRecord } from "./types";
+import { isDateStrInRange } from "./period";
 
 export interface AttentionRow {
   masterTaskId: string;
@@ -78,4 +79,79 @@ export function computeEstimationAccuracyTrend(
       label: month.slice(5) + "月",
       value: Math.round((sumRatio / count) * 1000) / 10,
     }));
+}
+
+export type AvgComparePeriodType = "year" | "h1" | "h2";
+
+export interface AvgComparePeriod {
+  type: AvgComparePeriodType;
+  fiscalYear: number;
+}
+
+function avgComparePeriodRange(period: AvgComparePeriod): { start: Date; end: Date } {
+  const fy = period.fiscalYear;
+  if (period.type === "year") return { start: new Date(fy, 3, 1, 0, 0, 0), end: new Date(fy + 1, 2, 31, 23, 59, 59) };
+  if (period.type === "h1") return { start: new Date(fy, 3, 1, 0, 0, 0), end: new Date(fy, 8, 30, 23, 59, 59) };
+  return { start: new Date(fy, 9, 1, 0, 0, 0), end: new Date(fy + 1, 2, 31, 23, 59, 59) };
+}
+
+// 指定した期の自然な「前期」を決める（年度なら前年度、半期なら前の半期）
+export function defaultAvgComparePeriod(period: AvgComparePeriod): AvgComparePeriod {
+  if (period.type === "year") return { type: "year", fiscalYear: period.fiscalYear - 1 };
+  return period.type === "h1"
+    ? { type: "h2", fiscalYear: period.fiscalYear - 1 }
+    : { type: "h1", fiscalYear: period.fiscalYear };
+}
+
+export interface AvgTimeComparisonRow {
+  key: string;
+  category: string;
+  name: string;
+  avgSeconds: number;
+  prevAvgSeconds: number;
+  deltaSeconds: number; // 現在の期の平均 - 比較先の期の平均。負なら短縮（改善）、正なら増加（要改善）
+  count: number;
+}
+
+function avgByKeyInRange(records: WorkRecord[], range: { start: Date; end: Date }): Map<string, AvgTimeComparisonRow> {
+  const inRange = records.filter((r) => !r.excludedFromStats && isDateStrInRange(r.date, range));
+  const totals = new Map<string, { category: string; name: string; total: number; count: number }>();
+  for (const r of inRange) {
+    const key = r.isTrouble ? `__trouble__::${r.category}` : (r.masterTaskId ?? `${r.category}::${r.name}`);
+    if (!totals.has(key)) {
+      totals.set(key, { category: r.category, name: r.isTrouble ? "（全件合計）" : r.name, total: 0, count: 0 });
+    }
+    const entry = totals.get(key)!;
+    entry.total += r.seconds;
+    entry.count += 1;
+  }
+  const out = new Map<string, AvgTimeComparisonRow>();
+  for (const [key, { category, name, total, count }] of totals) {
+    out.set(key, { key, category, name, avgSeconds: total / count, prevAvgSeconds: 0, deltaSeconds: 0, count });
+  }
+  return out;
+}
+
+// 2つの期(年度どうし、または半期どうし)の間で、1件あたりの平均作業時間がどう
+// 変化したかを作業ごとに比較する。両方の期に一定件数の実績がある作業のみが対象
+export function computeAverageTimeComparison(
+  records: WorkRecord[],
+  current: AvgComparePeriod,
+  compareTo: AvgComparePeriod,
+  minSampleCount = 2
+): { improved: AvgTimeComparisonRow[]; regressed: AvgTimeComparisonRow[] } {
+  const currentMap = avgByKeyInRange(records, avgComparePeriodRange(current));
+  const prevMap = avgByKeyInRange(records, avgComparePeriodRange(compareTo));
+
+  const rows: AvgTimeComparisonRow[] = [];
+  for (const [key, cur] of currentMap) {
+    const prev = prevMap.get(key);
+    if (!prev || cur.count < minSampleCount || prev.count < minSampleCount) continue;
+    rows.push({ ...cur, prevAvgSeconds: prev.avgSeconds, deltaSeconds: cur.avgSeconds - prev.avgSeconds });
+  }
+
+  return {
+    improved: rows.filter((r) => r.deltaSeconds < 0).sort((a, b) => a.deltaSeconds - b.deltaSeconds),
+    regressed: rows.filter((r) => r.deltaSeconds > 0).sort((a, b) => b.deltaSeconds - a.deltaSeconds),
+  };
 }

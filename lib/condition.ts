@@ -14,20 +14,9 @@ export interface ConditionProductivityRow {
   sampleCount: number;
 }
 
-// 体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱う。
-// 各実績(WorkRecord)の作業時間中に体調が切り替わっていた場合は、切り替え前後で
-// より長い時間を占めていた方の体調にその実績全体を割り当てる（多数決）。
-// 想定時間との比較（想定÷実績）を体調レベルごとに平均して生産性の目安とする
-export function computeProductivityByCondition(
-  conditionLogs: ConditionLog[],
-  records: WorkRecord[],
-  masterTasks: MasterTask[]
-): ConditionProductivityRow[] {
-  const estimatedByKey = new Map<string, number>();
-  for (const m of masterTasks) {
-    if (m.estimatedSeconds > 0) estimatedByKey.set(`${m.category}::${m.name}`, m.estimatedSeconds);
-  }
-
+// 日付ごとの体調ログから、任意の時刻に有効だった体調レベル、および任意の作業時間
+// [startedAt, endedAt)における「多数決」レベルを求める関数を組み立てる
+function buildConditionLookup(conditionLogs: ConditionLog[]) {
   const logsByDate = new Map<string, ConditionLog[]>();
   for (const log of conditionLogs) {
     if (!logsByDate.has(log.date)) logsByDate.set(log.date, []);
@@ -83,13 +72,45 @@ export function computeProductivityByCondition(
     return best;
   }
 
-  const byLevel = new Map<string, { sumPct: number; count: number }>();
+  return { dominantLevel };
+}
+
+interface LeveledRecord {
+  record: WorkRecord;
+  level: string;
+}
+
+// 体調を記録している間に行われた実績を、それぞれ多数決で決まる体調レベルに割り当てる
+function attributeRecordsByCondition(conditionLogs: ConditionLog[], records: WorkRecord[]): LeveledRecord[] {
+  const { dominantLevel } = buildConditionLookup(conditionLogs);
+  const out: LeveledRecord[] = [];
   for (const r of records) {
     if (r.excludedFromStats || !r.startedAt || r.seconds <= 0) continue;
-    const estimatedSeconds = estimatedByKey.get(`${r.category}::${r.name}`);
-    if (!estimatedSeconds) continue;
     const level = dominantLevel(r.date, r.startedAt, r.endedAt);
     if (!level) continue;
+    out.push({ record: r, level });
+  }
+  return out;
+}
+
+// 体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱う。
+// 各実績(WorkRecord)の作業時間中に体調が切り替わっていた場合は、切り替え前後で
+// より長い時間を占めていた方の体調にその実績全体を割り当てる（多数決）。
+// 想定時間との比較（想定÷実績）を体調レベルごとに平均して生産性の目安とする
+export function computeProductivityByCondition(
+  conditionLogs: ConditionLog[],
+  records: WorkRecord[],
+  masterTasks: MasterTask[]
+): ConditionProductivityRow[] {
+  const estimatedByKey = new Map<string, number>();
+  for (const m of masterTasks) {
+    if (m.estimatedSeconds > 0) estimatedByKey.set(`${m.category}::${m.name}`, m.estimatedSeconds);
+  }
+
+  const byLevel = new Map<string, { sumPct: number; count: number }>();
+  for (const { record: r, level } of attributeRecordsByCondition(conditionLogs, records)) {
+    const estimatedSeconds = estimatedByKey.get(`${r.category}::${r.name}`);
+    if (!estimatedSeconds) continue;
     const pct = (estimatedSeconds / r.seconds) * 100;
     if (!byLevel.has(level)) byLevel.set(level, { sumPct: 0, count: 0 });
     const entry = byLevel.get(level)!;
@@ -104,4 +125,70 @@ export function computeProductivityByCondition(
       sampleCount: count,
     }))
     .sort((a, b) => Number(b.level) - Number(a.level));
+}
+
+export interface ConditionVarianceLevelStat {
+  level: string;
+  avgProductivityPct: number;
+  sampleCount: number;
+}
+
+export interface ConditionVarianceRow {
+  masterTaskId: string;
+  category: string;
+  name: string;
+  estimatedSeconds: number;
+  levels: ConditionVarianceLevelStat[]; // 体調レベルごとの平均達成度（達成度の高い順）
+  rangePct: number; // レベル間の達成度の最大差（ポイント）。大きいほど体調に左右されやすい
+}
+
+// 作業ごとに、体調レベル別の達成度（想定÷実績）を比べ、レベル間の差が大きい
+// （＝体調によって所要時間の増減が激しい）作業を、差の大きい順にピックアップする
+export function computeConditionVarianceByTask(
+  conditionLogs: ConditionLog[],
+  records: WorkRecord[],
+  masterTasks: MasterTask[],
+  minSamplesPerLevel = 2,
+  minLevels = 2
+): ConditionVarianceRow[] {
+  const masterById = new Map(masterTasks.map((m) => [m.id, m]));
+
+  const byTaskLevel = new Map<string, Map<string, { sumPct: number; count: number }>>();
+  for (const { record: r, level } of attributeRecordsByCondition(conditionLogs, records)) {
+    if (!r.masterTaskId) continue;
+    const master = masterById.get(r.masterTaskId);
+    if (!master || master.estimatedSeconds <= 0) continue;
+    const pct = (master.estimatedSeconds / r.seconds) * 100;
+    if (!byTaskLevel.has(r.masterTaskId)) byTaskLevel.set(r.masterTaskId, new Map());
+    const levelMap = byTaskLevel.get(r.masterTaskId)!;
+    if (!levelMap.has(level)) levelMap.set(level, { sumPct: 0, count: 0 });
+    const entry = levelMap.get(level)!;
+    entry.sumPct += pct;
+    entry.count += 1;
+  }
+
+  const rows: ConditionVarianceRow[] = [];
+  for (const [masterTaskId, levelMap] of byTaskLevel) {
+    const master = masterById.get(masterTaskId)!;
+    const levels: ConditionVarianceLevelStat[] = [];
+    for (const [level, { sumPct, count }] of levelMap) {
+      if (count < minSamplesPerLevel) continue;
+      levels.push({ level, avgProductivityPct: Math.round(sumPct / count), sampleCount: count });
+    }
+    if (levels.length < minLevels) continue;
+    levels.sort((a, b) => Number(b.level) - Number(a.level));
+
+    const values = levels.map((l) => l.avgProductivityPct);
+    const rangePct = Math.max(...values) - Math.min(...values);
+    rows.push({
+      masterTaskId,
+      category: master.category,
+      name: master.name,
+      estimatedSeconds: master.estimatedSeconds,
+      levels,
+      rangePct,
+    });
+  }
+
+  return rows.sort((a, b) => b.rangePct - a.rangePct);
 }

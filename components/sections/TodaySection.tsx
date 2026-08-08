@@ -34,6 +34,7 @@ import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
+const RANK_MEDALS = ["🥇", "🥈", "🥉"];
 
 export default function TodaySection() {
   const date = todayStr();
@@ -120,11 +121,11 @@ export default function TodaySection() {
     return map;
   }, [projectRecords]);
 
-  // 集計・ランキングで上位（累計時間トップ3）に入っている作業を把握しておく
+  // 集計・ランキングで上位（累計時間トップ3）に入っている作業を、順位付きで把握しておく
   const topRankedKeys = useMemo(() => {
-    if (!projectRecords || projectRecords.length === 0) return new Set<string>();
+    if (!projectRecords || projectRecords.length === 0) return new Map<string, number>();
     const ranked = aggregateRecords(projectRecords, { type: "all" }, "total");
-    return new Set(ranked.slice(0, 3).map((r) => r.key));
+    return new Map(ranked.slice(0, 3).map((r, idx) => [r.key, idx]));
   }, [projectRecords]);
 
   // 同じ曜日・近い時間帯によく行っている作業を、過去の実績からワンタップ提案する
@@ -1114,7 +1115,7 @@ export default function TodaySection() {
           const remainingMs = estMs - elapsedMs;
           const isNext = task.id === nextTaskId;
           const taskRankKey = task.masterTaskId ?? `${task.category}::${task.name}`;
-          const isTopRanked = topRankedKeys.has(taskRankKey);
+          const topRank = topRankedKeys.get(taskRankKey);
           const cardClass =
             task.status === "running"
               ? "border-cream ring-2 ring-cream/50 bg-cream/[0.04]"
@@ -1168,9 +1169,9 @@ export default function TodaySection() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-display text-base font-bold">{task.name}</span>
-                    {isTopRanked && (
+                    {topRank !== undefined && (
                       <span className="rounded-full bg-alert/20 px-2 py-0.5 text-[10px] font-bold text-alert">
-                        🏆 集計ランキング上位
+                        {RANK_MEDALS[topRank]} 集計ランキング{topRank + 1}位
                       </span>
                     )}
                   </div>

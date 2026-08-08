@@ -99,6 +99,24 @@ export function computeHalfYearComparison(
 
 export type TrendGranularity = "year" | "half" | "month";
 
+// 日付を年度・半期・月単位の集計バケットに変換する。sortKeyは文字列比較でそのまま
+// 時系列順になる形式にしている
+function bucketFor(dateStr: string, granularity: TrendGranularity): { sortKey: string; label: string } {
+  const d = new Date(dateStr + "T12:00:00");
+  const fy = currentFiscalYear(d);
+  if (granularity === "year") {
+    return { sortKey: String(fy), label: `${fy}年度` };
+  }
+  if (granularity === "half") {
+    const month = d.getMonth() + 1;
+    const half = month >= 4 && month <= 9 ? "h1" : "h2";
+    return { sortKey: `${fy}-${half}`, label: `${fy}年度${half === "h1" ? "上期" : "下期"}` };
+  }
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  return { sortKey: `${y}-${String(m).padStart(2, "0")}`, label: `${y}/${m}` };
+}
+
 export interface TaskTrendPoint {
   label: string; // 表示用ラベル（例: "2026年度", "2026年度上期", "2026/8"）
   sortKey: string; // 時系列順に並べるためのキー
@@ -117,28 +135,33 @@ export function computeTaskTrend(
   const matching = records.filter((r) => aggregateKey(r) === key && (includeExcluded || !r.excludedFromStats));
   const map = new Map<string, TaskTrendPoint>();
   for (const r of matching) {
-    const d = new Date(r.date + "T12:00:00");
-    const fy = currentFiscalYear(d);
-    let sortKey: string;
-    let label: string;
-    if (granularity === "year") {
-      sortKey = String(fy);
-      label = `${fy}年度`;
-    } else if (granularity === "half") {
-      const month = d.getMonth() + 1;
-      const half = month >= 4 && month <= 9 ? "h1" : "h2";
-      sortKey = `${fy}-${half}`;
-      label = `${fy}年度${half === "h1" ? "上期" : "下期"}`;
-    } else {
-      const y = d.getFullYear();
-      const m = d.getMonth() + 1;
-      sortKey = `${y}-${String(m).padStart(2, "0")}`;
-      label = `${y}/${m}`;
-    }
+    const { sortKey, label } = bucketFor(r.date, granularity);
     if (!map.has(sortKey)) map.set(sortKey, { label, sortKey, totalSeconds: 0, count: 0 });
     const point = map.get(sortKey)!;
     point.totalSeconds += r.seconds;
     point.count += 1;
+  }
+  return [...map.values()].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+}
+
+export interface TotalTimeTrendPoint {
+  label: string;
+  sortKey: string;
+  totalSeconds: number;
+}
+
+// 全作業を合わせた累計作業時間の推移を、年度・半期・月単位で時系列順に返す
+export function computeTotalTimeTrend(
+  records: WorkRecord[],
+  granularity: TrendGranularity,
+  includeExcluded = false
+): TotalTimeTrendPoint[] {
+  const target = records.filter((r) => includeExcluded || !r.excludedFromStats);
+  const map = new Map<string, TotalTimeTrendPoint>();
+  for (const r of target) {
+    const { sortKey, label } = bucketFor(r.date, granularity);
+    if (!map.has(sortKey)) map.set(sortKey, { label, sortKey, totalSeconds: 0 });
+    map.get(sortKey)!.totalSeconds += r.seconds;
   }
   return [...map.values()].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 }
