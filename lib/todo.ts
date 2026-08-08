@@ -136,6 +136,8 @@ export async function upsertTodoFromCsv(
     const order = existing?.order ?? orderCursor.get(listId)!;
     if (!existing) orderCursor.set(listId, order + 1);
 
+    // 既に完了済みのタスクはCSV側がfalseでも復活させない（完了はCSV再取込で覆されない一方向の状態）
+    const completed = existing?.completed || row.completed;
     const task: TodoTask = {
       id,
       listId,
@@ -148,8 +150,8 @@ export async function upsertTodoFromCsv(
       startDate: row.startDate,
       dueDate: row.dueDate,
       important: row.important,
-      completed: row.completed,
-      completedAt: row.completed ? (existing?.completedAt ?? Date.now()) : undefined,
+      completed,
+      completedAt: completed ? (existing?.completedAt ?? Date.now()) : undefined,
       notes: row.notes,
       order,
       createdAt: existing?.createdAt ?? Date.now(),
