@@ -457,6 +457,32 @@ export default function SettingsSection() {
           ToDoの「対応状況」ドロップダウン・かんばんの列に出てくる選択肢です。ここでの増減とは別に、ToDo登録・編集時は自由入力（「＋
           新しい対応状況...」）も引き続きできます。
         </p>
+
+        <div className="border-t border-cream/10 pt-3">
+          <h4 className="mb-2 text-xs font-bold text-cream/70">自動重要化のトリガー</h4>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className={!autoImportantTag ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setAutoImportantTag("")}
+            >
+              なし
+            </button>
+            {tagPresets.map((t) => (
+              <button
+                key={t}
+                className={autoImportantTag === t ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setAutoImportantTag(t)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-cream/50">
+            {autoImportantTag
+              ? `ToDoのタスク登録・編集時に対応状況「${autoImportantTag}」を選ぶと、自動的に★重要にします（対応状況を外しても重要フラグは自動では解除しません）。`
+              : "自動重要化は無効です。対応状況を選んでも★重要は自動では変わりません。"}
+          </p>
+        </div>
       </div>
 
       <div className="panel space-y-3 p-4">
@@ -464,32 +490,6 @@ export default function SettingsSection() {
         <PresetListEditor presets={categoryPresets} onAdd={addCategoryPreset} onRemove={removeCategoryPreset} placeholder="分類名" />
         <p className="text-xs text-cream/50">
           分類には既定値はありません。ここで登録したものだけがドロップダウン・かんばんの列に出てきます（自由入力でタスクに設定はできますが、ここで登録するまで選択肢やかんばんの列にはなりません）。
-        </p>
-      </div>
-
-      <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">ToDoの対応状況による自動重要化</h3>
-        <div className="flex flex-wrap gap-2">
-          <button
-            className={!autoImportantTag ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setAutoImportantTag("")}
-          >
-            なし
-          </button>
-          {tagPresets.map((t) => (
-            <button
-              key={t}
-              className={autoImportantTag === t ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setAutoImportantTag(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-cream/50">
-          {autoImportantTag
-            ? `ToDoのタスク登録・編集時に対応状況「${autoImportantTag}」を選ぶと、自動的に★重要にします（対応状況を外しても重要フラグは自動では解除しません）。`
-            : "自動重要化は無効です。対応状況を選んでも★重要は自動では変わりません。"}
         </p>
       </div>
 
