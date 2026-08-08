@@ -887,7 +887,8 @@ export default function TodaySection() {
   }
 
   // 予定インポートで登録した作業(scheduledTime)がその時刻になったら、計測中の作業を
-  // すべて一時停止して差し込み開始する。トラブル対応と同様、完了時に自動的に再開される
+  // すべて一時停止して差し込み開始する。トラブル対応と異なり、予定終了後に元の作業を
+  // 自動再開はしない（予定の内容によって次にやることが変わり得るため、判断はユーザーに委ねる）
   async function autoStartScheduledTask(task: DailyTask) {
     const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
     const nowMs = Date.now();
@@ -899,7 +900,6 @@ export default function TodaySection() {
         segments: [{ start: nowMs }],
         startedAt: nowMs,
         autoStartNotified: true,
-        resumeTaskIds: runningTasks.map((t) => t.id),
       });
     });
   }
