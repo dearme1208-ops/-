@@ -111,27 +111,36 @@ export default function AddTaskDialog({
         </div>
       ) : (
         <div className="space-y-2">
-          <input
-            placeholder="業務区分（大項目）"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          />
-          <div className="flex items-center gap-2">
+          <div>
+            <label className="mb-1 block text-xs text-cream/60">業務区分（大項目）</label>
             <input
-              placeholder="詳細作業名"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              placeholder="例: 資料作成"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
               className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
             />
-            <VoiceInputButton onResult={(text) => setName((v) => (v ? `${v} ${text}` : text))} />
           </div>
-          <input
-            placeholder="想定時間 hh:mm:ss"
-            value={estimate}
-            onChange={(e) => setEstimate(e.target.value)}
-            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          />
+          <div>
+            <label className="mb-1 block text-xs text-cream/60">詳細作業名</label>
+            <div className="flex items-center gap-2">
+              <input
+                placeholder="例: 見積書の作成"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+              <VoiceInputButton onResult={(text) => setName((v) => (v ? `${v} ${text}` : text))} />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-cream/60">想定時間</label>
+            <input
+              placeholder="hh:mm:ss"
+              value={estimate}
+              onChange={(e) => setEstimate(e.target.value)}
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+          </div>
           <div className="mt-4 flex justify-end gap-2">
             <button className="btn-pill-outline text-sm" onClick={() => submitFreeform(false)}>
               追加のみ
