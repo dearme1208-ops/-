@@ -4,7 +4,7 @@ import { useState } from "react";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
-import { parseHmsToSeconds } from "@/lib/time";
+import { formatClock, parseHmsToSeconds } from "@/lib/time";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
@@ -13,11 +13,13 @@ import VoiceInputButton from "@/components/ui/VoiceInputButton";
 export default function AddTaskDialog({
   date,
   provisionalRunning,
+  lastStopTime,
   onRequestConflictStart,
   onClose,
 }: {
   date: string;
   provisionalRunning: boolean;
+  lastStopTime?: number | null;
   onRequestConflictStart: (category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) => void;
   onClose: () => void;
 }) {
@@ -32,17 +34,16 @@ export default function AddTaskDialog({
     taskName: string,
     estimatedSeconds: number,
     masterTaskId: string | undefined,
-    start: boolean
+    startAt: number | undefined
   ) {
     // 未計測(仮計測)が既に計測中の状態ですぐ開始しようとした場合、二重計測になって
     // しまうため、ここでは追加せず、呼び出し元（本日タブ）に判断を委ねる
-    if (start && provisionalRunning) {
+    if (startAt !== undefined && provisionalRunning) {
       onRequestConflictStart(taskCategory, taskName, estimatedSeconds, masterTaskId);
       onClose();
       return;
     }
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
-    const now = Date.now();
     const task: DailyTask = {
       id: uid(),
       date,
@@ -51,17 +52,17 @@ export default function AddTaskDialog({
       category: taskCategory,
       name: taskName,
       estimatedSeconds,
-      status: start ? "running" : "pending",
-      segments: start ? [{ start: now }] : [],
+      status: startAt !== undefined ? "running" : "pending",
+      segments: startAt !== undefined ? [{ start: startAt }] : [],
       accumulatedMs: 0,
-      startedAt: start ? now : undefined,
+      startedAt: startAt,
       isSpontaneous: true,
     };
     await db.dailyTasks.add(task);
     onClose();
   }
 
-  async function submitMaster(start: boolean) {
+  async function submitMaster(startAt: number | undefined) {
     if (!selectedMaster) return;
     // 同日中に同じ大項目・詳細作業名の作業が既にあれば、残りの想定時間を繰り越す
     const estimatedSeconds = await computeRemainingEstimatedSeconds(
@@ -70,14 +71,14 @@ export default function AddTaskDialog({
       selectedMaster.name,
       selectedMaster.estimatedSeconds
     );
-    await insertTask(selectedMaster.category, selectedMaster.name, estimatedSeconds, selectedMaster.id, start);
+    await insertTask(selectedMaster.category, selectedMaster.name, estimatedSeconds, selectedMaster.id, startAt);
   }
 
-  async function submitFreeform(start: boolean) {
+  async function submitFreeform(startAt: number | undefined) {
     if (!category.trim() || !name.trim()) return;
     const estimatedSeconds = parseHmsToSeconds(estimate);
     const master = await findOrCreateMasterTask(category, name, estimatedSeconds);
-    await insertTask(category.trim(), name.trim(), estimatedSeconds, master.id, start);
+    await insertTask(category.trim(), name.trim(), estimatedSeconds, master.id, startAt);
   }
 
   return (
@@ -100,11 +101,21 @@ export default function AddTaskDialog({
       {mode === "master" ? (
         <div className="space-y-2">
           <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
-          <div className="mt-4 flex justify-end gap-2">
-            <button className="btn-pill-outline text-sm" onClick={() => submitMaster(false)} disabled={!selectedMaster}>
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => submitMaster(undefined)} disabled={!selectedMaster}>
               追加のみ
             </button>
-            <button className="btn-pill text-sm" onClick={() => submitMaster(true)} disabled={!selectedMaster}>
+            {lastStopTime != null && (
+              <button
+                className="btn-pill-outline text-sm"
+                onClick={() => submitMaster(lastStopTime)}
+                disabled={!selectedMaster}
+                title="前の作業が終了/一時停止した時刻から、この作業が始まっていたことにします"
+              >
+                {formatClock(lastStopTime)}から開始
+              </button>
+            )}
+            <button className="btn-pill text-sm" onClick={() => submitMaster(Date.now())} disabled={!selectedMaster}>
               追加してすぐ開始
             </button>
           </div>
@@ -141,11 +152,20 @@ export default function AddTaskDialog({
               className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
             />
           </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <button className="btn-pill-outline text-sm" onClick={() => submitFreeform(false)}>
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => submitFreeform(undefined)}>
               追加のみ
             </button>
-            <button className="btn-pill text-sm" onClick={() => submitFreeform(true)}>
+            {lastStopTime != null && (
+              <button
+                className="btn-pill-outline text-sm"
+                onClick={() => submitFreeform(lastStopTime)}
+                title="前の作業が終了/一時停止した時刻から、この作業が始まっていたことにします"
+              >
+                {formatClock(lastStopTime)}から開始
+              </button>
+            )}
+            <button className="btn-pill text-sm" onClick={() => submitFreeform(Date.now())}>
               追加してすぐ開始
             </button>
           </div>

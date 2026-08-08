@@ -1310,6 +1310,7 @@ export default function TodaySection() {
         <AddTaskDialog
           date={date}
           provisionalRunning={provisionalActive}
+          lastStopTime={effectiveLastStopTime}
           onRequestConflictStart={requestStartNew}
           onClose={() => setShowAddDialog(false)}
         />
