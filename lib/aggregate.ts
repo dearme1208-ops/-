@@ -1,5 +1,5 @@
 import type { WorkRecord } from "./types";
-import { isDateStrInRange, type PeriodFilter, getPeriodRange } from "./period";
+import { currentFiscalYear, isDateStrInRange, type PeriodFilter, getPeriodRange } from "./period";
 
 export interface AggregateRow {
   key: string;
@@ -11,6 +11,12 @@ export interface AggregateRow {
 }
 
 export type SortMetric = "total" | "avg" | "count";
+
+// トラブル対応など「ポイント」が付いた実績は、実績ごとに詳細作業名が異なっていても
+// 大項目（category）でひとつにまとめて集計する
+function aggregateKey(r: WorkRecord): string {
+  return r.isTrouble ? `__trouble__::${r.category}` : (r.masterTaskId ?? `${r.category}::${r.name}`);
+}
 
 export function aggregateRecords(
   records: WorkRecord[],
@@ -25,9 +31,7 @@ export function aggregateRecords(
   );
   const map = new Map<string, AggregateRow>();
   for (const r of inPeriod) {
-    // トラブル対応など「ポイント」が付いた実績は、実績ごとに詳細作業名が異なっていても
-    // 大項目（category）でひとつにまとめて集計する
-    const key = r.isTrouble ? `__trouble__::${r.category}` : (r.masterTaskId ?? `${r.category}::${r.name}`);
+    const key = aggregateKey(r);
     if (!map.has(key)) {
       map.set(key, {
         key,
@@ -91,4 +95,50 @@ export function computeHalfYearComparison(
     increased: comparisonRows.filter((r) => r.delta > 0).sort((a, b) => b.delta - a.delta),
     decreased: comparisonRows.filter((r) => r.delta < 0).sort((a, b) => a.delta - b.delta),
   };
+}
+
+export type TrendGranularity = "year" | "half" | "month";
+
+export interface TaskTrendPoint {
+  label: string; // 表示用ラベル（例: "2026年度", "2026年度上期", "2026/8"）
+  sortKey: string; // 時系列順に並べるためのキー
+  totalSeconds: number;
+  count: number;
+}
+
+// 特定の作業(aggregateRecordsが返すkeyと同じ単位)について、年度・半期・月単位での
+// 作業時間・件数の推移を時系列順に返す。期間フィルタは適用せず全期間のデータが対象
+export function computeTaskTrend(
+  records: WorkRecord[],
+  key: string,
+  granularity: TrendGranularity,
+  includeExcluded = false
+): TaskTrendPoint[] {
+  const matching = records.filter((r) => aggregateKey(r) === key && (includeExcluded || !r.excludedFromStats));
+  const map = new Map<string, TaskTrendPoint>();
+  for (const r of matching) {
+    const d = new Date(r.date + "T12:00:00");
+    const fy = currentFiscalYear(d);
+    let sortKey: string;
+    let label: string;
+    if (granularity === "year") {
+      sortKey = String(fy);
+      label = `${fy}年度`;
+    } else if (granularity === "half") {
+      const month = d.getMonth() + 1;
+      const half = month >= 4 && month <= 9 ? "h1" : "h2";
+      sortKey = `${fy}-${half}`;
+      label = `${fy}年度${half === "h1" ? "上期" : "下期"}`;
+    } else {
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      sortKey = `${y}-${String(m).padStart(2, "0")}`;
+      label = `${y}/${m}`;
+    }
+    if (!map.has(sortKey)) map.set(sortKey, { label, sortKey, totalSeconds: 0, count: 0 });
+    const point = map.get(sortKey)!;
+    point.totalSeconds += r.seconds;
+    point.count += 1;
+  }
+  return [...map.values()].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 }

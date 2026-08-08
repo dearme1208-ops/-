@@ -8,6 +8,7 @@ import {
   aggregateRecords,
   computeHalfYearComparison,
   defaultComparePeriod,
+  type AggregateRow,
   type HalfYearPeriod,
   type SortMetric,
 } from "@/lib/aggregate";
@@ -18,6 +19,7 @@ import { computeSwitchCostAnalysis } from "@/lib/switchcost";
 import { computeTimeByTag } from "@/lib/tags";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
+import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 const HALF_LABELS: Record<"h1" | "h2", string> = { h1: "上期", h2: "下期" };
@@ -27,6 +29,7 @@ export default function AggregationSection() {
   const [fiscalYear, setFiscalYear] = useState(() => currentFiscalYear());
   const [sortBy, setSortBy] = useState<SortMetric>("total");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [trendRow, setTrendRow] = useState<AggregateRow | null>(null);
   const [compareTarget, setCompareTarget] = useState<HalfYearPeriod>(() =>
     defaultComparePeriod({ type: "h1", fiscalYear: currentFiscalYear() })
   );
@@ -296,7 +299,11 @@ export default function AggregationSection() {
             const prevSeconds = previousTotalsByKey?.get(row.key) ?? 0;
             const delta = row.totalSeconds - prevSeconds;
             return (
-              <div key={row.key} className="flex items-center justify-between gap-3 px-4 py-3">
+              <button
+                key={row.key}
+                onClick={() => setTrendRow(row)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-cream/5"
+              >
                 <div className="flex items-center gap-3">
                   <span className="w-8 text-center text-lg">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
                   <div>
@@ -326,7 +333,7 @@ export default function AggregationSection() {
                     </div>
                   )}
                 </div>
-              </div>
+              </button>
             );
           })}
           {rows.length === 0 && <p className="px-4 py-6 text-sm text-cream/50">この期間のデータはありません。</p>}
@@ -335,6 +342,16 @@ export default function AggregationSection() {
       <p className="text-xs text-cream/40">
         ※ 実績は基本的にそのまま集計されます。特定の記録を除外したい場合は「実績編集」から手動で操作してください。
       </p>
+
+      {trendRow && (
+        <TaskTrendDialog
+          rowKey={trendRow.key}
+          category={trendRow.category}
+          name={trendRow.name}
+          records={records ?? []}
+          onClose={() => setTrendRow(null)}
+        />
+      )}
     </div>
   );
 }
