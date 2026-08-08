@@ -7,6 +7,7 @@ import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import LineChart from "@/components/charts/LineChart";
+import ComboChart from "@/components/charts/ComboChart";
 
 const GRANULARITY_LABELS: Record<TrendGranularity, string> = {
   year: "年度ごと",
@@ -14,7 +15,12 @@ const GRANULARITY_LABELS: Record<TrendGranularity, string> = {
   month: "1ヶ月ごと",
 };
 
-type ChartType = "bar" | "line";
+type ChartType = "bar" | "line" | "combo";
+const CHART_TYPE_LABELS: Record<ChartType, string> = {
+  bar: "棒グラフ",
+  line: "折れ線グラフ",
+  combo: "合計(棒)+平均(線)",
+};
 
 export default function TaskTrendDialog({
   rowKey,
@@ -63,22 +69,44 @@ export default function TaskTrendDialog({
         ))}
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
-        {([
-          ["bar", "棒グラフ"],
-          ["line", "折れ線グラフ"],
-        ] as [ChartType, string][]).map(([t, label]) => (
+        {(Object.keys(CHART_TYPE_LABELS) as ChartType[]).map((t) => (
           <button
             key={t}
             className={chartType === t ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setChartType(t)}
           >
-            {label}
+            {CHART_TYPE_LABELS[t]}
           </button>
         ))}
       </div>
 
       {points.length === 0 ? (
         <p className="text-sm text-cream/50">データがありません。</p>
+      ) : chartType === "combo" ? (
+        <div className="max-h-[55vh] space-y-5 overflow-y-auto pr-1">
+          <div>
+            <h4 className="mb-2 text-xs font-bold text-cream/70">合計時間（棒）× 平均時間（線）</h4>
+            <ComboChart
+              points={points.map((p) => ({
+                key: p.sortKey,
+                label: p.label,
+                barValue: p.totalSeconds,
+                lineValue: p.totalSeconds / p.count,
+              }))}
+              barLabel="合計時間"
+              lineLabel="平均時間"
+              formatBar={formatHms}
+              formatLine={formatHms}
+            />
+          </div>
+          <div>
+            <h4 className="mb-2 text-xs font-bold text-cream/70">作業件数</h4>
+            <RankingBarChart
+              data={points.map((p) => ({ key: p.sortKey, label: p.label, value: p.count }))}
+              formatValue={(v) => `${v}件`}
+            />
+          </div>
+        </div>
       ) : (
         <div className="max-h-[55vh] space-y-5 overflow-y-auto pr-1">
           <div>

@@ -37,6 +37,8 @@ export default function SettingsSection() {
   const [standardWorkEnd, setStandardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
   const [conditionEnabledStr, setConditionEnabledStr] = useSetting("condition.enabled", "true");
   const conditionEnabled = conditionEnabledStr === "true";
+  const [simpleButtonsStr, setSimpleButtonsStr] = useSetting("today.simpleButtons", "false");
+  const simpleButtons = simpleButtonsStr === "true";
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [tagPresetsJson, setTagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
@@ -426,6 +428,29 @@ export default function SettingsSection() {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">本日タブのボタン表示</h3>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={!simpleButtons ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setSimpleButtonsStr("false")}
+          >
+            通常表示
+          </button>
+          <button
+            className={simpleButtons ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setSimpleButtonsStr("true")}
+          >
+            簡易表示（アイコンのみ）
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          {simpleButtons
+            ? "「トラブル発生」「突発作業を追加」ボタンをアイコンのみで表示します。"
+            : "「トラブル発生」「突発作業を追加」ボタンを文字付きで表示します。"}
+        </p>
       </div>
 
       <div className="panel space-y-3 p-4">

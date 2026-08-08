@@ -73,6 +73,8 @@ export default function TodaySection() {
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [conditionEnabledStr] = useSetting("condition.enabled", "true");
   const conditionEnabled = conditionEnabledStr === "true";
+  const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
+  const simpleButtons = simpleButtonsStr === "true";
   const [weeklyAfterHoursNotifyEnabledStr] = useSetting("notify.afterHoursWeeklyEnabled", "false");
   const weeklyAfterHoursNotifyEnabled = weeklyAfterHoursNotifyEnabledStr === "true";
   const [weeklyAfterHoursThresholdStr] = useSetting("notify.afterHoursWeeklyThresholdHours", "5");
@@ -1056,12 +1058,35 @@ export default function TodaySection() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-pill-danger text-sm" onClick={() => startTrouble()}>
-            ⚡ トラブル発生
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={() => setShowAddDialog(true)}>
-            + 突発作業を追加
-          </button>
+          {simpleButtons ? (
+            <>
+              <button
+                className="btn-pill-danger px-3 py-2 text-base"
+                onClick={() => startTrouble()}
+                title="トラブル発生"
+                aria-label="トラブル発生"
+              >
+                ⚡
+              </button>
+              <button
+                className="btn-pill-outline px-3 py-2 text-base"
+                onClick={() => setShowAddDialog(true)}
+                title="突発作業を追加"
+                aria-label="突発作業を追加"
+              >
+                ➕
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn-pill-danger text-sm" onClick={() => startTrouble()}>
+                ⚡ トラブル発生
+              </button>
+              <button className="btn-pill-outline text-sm" onClick={() => setShowAddDialog(true)}>
+                + 突発作業を追加
+              </button>
+            </>
+          )}
           <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
             予定CSVテンプレート
           </button>

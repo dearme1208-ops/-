@@ -1,5 +1,5 @@
 import type { MasterTask, WorkRecord } from "./types";
-import { isDateStrInRange } from "./period";
+import { fiscalPeriodRange, isDateStrInRange } from "./period";
 
 export interface AttentionRow {
   masterTaskId: string;
@@ -89,10 +89,7 @@ export interface AvgComparePeriod {
 }
 
 function avgComparePeriodRange(period: AvgComparePeriod): { start: Date; end: Date } {
-  const fy = period.fiscalYear;
-  if (period.type === "year") return { start: new Date(fy, 3, 1, 0, 0, 0), end: new Date(fy + 1, 2, 31, 23, 59, 59) };
-  if (period.type === "h1") return { start: new Date(fy, 3, 1, 0, 0, 0), end: new Date(fy, 8, 30, 23, 59, 59) };
-  return { start: new Date(fy, 9, 1, 0, 0, 0), end: new Date(fy + 1, 2, 31, 23, 59, 59) };
+  return fiscalPeriodRange(period.type, period.fiscalYear)!;
 }
 
 // 指定した期の自然な「前期」を決める（年度なら前年度、半期なら前の半期）

@@ -14,7 +14,7 @@ import {
   type SortMetric,
   type TrendGranularity,
 } from "@/lib/aggregate";
-import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
+import { currentFiscalYear, fiscalPeriodRange, isDateStrInRange, PERIOD_LABELS, type FiscalPeriodType, type PeriodType } from "@/lib/period";
 import { formatHms } from "@/lib/time";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeSwitchCostAnalysis } from "@/lib/switchcost";
@@ -31,6 +31,12 @@ const TREND_GRANULARITY_LABELS: Record<TrendGranularity, string> = {
   half: "半期ごと",
   month: "1ヶ月ごと",
 };
+const WEEKDAY_PERIOD_LABELS: Record<FiscalPeriodType, string> = {
+  all: "累計",
+  year: "年度",
+  h1: "上期",
+  h2: "下期",
+};
 
 export default function AggregationSection() {
   const [period, setPeriod] = useState<PeriodType>("all");
@@ -40,6 +46,8 @@ export default function AggregationSection() {
   const [trendRow, setTrendRow] = useState<AggregateRow | null>(null);
   const [totalTrendGranularity, setTotalTrendGranularity] = useState<TrendGranularity>("half");
   const [totalTrendChartType, setTotalTrendChartType] = useState<"bar" | "line">("bar");
+  const [weekdayPeriodType, setWeekdayPeriodType] = useState<FiscalPeriodType>("all");
+  const [weekdayFiscalYear, setWeekdayFiscalYear] = useState(() => currentFiscalYear());
   const [compareTarget, setCompareTarget] = useState<HalfYearPeriod>(() =>
     defaultComparePeriod({ type: "h1", fiscalYear: currentFiscalYear() })
   );
@@ -59,7 +67,11 @@ export default function AggregationSection() {
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
-  const weekdayAverages = useMemo(() => computeWeekdayAverages(records ?? []), [records]);
+  const weekdayAverages = useMemo(() => {
+    const range = fiscalPeriodRange(weekdayPeriodType, weekdayFiscalYear);
+    const filtered = range ? (records ?? []).filter((r) => isDateStrInRange(r.date, range)) : records ?? [];
+    return computeWeekdayAverages(filtered);
+  }, [records, weekdayPeriodType, weekdayFiscalYear]);
   const switchCost = useMemo(() => computeSwitchCostAnalysis(records ?? []), [records]);
   const tagRows = useMemo(() => computeTimeByTag(records ?? [], masterTasks ?? []), [records, masterTasks]);
   const totalTrendPoints = useMemo(
@@ -283,6 +295,30 @@ export default function AggregationSection() {
         collapsed={!!collapsed.weekday}
         onToggle={() => toggleSection("weekday")}
       >
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {(Object.keys(WEEKDAY_PERIOD_LABELS) as FiscalPeriodType[]).map((t) => (
+            <button
+              key={t}
+              className={weekdayPeriodType === t ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setWeekdayPeriodType(t)}
+            >
+              {WEEKDAY_PERIOD_LABELS[t]}
+            </button>
+          ))}
+          {weekdayPeriodType !== "all" && (
+            <select
+              value={weekdayFiscalYear}
+              onChange={(e) => setWeekdayFiscalYear(Number(e.target.value))}
+              className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+            >
+              {fiscalYearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}年度
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <RankingBarChart
           data={weekdayAverages
             .filter((w) => w.dayCount > 0)
