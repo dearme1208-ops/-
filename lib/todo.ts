@@ -5,6 +5,20 @@ import { todayStr } from "./time";
 
 export const DEFAULT_TAG_PRESETS = ["社内確認中", "客先確認中", "打ち合わせ", "対応中", "保留"];
 
+export const DEFAULT_CATEGORY_PRESETS = [
+  "見積",
+  "生産性検討",
+  "VT1回答",
+  "単価改定",
+  "品質不具合",
+  "出荷/荷姿",
+  "図面",
+  "塗装",
+  "支給品",
+  "請求",
+  "その他",
+];
+
 // タスク全体の期日を、自分自身の期日とサブタスクの期日の中で最も早いものとして算出する
 export function effectiveDueDate(task: TodoTask, subtasks: TodoTask[]): string | undefined {
   const dates = [task.dueDate, ...subtasks.map((s) => s.dueDate)].filter((d): d is string => !!d);
@@ -146,6 +160,7 @@ export async function upsertTodoFromCsv(
       action: row.action,
       url: row.url,
       tag: row.tag,
+      category: row.category,
       customer: row.customer,
       startDate: row.startDate,
       dueDate: row.dueDate,

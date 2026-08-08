@@ -163,7 +163,8 @@ export interface TodoTask {
   title: string;
   action?: string; // 次にすべき具体的な行動。件名(title)とは別に記録する
   url?: string; // 関連リンク。一覧のリンクボタンから直接開ける
-  tag?: string; // 社内確認中・客先確認中・打ち合わせ など、件名の頭に付けるラベル
+  tag?: string; // 対応状況。社内確認中・客先確認中・打ち合わせ など
+  category?: string; // 分類。見積・生産性検討・単価改定 など、案件の種類
   customer?: string; // 客先名
   notes?: string;
   startDate?: string; // 開始日 YYYY-MM-DD。設定されていれば期日よりこちらを優先してリスト順に反映する

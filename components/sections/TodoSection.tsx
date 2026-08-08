@@ -8,12 +8,21 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDraggable,
+  useDroppable,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
-import { computeDateOrderedPosition, computeNextDueDate, DEFAULT_TAG_PRESETS, effectiveDueDate, upsertTodoFromCsv } from "@/lib/todo";
+import {
+  computeDateOrderedPosition,
+  computeNextDueDate,
+  DEFAULT_CATEGORY_PRESETS,
+  DEFAULT_TAG_PRESETS,
+  effectiveDueDate,
+  upsertTodoFromCsv,
+} from "@/lib/todo";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
@@ -27,8 +36,11 @@ import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
 const NO_TAG_VALUE = "";
+const CUSTOM_CATEGORY_VALUE = "__custom__";
+const NO_CATEGORY_VALUE = "";
 const CUSTOM_CUSTOMER_VALUE = "__custom__";
 const NO_CUSTOMER_VALUE = "";
+const KANBAN_UNSET = "__unset__";
 
 const DEFAULT_PX_PER_DAY = 28;
 const MIN_PX_PER_DAY = 0.3;
@@ -37,7 +49,8 @@ const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
 type ViewKey = "myday" | "important" | "planned" | `list:${string}`;
-type DisplayMode = "list" | "gantt" | "calendar";
+type DisplayMode = "list" | "gantt" | "calendar" | "kanban";
+type KanbanAxis = "tag" | "category";
 
 // スキームなしで貼られたURL（例: example.com）もリンクボタンから開けるよう補う
 function normalizeUrl(url: string): string {
@@ -53,13 +66,17 @@ export default function TodoSection() {
   const [newTaskAction, setNewTaskAction] = useState("");
   const [newTaskTagMode, setNewTaskTagMode] = useState<string>(NO_TAG_VALUE);
   const [newTaskCustomTag, setNewTaskCustomTag] = useState("");
+  const [newTaskCategoryMode, setNewTaskCategoryMode] = useState<string>(NO_CATEGORY_VALUE);
+  const [newTaskCustomCategory, setNewTaskCustomCategory] = useState("");
   const [newTaskCustomerMode, setNewTaskCustomerMode] = useState<string>(NO_CUSTOMER_VALUE);
   const [newTaskCustomCustomer, setNewTaskCustomCustomer] = useState("");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTag, setFilterTag] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
   const [filterCustomer, setFilterCustomer] = useState("");
+  const [kanbanAxis, setKanbanAxis] = useState<KanbanAxis>("tag");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
@@ -93,6 +110,14 @@ export default function TodoSection() {
     const used = new Set<string>(DEFAULT_TAG_PRESETS);
     for (const t of allTasks ?? []) {
       if (t.tag) used.add(t.tag);
+    }
+    return [...used];
+  }, [allTasks]);
+
+  const categoryOptions = useMemo(() => {
+    const used = new Set<string>(DEFAULT_CATEGORY_PRESETS);
+    for (const t of allTasks ?? []) {
+      if (t.category) used.add(t.category);
     }
     return [...used];
   }, [allTasks]);
@@ -140,7 +165,7 @@ export default function TodoSection() {
 
   const currentListId = view.startsWith("list:") ? view.slice(5) : null;
 
-  const searchActive = searchQuery.trim() !== "" || filterTag !== "" || filterCustomer !== "";
+  const searchActive = searchQuery.trim() !== "" || filterTag !== "" || filterCategory !== "" || filterCustomer !== "";
 
   const visibleTasks = useMemo(() => {
     let filtered: TodoTask[];
@@ -168,6 +193,7 @@ export default function TodoSection() {
         )
           return false;
         if (filterTag && t.tag !== filterTag) return false;
+        if (filterCategory && t.category !== filterCategory) return false;
         if (filterCustomer && t.customer !== filterCustomer) return false;
         return true;
       });
@@ -182,7 +208,7 @@ export default function TodoSection() {
       }
       return a.order - b.order;
     });
-  }, [view, currentListId, topLevelTasks, today, searchActive, searchQuery, filterTag, filterCustomer, subtasksByParent]);
+  }, [view, currentListId, topLevelTasks, today, searchActive, searchQuery, filterTag, filterCategory, filterCustomer, subtasksByParent]);
 
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
   const completedTasks = visibleTasks.filter((t) => t.completed);
@@ -229,6 +255,11 @@ export default function TodoSection() {
     return mode || undefined;
   }
 
+  function resolveCategory(mode: string, custom: string): string | undefined {
+    if (mode === CUSTOM_CATEGORY_VALUE) return custom.trim() || undefined;
+    return mode || undefined;
+  }
+
   function resolveCustomer(mode: string, custom: string): string | undefined {
     if (mode === CUSTOM_CUSTOMER_VALUE) return custom.trim() || undefined;
     return mode || undefined;
@@ -246,6 +277,7 @@ export default function TodoSection() {
       title: newTaskTitle.trim(),
       action: newTaskAction.trim() || undefined,
       tag,
+      category: resolveCategory(newTaskCategoryMode, newTaskCustomCategory),
       customer: resolveCustomer(newTaskCustomerMode, newTaskCustomCustomer),
       // 設定で指定したタグが選択されていれば自動的に重要にする（それ以外は閲覧中のビューに従う）
       important: view === "important" || (!!autoImportantTag && tag === autoImportantTag),
@@ -259,8 +291,20 @@ export default function TodoSection() {
     setNewTaskAction("");
     setNewTaskTagMode(NO_TAG_VALUE);
     setNewTaskCustomTag("");
+    setNewTaskCategoryMode(NO_CATEGORY_VALUE);
+    setNewTaskCustomCategory("");
     setNewTaskCustomerMode(NO_CUSTOMER_VALUE);
     setNewTaskCustomCustomer("");
+  }
+
+  async function setTaskColumnValue(task: TodoTask, axis: KanbanAxis, value: string | undefined) {
+    if (axis === "tag") {
+      const updates: Partial<TodoTask> = { tag: value };
+      if (autoImportantTag && value === autoImportantTag) updates.important = true;
+      await db.todoTasks.update(task.id, updates);
+    } else {
+      await db.todoTasks.update(task.id, { category: value });
+    }
   }
 
   async function toggleComplete(task: TodoTask) {
@@ -441,10 +485,22 @@ export default function TodoSection() {
           onChange={(e) => setFilterTag(e.target.value)}
           className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
         >
-          <option value="">タグ: すべて</option>
+          <option value="">対応状況: すべて</option>
           {tagOptions.map((t) => (
             <option key={t} value={t}>
               {t}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterCategory}
+          onChange={(e) => setFilterCategory(e.target.value)}
+          className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+        >
+          <option value="">分類: すべて</option>
+          {categoryOptions.map((c) => (
+            <option key={c} value={c}>
+              {c}
             </option>
           ))}
         </select>
@@ -466,6 +522,7 @@ export default function TodoSection() {
             onClick={() => {
               setSearchQuery("");
               setFilterTag("");
+              setFilterCategory("");
               setFilterCustomer("");
             }}
           >
@@ -510,13 +567,13 @@ export default function TodoSection() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-bold">{panelTitle}</h2>
           <div className="flex flex-wrap items-center gap-2">
-            {(["list", "gantt", "calendar"] as DisplayMode[]).map((m) => (
+            {(["list", "kanban", "gantt", "calendar"] as DisplayMode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => setDisplayMode(m)}
                 className={displayMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
               >
-                {m === "list" ? "リスト" : m === "gantt" ? "ガント" : "カレンダー"}
+                {m === "list" ? "リスト" : m === "kanban" ? "かんばん" : m === "gantt" ? "ガント" : "カレンダー"}
               </button>
             ))}
             {currentListId && !searchActive && (
@@ -547,19 +604,40 @@ export default function TodoSection() {
             onChange={(e) => setNewTaskTagMode(e.target.value)}
             className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
           >
-            <option value={NO_TAG_VALUE}>タグなし</option>
+            <option value={NO_TAG_VALUE}>対応状況なし</option>
             {tagOptions.map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
             ))}
-            <option value={CUSTOM_TAG_VALUE}>＋ 新しいタグ...</option>
+            <option value={CUSTOM_TAG_VALUE}>＋ 新しい対応状況...</option>
           </select>
           {newTaskTagMode === CUSTOM_TAG_VALUE && (
             <input
               value={newTaskCustomTag}
               onChange={(e) => setNewTaskCustomTag(e.target.value)}
-              placeholder="タグ名"
+              placeholder="対応状況名"
+              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+            />
+          )}
+          <select
+            value={newTaskCategoryMode}
+            onChange={(e) => setNewTaskCategoryMode(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+          >
+            <option value={NO_CATEGORY_VALUE}>分類なし</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+            <option value={CUSTOM_CATEGORY_VALUE}>＋ 新しい分類...</option>
+          </select>
+          {newTaskCategoryMode === CUSTOM_CATEGORY_VALUE && (
+            <input
+              value={newTaskCustomCategory}
+              onChange={(e) => setNewTaskCustomCategory(e.target.value)}
+              placeholder="分類名"
               className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
             />
           )}
@@ -591,6 +669,17 @@ export default function TodoSection() {
 
         {displayMode === "calendar" ? (
           <TodoCalendarView tasks={tasksForTimeline} today={today} />
+        ) : displayMode === "kanban" ? (
+          <KanbanBoard
+            tasks={visibleTasks}
+            axis={kanbanAxis}
+            onAxisChange={setKanbanAxis}
+            tagOptions={tagOptions}
+            categoryOptions={categoryOptions}
+            autoImportantTag={autoImportantTag}
+            onMoveTask={setTaskColumnValue}
+            onOpenDetail={(task) => setDetailTaskId(task.id)}
+          />
         ) : displayMode === "gantt" ? (
           <div>
             {ganttRows.length === 0 ? (
@@ -752,6 +841,7 @@ export default function TodoSection() {
           task={detailTask}
           subtasks={subtasksByParent.get(detailTask.id) ?? []}
           tagOptions={tagOptions}
+          categoryOptions={categoryOptions}
           customerOptions={customerOptions}
           today={today}
           onClose={() => setDetailTaskId(null)}
@@ -909,6 +999,11 @@ function TaskRow({
               {task.tag}
             </span>
           )}
+          {task.category && (
+            <span className="rounded-full border border-cream/20 bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/60">
+              {task.category}
+            </span>
+          )}
           {task.customer && (
             <span className="rounded-full bg-cream/10 px-1.5 py-0.5 text-[10px] text-cream/60">
               {task.customer}
@@ -960,6 +1055,7 @@ function TaskDetailModal({
   task,
   subtasks,
   tagOptions,
+  categoryOptions,
   customerOptions,
   today,
   onClose,
@@ -970,6 +1066,7 @@ function TaskDetailModal({
   task: TodoTask;
   subtasks: TodoTask[];
   tagOptions: string[];
+  categoryOptions: string[];
   customerOptions: string[];
   today: string;
   onClose: () => void;
@@ -987,6 +1084,12 @@ function TaskDetailModal({
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
   const [tagMode, setTagMode] = useState(task.tag && !tagOptions.includes(task.tag) ? CUSTOM_TAG_VALUE : (task.tag ?? NO_TAG_VALUE));
   const [customTag, setCustomTag] = useState(task.tag && !tagOptions.includes(task.tag) ? task.tag : "");
+  const [categoryMode, setCategoryMode] = useState(
+    task.category && !categoryOptions.includes(task.category) ? CUSTOM_CATEGORY_VALUE : (task.category ?? NO_CATEGORY_VALUE)
+  );
+  const [customCategory, setCustomCategory] = useState(
+    task.category && !categoryOptions.includes(task.category) ? task.category : ""
+  );
   const [customerMode, setCustomerMode] = useState(
     task.customer && !customerOptions.includes(task.customer) ? CUSTOM_CUSTOMER_VALUE : (task.customer ?? NO_CUSTOMER_VALUE)
   );
@@ -1002,6 +1105,11 @@ function TaskDetailModal({
   function resolveTag(): string | undefined {
     if (tagMode === CUSTOM_TAG_VALUE) return customTag.trim() || undefined;
     return tagMode || undefined;
+  }
+
+  function resolveCategory(): string | undefined {
+    if (categoryMode === CUSTOM_CATEGORY_VALUE) return customCategory.trim() || undefined;
+    return categoryMode || undefined;
   }
 
   function resolveCustomer(): string | undefined {
@@ -1020,6 +1128,7 @@ function TaskDetailModal({
       startDate: startDate || undefined,
       dueDate: dueDate || undefined,
       tag,
+      category: resolveCategory(),
       customer: resolveCustomer(),
       recurrence: recurrenceEnabled ? recurrence : undefined,
     };
@@ -1103,25 +1212,50 @@ function TaskDetailModal({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-cream/60">タグ</label>
+          <label className="text-xs text-cream/60">対応状況</label>
           <select
             value={tagMode}
             onChange={(e) => setTagMode(e.target.value)}
             className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
           >
-            <option value={NO_TAG_VALUE}>タグなし</option>
+            <option value={NO_TAG_VALUE}>対応状況なし</option>
             {tagOptions.map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
             ))}
-            <option value={CUSTOM_TAG_VALUE}>＋ 新しいタグ...</option>
+            <option value={CUSTOM_TAG_VALUE}>＋ 新しい対応状況...</option>
           </select>
           {tagMode === CUSTOM_TAG_VALUE && (
             <input
               value={customTag}
               onChange={(e) => setCustomTag(e.target.value)}
-              placeholder="タグ名"
+              placeholder="対応状況名"
+              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+            />
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-cream/60">分類</label>
+          <select
+            value={categoryMode}
+            onChange={(e) => setCategoryMode(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+          >
+            <option value={NO_CATEGORY_VALUE}>分類なし</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+            <option value={CUSTOM_CATEGORY_VALUE}>＋ 新しい分類...</option>
+          </select>
+          {categoryMode === CUSTOM_CATEGORY_VALUE && (
+            <input
+              value={customCategory}
+              onChange={(e) => setCustomCategory(e.target.value)}
+              placeholder="分類名"
               className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
             />
           )}
@@ -1425,5 +1559,154 @@ function TaskDetailModal({
         </button>
       </div>
     </Modal>
+  );
+}
+
+// 対応状況(タグ)または分類(カテゴリ)を列にした、ドラッグ&ドロップで移動できるかんばん表示
+function KanbanBoard({
+  tasks,
+  axis,
+  onAxisChange,
+  tagOptions,
+  categoryOptions,
+  autoImportantTag,
+  onMoveTask,
+  onOpenDetail,
+}: {
+  tasks: TodoTask[];
+  axis: KanbanAxis;
+  onAxisChange: (axis: KanbanAxis) => void;
+  tagOptions: string[];
+  categoryOptions: string[];
+  autoImportantTag: string;
+  onMoveTask: (task: TodoTask, axis: KanbanAxis, value: string | undefined) => void;
+  onOpenDetail: (task: TodoTask) => void;
+}) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const columns = useMemo(() => [...(axis === "tag" ? tagOptions : categoryOptions), KANBAN_UNSET], [axis, tagOptions, categoryOptions]);
+
+  const tasksByColumn = useMemo(() => {
+    const map = new Map<string, TodoTask[]>();
+    for (const col of columns) map.set(col, []);
+    for (const t of tasks) {
+      const value = axis === "tag" ? t.tag : t.category;
+      const col = value && map.has(value) ? value : KANBAN_UNSET;
+      map.get(col)!.push(t);
+    }
+    return map;
+  }, [tasks, axis, columns]);
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const overId = String(over.id);
+    if (!overId.startsWith("col:")) return;
+    const value = overId.slice(4);
+    const task = tasks.find((t) => t.id === active.id);
+    if (!task) return;
+    const current = (axis === "tag" ? task.tag : task.category) ?? KANBAN_UNSET;
+    if (current === value) return;
+    onMoveTask(task, axis, value === KANBAN_UNSET ? undefined : value);
+  }
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-xs text-cream/60">列の基準:</span>
+        <button
+          className={axis === "tag" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => onAxisChange("tag")}
+        >
+          対応状況
+        </button>
+        <button
+          className={axis === "category" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => onAxisChange("category")}
+        >
+          分類
+        </button>
+        <span className="text-[10px] text-cream/40">カードをドラッグして列間を移動できます</span>
+      </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {columns.map((col) => (
+            <KanbanColumn
+              key={col}
+              columnId={col}
+              label={col === KANBAN_UNSET ? "未設定" : col}
+              tasks={tasksByColumn.get(col) ?? []}
+              highlighted={axis === "tag" && !!autoImportantTag && col === autoImportantTag}
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
+        </div>
+      </DndContext>
+    </div>
+  );
+}
+
+function KanbanColumn({
+  columnId,
+  label,
+  tasks,
+  highlighted,
+  onOpenDetail,
+}: {
+  columnId: string;
+  label: string;
+  tasks: TodoTask[];
+  highlighted: boolean;
+  onOpenDetail: (task: TodoTask) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `col:${columnId}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`w-56 shrink-0 rounded-lg border p-2 transition-colors ${
+        isOver ? "border-cream/50 bg-cream/5" : "border-cream/10"
+      }`}
+    >
+      <div className="mb-2 flex items-center justify-between px-1">
+        <span className={`text-xs font-bold ${highlighted ? "text-alert" : "text-cream/80"}`}>{label}</span>
+        <span className="text-[10px] text-cream/40">{tasks.length}</span>
+      </div>
+      <div className="min-h-[2rem] space-y-1.5">
+        {tasks.map((t) => (
+          <KanbanCard key={t.id} task={t} onOpenDetail={() => onOpenDetail(t)} />
+        ))}
+        {tasks.length === 0 && <p className="px-1 py-2 text-[10px] text-cream/30">なし</p>}
+      </div>
+    </div>
+  );
+}
+
+function KanbanCard({ task, onOpenDetail }: { task: TodoTask; onOpenDetail: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={onOpenDetail}
+      className={`w-full cursor-grab rounded-lg bg-ink/50 px-2 py-1.5 text-left active:cursor-grabbing ${
+        task.completed ? "opacity-50" : ""
+      }`}
+    >
+      <div className="flex items-center gap-1">
+        {task.important && <span className="text-alert">★</span>}
+        <span className={`flex-1 truncate text-xs text-cream ${task.completed ? "text-cream/40 line-through" : ""}`}>
+          {task.title}
+        </span>
+      </div>
+      <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-cream/50">
+        {task.customer && <span>{task.customer}</span>}
+        {task.dueDate && <span>{formatDateJp(task.dueDate)}</span>}
+      </div>
+    </button>
   );
 }
