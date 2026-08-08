@@ -4,8 +4,15 @@ import { diffHmToSeconds } from "./time";
 import type { DailyTask } from "./types";
 import type { ScheduleRow } from "./scheduleCsv";
 
+// 一時停止中/完了時点で確定している合計時間（「時間を加算」による手動加算分を含む。
+// 計測中セグメントの経過分は含まない）
+export function baseAccumulatedMs(task: DailyTask): number {
+  return task.accumulatedMs + (task.manualAdjustmentMs ?? 0);
+}
+
+// 現時点での合計時間（計測中なら現在進行中のセグメントの経過分も含む）
 export function segmentsAccumulatedMs(task: DailyTask, now: number): number {
-  let total = task.accumulatedMs;
+  let total = baseAccumulatedMs(task);
   const running = task.segments.find((s) => s.end === undefined);
   if (running) total += now - running.start;
   return total;

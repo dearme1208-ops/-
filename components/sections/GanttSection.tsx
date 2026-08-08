@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
+import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
 
@@ -123,10 +124,7 @@ export default function GanttSection() {
         }))
         .filter((s) => s.endMin > s.startMin);
 
-      const actualSeconds =
-        task.status === "running"
-          ? task.accumulatedMs / 1000 + (task.segments.find((s) => s.end === undefined) ? (now - task.segments[task.segments.length - 1].start) / 1000 : 0)
-          : task.accumulatedMs / 1000;
+      const actualSeconds = segmentsAccumulatedMs(task, now) / 1000;
 
       return {
         task,

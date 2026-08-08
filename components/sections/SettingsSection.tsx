@@ -35,8 +35,8 @@ export default function SettingsSection() {
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
   const [standardWorkStart, setStandardWorkStart] = useSetting("today.standardWorkStart", "08:00");
   const [standardWorkEnd, setStandardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
-  const [conditionWindowStart, setConditionWindowStart] = useSetting("condition.windowStart", "08:00");
-  const [conditionWindowEnd, setConditionWindowEnd] = useSetting("condition.windowEnd", "17:00");
+  const [conditionEnabledStr, setConditionEnabledStr] = useSetting("condition.enabled", "true");
+  const conditionEnabled = conditionEnabledStr === "true";
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [tagPresetsJson, setTagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
@@ -385,24 +385,25 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">体調を記録できる時間帯</h3>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
-          <input
-            type="time"
-            value={conditionWindowStart}
-            onChange={(e) => setConditionWindowStart(e.target.value)}
-            className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
-          />
-          <span>〜</span>
-          <input
-            type="time"
-            value={conditionWindowEnd}
-            onChange={(e) => setConditionWindowEnd(e.target.value)}
-            className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
-          />
+        <h3 className="font-display text-sm font-bold text-cream/80">体調の記録</h3>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={conditionEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setConditionEnabledStr("true")}
+          >
+            ON
+          </button>
+          <button
+            className={!conditionEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setConditionEnabledStr("false")}
+          >
+            OFF
+          </button>
         </div>
         <p className="text-xs text-cream/50">
-          本日タブで「今日の体調」を記録できる時間帯です。この時間帯の外では入力欄が表示されません。
+          {conditionEnabled
+            ? "本日タブに「今の体調」欄を表示し、いつでも記録できます。"
+            : "本日タブの「今の体調」欄を非表示にします（既に記録済みのデータは残ります）。"}
         </p>
         <div className="space-y-2 border-t border-cream/10 pt-3">
           <div className="flex flex-wrap items-center gap-2">

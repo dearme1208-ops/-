@@ -8,6 +8,7 @@ import { aggregateRecords } from "@/lib/aggregate";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
+import { baseAccumulatedMs } from "@/lib/tasks";
 import { generateReportText, downloadTextFile } from "@/lib/report";
 import { exportElementToPdf } from "@/lib/pdfExport";
 import { useSetting } from "@/lib/settings";
@@ -75,7 +76,7 @@ export default function ReportSection() {
 
     // トラブル対応（今期間中に発生した件数・時間）
     const troubleTasks = (dailyTasks ?? []).filter((t) => t.isTrouble && isDateStrInRange(t.date, range));
-    const troubleTotalSeconds = troubleTasks.reduce((s, t) => s + t.accumulatedMs / 1000, 0);
+    const troubleTotalSeconds = troubleTasks.reduce((s, t) => s + baseAccumulatedMs(t) / 1000, 0);
 
     // ToDoの期限超過タスク（現時点で超過しているもの。サブタスクの期日も考慮）
     const subtasksByParent = new Map<string, TodoTask[]>();

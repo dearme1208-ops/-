@@ -7,7 +7,7 @@ import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
 import { adjustStopTimeForBreaks, computeEffectiveElapsedMs, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
 import { useSetting } from "@/lib/settings";
-import { computeRemainingEstimatedSeconds, importScheduleRows, segmentsAccumulatedMs } from "@/lib/tasks";
+import { baseAccumulatedMs, computeRemainingEstimatedSeconds, importScheduleRows, segmentsAccumulatedMs } from "@/lib/tasks";
 import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
 import { downloadTextFile } from "@/lib/report";
 import { computeStreakDays } from "@/lib/streak";
@@ -70,8 +70,8 @@ export default function TodaySection() {
   const provisionalIdleMs = Math.max(0.5, Number(provisionalIdleHoursStr) || 3) * 3600000;
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
-  const [conditionWindowStart] = useSetting("condition.windowStart", "08:00");
-  const [conditionWindowEnd] = useSetting("condition.windowEnd", "17:00");
+  const [conditionEnabledStr] = useSetting("condition.enabled", "true");
+  const conditionEnabled = conditionEnabledStr === "true";
   const [weeklyAfterHoursNotifyEnabledStr] = useSetting("notify.afterHoursWeeklyEnabled", "false");
   const weeklyAfterHoursNotifyEnabled = weeklyAfterHoursNotifyEnabledStr === "true";
   const [weeklyAfterHoursThresholdStr] = useSetting("notify.afterHoursWeeklyThresholdHours", "5");
@@ -310,7 +310,7 @@ export default function TodaySection() {
         map.set(task.id, finish);
         cursor = Math.max(cursor, finish);
       } else if (task.status === "paused") {
-        const remainingMs = Math.max(0, task.estimatedSeconds * 1000 - task.accumulatedMs);
+        const remainingMs = Math.max(0, task.estimatedSeconds * 1000 - baseAccumulatedMs(task));
         const finish = now + remainingMs;
         map.set(task.id, finish);
         cursor = Math.max(cursor, finish);
@@ -686,10 +686,11 @@ export default function TodaySection() {
     await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs });
   }
 
-  // 作業を完了にせず、計測時間(accumulatedMs)だけを加算する
+  // 作業を完了にせず、計測時間だけを加算する。segmentsとは独立したmanualAdjustmentMsとして
+  // 保持し、一時停止・終了時にsegments合計で上書きされて消えてしまわないようにする
   async function addTimeToTask(task: DailyTask, seconds: number) {
     if (seconds <= 0) return;
-    await db.dailyTasks.update(task.id, { accumulatedMs: task.accumulatedMs + seconds * 1000 });
+    await db.dailyTasks.update(task.id, { manualAdjustmentMs: (task.manualAdjustmentMs ?? 0) + seconds * 1000 });
     setAddTimeTask(null);
   }
 
@@ -757,7 +758,8 @@ export default function TodaySection() {
         i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
       );
     }
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
+    const segmentsMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
+    const accumulatedMs = segmentsMs + (task.manualAdjustmentMs ?? 0);
     await commitFinish(task, segments, accumulatedMs);
     // トラブル対応・予定の自動差し込みなどで中断した作業（仮計測含む、複数ある場合も全て）を自動的に再開する
     if (task.resumeTaskIds && task.resumeTaskIds.length > 0) {
@@ -922,12 +924,6 @@ export default function TodaySection() {
     setNotifPermission(perm);
   }
 
-  // 体調は設定した時間帯の間、何度でも記録できる（デフォルト8:00〜17:00）。
-  // 記録のたびにその時点で計測中の作業と時刻を紐付けて残す
-  const nowHour = new Date(now).getHours() + new Date(now).getMinutes() / 60;
-  const conditionWindowStartHour = parseHourStr(conditionWindowStart, 8);
-  const conditionWindowEndHour = parseHourStr(conditionWindowEnd, 17);
-  const conditionWindowOpen = nowHour >= conditionWindowStartHour && nowHour < conditionWindowEndHour;
   const streakDays = useMemo(() => computeStreakDays(projectRecords ?? [], date), [projectRecords, date]);
 
   // 同曜日比較: 本日の実績合計を、過去の同じ曜日の平均と比べる
@@ -945,9 +941,9 @@ export default function TodaySection() {
 
   return (
     <div className="space-y-4">
-      <div className="panel p-4">
-        <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
-        {conditionWindowOpen ? (
+      {conditionEnabled && (
+        <div className="panel p-4">
+          <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
           <div className="flex flex-wrap gap-2">
             {CONDITION_LEVELS.map((c) => (
               <button
@@ -965,12 +961,8 @@ export default function TodaySection() {
               </button>
             ))}
           </div>
-        ) : (
-          <p className="text-xs text-cream/40">
-            {conditionWindowStart}〜{conditionWindowEnd}の間に記録できます。
-          </p>
-        )}
-      </div>
+        </div>
+      )}
 
       {(!tasks || tasks.length === 0) && (
         <div className="panel p-5">

@@ -49,6 +49,9 @@ export interface DailyTask {
   status: TaskStatus;
   segments: TimeSegment[];
   accumulatedMs: number; // completed segments total
+  manualAdjustmentMs?: number; // 「時間を加算」で手動追加した分。segmentsとは独立して保持し、
+  // pause/finish時にsegments合計で上書きされないようにする（実際の区間ではないためGanttの
+  // セグメント表示には出さず、合計時間の算出時にのみ加算する）
   startedAt?: number;
   endedAt?: number;
   isSpontaneous: boolean;

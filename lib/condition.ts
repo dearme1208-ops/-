@@ -15,7 +15,8 @@ export interface ConditionProductivityRow {
 }
 
 // 体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱う。
-// 各実績(WorkRecord)は、その開始時刻(startedAt)の時点で有効だった体調レベルに割り当てられ、
+// 各実績(WorkRecord)の作業時間中に体調が切り替わっていた場合は、切り替え前後で
+// より長い時間を占めていた方の体調にその実績全体を割り当てる（多数決）。
 // 想定時間との比較（想定÷実績）を体調レベルごとに平均して生産性の目安とする
 export function computeProductivityByCondition(
   conditionLogs: ConditionLog[],
@@ -45,12 +46,49 @@ export function computeProductivityByCondition(
     return active;
   }
 
+  // 実績の作業時間[startedAt, endedAt)を、その間に発生した体調切り替えで区切り、
+  // 区間ごとの経過時間をレベル別に合計して最も長いレベルを返す
+  function dominantLevel(date: string, startedAt: number, endedAt: number): string | null {
+    const startLevel = levelActiveAt(date, startedAt);
+    const end = Math.max(endedAt, startedAt);
+    if (end <= startedAt) return startLevel;
+
+    const logs = logsByDate.get(date) ?? [];
+    const switchesInRange = logs.filter((log) => log.loggedAt > startedAt && log.loggedAt < end);
+    if (switchesInRange.length === 0) return startLevel;
+
+    const durationByLevel = new Map<string, number>();
+    let cursor = startedAt;
+    let currentLevel = startLevel;
+    for (const log of switchesInRange) {
+      if (currentLevel) {
+        durationByLevel.set(currentLevel, (durationByLevel.get(currentLevel) ?? 0) + (log.loggedAt - cursor));
+      }
+      cursor = log.loggedAt;
+      currentLevel = log.level;
+    }
+    if (currentLevel) {
+      durationByLevel.set(currentLevel, (durationByLevel.get(currentLevel) ?? 0) + (end - cursor));
+    }
+    if (durationByLevel.size === 0) return null;
+
+    let best: string | null = null;
+    let bestDuration = -1;
+    for (const [level, duration] of durationByLevel) {
+      if (duration > bestDuration) {
+        bestDuration = duration;
+        best = level;
+      }
+    }
+    return best;
+  }
+
   const byLevel = new Map<string, { sumPct: number; count: number }>();
   for (const r of records) {
     if (r.excludedFromStats || !r.startedAt || r.seconds <= 0) continue;
     const estimatedSeconds = estimatedByKey.get(`${r.category}::${r.name}`);
     if (!estimatedSeconds) continue;
-    const level = levelActiveAt(r.date, r.startedAt);
+    const level = dominantLevel(r.date, r.startedAt, r.endedAt);
     if (!level) continue;
     const pct = (estimatedSeconds / r.seconds) * 100;
     if (!byLevel.has(level)) byLevel.set(level, { sumPct: 0, count: 0 });
