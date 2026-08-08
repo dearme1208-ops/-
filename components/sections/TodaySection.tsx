@@ -16,6 +16,7 @@ import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { computeWeekdayAverages } from "@/lib/weekday";
+import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -27,31 +28,18 @@ import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
+import AddTimeDialog from "@/components/sections/AddTimeDialog";
 import EditTaskDialog from "@/components/sections/EditTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
-const TROUBLE_DETAIL_OPTIONS = [
-  "キャタピラー",
-  "コマツ",
-  "塗装出荷",
-  "営業企画",
-  "生産管理",
-  "品質保証",
-  "溶接組立",
-  "部品製造",
-  "一般",
-  "生産技術",
-  "技術開発",
-];
 
 export default function TodaySection() {
   const date = todayStr();
   const [now, setNow] = useState(() => Date.now());
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [showTroubleDialog, setShowTroubleDialog] = useState(false);
   const [scheduleImportErrors, setScheduleImportErrors] = useState<string[]>([]);
   const [scheduleImportResult, setScheduleImportResult] = useState("");
   const scheduleFileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +47,9 @@ export default function TodaySection() {
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
+  const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
+  const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
+  const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
   const [pendingStart, setPendingStart] = useState<
     { category: string; name: string; estimatedSeconds: number; masterTaskId: string | undefined } | null
   >(null);
@@ -204,7 +195,7 @@ export default function TodaySection() {
         setShowAddDialog(true);
       }
       if (e.key === "t" || e.key === "T") {
-        setShowTroubleDialog(true);
+        startTrouble();
       }
     }
     window.addEventListener("keydown", handleKeydown);
@@ -695,6 +686,13 @@ export default function TodaySection() {
     await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs });
   }
 
+  // 作業を完了にせず、計測時間(accumulatedMs)だけを加算する
+  async function addTimeToTask(task: DailyTask, seconds: number) {
+    if (seconds <= 0) return;
+    await db.dailyTasks.update(task.id, { accumulatedMs: task.accumulatedMs + seconds * 1000 });
+    setAddTimeTask(null);
+  }
+
   // 作業を完了として確定する。同日・同じマスタの実績が既にあれば合算する
   async function commitFinish(
     task: DailyTask,
@@ -856,11 +854,11 @@ export default function TodaySection() {
     requestStartNew(suggestedTask.category, suggestedTask.name, estimatedSeconds, master.id);
   }
 
-  // 作業名を入力せずにすぐ計測を開始し、内容は後から編集する
+  // 作業名・対応部署を入力せずにすぐ計測を開始し、詳細は後から編集する。
   // どんな状態でもトラブル対応を最優先で開始する。仮計測を含め、計測中の作業が
   // （複数同時に計測中であっても全て）あればまず一時停止し、トラブル対応が
   // 終わったら自動的に再開できるよう覚えておく
-  async function startTrouble(detailName: string) {
+  async function startTrouble() {
     const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
     const nowMs = Date.now();
@@ -869,7 +867,7 @@ export default function TodaySection() {
       date,
       order: count,
       category: "トラブル対応",
-      name: `${detailName} トラブル ${formatClock(nowMs)}`,
+      name: `トラブル ${formatClock(nowMs)}`,
       estimatedSeconds: 0,
       status: "running",
       segments: [{ start: nowMs }],
@@ -883,7 +881,6 @@ export default function TodaySection() {
       for (const r of runningTasks) await pauseTask(r);
       await db.dailyTasks.add(task);
     });
-    setShowTroubleDialog(false);
   }
 
   // 予定インポートで登録した作業(scheduledTime)がその時刻になったら、計測中の作業を
@@ -949,7 +946,7 @@ export default function TodaySection() {
   return (
     <div className="space-y-4">
       <div className="panel p-4">
-        <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今日の体調</h3>
+        <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
         {conditionWindowOpen ? (
           <div className="flex flex-wrap gap-2">
             {CONDITION_LEVELS.map((c) => (
@@ -1063,7 +1060,7 @@ export default function TodaySection() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-pill-danger text-sm" onClick={() => setShowTroubleDialog(true)}>
+          <button className="btn-pill-danger text-sm" onClick={() => startTrouble()}>
             ⚡ トラブル発生
           </button>
           <button className="btn-pill-outline text-sm" onClick={() => setShowAddDialog(true)}>
@@ -1254,6 +1251,13 @@ export default function TodaySection() {
                         <button className="btn-pill-outline text-xs" disabled={controlsDisabled} onClick={() => pauseTask(task)}>
                           一時停止
                         </button>
+                        <button
+                          className="btn-pill-outline text-xs"
+                          disabled={controlsDisabled}
+                          onClick={() => setAddTimeTask(task)}
+                        >
+                          時間を加算
+                        </button>
                         <button className="btn-pill text-xs" disabled={controlsDisabled} onClick={() => finishTask(task)}>
                           終了
                         </button>
@@ -1277,6 +1281,13 @@ export default function TodaySection() {
                             さかのぼって再開
                           </button>
                         )}
+                        <button
+                          className="btn-pill-outline text-xs"
+                          disabled={controlsDisabled}
+                          onClick={() => setAddTimeTask(task)}
+                        >
+                          時間を加算
+                        </button>
                         <button className="btn-pill text-xs" disabled={controlsDisabled} onClick={() => finishTask(task)}>
                           終了
                         </button>
@@ -1307,18 +1318,6 @@ export default function TodaySection() {
         />
       )}
 
-      {showTroubleDialog && (
-        <Modal title="トラブル発生：詳細作業名を選択" onClose={() => setShowTroubleDialog(false)}>
-          <div className="flex flex-wrap gap-2">
-            {TROUBLE_DETAIL_OPTIONS.map((opt) => (
-              <button key={opt} className="btn-pill-outline text-sm" onClick={() => startTrouble(opt)}>
-                {opt}
-              </button>
-            ))}
-          </div>
-        </Modal>
-      )}
-
       {pendingStart && provisionalTask && (
         <Modal title="未計測(仮計測)が計測中です" onClose={() => setPendingStart(null)}>
           <p className="mb-4 text-sm text-cream/80">
@@ -1344,6 +1343,15 @@ export default function TodaySection() {
           task={editingTask}
           onSave={(category, name, actualSeconds, note) => applyTaskEdit(editingTask, category, name, actualSeconds, note)}
           onClose={() => setEditingTask(null)}
+        />
+      )}
+
+      {addTimeTask && (
+        <AddTimeDialog
+          taskName={addTimeTask.name}
+          gapSeconds={computeUntrackedGapSeconds(tasks ?? [], date, standardWorkStart, standardWorkEnd, now)}
+          onConfirm={(seconds) => addTimeToTask(addTimeTask, seconds)}
+          onClose={() => setAddTimeTask(null)}
         />
       )}
 

@@ -33,6 +33,8 @@ export default function SettingsSection() {
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
+  const [standardWorkStart, setStandardWorkStart] = useSetting("today.standardWorkStart", "08:00");
+  const [standardWorkEnd, setStandardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
   const [conditionWindowStart, setConditionWindowStart] = useSetting("condition.windowStart", "08:00");
   const [conditionWindowEnd, setConditionWindowEnd] = useSetting("condition.windowEnd", "17:00");
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
@@ -239,6 +241,29 @@ export default function SettingsSection() {
             <b className="text-cream">T</b> = トラブル発生
           </p>
         )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">基本労働時間</h3>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+          <input
+            type="time"
+            value={standardWorkStart}
+            onChange={(e) => setStandardWorkStart(e.target.value)}
+            className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+          />
+          <span>〜</span>
+          <input
+            type="time"
+            value={standardWorkEnd}
+            onChange={(e) => setStandardWorkEnd(e.target.value)}
+            className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+          />
+        </div>
+        <p className="text-xs text-cream/50">
+          本日タブの「時間を加算」で、この時間帯のうちどの作業のセグメントにも含まれていない
+          （未計測の）時間を目安として表示します。
+        </p>
       </div>
 
       <div className="panel space-y-3 p-4">
