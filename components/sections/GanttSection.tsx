@@ -98,15 +98,21 @@ export default function GanttSection() {
   const conditionLogs = useLiveQuery(() => db.conditionLogs.where("date").equals(date).sortBy("loggedAt"), [date]);
   const masterMap = useMemo(() => new Map((masterTasks ?? []).map((m) => [m.id, m])), [masterTasks]);
 
-  // 予定バーの起点: 実際に最初に計測を開始した作業の開始時刻を優先し、
-  // まだ何も開始していない日は「表示開始時刻」の設定にフォールバックする
+  // 予定バーの起点: 実際に最初に計測を開始した作業の開始時刻、または最初に
+  // 体調を記録した時刻のうち、より早い方を優先する（体調だけ計測開始前に記録した
+  // 場合でも表示範囲外にならないようにする）。どちらもなければ「表示開始時刻」の設定に
+  // フォールバックする
   const timelineBase = useMemo(() => {
+    const starts: number[] = [];
     if (tasks) {
-      const starts = tasks.filter((t) => t.startedAt).map((t) => t.startedAt!);
-      if (starts.length > 0) return Math.min(...starts);
+      for (const t of tasks) if (t.startedAt) starts.push(t.startedAt);
     }
+    if (conditionLogs) {
+      for (const log of conditionLogs) starts.push(log.loggedAt);
+    }
+    if (starts.length > 0) return Math.min(...starts);
     return baseAtHour(date, startHour);
-  }, [tasks, date, startHour]);
+  }, [tasks, conditionLogs, date, startHour]);
 
   const rows = useMemo(() => {
     if (!tasks) return [];

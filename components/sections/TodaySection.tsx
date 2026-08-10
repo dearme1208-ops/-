@@ -309,7 +309,7 @@ export default function TodaySection() {
   useEffect(() => {
     if (!tasks) return;
     for (const task of tasks) {
-      if (task.status !== "pending" || !task.scheduledTime || task.autoStartNotified) continue;
+      if (task.status !== "pending" || !task.scheduledTime || task.autoStartNotified || task.autoStartDisabled) continue;
       const [h, m] = task.scheduledTime.split(":").map(Number);
       if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
       const scheduledMs = new Date(date + "T00:00:00").getTime() + (h * 60 + m) * 60000;
@@ -923,6 +923,12 @@ export default function TodaySection() {
     await db.masterTasks.update(masterId, { isFavorite: !master.isFavorite });
   }
 
+  // カレンダー予定インポートで登録された作業(scheduledTime)について、その時刻になっても
+  // 自動的に差し込み開始しないようにする/元に戻す。時刻の目安表示自体は残す
+  async function toggleAutoStart(task: DailyTask) {
+    await db.dailyTasks.update(task.id, { autoStartDisabled: !task.autoStartDisabled });
+  }
+
   async function deleteTask(task: DailyTask) {
     if (!confirm(`「${task.name}」を本日の作業リストから削除しますか?`)) return;
     await db.dailyTasks.delete(task.id);
@@ -1514,8 +1520,22 @@ export default function TodaySection() {
                     </div>
                   )}
                   {task.scheduledTime && task.status === "pending" && (
-                    <div className="text-xs font-bold text-alert" title="この時刻になったら自動的に差し込み開始されます">
-                      ⏰ {task.scheduledTime} に自動開始
+                    <div className="flex items-center gap-2 text-xs">
+                      {task.autoStartDisabled ? (
+                        <span className="text-cream/50" title="この時刻になっても自動的には開始されません">
+                          ⏰ {task.scheduledTime}（自動開始OFF）
+                        </span>
+                      ) : (
+                        <span className="font-bold text-alert" title="この時刻になったら自動的に差し込み開始されます">
+                          ⏰ {task.scheduledTime} に自動開始
+                        </span>
+                      )}
+                      <button
+                        onClick={() => toggleAutoStart(task)}
+                        className="text-cream/40 underline hover:text-cream"
+                      >
+                        {task.autoStartDisabled ? "自動開始をONにする" : "自動開始をOFFにする"}
+                      </button>
                     </div>
                   )}
                   <div className="text-xs text-cream/50">
