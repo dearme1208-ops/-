@@ -30,6 +30,12 @@ export default function SettingsSection() {
   const [breakRangesStr, setBreakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
   const breakRanges = parseBreakRanges(breakRangesStr);
   const [provisionalIdleHoursStr, setProvisionalIdleHoursStr] = useSetting("today.provisionalIdleThresholdHours", "3");
+  const [geoTrackingEnabledStr, setGeoTrackingEnabledStr] = useSetting("today.geoTrackingEnabled", "false");
+  const geoTrackingEnabled = geoTrackingEnabledStr === "true";
+  const [geoDistanceThresholdStr, setGeoDistanceThresholdStr] = useSetting("today.geoDistanceThresholdMeters", "200");
+  const [geoCategory, setGeoCategory] = useSetting("today.geoCategory", "移動");
+  const [geoTaskName, setGeoTaskName] = useSetting("today.geoTaskName", "移動");
+  const [geoStillMinutesStr, setGeoStillMinutesStr] = useSetting("today.geoStillMinutes", "10");
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
@@ -232,6 +238,69 @@ export default function SettingsSection() {
             </div>
             <p className="text-[10px] text-cream/40">
               定時後・休日にPCを開いたまま放置しても、際限なく計測され続けないようにするための保険です。
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">位置情報による移動検知</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={geoTrackingEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setGeoTrackingEnabledStr(geoTrackingEnabled ? "false" : "true")}
+          >
+            移動検知の自動計測: {geoTrackingEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-[10px] text-cream/40">
+          ONにするとブラウザから位置情報の利用許可を求められます。ブラウザ/PWAの仕様上、この画面(タブ)を開いている間だけ動作します。アプリを閉じたり画面を消灯してバックグラウンドに回すと、特にiOSでは数十秒〜数分で位置情報の取得が止まり、移動を検知できなくなります。
+        </p>
+        {geoTrackingEnabled && (
+          <div className="space-y-2 border-t border-cream/10 pt-3 text-xs text-cream/60">
+            <div className="flex flex-wrap items-center gap-2">
+              <span>直前の地点から</span>
+              <input
+                type="number"
+                min={10}
+                step={10}
+                value={geoDistanceThresholdStr}
+                onChange={(e) => setGeoDistanceThresholdStr(e.target.value)}
+                className="w-20 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+              />
+              <span>m以上動いたら、以下の名称で仮計測を自動開始します</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={geoCategory}
+                onChange={(e) => setGeoCategory(e.target.value)}
+                placeholder="業務区分（例: 移動）"
+                className="w-32 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+              />
+              <span>/</span>
+              <input
+                type="text"
+                value={geoTaskName}
+                onChange={(e) => setGeoTaskName(e.target.value)}
+                placeholder="作業名（例: 移動）"
+                className="w-32 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span>その後</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={geoStillMinutesStr}
+                onChange={(e) => setGeoStillMinutesStr(e.target.value)}
+                className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+              />
+              <span>分以上、位置情報の変化(移動)がなければ自動的に計測を終了します</span>
+            </div>
+            <p className="text-[10px] text-cream/40">
+              自動開始された仮計測は「本日の作業」画面の仮計測カードから、通常の仮計測と同様に既存の作業へ割り当てたり、新しい作業として確定できます。他の作業を計測中・仮計測中は移動検知による自動開始は行われません。
             </p>
           </div>
         )}

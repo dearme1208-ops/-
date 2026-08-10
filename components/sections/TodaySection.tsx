@@ -17,6 +17,7 @@ import { computeSuggestedTask } from "@/lib/suggest";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
+import { haversineDistanceMeters } from "@/lib/geo";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -69,6 +70,23 @@ export default function TodaySection() {
   const emphasizeRunning = emphasizeRunningStr === "true";
   const [provisionalIdleHoursStr] = useSetting("today.provisionalIdleThresholdHours", "3");
   const provisionalIdleMs = Math.max(0.5, Number(provisionalIdleHoursStr) || 3) * 3600000;
+  const [geoTrackingEnabledStr] = useSetting("today.geoTrackingEnabled", "false");
+  const geoTrackingEnabled = geoTrackingEnabledStr === "true";
+  const [geoDistanceThresholdStr] = useSetting("today.geoDistanceThresholdMeters", "200");
+  const geoDistanceThresholdMeters = Math.max(10, Number(geoDistanceThresholdStr) || 200);
+  const [geoCategorySetting] = useSetting("today.geoCategory", "移動");
+  const [geoTaskNameSetting] = useSetting("today.geoTaskName", "移動");
+  const [geoStillMinutesStr] = useSetting("today.geoStillMinutes", "10");
+  const geoStillMs = Math.max(1, Number(geoStillMinutesStr) || 10) * 60000;
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [geoMovementTick, setGeoMovementTick] = useState(0);
+  // GPSでの移動検知に使う各種状態。位置情報コールバックは頻繁に発火するため、
+  // 再レンダーを避けてrefで保持し、しきい値超過を検知した時だけstateを更新してタスク生成をトリガーする
+  const geoWatchIdRef = useRef<number | null>(null);
+  const geoAnchorRef = useRef<{ lat: number; lon: number } | null>(null);
+  const geoLastMovedAtRef = useRef<number>(Date.now());
+  const geoTaskIdRef = useRef<string | null>(null);
+  const geoFinishInFlightRef = useRef(false);
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [conditionEnabledStr] = useSetting("condition.enabled", "true");
@@ -465,6 +483,110 @@ export default function TodaySection() {
     );
     provisionalNotifiedAtRef.current = now;
   }, [provisionalNotifyEnabled, provisionalTask, provisionalActive, now]);
+
+  // 位置情報の監視。しきい値以上動いたことを検知したら geoMovementTick を進めて、
+  // 別のuseEffectに「移動を検知した」ことだけを伝える。タブが開いている間のみ動作し、
+  // バックグラウンド/アプリを閉じている間は動作しない(ブラウザの位置情報APIの制約による)
+  useEffect(() => {
+    if (!geoTrackingEnabled) {
+      if (geoWatchIdRef.current !== null && typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(geoWatchIdRef.current);
+      }
+      geoWatchIdRef.current = null;
+      geoAnchorRef.current = null;
+      geoTaskIdRef.current = null;
+      setGeoError(null);
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoError("この端末・ブラウザは位置情報の取得に対応していません");
+      return;
+    }
+    geoAnchorRef.current = null;
+    geoLastMovedAtRef.current = Date.now();
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setGeoError(null);
+        const { latitude, longitude } = pos.coords;
+        if (!geoAnchorRef.current) {
+          geoAnchorRef.current = { lat: latitude, lon: longitude };
+          return;
+        }
+        const dist = haversineDistanceMeters(geoAnchorRef.current.lat, geoAnchorRef.current.lon, latitude, longitude);
+        if (dist >= geoDistanceThresholdMeters) {
+          geoAnchorRef.current = { lat: latitude, lon: longitude };
+          geoLastMovedAtRef.current = Date.now();
+          setGeoMovementTick((n) => n + 1);
+        }
+      },
+      () => setGeoError("位置情報を取得できませんでした（権限をご確認ください）"),
+      { enableHighAccuracy: false, maximumAge: 30000, timeout: 20000 }
+    );
+    geoWatchIdRef.current = watchId;
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      geoWatchIdRef.current = null;
+    };
+  }, [geoTrackingEnabled, geoDistanceThresholdMeters]);
+
+  // 移動を検知した(geoMovementTickが進んだ)ら、他に計測中/仮計測中の作業がなければ
+  // 「移動」の仮計測タスクを自動的に開始する。仕組みは未計測の自動計測と同じ仮計測枠を使う
+  useEffect(() => {
+    if (!geoTrackingEnabled) return;
+    if (geoMovementTick === 0) return;
+    if (!tasks) return;
+    if (tasks.some((t) => t.isProvisional)) return;
+    if (tasks.some((t) => t.status === "running")) return;
+    (async () => {
+      const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
+      const startAt = Date.now();
+      const task: DailyTask = {
+        id: uid(),
+        date,
+        order: count,
+        category: geoCategorySetting || "移動",
+        name: geoTaskNameSetting || "移動",
+        estimatedSeconds: 0,
+        status: "running",
+        segments: [{ start: startAt }],
+        accumulatedMs: 0,
+        startedAt: startAt,
+        isSpontaneous: true,
+        isProvisional: true,
+      };
+      await db.dailyTasks.add(task);
+      geoTaskIdRef.current = task.id;
+      notify("移動を検知しました", `${task.category} / ${task.name} の自動計測を開始しました`, "geo-tracking-start");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geoMovementTick]);
+
+  // 移動検知で始めた仮計測は、一定時間位置情報の変化がなくなったら
+  // (＝止まったら)最後に動いていた時刻で自動的に打ち切る
+  useEffect(() => {
+    if (!geoTrackingEnabled) return;
+    if (!provisionalTask || provisionalTask.status !== "running") return;
+    if (geoTaskIdRef.current !== provisionalTask.id) return;
+    const stillMs = now - geoLastMovedAtRef.current;
+    if (stillMs < geoStillMs) return;
+    if (geoFinishInFlightRef.current) return;
+    geoFinishInFlightRef.current = true;
+    const cutoff = Math.max(geoLastMovedAtRef.current, provisionalTask.segments[0]?.start ?? geoLastMovedAtRef.current);
+    const segments = provisionalTask.segments.map((s, i) =>
+      i === provisionalTask.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(cutoff, s.start) } : s
+    );
+    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? cutoff) - s.start), 0);
+    commitFinish(provisionalTask, segments, accumulatedMs).then(() => {
+      geoFinishInFlightRef.current = false;
+      geoTaskIdRef.current = null;
+      const minutesLabel = Math.round((geoStillMs / 60000) * 10) / 10;
+      notify(
+        "移動の自動計測を終了しました",
+        `${minutesLabel}分以上、位置情報の変化がなかったため終了しました`,
+        "geo-tracking-stop"
+      );
+    });
+  }, [now, provisionalTask, geoTrackingEnabled, geoStillMs]);
 
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
@@ -998,6 +1120,19 @@ export default function TodaySection() {
           <button className="btn-pill-outline text-sm" onClick={enableNotifications}>
             通知を許可
           </button>
+        </div>
+      )}
+
+      {geoTrackingEnabled && (
+        <div className="panel flex items-center gap-2 p-3 text-xs">
+          {geoError ? (
+            <span className="text-alert">📍 {geoError}</span>
+          ) : (
+            <span className="text-cream/50">
+              📍 移動検知中（{geoDistanceThresholdMeters}m以上の移動で「{geoCategorySetting || "移動"} / {geoTaskNameSetting || "移動"}」を自動計測・
+              {Math.round((geoStillMs / 60000) * 10) / 10}分以上停止で自動終了）
+            </span>
+          )}
         </div>
       )}
 
