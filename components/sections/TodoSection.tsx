@@ -327,6 +327,44 @@ export default function TodoSection() {
     if (detailTaskId === task.id) setDetailTaskId(null);
   }
 
+  // タスクをコピーして新規タスクとして追加する（よく使う内容をテンプレート的に使い回す用）。
+  // 期日・完了状態・案件連携など「そのインスタンス固有」の情報は引き継がず、
+  // 件名・アクション・タグ・分類・客先・メモ・サブタスクの構成だけを複製する
+  async function copyTask(task: TodoTask) {
+    const subs = subtasksByParent.get(task.id) ?? [];
+    const count = (allTasks ?? []).filter((t) => t.listId === task.listId && !t.parentTaskId).length;
+    const newId = uid();
+    const newTask: TodoTask = {
+      id: newId,
+      listId: task.listId,
+      title: task.title,
+      action: task.action,
+      url: task.url,
+      tag: task.tag,
+      category: task.category,
+      customer: task.customer,
+      notes: task.notes,
+      important: false,
+      completed: false,
+      order: count,
+      createdAt: Date.now(),
+    };
+    await db.todoTasks.add(newTask);
+    for (let i = 0; i < subs.length; i++) {
+      await db.todoTasks.add({
+        id: uid(),
+        listId: task.listId,
+        parentTaskId: newId,
+        title: subs[i].title,
+        important: false,
+        completed: false,
+        order: i,
+        createdAt: Date.now(),
+      });
+    }
+    setDetailTaskId(newId);
+  }
+
   async function toggleSubtaskComplete(sub: TodoTask) {
     await db.todoTasks.update(sub.id, { completed: !sub.completed, completedAt: !sub.completed ? Date.now() : undefined });
   }
@@ -837,6 +875,7 @@ export default function TodoSection() {
           onClose={() => setDetailTaskId(null)}
           onToggleMyDay={() => toggleMyDay(detailTask)}
           onDelete={() => deleteTask(detailTask)}
+          onCopy={() => copyTask(detailTask)}
           onReflectToProject={(category, workName) => reflectToProject(detailTask, category, workName)}
         />
       )}
@@ -1051,6 +1090,7 @@ function TaskDetailModal({
   onClose,
   onToggleMyDay,
   onDelete,
+  onCopy,
   onReflectToProject,
 }: {
   task: TodoTask;
@@ -1062,6 +1102,7 @@ function TaskDetailModal({
   onClose: () => void;
   onToggleMyDay: () => void;
   onDelete: () => void;
+  onCopy: () => void;
   onReflectToProject: (category: string, workName: string) => void;
 }) {
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
@@ -1540,13 +1581,18 @@ function TaskDetailModal({
         </div>
       </div>
 
-      <div className="mt-4 flex justify-between gap-2 border-t border-cream/10 pt-3">
+      <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-cream/10 pt-3">
         <button className="text-xs text-alert" onClick={onDelete}>
           タスクを削除
         </button>
-        <button className="btn-pill text-sm" onClick={save}>
-          保存
-        </button>
+        <div className="flex gap-2">
+          <button className="btn-pill-outline text-sm" onClick={onCopy} title="内容をコピーして新しいタスクを追加します">
+            コピーして追加
+          </button>
+          <button className="btn-pill text-sm" onClick={save}>
+            保存
+          </button>
+        </div>
       </div>
     </Modal>
   );

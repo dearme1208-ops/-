@@ -248,25 +248,33 @@ export default function MasterSection() {
 
       {!showArchived && staleCandidates.length > 0 && (
         <div className="panel space-y-2 p-4">
-          <h3 className="font-display text-sm font-bold text-cream/80">
-            使われていない作業（{staleDays}日以上未使用・{staleCandidates.length}件）
-          </h3>
-          <div className="space-y-2">
-            {staleCandidates.map(({ task, lastUsedDate, daysSinceLastUse }) => (
-              <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
-                <div>
-                  <div className="text-xs text-cream/50">{task.category}</div>
-                  <div className="text-sm text-cream">{task.name}</div>
-                  <div className="text-xs text-cream/40">
-                    {lastUsedDate ? `最終実績 ${lastUsedDate}（${daysSinceLastUse}日前）` : `実績なし（登録から${daysSinceLastUse}日）`}
+          <button
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setCollapsed((c) => ({ ...c, __stale: !c.__stale }))}
+          >
+            <h3 className="font-display text-sm font-bold text-cream/80">
+              使われていない作業（{staleDays}日以上未使用・{staleCandidates.length}件）
+            </h3>
+            <span className="shrink-0 text-cream/60">{collapsed.__stale ? "▶" : "▼"}</span>
+          </button>
+          {!collapsed.__stale && (
+            <div className="space-y-2">
+              {staleCandidates.map(({ task, lastUsedDate, daysSinceLastUse }) => (
+                <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                  <div>
+                    <div className="text-xs text-cream/50">{task.category}</div>
+                    <div className="text-sm text-cream">{task.name}</div>
+                    <div className="text-xs text-cream/40">
+                      {lastUsedDate ? `最終実績 ${lastUsedDate}（${daysSinceLastUse}日前）` : `実績なし（登録から${daysSinceLastUse}日）`}
+                    </div>
                   </div>
+                  <button className="btn-pill-outline text-xs" onClick={() => archiveTask(task)}>
+                    アーカイブする
+                  </button>
                 </div>
-                <button className="btn-pill-outline text-xs" onClick={() => archiveTask(task)}>
-                  アーカイブする
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

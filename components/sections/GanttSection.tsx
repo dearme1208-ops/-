@@ -7,6 +7,8 @@ import { useSetting } from "@/lib/settings";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
+import { CONDITION_LEVELS } from "@/lib/condition";
+import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 0.05;
@@ -93,6 +95,7 @@ export default function GanttSection() {
 
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).sortBy("order"), [date]);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const conditionLogs = useLiveQuery(() => db.conditionLogs.where("date").equals(date).sortBy("loggedAt"), [date]);
   const masterMap = useMemo(() => new Map((masterTasks ?? []).map((m) => [m.id, m])), [masterTasks]);
 
   // 予定バーの起点: 実際に最初に計測を開始した作業の開始時刻を優先し、
@@ -376,6 +379,11 @@ export default function GanttSection() {
     }
   }
 
+  // 体調が記録された時刻を、タイムライン上の位置(分)に変換する。表示範囲外は除く
+  const conditionMarkers = (conditionLogs ?? [])
+    .map((log) => ({ log, minutes: (log.loggedAt - timelineBase) / 60000 }))
+    .filter((m) => m.minutes >= 0 && m.minutes <= totalMinutes);
+
   function zoomIn() {
     setPxPerMin((v) => Math.min(MAX_PX_PER_MIN, +(v * 1.4).toFixed(2)));
   }
@@ -520,6 +528,25 @@ export default function GanttSection() {
                 ))}
             </div>
 
+            {/* 体調の変化: 記録された時刻にアイコンを表示する */}
+            {conditionMarkers.length > 0 && (
+              <div className="relative mb-1 h-5">
+                {conditionMarkers.map(({ log, minutes }) => (
+                  <div
+                    key={log.id}
+                    className="group absolute -translate-x-1/2"
+                    style={{ left: minutes * pxPerMin }}
+                  >
+                    <ConditionGlyph level={log.level} size={16} />
+                    <div className="pointer-events-none absolute top-full left-1/2 z-20 mt-1 hidden -translate-x-1/2 whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
+                      {formatClock(log.loggedAt)} 体調:{" "}
+                      {CONDITION_LEVELS.find((c) => c.level === log.level)?.label ?? log.level}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="relative" style={{ height: (compactView ? 2 : ganttRows.length) * ROW_H }}>
               {minuteMarks.map((m) => (
                 <div
@@ -537,6 +564,13 @@ export default function GanttSection() {
                     style={{ left: h * 60 * pxPerMin }}
                   />
                 ))}
+              {conditionMarkers.map(({ log, minutes }) => (
+                <div
+                  key={`condline-${log.id}`}
+                  className="absolute top-0 bottom-0 border-l border-dashed border-alert/40"
+                  style={{ left: minutes * pxPerMin }}
+                />
+              ))}
               {compactView ? (
                 <>
                   {/* 予定行: 全作業の予定バーを1本の行にまとめて表示 */}
@@ -711,6 +745,9 @@ export default function GanttSection() {
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded border border-dashed border-cream/50" /> 予測</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-cream" /> 実績</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-alert" /> 実績（超過）</span>
+        <span className="flex items-center gap-1">
+          <ConditionGlyph level="3" size={14} /> 体調の変化（縦線が記録時刻）
+        </span>
       </div>
 
       {(!tasks || tasks.length === 0) && (
