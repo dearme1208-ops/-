@@ -75,6 +75,19 @@ function buildConditionLookup(conditionLogs: ConditionLog[]) {
   return { dominantLevel };
 }
 
+// 指定した作業時間[startedAt, endedAt]中、集計(生産性分析など)と同じ「多数決」ロジックで
+// 有効だったとみなせる体調レベルを返す。本日の作業画面での表示にも使い、集計と表示の
+// 前提を一致させる（体調の記録がその作業中に無くても、直前の記録が繰り越される）
+export function dominantConditionLevel(
+  conditionLogs: ConditionLog[],
+  date: string,
+  startedAt: number,
+  endedAt: number
+): string | null {
+  const { dominantLevel } = buildConditionLookup(conditionLogs);
+  return dominantLevel(date, startedAt, endedAt);
+}
+
 interface LeveledRecord {
   record: WorkRecord;
   level: string;

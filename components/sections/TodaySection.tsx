@@ -14,7 +14,7 @@ import { computeStreakDays } from "@/lib/streak";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
-import { CONDITION_LEVELS } from "@/lib/condition";
+import { CONDITION_LEVELS, dominantConditionLevel } from "@/lib/condition";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
@@ -1097,8 +1097,9 @@ export default function TodaySection() {
     });
   }
 
-  // 完了した作業の実際の作業時間中に記録されていた体調ログを返す（複数あれば最後のもの）
-  function taskConditionLog(task: DailyTask) {
+  // 完了した作業の実際の作業時間中に記録されていた体調ログを返す（複数あれば最後のもの）。
+  // この作業「専用」の記録があるかどうかの判定に使う（編集時に上書き対象を決めるため）
+  function taskOwnConditionLog(task: DailyTask) {
     if (!task.startedAt || !task.endedAt) return null;
     const matches = (conditionLogs ?? []).filter(
       (log) => log.loggedAt >= task.startedAt! && log.loggedAt <= task.endedAt!
@@ -1106,10 +1107,20 @@ export default function TodaySection() {
     return matches.length > 0 ? matches[matches.length - 1] : null;
   }
 
-  // 完了した作業に体調を記録/変更する。その作業時間中に既に体調ログがあれば
-  // それを書き換え、なければ作業終了時刻を記録時刻として新規に追加する
+  // 表示用の体調レベル。その作業専用の記録があればそれを、無ければ集計(生産性分析等)と
+  // 同じ「繰り越し」ロジックで、直前までに記録されていた体調を表示する
+  function taskDisplayConditionLevel(task: DailyTask): string | null {
+    const own = taskOwnConditionLog(task);
+    if (own) return own.level;
+    if (!task.startedAt || !task.endedAt) return null;
+    return dominantConditionLevel(conditionLogs ?? [], task.date, task.startedAt, task.endedAt);
+  }
+
+  // 完了した作業に体調を記録/変更する。その作業専用の体調ログが既にあればそれを書き換え、
+  // 無ければ（繰り越し表示中でも）新しくその作業専用の記録を作業終了時刻で追加する
+  // （直前の作業から繰り越されている共有ログ自体は書き換えない）
   async function setTaskCondition(task: DailyTask, level: string) {
-    const existing = taskConditionLog(task);
+    const existing = taskOwnConditionLog(task);
     if (existing) {
       await db.conditionLogs.update(existing.id, { level });
     } else {
@@ -1128,7 +1139,7 @@ export default function TodaySection() {
   }
 
   async function clearTaskCondition(task: DailyTask) {
-    const existing = taskConditionLog(task);
+    const existing = taskOwnConditionLog(task);
     if (existing) await db.conditionLogs.delete(existing.id);
     setConditionEditTaskId(null);
   }
@@ -1699,18 +1710,20 @@ export default function TodaySection() {
                 {conditionEnabled && task.status === "done" && (
                   <div className="mt-2 border-t border-cream/10 pt-2">
                     {(() => {
-                      const condLog = taskConditionLog(task);
+                      const ownLog = taskOwnConditionLog(task);
+                      const displayLevel = taskDisplayConditionLevel(task);
                       return (
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setConditionEditTaskId(conditionEditTaskId === task.id ? null : task.id)}
                             className="flex items-center gap-1 text-xs text-cream/50 hover:text-cream"
                           >
-                            {condLog ? (
+                            {displayLevel ? (
                               <>
-                                <ConditionGlyph level={condLog.level} size={16} />
+                                <ConditionGlyph level={displayLevel} size={16} />
                                 <span>
-                                  {CONDITION_LEVELS.find((c) => c.level === condLog.level)?.label ?? condLog.level}
+                                  {CONDITION_LEVELS.find((c) => c.level === displayLevel)?.label ?? displayLevel}
+                                  {!ownLog && <span className="text-cream/30">（直前から）</span>}
                                 </span>
                               </>
                             ) : (
@@ -1725,12 +1738,12 @@ export default function TodaySection() {
                                   onClick={() => setTaskCondition(task, c.level)}
                                   aria-label={c.label}
                                   title={c.label}
-                                  className={condLog?.level === c.level ? "btn-pill p-1" : "btn-pill-outline p-1"}
+                                  className={displayLevel === c.level ? "btn-pill p-1" : "btn-pill-outline p-1"}
                                 >
                                   <ConditionGlyph level={c.level} size={18} />
                                 </button>
                               ))}
-                              {condLog && (
+                              {ownLog && (
                                 <button
                                   onClick={() => clearTaskCondition(task)}
                                   className="text-xs text-cream/40 hover:text-alert"
