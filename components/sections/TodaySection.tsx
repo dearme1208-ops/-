@@ -1172,6 +1172,9 @@ export default function TodaySection() {
     setScheduleImportErrors(errors);
     if (rows.length === 0) {
       setScheduleImportResult("");
+      if (errors.length === 0) {
+        alert("取り込める予定がありませんでした（このCSVにはヘッダーのみで、予定のデータ行がありません）。");
+      }
       return;
     }
     const { created } = await importScheduleRows(rows);
