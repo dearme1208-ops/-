@@ -1098,11 +1098,13 @@ export default function TodaySection() {
   }
 
   // 完了した作業の実際の作業時間中に記録されていた体調ログを返す（複数あれば最後のもの）。
-  // この作業「専用」の記録があるかどうかの判定に使う（編集時に上書き対象を決めるため）
+  // この作業「専用」の記録があるかどうかの判定に使う（編集時に上書き対象を決めるため）。
+  // 終了時刻ちょうどは次の作業の開始時刻と一致し得るため、終了側は含めない
+  // （境界の記録がどちらの作業のものか曖昧にならないようにする）
   function taskOwnConditionLog(task: DailyTask) {
     if (!task.startedAt || !task.endedAt) return null;
     const matches = (conditionLogs ?? []).filter(
-      (log) => log.loggedAt >= task.startedAt! && log.loggedAt <= task.endedAt!
+      (log) => log.loggedAt >= task.startedAt! && log.loggedAt < task.endedAt!
     );
     return matches.length > 0 ? matches[matches.length - 1] : null;
   }
@@ -1124,7 +1126,13 @@ export default function TodaySection() {
     if (existing) {
       await db.conditionLogs.update(existing.id, { level });
     } else {
-      const loggedAt = task.endedAt ?? task.startedAt ?? Date.now();
+      // 開始・終了ちょうどの時刻だと、隣接する作業の境界時刻と一致してしまい、
+      // どちらの作業の記録か曖昧になる(ガントチャート上でも境界に表示されて分かりづらい)。
+      // 作業時間の中央に置くことで、その作業の区間内であることを明確にする
+      const loggedAt =
+        task.startedAt && task.endedAt
+          ? Math.round((task.startedAt + task.endedAt) / 2)
+          : (task.endedAt ?? task.startedAt ?? Date.now());
       await db.conditionLogs.add({
         id: uid(),
         date: task.date,
