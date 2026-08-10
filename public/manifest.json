@@ -28,5 +28,31 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "クイック起動①",
+      "short_name": "①",
+      "url": "/?quickstart=1",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "クイック起動②",
+      "short_name": "②",
+      "url": "/?quickstart=2",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "クイック起動③",
+      "short_name": "③",
+      "url": "/?quickstart=3",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "クイック起動④",
+      "short_name": "④",
+      "url": "/?quickstart=4",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }

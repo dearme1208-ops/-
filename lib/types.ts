@@ -19,6 +19,7 @@ export interface MasterTask {
   updatedAt: number;
   tags?: string[]; // タグ別の作業時間集計に使う自由入力タグ
   archived?: boolean; // 使用頻度の低いマスタをアーカイブした際にtrue。一覧・ピッカーの既定表示から除外する
+  quickSlot?: number; // 1〜4。ホーム画面ショートカット(?quickstart=N)から開始/終了できる枠に割り当て済みの場合に設定
 }
 
 export interface TemplateItem {

@@ -50,6 +50,8 @@ export default function TodaySection() {
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
   const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
+  const [pendingQuickSlot, setPendingQuickSlot] = useState<number | null>(null);
+  const [quickActionMessage, setQuickActionMessage] = useState<string | null>(null);
   const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
   const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
   const [pendingStart, setPendingStart] = useState<
@@ -593,6 +595,74 @@ export default function TodaySection() {
     });
   }, [now, provisionalTask, geoTrackingEnabled, geoStillMs]);
 
+  // ホーム画面ショートカット(manifestのshortcuts、/?quickstart=1〜4)からの起動を検知する。
+  // URLのクエリはその場で消し、実際の処理はtasks/allMasterTasksの読み込みを待ってから行う
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const slotStr = params.get("quickstart");
+    if (!slotStr) return;
+    window.history.replaceState({}, "", window.location.pathname);
+    const slot = Number(slotStr);
+    if (Number.isFinite(slot)) setPendingQuickSlot(slot);
+  }, []);
+
+  useEffect(() => {
+    if (pendingQuickSlot === null) return;
+    if (!tasks || !allMasterTasks) return;
+    const slot = pendingQuickSlot;
+    setPendingQuickSlot(null);
+    handleQuickStart(slot);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQuickSlot, tasks, allMasterTasks]);
+
+  useEffect(() => {
+    if (!quickActionMessage) return;
+    const id = setTimeout(() => setQuickActionMessage(null), 6000);
+    return () => clearTimeout(id);
+  }, [quickActionMessage]);
+
+  // クイック起動枠(1〜4)に割り当てられた作業を、状況に応じて開始/再開/終了する
+  // (計測中なら終了、一時停止中なら再開、それ以外なら新しく開始)ワンタップ用のトグル処理
+  async function handleQuickStart(slot: number) {
+    const master = (allMasterTasks ?? []).find((m) => m.quickSlot === slot);
+    if (!master) {
+      setQuickActionMessage(
+        `クイック起動${slot}にはまだ作業が割り当てられていません。「お気に入り」欄の番号ボタンから割り当てできます。`
+      );
+      return;
+    }
+    const activeToday = (tasks ?? []).filter((t) => t.masterTaskId === master.id && !t.isProvisional);
+    const running = activeToday.find((t) => t.status === "running");
+    if (running) {
+      await finishTask(running);
+      setQuickActionMessage(`🛑「${master.category} / ${master.name}」を終了しました`);
+      return;
+    }
+    const paused = activeToday.find((t) => t.status === "paused");
+    if (paused) {
+      await startTask(paused);
+      setQuickActionMessage(`▶「${master.category} / ${master.name}」を再開しました`);
+      return;
+    }
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(date, master.category, master.name, master.estimatedSeconds);
+    requestStartNew(master.category, master.name, estimatedSeconds, master.id);
+    setQuickActionMessage(`▶「${master.category} / ${master.name}」を開始しました`);
+  }
+
+  // お気に入り作業をクイック起動枠(1〜4)に割り当て/解除する。既に他の作業が
+  // その枠を使っていた場合は先にその割り当てを外す(枠は常に最大1件のみ)
+  async function toggleQuickSlot(masterId: string, slot: number) {
+    const current = (allMasterTasks ?? []).find((m) => m.id === masterId);
+    if (!current) return;
+    if (current.quickSlot === slot) {
+      await db.masterTasks.update(masterId, { quickSlot: undefined });
+      return;
+    }
+    const holder = (allMasterTasks ?? []).find((m) => m.quickSlot === slot && m.id !== masterId);
+    if (holder) await db.masterTasks.update(holder.id, { quickSlot: undefined });
+    await db.masterTasks.update(masterId, { quickSlot: slot });
+  }
+
   async function generateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
     if (items.length === 0) {
@@ -1118,6 +1188,14 @@ export default function TodaySection() {
 
   return (
     <div className="space-y-4">
+      {quickActionMessage && (
+        <div className="panel flex items-center justify-between gap-2 border border-cream/30 p-4">
+          <p className="text-sm font-bold text-cream">{quickActionMessage}</p>
+          <button className="text-xs text-cream/50" onClick={() => setQuickActionMessage(null)}>
+            閉じる
+          </button>
+        </div>
+      )}
       {conditionEnabled && (
         <div className="panel p-4">
           <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
@@ -1207,15 +1285,36 @@ export default function TodaySection() {
           <h3 className="mb-2 font-display text-sm font-bold text-cream/80">★ お気に入り（ワンタップで追加+開始）</h3>
           <div className="flex flex-wrap gap-2">
             {favorites.map((f) => (
-              <button
+              <div
                 key={f.id}
-                onClick={() => addFavoriteAndStart(f.id)}
-                className="rounded-full border border-cream/30 bg-ink px-4 py-2 text-sm text-cream hover:bg-cream/10"
+                className="flex items-center gap-1 rounded-full border border-cream/30 bg-ink py-1 pl-1 pr-2"
               >
-                ★ {f.category} / {f.name}
-              </button>
+                <button
+                  onClick={() => addFavoriteAndStart(f.id)}
+                  className="rounded-full px-3 py-1 text-sm text-cream hover:bg-cream/10"
+                >
+                  ★ {f.category} / {f.name}
+                </button>
+                <div className="flex gap-0.5">
+                  {[1, 2, 3, 4].map((slot) => (
+                    <button
+                      key={slot}
+                      onClick={() => toggleQuickSlot(f.id, slot)}
+                      title={`ホーム画面ショートカット${slot}に割り当て`}
+                      className={`h-5 w-5 rounded text-[10px] font-bold ${
+                        f.quickSlot === slot ? "bg-alert text-ink" : "text-cream/30 hover:text-cream/70"
+                      }`}
+                    >
+                      {slot}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
+          <p className="mt-2 text-[10px] text-cream/40">
+            番号を押すと、ホーム画面に追加したこのアプリのアイコンを長押しして出てくる「クイック起動①〜④」ショートカットにその作業を割り当てられます。ショートカットをタップすると、計測中なら終了・一時停止中なら再開・それ以外なら新規開始、とワンタップで切り替わります(対応はAndroidのChrome/Edge等。iOS Safariのホーム画面追加ではショートカットメニュー自体が利用できません)。
+          </p>
         </div>
       )}
 
