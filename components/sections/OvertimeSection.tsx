@@ -38,6 +38,19 @@ export default function OvertimeSection() {
     return map;
   }, [settings]);
 
+  // 年表タブで「労働日数×所定労働時間」を基準とした残業時間を算出するために使う
+  const workDaysByMonth = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of settings ?? []) {
+      if (s.key.startsWith("overtime.workdays.")) {
+        const month = s.key.slice("overtime.workdays.".length);
+        const v = Number(s.value);
+        if (!Number.isNaN(v)) map.set(month, v);
+      }
+    }
+    return map;
+  }, [settings]);
+
   const monthlyMap = useMemo(
     () => computeMonthlyOvertime(records ?? [], standardDailySeconds),
     [records, standardDailySeconds]
@@ -85,6 +98,17 @@ export default function OvertimeSection() {
     await db.settings.put({ key, value: String(v) });
   }
 
+  async function saveWorkDays(month: string, daysStr: string) {
+    const key = `overtime.workdays.${month}`;
+    if (daysStr.trim() === "") {
+      await db.settings.delete(key);
+      return;
+    }
+    const v = Number(daysStr);
+    if (Number.isNaN(v)) return;
+    await db.settings.put({ key, value: String(v) });
+  }
+
   function monthLabel(month: string): { year: string; m: string } {
     const [y, m] = month.split("-");
     return { year: y, m: String(Number(m)) };
@@ -119,6 +143,7 @@ export default function OvertimeSection() {
               <th className="px-3 py-2 text-right">実績合計</th>
               <th className="px-3 py-2 text-right">概算残業（自動）</th>
               <th className="px-3 py-2 text-right">手入力残業</th>
+              <th className="px-3 py-2 text-right">労働日数</th>
             </tr>
           </thead>
           <tbody>
@@ -162,12 +187,23 @@ export default function OvertimeSection() {
                       className="w-20 rounded-lg border border-cream/20 bg-ink px-2 py-1 text-right text-sm text-cream"
                     />
                   </td>
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      defaultValue={workDaysByMonth.get(month) ?? ""}
+                      placeholder="未入力"
+                      onBlur={(e) => saveWorkDays(month, e.target.value)}
+                      className="w-16 rounded-lg border border-cream/20 bg-ink px-2 py-1 text-right text-sm text-cream"
+                    />
+                  </td>
                 </tr>
               );
             })}
             {months.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-sm text-cream/50">
+                <td colSpan={6} className="px-3 py-6 text-center text-sm text-cream/50">
                   実績データがありません。
                 </td>
               </tr>
