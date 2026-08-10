@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { diffHmToSeconds, formatClock, formatHms } from "@/lib/time";
+import { formatClock, formatHms } from "@/lib/time";
 import { TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+
+const DAY_MS = 86400000;
 
 // "YYYY-MM-DD" + "HH:MM" をその日のローカル時刻のepoch msに変換する
 function toEpoch(date: string, hm: string): number {
@@ -32,10 +34,10 @@ export default function EditTaskDialog({
   const [category, setCategory] = useState(task.category);
   const [name, setName] = useState(task.name);
   const fallbackNow = Date.now();
-  const [startTime, setStartTime] = useState(formatClock(task.startedAt ?? task.segments[0]?.start ?? fallbackNow));
-  const [endTime, setEndTime] = useState(
-    formatClock(task.endedAt ?? task.segments[task.segments.length - 1]?.end ?? fallbackNow)
-  );
+  const originalStart = task.startedAt ?? task.segments[0]?.start ?? fallbackNow;
+  const originalEnd = task.endedAt ?? task.segments[task.segments.length - 1]?.end ?? fallbackNow;
+  const [startTime, setStartTime] = useState(formatClock(originalStart));
+  const [endTime, setEndTime] = useState(formatClock(originalEnd));
   // <input type="time">はHH:MMまでしか扱えず秒が丸められるため、実際に編集していない
   // 側はこのフラグで判別し、秒まで含めた元のepoch値をそのまま使う（丸めによって
   // 一時停止区間と矛盾する時刻に化けてしまうのを防ぐ）
@@ -43,7 +45,16 @@ export default function EditTaskDialog({
   const [endTouched, setEndTouched] = useState(false);
   const [note, setNote] = useState(task.note ?? "");
   const isDone = task.status === "done";
-  const durationSeconds = diffHmToSeconds(startTime, endTime);
+
+  // 開始・終了それぞれ、編集していなければ元の値(秒まで正確)、編集していれば
+  // 入力欄のHH:MMをこの作業の日付にあてはめた値を使う。開始が終了以降になって
+  // しまう場合は、日をまたいで前日から始まっていたとみなし開始日を1日前にずらす
+  // （例: 前日20:40〜日付が変わった後の0:12、といった作業を登録できるようにするため）
+  const rawStart = startTouched ? toEpoch(task.date, startTime) : originalStart;
+  const rawEnd = endTouched ? toEpoch(task.date, endTime) : originalEnd;
+  const crossesMidnight = rawStart >= rawEnd;
+  const resolvedStart = crossesMidnight ? rawStart - DAY_MS : rawStart;
+  const durationSeconds = Math.round((rawEnd - resolvedStart) / 1000);
   const invalidRange = isDone && durationSeconds <= 0;
 
   function save() {
@@ -59,8 +70,8 @@ export default function EditTaskDialog({
       name.trim(),
       undefined,
       note.trim() || undefined,
-      startTouched ? toEpoch(task.date, startTime) : undefined,
-      endTouched ? toEpoch(task.date, endTime) : undefined
+      startTouched ? resolvedStart : undefined,
+      endTouched ? rawEnd : undefined
     );
     onClose();
   }
@@ -120,8 +131,13 @@ export default function EditTaskDialog({
               />
             </div>
             <p className={`mt-1 text-xs tabular-nums ${invalidRange ? "text-alert" : "text-cream/60"}`}>
-              {invalidRange ? "終了時刻は開始時刻より後にしてください" : `実績時間 ${formatHms(durationSeconds)}`}
+              {invalidRange ? "開始と終了の時刻が同じです" : `実績時間 ${formatHms(durationSeconds)}`}
             </p>
+            {crossesMidnight && !invalidRange && (
+              <p className="mt-1 text-xs text-alert">
+                終了より遅い開始時刻のため、前日の{startTime}から日をまたいで始まったものとして保存します。
+              </p>
+            )}
             <p className="mt-1 text-[10px] text-cream/40">
               開始か終了のどちらかを変更すると、実績時間はその差分から自動的に再計算されます。区分・作業名・時刻の変更は、紐づく実績（集計・ランキングなどに使われるデータ）にも反映されます。
             </p>
