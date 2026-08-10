@@ -123,6 +123,11 @@ export default function TodaySection() {
     () => db.masterTasks.filter((t) => t.isFavorite && !t.archived).toArray(),
     []
   );
+  const allMasterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const favoriteMasterIds = useMemo(
+    () => new Set((allMasterTasks ?? []).filter((m) => m.isFavorite).map((m) => m.id)),
+    [allMasterTasks]
+  );
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const projectRecords = useLiveQuery(() => db.records.toArray(), []);
   const conditionLogs = useLiveQuery(
@@ -828,6 +833,20 @@ export default function TodaySection() {
     await recomputeEstimateFromRecords(newMaster.id);
   }
 
+  // 本日の作業カードから直接お気に入りを付け外しする。まだ作業マスタに紐づいていない
+  // （自由入力の突発作業など）場合は、その場でマスタを見つける/作成してから紐づける
+  async function toggleTaskFavorite(task: DailyTask) {
+    let masterId = task.masterTaskId;
+    if (!masterId) {
+      const master = await findOrCreateMasterTask(task.category, task.name, task.estimatedSeconds);
+      masterId = master.id;
+      await db.dailyTasks.update(task.id, { masterTaskId: masterId });
+    }
+    const master = await db.masterTasks.get(masterId);
+    if (!master) return;
+    await db.masterTasks.update(masterId, { isFavorite: !master.isFavorite });
+  }
+
   async function deleteTask(task: DailyTask) {
     if (!confirm(`「${task.name}」を本日の作業リストから削除しますか?`)) return;
     await db.dailyTasks.delete(task.id);
@@ -1340,6 +1359,14 @@ export default function TodaySection() {
                       {task.category} {task.isSpontaneous && <span className="ml-1 text-alert">突発</span>}
                       {isNext && task.status === "pending" && <span className="ml-2 text-cream">▶ 次の作業</span>}
                     </span>
+                    <button
+                      onClick={() => toggleTaskFavorite(task)}
+                      className={favoriteMasterIds.has(task.masterTaskId ?? "") ? "text-alert" : "text-cream/40 hover:text-cream"}
+                      aria-label={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
+                      title={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
+                    >
+                      {favoriteMasterIds.has(task.masterTaskId ?? "") ? "★" : "☆"}
+                    </button>
                     <button
                       onClick={() => setEditingTask(task)}
                       className="text-cream/40 hover:text-cream"
