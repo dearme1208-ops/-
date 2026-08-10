@@ -1,10 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { formatHms, parseHmsToSeconds } from "@/lib/time";
+import { diffHmToSeconds, formatClock, formatHms } from "@/lib/time";
 import { TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+
+// "YYYY-MM-DD" + "HH:MM" をその日のローカル時刻のepoch msに変換する
+function toEpoch(date: string, hm: string): number {
+  const [y, mo, d] = date.split("-").map(Number);
+  const [h, mi] = hm.split(":").map(Number);
+  return new Date(y, mo - 1, d, h, mi, 0, 0).getTime();
+}
 
 export default function EditTaskDialog({
   task,
@@ -12,18 +19,44 @@ export default function EditTaskDialog({
   onClose,
 }: {
   task: DailyTask;
-  onSave: (category: string, name: string, actualSeconds?: number, note?: string) => void;
+  onSave: (
+    category: string,
+    name: string,
+    actualSeconds?: number,
+    note?: string,
+    startedAt?: number,
+    endedAt?: number
+  ) => void;
   onClose: () => void;
 }) {
   const [category, setCategory] = useState(task.category);
   const [name, setName] = useState(task.name);
-  const [actualTime, setActualTime] = useState(formatHms(Math.round(task.accumulatedMs / 1000)));
+  const fallbackNow = Date.now();
+  const [startTime, setStartTime] = useState(formatClock(task.startedAt ?? task.segments[0]?.start ?? fallbackNow));
+  const [endTime, setEndTime] = useState(
+    formatClock(task.endedAt ?? task.segments[task.segments.length - 1]?.end ?? fallbackNow)
+  );
   const [note, setNote] = useState(task.note ?? "");
   const isDone = task.status === "done";
+  const durationSeconds = diffHmToSeconds(startTime, endTime);
+  const invalidRange = isDone && durationSeconds <= 0;
 
   function save() {
     if (!category.trim() || !name.trim()) return;
-    onSave(category.trim(), name.trim(), isDone ? parseHmsToSeconds(actualTime) : undefined, note.trim() || undefined);
+    if (invalidRange) return;
+    if (!isDone) {
+      onSave(category.trim(), name.trim(), undefined, note.trim() || undefined);
+      onClose();
+      return;
+    }
+    onSave(
+      category.trim(),
+      name.trim(),
+      durationSeconds,
+      note.trim() || undefined,
+      toEpoch(task.date, startTime),
+      toEpoch(task.date, endTime)
+    );
     onClose();
   }
 
@@ -59,15 +92,27 @@ export default function EditTaskDialog({
         )}
         {isDone && (
           <div>
-            <label className="mb-1 block text-xs text-cream/60">実績時間 (hh:mm:ss)</label>
-            <input
-              placeholder="hh:mm:ss"
-              value={actualTime}
-              onChange={(e) => setActualTime(e.target.value)}
-              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream tabular-nums"
-            />
+            <label className="mb-1 block text-xs text-cream/60">開始〜終了時刻</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+              <span className="text-cream/50">〜</span>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+            </div>
+            <p className={`mt-1 text-xs tabular-nums ${invalidRange ? "text-alert" : "text-cream/60"}`}>
+              {invalidRange ? "終了時刻は開始時刻より後にしてください" : `実績時間 ${formatHms(durationSeconds)}`}
+            </p>
             <p className="mt-1 text-[10px] text-cream/40">
-              区分・作業名・実績時間の変更は、紐づく実績（集計・ランキングなどに使われるデータ）にも反映されます。
+              開始か終了のどちらかを変更すると、実績時間はその差分から自動的に再計算されます。区分・作業名・時刻の変更は、紐づく実績（集計・ランキングなどに使われるデータ）にも反映されます。
             </p>
           </div>
         )}

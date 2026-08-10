@@ -693,8 +693,18 @@ export default function TodaySection() {
   // 同じ区分/作業名の実績は日付ごとに1件へ合算されているため、実績時間の変更は差分(delta)を
   // その実績にそのまま加減することで、他の作業から合算された分にも影響を与えず正しく反映できる。
   // 区分/作業名の変更は設定(records.masterEditMode)に従い、マスタ自体をリネームするか、
-  // 別マスタ(既存 or 新規)に実績ごと繋ぎ変える
-  async function applyTaskEdit(task: DailyTask, category: string, name: string, actualSeconds?: number, note?: string) {
+  // 別マスタ(既存 or 新規)に実績ごと繋ぎ変える。開始/終了時刻が指定された場合は、最初/最後の
+  // セグメントの端をその時刻に合わせて伸縮させ、実績時間(accumulatedMs)はセグメント合計から
+  // 再計算する（開始・終了・実績時間は常に連動する）
+  async function applyTaskEdit(
+    task: DailyTask,
+    category: string,
+    name: string,
+    actualSeconds?: number,
+    note?: string,
+    startedAtOverride?: number,
+    endedAtOverride?: number
+  ) {
     const renamed = category !== task.category || name !== task.name;
 
     if (task.status !== "done") {
@@ -708,11 +718,31 @@ export default function TodaySection() {
     }
 
     const oldSeconds = Math.round(task.accumulatedMs / 1000);
-    const newSeconds = actualSeconds ?? oldSeconds;
+    let segments = task.segments;
+    if (startedAtOverride !== undefined && segments.length > 0) {
+      segments = segments.map((s, i) => (i === 0 ? { ...s, start: startedAtOverride } : s));
+    }
+    if (endedAtOverride !== undefined && segments.length > 0) {
+      segments = segments.map((s, i) => (i === segments.length - 1 ? { ...s, end: endedAtOverride } : s));
+    }
+    const segmentsChanged = segments !== task.segments;
+    if (segmentsChanged && segments.some((s) => s.end !== undefined && s.end <= s.start)) {
+      alert("開始・終了時刻の範囲が不正です(途中の一時停止区間と矛盾しています)");
+      return;
+    }
+    const newAccumulatedMs = segmentsChanged
+      ? segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0)
+      : task.accumulatedMs;
+    const newSeconds = segmentsChanged ? Math.round(newAccumulatedMs / 1000) : (actualSeconds ?? oldSeconds);
     const delta = newSeconds - oldSeconds;
 
     const taskUpdates: Partial<DailyTask> = { category, name, note };
-    if (delta !== 0) {
+    if (segmentsChanged) {
+      taskUpdates.segments = segments;
+      taskUpdates.accumulatedMs = newAccumulatedMs;
+      taskUpdates.startedAt = segments[0].start;
+      taskUpdates.endedAt = segments[segments.length - 1].end;
+    } else if (delta !== 0) {
       const lastEnd = (task.segments[task.segments.length - 1]?.end ?? task.endedAt ?? Date.now()) + delta * 1000;
       taskUpdates.accumulatedMs = newSeconds * 1000;
       taskUpdates.segments = task.segments.map((s, i) =>
@@ -1458,7 +1488,16 @@ export default function TodaySection() {
                         </button>
                       </>
                     )}
-                    {task.status === "done" && <span className="text-xs text-cream/50">完了</span>}
+                    {task.status === "done" && (
+                      <div className="text-right">
+                        <span className="text-xs text-cream/50">完了</span>
+                        {task.startedAt && task.endedAt && (
+                          <div className="text-xs tabular-nums text-cream/40">
+                            {formatClock(task.startedAt)}〜{formatClock(task.endedAt)}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1500,7 +1539,9 @@ export default function TodaySection() {
       {editingTask && (
         <EditTaskDialog
           task={editingTask}
-          onSave={(category, name, actualSeconds, note) => applyTaskEdit(editingTask, category, name, actualSeconds, note)}
+          onSave={(category, name, actualSeconds, note, startedAt, endedAt) =>
+            applyTaskEdit(editingTask, category, name, actualSeconds, note, startedAt, endedAt)
+          }
           onClose={() => setEditingTask(null)}
         />
       )}
