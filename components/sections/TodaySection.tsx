@@ -52,6 +52,8 @@ export default function TodaySection() {
   const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
   const [pendingQuickSlot, setPendingQuickSlot] = useState<number | null>(null);
   const [quickActionMessage, setQuickActionMessage] = useState<string | null>(null);
+  const [quickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
+  const quickStartEnabled = quickStartEnabledStr === "true";
   const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
   const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
   const [pendingStart, setPendingStart] = useState<
@@ -624,6 +626,10 @@ export default function TodaySection() {
   // クイック起動枠(1〜4)に割り当てられた作業を、状況に応じて開始/再開/終了する
   // (計測中なら終了、一時停止中なら再開、それ以外なら新しく開始)ワンタップ用のトグル処理
   async function handleQuickStart(slot: number) {
+    if (!quickStartEnabled) {
+      setQuickActionMessage("ホーム画面ショートカットからのクイック起動は設定でOFFになっています。");
+      return;
+    }
     const master = (allMasterTasks ?? []).find((m) => m.quickSlot === slot);
     if (!master) {
       setQuickActionMessage(
@@ -1295,26 +1301,30 @@ export default function TodaySection() {
                 >
                   ★ {f.category} / {f.name}
                 </button>
-                <div className="flex gap-0.5">
-                  {[1, 2, 3, 4].map((slot) => (
-                    <button
-                      key={slot}
-                      onClick={() => toggleQuickSlot(f.id, slot)}
-                      title={`ホーム画面ショートカット${slot}に割り当て`}
-                      className={`h-5 w-5 rounded text-[10px] font-bold ${
-                        f.quickSlot === slot ? "bg-alert text-ink" : "text-cream/30 hover:text-cream/70"
-                      }`}
-                    >
-                      {slot}
-                    </button>
-                  ))}
-                </div>
+                {quickStartEnabled && (
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3, 4].map((slot) => (
+                      <button
+                        key={slot}
+                        onClick={() => toggleQuickSlot(f.id, slot)}
+                        title={`ホーム画面ショートカット${slot}に割り当て`}
+                        className={`h-5 w-5 rounded text-[10px] font-bold ${
+                          f.quickSlot === slot ? "bg-alert text-ink" : "text-cream/30 hover:text-cream/70"
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          <p className="mt-2 text-[10px] text-cream/40">
-            番号を押すと、ホーム画面に追加したこのアプリのアイコンを長押しして出てくる「クイック起動①〜④」ショートカットにその作業を割り当てられます。ショートカットをタップすると、計測中なら終了・一時停止中なら再開・それ以外なら新規開始、とワンタップで切り替わります(対応はAndroidのChrome/Edge等。iOS Safariのホーム画面追加ではショートカットメニュー自体が利用できません)。
-          </p>
+          {quickStartEnabled && (
+            <p className="mt-2 text-[10px] text-cream/40">
+              番号を押すと、ホーム画面に追加したこのアプリのアイコンを長押しして出てくる「クイック起動①〜④」ショートカットにその作業を割り当てられます。ショートカットをタップすると、計測中なら終了・一時停止中なら再開・それ以外なら新規開始、とワンタップで切り替わります(対応はAndroidのChrome/Edge等。iOS Safariのホーム画面追加ではショートカットメニュー自体が利用できません)。設定画面でOFFにできます。
+            </p>
+          )}
         </div>
       )}
 

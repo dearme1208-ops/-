@@ -36,6 +36,8 @@ export default function SettingsSection() {
   const [geoCategory, setGeoCategory] = useSetting("today.geoCategory", "移動");
   const [geoTaskName, setGeoTaskName] = useSetting("today.geoTaskName", "移動");
   const [geoStillMinutesStr, setGeoStillMinutesStr] = useSetting("today.geoStillMinutes", "10");
+  const [quickStartEnabledStr, setQuickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
+  const quickStartEnabled = quickStartEnabledStr === "true";
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
@@ -304,6 +306,21 @@ export default function SettingsSection() {
             </p>
           </div>
         )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">ホーム画面のクイック起動</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={quickStartEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setQuickStartEnabledStr(quickStartEnabled ? "false" : "true")}
+          >
+            クイック起動: {quickStartEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-[10px] text-cream/40">
+          ホーム画面に追加したアプリのアイコンを長押しして出る「クイック起動①〜④」ショートカットから、お気に入り作業をワンタップで開始/終了できる機能です。OFFにすると、ショートカットを開いても何も起きなくなり、「本日の作業」画面のお気に入り欄からも割り当てボタンが消えます(割り当て自体は消えないので、再度ONにすれば元通りです)。
+        </p>
       </div>
 
       <div className="panel space-y-3 p-4">
