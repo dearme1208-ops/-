@@ -36,6 +36,11 @@ export default function EditTaskDialog({
   const [endTime, setEndTime] = useState(
     formatClock(task.endedAt ?? task.segments[task.segments.length - 1]?.end ?? fallbackNow)
   );
+  // <input type="time">はHH:MMまでしか扱えず秒が丸められるため、実際に編集していない
+  // 側はこのフラグで判別し、秒まで含めた元のepoch値をそのまま使う（丸めによって
+  // 一時停止区間と矛盾する時刻に化けてしまうのを防ぐ）
+  const [startTouched, setStartTouched] = useState(false);
+  const [endTouched, setEndTouched] = useState(false);
   const [note, setNote] = useState(task.note ?? "");
   const isDone = task.status === "done";
   const durationSeconds = diffHmToSeconds(startTime, endTime);
@@ -52,10 +57,10 @@ export default function EditTaskDialog({
     onSave(
       category.trim(),
       name.trim(),
-      durationSeconds,
+      undefined,
       note.trim() || undefined,
-      toEpoch(task.date, startTime),
-      toEpoch(task.date, endTime)
+      startTouched ? toEpoch(task.date, startTime) : undefined,
+      endTouched ? toEpoch(task.date, endTime) : undefined
     );
     onClose();
   }
@@ -97,14 +102,20 @@ export default function EditTaskDialog({
               <input
                 type="time"
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+                onChange={(e) => {
+                  setStartTime(e.target.value);
+                  setStartTouched(true);
+                }}
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
               <span className="text-cream/50">〜</span>
               <input
                 type="time"
                 value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
+                onChange={(e) => {
+                  setEndTime(e.target.value);
+                  setEndTouched(true);
+                }}
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
             </div>
