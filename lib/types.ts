@@ -119,6 +119,7 @@ export interface ProjectItem {
   completedAt?: number;
   fromImport?: boolean; // CSVインポートで作成/更新された案件かどうか。次回インポートで
   // 行が見当たらなくなった場合の自動完了判定はこのフラグが立っている案件だけに適用する
+  hourlyRate?: number; // この案件専用の時給/単価（円）。無ければカテゴリ別/デフォルト単価を使う
 }
 
 // ---- ToDo ----

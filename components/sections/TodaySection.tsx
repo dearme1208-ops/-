@@ -18,6 +18,7 @@ import { CONDITION_LEVELS, dominantConditionLevel } from "@/lib/condition";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
+import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -51,6 +52,11 @@ export default function TodaySection() {
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
   const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
   const [conditionEditTaskId, setConditionEditTaskId] = useState<string | null>(null);
+  const [voiceEnabledStr] = useSetting("today.voiceEnabled", "false");
+  const voiceEnabled = voiceEnabledStr === "true";
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceUnsupported, setVoiceUnsupported] = useState(false);
+  const voiceRecognitionRef = useRef<ReturnType<typeof createSpeechRecognition>>(null);
   const [pendingQuickSlot, setPendingQuickSlot] = useState<number | null>(null);
   const [quickActionMessage, setQuickActionMessage] = useState<string | null>(null);
   const [quickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
@@ -668,6 +674,79 @@ export default function TodaySection() {
     const holder = (allMasterTasks ?? []).find((m) => m.quickSlot === slot && m.id !== masterId);
     if (holder) await db.masterTasks.update(holder.id, { quickSlot: undefined });
     await db.masterTasks.update(masterId, { quickSlot: slot });
+  }
+
+  // 音声コマンドの発話結果を解釈して実行する。「○○を開始」で、その名前に近い
+  // お気に入り/マスタの作業があれば開始し、無ければその場で新規の突発作業として開始する。
+  // 「終了」「一時停止」は対象名が無ければ今計測中の作業を対象にする
+  async function handleVoiceResult(transcript: string) {
+    const command = parseVoiceCommand(transcript);
+    if (!command) return;
+
+    if (command.action === "finish") {
+      const target = command.target
+        ? (tasks ?? []).find(
+            (t) => (t.status === "running" || t.status === "paused") && !t.isProvisional && (t.name.includes(command.target!) || command.target!.includes(t.name))
+          )
+        : undefined;
+      const running = target ?? (tasks ?? []).find((t) => t.status === "running" && !t.isProvisional);
+      if (!running) {
+        setQuickActionMessage(`🎤「${transcript}」→ 対象の計測中の作業が見つかりませんでした`);
+        return;
+      }
+      await finishTask(running);
+      setQuickActionMessage(`🎤「${transcript}」→ 🛑「${running.category} / ${running.name}」を終了しました`);
+      return;
+    }
+
+    if (command.action === "pause") {
+      const running = (tasks ?? []).find((t) => t.status === "running" && !t.isProvisional);
+      if (!running) {
+        setQuickActionMessage(`🎤「${transcript}」→ 計測中の作業が見つかりませんでした`);
+        return;
+      }
+      await pauseTask(running);
+      setQuickActionMessage(`🎤「${transcript}」→ ‖「${running.category} / ${running.name}」を一時停止しました`);
+      return;
+    }
+
+    const target = command.target?.trim();
+    if (!target) return;
+    const master = (allMasterTasks ?? []).find((m) => m.name.includes(target) || target.includes(m.name));
+    if (master) {
+      const estimatedSeconds = await computeRemainingEstimatedSeconds(date, master.category, master.name, master.estimatedSeconds);
+      requestStartNew(master.category, master.name, estimatedSeconds, master.id);
+      setQuickActionMessage(`🎤「${transcript}」→ ▶「${master.category} / ${master.name}」を開始しました`);
+      return;
+    }
+    requestStartNew("音声", target, 0, undefined);
+    setQuickActionMessage(`🎤「${transcript}」→ ▶「音声 / ${target}」を新規作業として開始しました`);
+  }
+
+  function startVoiceListening() {
+    if (voiceListening) return;
+    const recognition = createSpeechRecognition();
+    if (!recognition) {
+      setVoiceUnsupported(true);
+      setQuickActionMessage("この端末・ブラウザは音声入力に対応していません");
+      return;
+    }
+    voiceRecognitionRef.current = recognition;
+    recognition.onresult = (e) => {
+      const transcript = e.results?.[0]?.[0]?.transcript ?? "";
+      if (transcript) handleVoiceResult(transcript);
+    };
+    recognition.onerror = () => {
+      setQuickActionMessage("音声を認識できませんでした。もう一度お試しください");
+    };
+    recognition.onend = () => setVoiceListening(false);
+    setVoiceListening(true);
+    recognition.start();
+  }
+
+  function stopVoiceListening() {
+    voiceRecognitionRef.current?.stop();
+    setVoiceListening(false);
   }
 
   async function generateFromTemplate() {
@@ -1444,6 +1523,15 @@ export default function TodaySection() {
                 + 突発作業を追加
               </button>
             </>
+          )}
+          {voiceEnabled && !voiceUnsupported && (
+            <button
+              className={voiceListening ? "btn-pill-danger text-sm" : "btn-pill-outline text-sm"}
+              onClick={voiceListening ? stopVoiceListening : startVoiceListening}
+              title="「〇〇を開始」「終了」のように話しかけて操作できます"
+            >
+              {voiceListening ? "🎤 聞き取り中..." : "🎤 音声で操作"}
+            </button>
           )}
           <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
             予定CSVテンプレート

@@ -19,6 +19,8 @@ import { formatHms } from "@/lib/time";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeSwitchCostAnalysis } from "@/lib/switchcost";
 import { computeTimeByTag } from "@/lib/tags";
+import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
+import { useSetting } from "@/lib/settings";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import LineChart from "@/components/charts/LineChart";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
@@ -51,6 +53,11 @@ export default function AggregationSection() {
   const [compareTarget, setCompareTarget] = useState<HalfYearPeriod>(() =>
     defaultComparePeriod({ type: "h1", fiscalYear: currentFiscalYear() })
   );
+  const [defaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
+  const defaultHourlyRate = Number(defaultHourlyRateStr) > 0 ? Number(defaultHourlyRateStr) : null;
+  const [categoryRatesJson] = useSetting("cost.categoryRates", "{}");
+  const categoryRates = useMemo(() => parseCategoryRates(categoryRatesJson), [categoryRatesJson]);
+  const costEnabled = defaultHourlyRate !== null || Object.keys(categoryRates).length > 0;
 
   // 表示期間（上期/下期）を切り替えたら、比較先も自然な「前期」に追従させる
   useEffect(() => {
@@ -391,6 +398,7 @@ export default function AggregationSection() {
           {rows.map((row, idx) => {
             const prevSeconds = previousTotalsByKey?.get(row.key) ?? 0;
             const delta = row.totalSeconds - prevSeconds;
+            const rate = resolveCategoryRate(row.category, categoryRates, defaultHourlyRate);
             return (
               <button
                 key={row.key}
@@ -417,6 +425,12 @@ export default function AggregationSection() {
                     <div className="text-cream/50 text-xs">件数</div>
                     {row.count}
                   </div>
+                  {costEnabled && rate !== null && (
+                    <div>
+                      <div className="text-cream/50 text-xs">概算金額</div>
+                      {formatYen(computeCost(row.totalSeconds, rate))}
+                    </div>
+                  )}
                   {comparisonLabel && (
                     <div>
                       <div className="text-cream/50 text-xs">{comparisonLabel}</div>

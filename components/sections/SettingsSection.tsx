@@ -11,6 +11,7 @@ import { todayStr } from "@/lib/time";
 import { ACCENT_PRESETS, DEFAULT_ACCENT_RGB } from "@/lib/theme";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { CONDITION_LEVELS } from "@/lib/condition";
+import { parseCategoryRates, serializeCategoryRates } from "@/lib/cost";
 import type { BreakRange } from "@/lib/types";
 
 export default function SettingsSection() {
@@ -53,6 +54,27 @@ export default function SettingsSection() {
   const tagPresets = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
   const [categoryPresetsJson, setCategoryPresetsJson] = useSetting("todo.categoryPresets", "[]");
   const categoryPresets = useMemo(() => parsePresetList(categoryPresetsJson), [categoryPresetsJson]);
+  const [voiceEnabledStr, setVoiceEnabledStr] = useSetting("today.voiceEnabled", "false");
+  const voiceEnabled = voiceEnabledStr === "true";
+  const [defaultHourlyRateStr, setDefaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
+  const [categoryRatesJson, setCategoryRatesJson] = useSetting("cost.categoryRates", "{}");
+  const categoryRates = useMemo(() => parseCategoryRates(categoryRatesJson), [categoryRatesJson]);
+  const [newRateCategory, setNewRateCategory] = useState("");
+  const [newRateAmount, setNewRateAmount] = useState("");
+
+  function addCategoryRate() {
+    const cat = newRateCategory.trim();
+    const amount = Number(newRateAmount);
+    if (!cat || !Number.isFinite(amount) || amount < 0) return;
+    setCategoryRatesJson(serializeCategoryRates({ ...categoryRates, [cat]: amount }));
+    setNewRateCategory("");
+    setNewRateAmount("");
+  }
+  function removeCategoryRate(cat: string) {
+    const next = { ...categoryRates };
+    delete next[cat];
+    setCategoryRatesJson(serializeCategoryRates(next));
+  }
 
   function addTagPreset(value: string) {
     if (tagPresets.includes(value)) return;
@@ -321,6 +343,73 @@ export default function SettingsSection() {
         <p className="text-[10px] text-cream/40">
           ホーム画面に追加したアプリのアイコンを長押しして出る「クイック起動①〜④」ショートカットから、お気に入り作業をワンタップで開始/終了できる機能です。OFFにすると、ショートカットを開いても何も起きなくなり、「本日の作業」画面のお気に入り欄からも割り当てボタンが消えます(割り当て自体は消えないので、再度ONにすれば元通りです)。
         </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">音声での開始/終了</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={voiceEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVoiceEnabledStr(voiceEnabled ? "false" : "true")}
+          >
+            音声での操作: {voiceEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-[10px] text-cream/40">
+          ONにすると「本日の作業」画面に🎤ボタンが出ます。タップして「掃除を開始」「終了」のように話しかけると、その内容に応じて作業を開始/終了/一時停止します。お気に入りやマスタに近い名前の作業があればそれを、無ければその場で新規の作業として開始します。ONにするとブラウザからマイクの利用許可を求められます。対応はブラウザによって異なり(主にChrome/Edge/Safari系)、Firefoxなどでは利用できません。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">コスト換算（時給/単価）</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <label className="text-xs text-cream/60">デフォルト単価</label>
+          <input
+            type="number"
+            min={0}
+            step={100}
+            value={defaultHourlyRateStr}
+            onChange={(e) => setDefaultHourlyRateStr(e.target.value)}
+            placeholder="未設定"
+            className="w-24 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-right text-cream"
+          />
+          <span className="text-xs text-cream/60">円/時間</span>
+        </div>
+        <p className="text-[10px] text-cream/40">
+          設定すると、集計・週報/月報・案件などの画面に概算金額（作業時間×単価）が表示されます。未設定のカテゴリ・案件にはこのデフォルト単価が使われます。案件ごとの単価は「案件」タブから個別に設定できます。
+        </p>
+        <div className="space-y-2 border-t border-cream/10 pt-3">
+          <p className="text-xs text-cream/60">カテゴリ別の単価（デフォルトより優先されます）</p>
+          {Object.entries(categoryRates).map(([cat, amount]) => (
+            <div key={cat} className="flex items-center gap-2 text-xs text-cream/70">
+              <span className="flex-1 truncate">{cat}</span>
+              <span className="tabular-nums">{amount.toLocaleString("ja-JP")}円/時間</span>
+              <button className="text-alert" onClick={() => removeCategoryRate(cat)} aria-label="削除">
+                ✕
+              </button>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={newRateCategory}
+              onChange={(e) => setNewRateCategory(e.target.value)}
+              placeholder="業務区分"
+              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+            />
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={newRateAmount}
+              onChange={(e) => setNewRateAmount(e.target.value)}
+              placeholder="円/時間"
+              className="w-24 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-right text-xs text-cream"
+            />
+            <button className="btn-pill-outline text-xs" onClick={addCategoryRate}>
+              + 追加
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="panel space-y-3 p-4">

@@ -11,6 +11,8 @@ import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/perio
 import { baseAccumulatedMs } from "@/lib/tasks";
 import { generateReportText, downloadTextFile } from "@/lib/report";
 import { exportElementToPdf } from "@/lib/pdfExport";
+import { recordsToIcs } from "@/lib/ics";
+import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { useSetting } from "@/lib/settings";
 import { effectiveDueDate } from "@/lib/todo";
 import { daysBetweenDateStrs, formatHms, todayStr } from "@/lib/time";
@@ -29,6 +31,11 @@ export default function ReportSection() {
   const [monthlyGoalHoursStr] = useSetting("report.monthlyGoalHours", "");
   const goalHoursStr = kind === "week" ? weeklyGoalHoursStr : monthlyGoalHoursStr;
   const goalSeconds = Number(goalHoursStr) > 0 ? Number(goalHoursStr) * 3600 : null;
+  const [defaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
+  const defaultHourlyRate = Number(defaultHourlyRateStr) > 0 ? Number(defaultHourlyRateStr) : null;
+  const [categoryRatesJson] = useSetting("cost.categoryRates", "{}");
+  const categoryRates = useMemo(() => parseCategoryRates(categoryRatesJson), [categoryRatesJson]);
+  const costEnabled = defaultHourlyRate !== null || Object.keys(categoryRates).length > 0;
 
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -117,6 +124,7 @@ export default function ReportSection() {
       troubleTotalSeconds,
       overdueTodos,
       paceWarning,
+      periodRecords,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, masterTasks, dailyTasks, todoTasks, kind, afterHoursCutoff, standardDailySeconds, today]);
@@ -127,6 +135,26 @@ export default function ReportSection() {
     const label = kind === "week" ? "weekly" : "monthly";
     downloadTextFile(`report_${label}_${todayStr()}.txt`, text);
   }
+
+  // 完了した実績を、カレンダーアプリにインポートできる.ics形式でエクスポートする。
+  // Googleカレンダーへの自動書き戻し(OAuth連携)は行わず、あえて「エクスポート→手動インポート」
+  // という形にしている。このアプリは認証・バックエンドを持たない100%クライアントサイド構成の
+  // ままにしたいため
+  function downloadIcs() {
+    if (!data) return;
+    const label = kind === "week" ? "weekly" : "monthly";
+    downloadTextFile(`records_${label}_${todayStr()}.ics`, recordsToIcs(data.periodRecords));
+  }
+
+  const totalCost = useMemo(() => {
+    if (!data || !costEnabled) return null;
+    let sum = 0;
+    for (const r of data.ranking) {
+      const rate = resolveCategoryRate(r.category, categoryRates, defaultHourlyRate);
+      if (rate !== null) sum += computeCost(r.totalSeconds, rate);
+    }
+    return sum;
+  }, [data, costEnabled, categoryRates, defaultHourlyRate]);
 
   const reportRef = useRef<HTMLDivElement>(null);
   const [pdfExporting, setPdfExporting] = useState(false);
@@ -162,6 +190,14 @@ export default function ReportSection() {
         </button>
         <button className="btn-pill-outline text-sm" onClick={downloadPdf} disabled={!data || pdfExporting}>
           {pdfExporting ? "PDF作成中..." : "ダウンロード (.pdf)"}
+        </button>
+        <button
+          className="btn-pill-outline text-sm"
+          onClick={downloadIcs}
+          disabled={!data}
+          title="完了した実績を、カレンダーアプリにインポートできる形式で書き出します"
+        >
+          実績をカレンダーへ (.ics)
         </button>
       </div>
 
@@ -249,6 +285,7 @@ export default function ReportSection() {
               value={`${data.attention.length}件`}
               accent={data.attention.length > 0}
             />
+            {totalCost !== null && <StatTile label="💰 概算コスト" value={formatYen(totalCost)} />}
           </div>
 
           {data.ranking.length > 0 && (

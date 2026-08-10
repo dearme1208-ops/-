@@ -8,6 +8,8 @@ import { upsertProjectsFromCsv } from "@/lib/projects";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
 import { downloadTextFile } from "@/lib/report";
+import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
+import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
@@ -49,6 +51,16 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
   const today = todayStr();
+
+  const [defaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
+  const defaultHourlyRate = Number(defaultHourlyRateStr) > 0 ? Number(defaultHourlyRateStr) : null;
+  const [categoryRatesJson] = useSetting("cost.categoryRates", "{}");
+  const categoryRates = useMemo(() => parseCategoryRates(categoryRatesJson), [categoryRatesJson]);
+
+  // 案件の概算金額 = (専用単価 ?? カテゴリ別単価 ?? デフォルト単価) × 累計作業時間
+  function resolveProjectRate(project: ProjectItem): number | null {
+    return project.hourlyRate ?? resolveCategoryRate(project.category, categoryRates, defaultHourlyRate);
+  }
 
   // 案件ごとの累計作業時間（全期間の実績を合算）
   const projectTotalSeconds = useMemo(() => {
@@ -298,6 +310,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
             daysLeft={daysLeft}
             paceWarning={paceWarning}
             totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
+            hourlyRate={resolveProjectRate(project)}
             onAddToToday={() => setAddToTodayTarget(project)}
             onToggleComplete={() => toggleComplete(project)}
             onEdit={() => setEditingProject(project)}
@@ -329,6 +342,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                   overdue={overdue}
                   daysLeft={daysLeft}
                   totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
+                  hourlyRate={resolveProjectRate(project)}
                   onAddToToday={() => setAddToTodayTarget(project)}
                   onToggleComplete={() => toggleComplete(project)}
                   onEdit={() => setEditingProject(project)}
@@ -525,6 +539,7 @@ function ProjectRow({
   daysLeft,
   paceWarning,
   totalSeconds,
+  hourlyRate,
   onAddToToday,
   onToggleComplete,
   onEdit,
@@ -535,6 +550,7 @@ function ProjectRow({
   daysLeft: number;
   paceWarning?: boolean;
   totalSeconds: number;
+  hourlyRate: number | null;
   onAddToToday: () => void;
   onToggleComplete: () => void;
   onEdit: () => void;
@@ -559,6 +575,11 @@ function ProjectRow({
         {totalSeconds > 0 && (
           <div className="text-xs text-cream/70">
             累計作業時間 <span className="font-bold tabular-nums text-cream">{formatHms(totalSeconds)}</span>
+            {hourlyRate !== null && (
+              <span className="ml-2 text-cream/50">
+                （概算 <span className="font-bold text-cream/80">{formatYen(computeCost(totalSeconds, hourlyRate))}</span>）
+              </span>
+            )}
           </div>
         )}
       </div>
