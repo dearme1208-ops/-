@@ -50,6 +50,7 @@ export default function TodaySection() {
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
   const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
+  const [conditionEditTaskId, setConditionEditTaskId] = useState<string | null>(null);
   const [pendingQuickSlot, setPendingQuickSlot] = useState<number | null>(null);
   const [quickActionMessage, setQuickActionMessage] = useState<string | null>(null);
   const [quickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
@@ -1096,6 +1097,42 @@ export default function TodaySection() {
     });
   }
 
+  // 完了した作業の実際の作業時間中に記録されていた体調ログを返す（複数あれば最後のもの）
+  function taskConditionLog(task: DailyTask) {
+    if (!task.startedAt || !task.endedAt) return null;
+    const matches = (conditionLogs ?? []).filter(
+      (log) => log.loggedAt >= task.startedAt! && log.loggedAt <= task.endedAt!
+    );
+    return matches.length > 0 ? matches[matches.length - 1] : null;
+  }
+
+  // 完了した作業に体調を記録/変更する。その作業時間中に既に体調ログがあれば
+  // それを書き換え、なければ作業終了時刻を記録時刻として新規に追加する
+  async function setTaskCondition(task: DailyTask, level: string) {
+    const existing = taskConditionLog(task);
+    if (existing) {
+      await db.conditionLogs.update(existing.id, { level });
+    } else {
+      const loggedAt = task.endedAt ?? task.startedAt ?? Date.now();
+      await db.conditionLogs.add({
+        id: uid(),
+        date: task.date,
+        time: formatClock(loggedAt),
+        loggedAt,
+        level,
+        category: task.category,
+        name: task.name,
+      });
+    }
+    setConditionEditTaskId(null);
+  }
+
+  async function clearTaskCondition(task: DailyTask) {
+    const existing = taskConditionLog(task);
+    if (existing) await db.conditionLogs.delete(existing.id);
+    setConditionEditTaskId(null);
+  }
+
   async function addFavoriteAndStart(masterTaskId: string) {
     const master = await db.masterTasks.get(masterTaskId);
     if (!master) return;
@@ -1659,6 +1696,55 @@ export default function TodaySection() {
                     )}
                   </div>
                 </div>
+                {conditionEnabled && task.status === "done" && (
+                  <div className="mt-2 border-t border-cream/10 pt-2">
+                    {(() => {
+                      const condLog = taskConditionLog(task);
+                      return (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setConditionEditTaskId(conditionEditTaskId === task.id ? null : task.id)}
+                            className="flex items-center gap-1 text-xs text-cream/50 hover:text-cream"
+                          >
+                            {condLog ? (
+                              <>
+                                <ConditionGlyph level={condLog.level} size={16} />
+                                <span>
+                                  {CONDITION_LEVELS.find((c) => c.level === condLog.level)?.label ?? condLog.level}
+                                </span>
+                              </>
+                            ) : (
+                              <span>体調: 記録なし（タップして記録）</span>
+                            )}
+                          </button>
+                          {conditionEditTaskId === task.id && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {CONDITION_LEVELS.map((c) => (
+                                <button
+                                  key={c.level}
+                                  onClick={() => setTaskCondition(task, c.level)}
+                                  aria-label={c.label}
+                                  title={c.label}
+                                  className={condLog?.level === c.level ? "btn-pill p-1" : "btn-pill-outline p-1"}
+                                >
+                                  <ConditionGlyph level={c.level} size={18} />
+                                </button>
+                              ))}
+                              {condLog && (
+                                <button
+                                  onClick={() => clearTaskCondition(task)}
+                                  className="text-xs text-cream/40 hover:text-alert"
+                                >
+                                  記録を削除
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           );
