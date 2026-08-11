@@ -25,6 +25,9 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   function removeStage(id: string) {
     setStages((prev) => prev.filter((s) => s.id !== id));
   }
+  function setStageDueDate(id: string, value: string) {
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, dueDate: value || undefined } : s)));
+  }
 
   async function save() {
     if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) return;
@@ -108,6 +111,12 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
                 <span className={`flex-1 text-xs text-cream ${stage.completed ? "text-cream/40 line-through" : ""}`}>
                   {stage.title}
                 </span>
+                <input
+                  type="date"
+                  value={stage.dueDate ?? ""}
+                  onChange={(e) => setStageDueDate(stage.id, e.target.value)}
+                  className="w-32 shrink-0 rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
+                />
                 <button className="text-cream/40 hover:text-alert" onClick={() => removeStage(stage.id)} aria-label="削除">
                   ✕
                 </button>

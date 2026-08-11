@@ -11,7 +11,7 @@ import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/time";
-import type { DailyTask, ProjectItem } from "@/lib/types";
+import type { DailyTask, ProjectItem, ProjectStage } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
@@ -174,6 +174,11 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     onAddedToToday?.();
   }
 
+  async function toggleProjectStage(project: ProjectItem, stageId: string) {
+    const stages = (project.stages ?? []).map((s) => (s.id === stageId ? { ...s, completed: !s.completed } : s));
+    await db.projects.update(project.id, { stages });
+  }
+
   const { rangeStartStr, totalDays, rows } = useMemo(() => {
     const list = projects ?? [];
     let start = today;
@@ -323,6 +328,8 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
             onToggleComplete={() => toggleComplete(project)}
             onEdit={() => setEditingProject(project)}
             onDelete={() => deleteProject(project)}
+            onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
+            onAddStageToToday={(stage) => addToToday(project, project.category, stage.title)}
           />
         ))}
         {activeRows.length === 0 && completedRows.length === 0 && (
@@ -355,6 +362,8 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                   onToggleComplete={() => toggleComplete(project)}
                   onEdit={() => setEditingProject(project)}
                   onDelete={() => deleteProject(project)}
+                  onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
+                  onAddStageToToday={(stage) => addToToday(project, project.category, stage.title)}
                 />
               ))}
             </div>
@@ -466,6 +475,8 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                     const top = idx * ROW_H;
                     const left = r.barStart * pxPerDay;
                     const width = Math.max((r.barEnd - r.barStart) * pxPerDay, 3);
+                    const stages = r.project.stages ?? [];
+                    const progressPct = stages.length > 0 ? stages.filter((s) => s.completed).length / stages.length : null;
                     return (
                       <div key={r.project.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
                         <div
@@ -475,6 +486,18 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                           style={{ left, width, top: 9, height: 20 }}
                           title={`${r.project.title} / ${r.project.workName}（期日 ${r.project.dueDate}）`}
                         />
+                        {progressPct !== null && (
+                          <div
+                            className="absolute rounded bg-cream/10"
+                            style={{ left, width, top: 31, height: 4 }}
+                            title={`進捗 ${Math.round(progressPct * 100)}%`}
+                          >
+                            <div
+                              className="h-full rounded bg-alert"
+                              style={{ width: `${Math.max(progressPct * 100, progressPct > 0 ? 4 : 0)}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -565,6 +588,8 @@ function ProjectRow({
   onToggleComplete,
   onEdit,
   onDelete,
+  onToggleStage,
+  onAddStageToToday,
 }: {
   project: ProjectItem;
   overdue: boolean;
@@ -576,6 +601,8 @@ function ProjectRow({
   onToggleComplete: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleStage: (stageId: string) => void;
+  onAddStageToToday: (stage: ProjectStage) => void;
 }) {
   return (
     <div className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""}`}>
@@ -610,6 +637,34 @@ function ProjectRow({
                   width: `${Math.round((project.stages.filter((s) => s.completed).length / project.stages.length) * 100)}%`,
                 }}
               />
+            </div>
+            <div className="mt-1.5 space-y-1">
+              {project.stages.map((stage) => (
+                <div key={stage.id} className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => onToggleStage(stage.id)}
+                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
+                      stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+                    }`}
+                    aria-label={stage.completed ? "未完了に戻す" : "完了にする"}
+                  >
+                    {stage.completed ? "✓" : ""}
+                  </button>
+                  <span className={`flex-1 truncate text-[11px] ${stage.completed ? "text-cream/40 line-through" : "text-cream/80"}`}>
+                    {stage.title}
+                  </span>
+                  {stage.dueDate && (
+                    <span className="shrink-0 text-[10px] text-cream/40">{stage.dueDate}</span>
+                  )}
+                  <button
+                    onClick={() => onAddStageToToday(stage)}
+                    className="shrink-0 text-[10px] text-cream/40 hover:text-cream"
+                    title="この段階を本日の作業に追加"
+                  >
+                    ＋本日
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}

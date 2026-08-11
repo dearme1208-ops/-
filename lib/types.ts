@@ -113,6 +113,7 @@ export interface ProjectStage {
   id: string;
   title: string;
   completed: boolean;
+  dueDate?: string; // YYYY-MM-DD（任意）
 }
 
 export interface ProjectItem {
