@@ -48,7 +48,7 @@ const MAX_PX_PER_DAY = 80;
 const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
-type ViewKey = "myday" | "important" | "planned" | `list:${string}`;
+type ViewKey = "myday" | "important" | "planned" | "overdue" | `list:${string}`;
 type DisplayMode = "list" | "gantt" | "calendar" | "kanban";
 type KanbanAxis = "tag" | "category";
 
@@ -139,6 +139,57 @@ export default function TodoSection() {
 
   const topLevelTasks = useMemo(() => (allTasks ?? []).filter((t) => !t.parentTaskId), [allTasks]);
 
+  // 期限切れ: 未完了かつ期日（サブタスクの期日を含む）が本日より前のタスク
+  const overdueTasks = useMemo(
+    () =>
+      topLevelTasks.filter((t) => {
+        if (t.completed) return false;
+        const due = effectiveDueDate(t, subtasksByParent.get(t.id) ?? []);
+        return !!due && due < today;
+      }),
+    [topLevelTasks, subtasksByParent, today]
+  );
+  const [selectedOverdueIds, setSelectedOverdueIds] = useState<Set<string>>(new Set());
+  const [bulkRescheduleDate, setBulkRescheduleDate] = useState(() =>
+    todayStr(new Date(Date.now() + 86400000))
+  );
+
+  // 期限切れから外れた（完了・期日変更等）タスクは選択状態からも自動的に外す
+  useEffect(() => {
+    setSelectedOverdueIds((prev) => {
+      const overdueIds = new Set(overdueTasks.map((t) => t.id));
+      const next = new Set([...prev].filter((id) => overdueIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [overdueTasks]);
+
+  function toggleOverdueSelect(id: string) {
+    setSelectedOverdueIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function selectAllOverdue() {
+    setSelectedOverdueIds(new Set(overdueTasks.map((t) => t.id)));
+  }
+  function clearOverdueSelection() {
+    setSelectedOverdueIds(new Set());
+  }
+
+  // 選択中のタスクの期日を、指定した日付にまとめて変更する（一括/選択どちらもこの1つの仕組みで対応）
+  async function applyBulkReschedule(newDate: string) {
+    if (!newDate || selectedOverdueIds.size === 0) return;
+    const ids = [...selectedOverdueIds];
+    await db.transaction("rw", db.todoTasks, async () => {
+      for (const id of ids) {
+        await db.todoTasks.update(id, { dueDate: newDate });
+      }
+    });
+    setSelectedOverdueIds(new Set());
+  }
+
   // 期日（サブタスクの期日を含む）が本日になったタスクは、繰り返しの有無に関わらず自動的にマイデイへ反映する
   useEffect(() => {
     if (!allTasks) return;
@@ -167,6 +218,8 @@ export default function TodoSection() {
       filtered = topLevelTasks.filter((t) => t.important);
     } else if (view === "planned") {
       filtered = topLevelTasks.filter((t) => !!effectiveDueDate(t, subtasksByParent.get(t.id) ?? []));
+    } else if (view === "overdue") {
+      filtered = overdueTasks;
     } else if (currentListId) {
       filtered = topLevelTasks.filter((t) => t.listId === currentListId);
     } else {
@@ -191,14 +244,14 @@ export default function TodoSection() {
     return [...filtered].sort((a, b) => {
       const doneDiff = Number(a.completed) - Number(b.completed);
       if (doneDiff !== 0) return doneDiff;
-      if (view === "planned" && !searchActive) {
+      if ((view === "planned" || view === "overdue") && !searchActive) {
         const dueA = effectiveDueDate(a, subtasksByParent.get(a.id) ?? []) ?? "9999-99-99";
         const dueB = effectiveDueDate(b, subtasksByParent.get(b.id) ?? []) ?? "9999-99-99";
         return dueA.localeCompare(dueB);
       }
       return a.order - b.order;
     });
-  }, [view, currentListId, topLevelTasks, today, searchActive, searchQuery, filterTag, filterCategory, filterCustomer, subtasksByParent]);
+  }, [view, currentListId, topLevelTasks, overdueTasks, today, searchActive, searchQuery, filterTag, filterCategory, filterCustomer, subtasksByParent]);
 
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
   const completedTasks = visibleTasks.filter((t) => t.completed);
@@ -206,7 +259,7 @@ export default function TodoSection() {
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
 
-  const reorderEnabled = displayMode === "list" && !searchActive && view !== "planned";
+  const reorderEnabled = displayMode === "list" && !searchActive && view !== "planned" && view !== "overdue";
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -409,6 +462,7 @@ export default function TodoSection() {
     if (key === "myday") return "マイデイ";
     if (key === "important") return "重要";
     if (key === "planned") return "期限日";
+    if (key === "overdue") return "期限切れ";
     return lists?.find((l) => l.id === key.slice(5))?.title ?? "";
   };
 
@@ -467,6 +521,12 @@ export default function TodoSection() {
             {v === "myday" ? "☀ マイデイ" : v === "important" ? "★ 重要" : "📅 期限日"}
           </button>
         ))}
+        <button
+          onClick={() => setView("overdue")}
+          className={view === "overdue" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+        >
+          ⚠ 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
+        </button>
         {(lists ?? []).map((l) => (
           <div key={l.id} className="flex items-center">
             <button
@@ -795,6 +855,20 @@ export default function TodoSection() {
               </>
             )}
           </div>
+        ) : view === "overdue" ? (
+          <OverdueBulkList
+            tasks={incompleteTasks}
+            today={today}
+            selectedIds={selectedOverdueIds}
+            onToggleSelect={toggleOverdueSelect}
+            onSelectAll={selectAllOverdue}
+            onClearSelection={clearOverdueSelection}
+            rescheduleDate={bulkRescheduleDate}
+            onRescheduleDateChange={setBulkRescheduleDate}
+            onApplyReschedule={() => applyBulkReschedule(bulkRescheduleDate)}
+            onQuickReschedule={(days) => applyBulkReschedule(todayStr(new Date(Date.now() + days * 86400000)))}
+            onOpenDetail={(id) => setDetailTaskId(id)}
+          />
         ) : (
           <>
             <div className="space-y-1.5">
@@ -879,6 +953,122 @@ export default function TodoSection() {
           onReflectToProject={(category, workName) => reflectToProject(detailTask, category, workName)}
         />
       )}
+    </div>
+  );
+}
+
+// 期限切れタスクを一覧表示し、チェックボックスでの選択と、選択した分をまとめて
+// （1件だけ選べば個別、複数/全選択すれば一括で）リスケジュールできるようにする
+function OverdueBulkList({
+  tasks,
+  today,
+  selectedIds,
+  onToggleSelect,
+  onSelectAll,
+  onClearSelection,
+  rescheduleDate,
+  onRescheduleDateChange,
+  onApplyReschedule,
+  onQuickReschedule,
+  onOpenDetail,
+}: {
+  tasks: TodoTask[];
+  today: string;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  rescheduleDate: string;
+  onRescheduleDateChange: (date: string) => void;
+  onApplyReschedule: () => void;
+  onQuickReschedule: (days: number) => void;
+  onOpenDetail: (id: string) => void;
+}) {
+  const allSelected = tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id));
+
+  if (tasks.length === 0) {
+    return <p className="px-1 py-4 text-sm text-cream/50">期限切れのタスクはありません。</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="panel space-y-2 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            className="text-xs text-cream/60 hover:text-cream"
+            onClick={allSelected ? onClearSelection : onSelectAll}
+          >
+            {allSelected ? "☑ 選択解除" : "☐ すべて選択"}
+          </button>
+          <span className="text-xs text-cream/50">選択中 {selectedIds.size}件 / 全{tasks.length}件</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="btn-pill-outline text-xs"
+            disabled={selectedIds.size === 0}
+            onClick={() => onQuickReschedule(0)}
+          >
+            今日に変更
+          </button>
+          <button
+            className="btn-pill-outline text-xs"
+            disabled={selectedIds.size === 0}
+            onClick={() => onQuickReschedule(1)}
+          >
+            明日に変更
+          </button>
+          <button
+            className="btn-pill-outline text-xs"
+            disabled={selectedIds.size === 0}
+            onClick={() => onQuickReschedule(7)}
+          >
+            1週間後に変更
+          </button>
+          <input
+            type="date"
+            value={rescheduleDate}
+            onChange={(e) => onRescheduleDateChange(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
+          />
+          <button className="btn-pill text-xs" disabled={selectedIds.size === 0} onClick={onApplyReschedule}>
+            選択した{selectedIds.size}件をこの日付に変更
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        {tasks.map((task) => {
+          const daysOverdue = task.dueDate ? daysBetweenDateStrs(task.dueDate, today) : null;
+          return (
+            <div
+              key={task.id}
+              className="flex items-center gap-3 rounded-lg border border-alert/30 bg-alert/5 px-3 py-2"
+            >
+              <button
+                onClick={() => onToggleSelect(task.id)}
+                aria-label="選択"
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-xs ${
+                  selectedIds.has(task.id) ? "border-cream bg-cream text-ink" : "border-cream/40"
+                }`}
+              >
+                {selectedIds.has(task.id) ? "✓" : ""}
+              </button>
+              <button className="min-w-0 flex-1 text-left" onClick={() => onOpenDetail(task.id)}>
+                <div className="truncate text-sm text-cream">{task.title}</div>
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-cream/50">
+                  {task.tag && <span>{task.tag}</span>}
+                  {task.category && <span>{task.category}</span>}
+                  {task.customer && <span>{task.customer}</span>}
+                </div>
+              </button>
+              <div className="shrink-0 text-right text-xs font-bold text-alert">
+                {task.dueDate ? formatDateJp(task.dueDate) : ""}
+                {daysOverdue !== null && daysOverdue > 0 && <div className="text-[10px]">{daysOverdue}日超過</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
