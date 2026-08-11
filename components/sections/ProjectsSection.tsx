@@ -205,6 +205,14 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   const activeRows = useMemo(() => rows.filter((r) => !r.project.completedAt), [rows]);
   const completedRows = useMemo(() => rows.filter((r) => !!r.project.completedAt), [rows]);
 
+  // ガントチャート・カレンダーは既定で未完了の案件だけを表示する(一覧の「完了済み」欄と同様、
+  // デフォルトでは埋もれさせない)。トグルで完了済みも重ねて表示できる
+  const [showCompletedInTimeline, setShowCompletedInTimeline] = useState(false);
+  const timelineRows = useMemo(
+    () => (showCompletedInTimeline ? rows : activeRows),
+    [rows, activeRows, showCompletedInTimeline]
+  );
+
   const todayIndex = daysBetweenDateStrs(rangeStartStr, today);
   const dayMarks = Array.from({ length: totalDays + 1 }, (_, i) => i);
   const labelStepDays = Math.max(1, Math.ceil(MIN_LABEL_SPACING_PX / pxPerDay));
@@ -369,10 +377,23 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
             >
               カレンダー
             </button>
+            <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
+              <input
+                type="checkbox"
+                checked={showCompletedInTimeline}
+                onChange={(e) => setShowCompletedInTimeline(e.target.checked)}
+                className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+              />
+              完了済みも表示
+            </label>
           </div>
 
-          {viewMode === "calendar" ? (
-            <ProjectsCalendarView projects={projects ?? []} today={today} />
+          {timelineRows.length === 0 ? (
+            <p className="px-1 py-4 text-sm text-cream/50">
+              表示する案件がありません（完了済みのみのため。「完了済みも表示」をONにすると見られます）。
+            </p>
+          ) : viewMode === "calendar" ? (
+            <ProjectsCalendarView projects={timelineRows.map((r) => r.project)} today={today} />
           ) : (
             <>
               <div className="mb-2 flex items-center justify-between">
@@ -394,7 +415,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
             {/* 固定ラベル列 */}
             <div className="w-28 shrink-0 pr-2 sm:w-40">
               <div className="mb-2 h-6 border-b border-cream/20" />
-              {rows.map((r) => (
+              {timelineRows.map((r) => (
                 <div
                   key={r.project.id}
                   className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
@@ -426,7 +447,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                     ))}
                 </div>
 
-                <div className="relative" style={{ height: rows.length * ROW_H }}>
+                <div className="relative" style={{ height: timelineRows.length * ROW_H }}>
                   {dayMarks
                     .filter((d) => d % labelStepDays === 0)
                     .map((d) => (
@@ -441,7 +462,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                     className="absolute top-0 bottom-0 border-l-2 border-alert/70"
                     style={{ left: todayIndex * pxPerDay }}
                   />
-                  {rows.map((r, idx) => {
+                  {timelineRows.map((r, idx) => {
                     const top = idx * ROW_H;
                     const left = r.barStart * pxPerDay;
                     const width = Math.max((r.barEnd - r.barStart) * pxPerDay, 3);
