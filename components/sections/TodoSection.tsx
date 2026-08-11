@@ -258,7 +258,13 @@ export default function TodoSection() {
 
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
   const completedTasks = visibleTasks.filter((t) => t.completed);
-  const tasksForTimeline = useMemo(() => visibleTasks.filter((t) => !!t.dueDate), [visibleTasks]);
+  // ガント・カレンダーは既定で未完了のタスクだけを対象にする(一覧の「完了済み」欄と同様、
+  // デフォルトでは埋もれさせない)。トグルで完了済みも重ねて表示できる
+  const [showCompletedInTimeline, setShowCompletedInTimeline] = useState(false);
+  const tasksForTimeline = useMemo(
+    () => visibleTasks.filter((t) => !!t.dueDate && (showCompletedInTimeline || !t.completed)),
+    [visibleTasks, showCompletedInTimeline]
+  );
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
 
@@ -676,6 +682,17 @@ export default function TodoSection() {
                 {m === "list" ? "リスト" : m === "kanban" ? "かんばん" : m === "gantt" ? "ガント" : "カレンダー"}
               </button>
             ))}
+            {(displayMode === "gantt" || displayMode === "calendar") && (
+              <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
+                <input
+                  type="checkbox"
+                  checked={showCompletedInTimeline}
+                  onChange={(e) => setShowCompletedInTimeline(e.target.checked)}
+                  className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+                />
+                完了済みも表示
+              </label>
+            )}
             {currentListId && !searchActive && (
               <button className="text-xs text-alert" onClick={() => deleteList(currentListId)}>
                 このリストを削除
@@ -783,7 +800,11 @@ export default function TodoSection() {
         ) : displayMode === "gantt" ? (
           <div>
             {ganttRows.length === 0 ? (
-              <p className="px-1 py-4 text-sm text-cream/50">期日が設定されたタスクはありません。</p>
+              <p className="px-1 py-4 text-sm text-cream/50">
+                {!showCompletedInTimeline && visibleTasks.some((t) => !!t.dueDate)
+                  ? "表示するタスクがありません（完了済みのみのため。「完了済みも表示」をONにすると見られます）。"
+                  : "期日が設定されたタスクはありません。"}
+              </p>
             ) : (
               <>
                 <div className="mb-2 flex items-center justify-end gap-1">

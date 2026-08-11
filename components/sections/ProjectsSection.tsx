@@ -207,22 +207,10 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     await addToToday(project, project.category, stage.title, stage.id);
   }
 
-  const { rangeStartStr, totalDays, rows } = useMemo(() => {
+  const rows = useMemo(() => {
     const list = projects ?? [];
-    let start = today;
-    let end = today;
-    for (const p of list) {
+    return list.map((p) => {
       const createdStr = todayStr(new Date(p.createdAt));
-      if (createdStr < start) start = createdStr;
-      if (p.dueDate < start) start = p.dueDate;
-      if (p.dueDate > end) end = p.dueDate;
-    }
-    end = todayStr(new Date(new Date(end + "T00:00:00").getTime() + 2 * 86400000));
-    const total = Math.max(daysBetweenDateStrs(start, end), 1);
-    const computedRows = list.map((p) => {
-      const createdStr = todayStr(new Date(p.createdAt));
-      const barStart = daysBetweenDateStrs(start, createdStr);
-      const barEnd = daysBetweenDateStrs(start, p.dueDate);
       const overdue = !p.completedAt && p.dueDate < today;
       const daysLeft = daysBetweenDateStrs(today, p.dueDate);
       // 消化ペースの簡易判定: 想定工数が無いため「経過日数のうち何割の日に着手できているか」で代用する
@@ -230,9 +218,8 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
       const daysElapsed = Math.max(1, daysBetweenDateStrs(createdStr, today) + 1);
       const workDays = projectWorkDays.get(p.id)?.size ?? 0;
       const paceWarning = !p.completedAt && daysLeft <= 3 && daysLeft >= 0 && workDays / daysElapsed < 0.3;
-      return { project: p, barStart, barEnd: Math.max(barEnd, barStart), overdue, daysLeft, paceWarning };
+      return { project: p, createdStr, overdue, daysLeft, paceWarning };
     });
-    return { rangeStartStr: start, totalDays: total, rows: computedRows };
   }, [projects, today, projectWorkDays]);
 
   const activeRows = useMemo(() => rows.filter((r) => !r.project.completedAt), [rows]);
@@ -241,10 +228,31 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   // ガントチャート・カレンダーは既定で未完了の案件だけを表示する(一覧の「完了済み」欄と同様、
   // デフォルトでは埋もれさせない)。トグルで完了済みも重ねて表示できる
   const [showCompletedInTimeline, setShowCompletedInTimeline] = useState(false);
-  const timelineRows = useMemo(
+  const timelineSourceRows = useMemo(
     () => (showCompletedInTimeline ? rows : activeRows),
     [rows, activeRows, showCompletedInTimeline]
   );
+
+  // ガントチャートの表示範囲(左端の日付・全体日数、「一番古い期日」の基準位置)は、実際にチャートへ
+  // 表示される案件(showCompletedInTimelineの設定に従う)だけを対象に計算する。完了済みを
+  // 非表示にしている間は、非表示の完了済み案件の古い期日に範囲や基準位置が引きずられないようにする
+  const { rangeStartStr, totalDays, timelineRows } = useMemo(() => {
+    let start = today;
+    let end = today;
+    for (const r of timelineSourceRows) {
+      if (r.createdStr < start) start = r.createdStr;
+      if (r.project.dueDate < start) start = r.project.dueDate;
+      if (r.project.dueDate > end) end = r.project.dueDate;
+    }
+    end = todayStr(new Date(new Date(end + "T00:00:00").getTime() + 2 * 86400000));
+    const total = Math.max(daysBetweenDateStrs(start, end), 1);
+    const computedTimelineRows = timelineSourceRows.map((r) => {
+      const barStart = daysBetweenDateStrs(start, r.createdStr);
+      const barEnd = daysBetweenDateStrs(start, r.project.dueDate);
+      return { ...r, barStart, barEnd: Math.max(barEnd, barStart) };
+    });
+    return { rangeStartStr: start, totalDays: total, timelineRows: computedTimelineRows };
+  }, [timelineSourceRows, today]);
 
   const todayIndex = daysBetweenDateStrs(rangeStartStr, today);
   const dayMarks = Array.from({ length: totalDays + 1 }, (_, i) => i);
