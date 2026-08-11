@@ -1706,6 +1706,15 @@ export default function TodaySection() {
                   )}
                   <div className="text-xs text-cream/50">
                     予定 {formatMsClock(estMs)}
+                    {task.estimatedSeconds === 0 &&
+                      (allMasterTasks ?? []).find((m) => m.id === task.masterTaskId)?.estimatedSeconds ? (
+                        <span
+                          className="ml-1 text-cream/40"
+                          title="同じ作業が今日すでに登録されていて、その合計がマスタの想定時間を超えているため、今日の残り想定時間が0になっています"
+                        >
+                          （今日の想定時間を使い切りました）
+                        </span>
+                      ) : null}
                     {projectedFinishByTaskId.has(task.id) && (
                       <span className="ml-2 text-cream/70">
                         終了予定 {formatClock(projectedFinishByTaskId.get(task.id)!)}
