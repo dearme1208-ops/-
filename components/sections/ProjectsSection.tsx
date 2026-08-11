@@ -72,6 +72,17 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     return map;
   }, [records]);
 
+  // 段階ごとの累計作業時間（未完了の段階でも、これまで記録した時間を確認できるようにする）
+  const stageSeconds = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of records ?? []) {
+      if (!r.projectId || !r.stageId) continue;
+      const key = `${r.projectId}::${r.stageId}`;
+      map.set(key, (map.get(key) ?? 0) + r.seconds);
+    }
+    return map;
+  }, [records]);
+
   // 案件ごとに実績が記録されている日数（消化ペースの簡易指標に使う）
   const projectWorkDays = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -147,7 +158,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     }
   }
 
-  async function addToToday(item: ProjectItem, category: string, workName: string) {
+  async function addToToday(item: ProjectItem, category: string, workName: string, stageId?: string) {
     const master = await findOrCreateMasterTask(category, workName, 0);
     const estimatedSeconds = await computeRemainingEstimatedSeconds(
       today,
@@ -169,6 +180,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
       accumulatedMs: 0,
       isSpontaneous: true,
       projectId: item.id,
+      stageId,
     };
     await db.dailyTasks.add(task);
     onAddedToToday?.();
@@ -186,7 +198,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
       `本日の作業に追加します。\n\n業務区分（大項目）: ${project.category || project.title}\n詳細作業名: ${stage.title}\n\nよろしいですか?`
     );
     if (!ok) return;
-    await addToToday(project, project.category, stage.title);
+    await addToToday(project, project.category, stage.title, stage.id);
   }
 
   const { rangeStartStr, totalDays, rows } = useMemo(() => {
@@ -334,6 +346,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
             paceWarning={paceWarning}
             totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
             hourlyRate={resolveProjectRate(project)}
+            stageSecondsFor={(stageId) => stageSeconds.get(`${project.id}::${stageId}`) ?? 0}
             onAddToToday={() => setAddToTodayTarget(project)}
             onToggleComplete={() => toggleComplete(project)}
             onEdit={() => setEditingProject(project)}
@@ -368,6 +381,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                   daysLeft={daysLeft}
                   totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
                   hourlyRate={resolveProjectRate(project)}
+                  stageSecondsFor={(stageId) => stageSeconds.get(`${project.id}::${stageId}`) ?? 0}
                   onAddToToday={() => setAddToTodayTarget(project)}
                   onToggleComplete={() => toggleComplete(project)}
                   onEdit={() => setEditingProject(project)}
@@ -594,6 +608,7 @@ function ProjectRow({
   paceWarning,
   totalSeconds,
   hourlyRate,
+  stageSecondsFor,
   onAddToToday,
   onToggleComplete,
   onEdit,
@@ -607,6 +622,7 @@ function ProjectRow({
   paceWarning?: boolean;
   totalSeconds: number;
   hourlyRate: number | null;
+  stageSecondsFor: (stageId: string) => number;
   onAddToToday: () => void;
   onToggleComplete: () => void;
   onEdit: () => void;
@@ -649,32 +665,43 @@ function ProjectRow({
               />
             </div>
             <div className="mt-1.5 space-y-1">
-              {project.stages.map((stage) => (
-                <div key={stage.id} className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => onToggleStage(stage.id)}
-                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
-                      stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-                    }`}
-                    aria-label={stage.completed ? "未完了に戻す" : "完了にする"}
-                  >
-                    {stage.completed ? "✓" : ""}
-                  </button>
-                  <span className={`flex-1 truncate text-[11px] ${stage.completed ? "text-cream/40 line-through" : "text-cream/80"}`}>
-                    {stage.title}
-                  </span>
-                  {stage.dueDate && (
-                    <span className="shrink-0 text-[10px] text-cream/40">{stage.dueDate}</span>
-                  )}
-                  <button
-                    onClick={() => onAddStageToToday(stage)}
-                    className="btn-pill-outline shrink-0 px-2.5 py-1 text-xs"
-                    title="この段階を本日の作業に追加"
-                  >
-                    ＋本日
-                  </button>
-                </div>
-              ))}
+              {project.stages.map((stage) => {
+                const seconds = stageSecondsFor(stage.id);
+                return (
+                  <div key={stage.id} className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => onToggleStage(stage.id)}
+                      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
+                        stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+                      }`}
+                      aria-label={stage.completed ? "未完了に戻す" : "完了にする"}
+                    >
+                      {stage.completed ? "✓" : ""}
+                    </button>
+                    <span className={`flex-1 truncate text-[11px] ${stage.completed ? "text-cream/40 line-through" : "text-cream/80"}`}>
+                      {stage.title}
+                    </span>
+                    {seconds > 0 && (
+                      <span
+                        className="shrink-0 text-[10px] tabular-nums text-cream/40"
+                        title={stage.completed ? "この段階に費やした累計作業時間" : "この段階にこれまで費やした作業時間（未完了）"}
+                      >
+                        {formatHms(seconds)}
+                      </span>
+                    )}
+                    {stage.dueDate && (
+                      <span className="shrink-0 text-[10px] text-cream/40">{stage.dueDate}</span>
+                    )}
+                    <button
+                      onClick={() => onAddStageToToday(stage)}
+                      className="btn-pill-outline shrink-0 px-2.5 py-1 text-xs"
+                      title="この段階を本日の作業に追加"
+                    >
+                      ＋本日
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

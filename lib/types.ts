@@ -61,6 +61,7 @@ export interface DailyTask {
   overrunPromptDismissedAt?: number;
   isProvisional?: boolean; // 未計測時間の自動仮計測タスク（作業未割り当て）
   projectId?: string; // 案件から追加された場合、その案件のID
+  stageId?: string; // 案件の段階（マイルストーン）から追加された場合、その段階のID
   isTrouble?: boolean; // トラブル対応タスクかどうか
   resumeTaskIds?: string[]; // 中断した（一時停止させられた）作業のID一覧。この作業の完了時にまとめて再開する
   note?: string; // 完了時の一言メモ
@@ -82,6 +83,7 @@ export interface WorkRecord {
   excludeReason?: "auto-iqr" | "manual";
   manualOverride?: boolean; // true = ユーザーが除外/復活を手動指定済み。自動IQR判定の対象外
   projectId?: string; // 案件から追加された作業の場合、その案件のID
+  stageId?: string; // 案件の段階（マイルストーン）から追加された作業の場合、その段階のID
   isTrouble?: boolean; // トラブル対応の実績かどうか。詳細作業名が実績ごとに異なるため、
   // ランキング等の集計では詳細作業名を無視し、大項目でひとつにまとめて集計する
   note?: string; // 作業完了時の一言メモ（複数の実績が合算された場合は最後に編集したメモで上書きされる）

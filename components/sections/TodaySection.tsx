@@ -49,6 +49,7 @@ export default function TodaySection() {
   const scheduleFileInputRef = useRef<HTMLInputElement>(null);
   const [notifPermission, setNotifPermission] = useState<string>("default");
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
+  const [stageConfirmTask, setStageConfirmTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
   const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
@@ -974,7 +975,7 @@ export default function TodaySection() {
     const existingNew = await db.records
       .where("date")
       .equals(task.date)
-      .filter((r) => r.masterTaskId === newMaster.id && r.projectId === task.projectId)
+      .filter((r) => r.masterTaskId === newMaster.id && r.projectId === task.projectId && r.stageId === task.stageId)
       .first();
     if (existingNew) {
       await db.records.update(existingNew.id, {
@@ -994,6 +995,7 @@ export default function TodaySection() {
         endedAt: newEndedAt,
         excludedFromStats: false,
         projectId: task.projectId,
+        stageId: task.stageId,
         isTrouble: task.isTrouble,
         note,
       });
@@ -1076,7 +1078,7 @@ export default function TodaySection() {
     const existing = await db.records
       .where("date")
       .equals(date)
-      .filter((r) => r.masterTaskId === masterTaskId && r.projectId === task.projectId)
+      .filter((r) => r.masterTaskId === masterTaskId && r.projectId === task.projectId && r.stageId === task.stageId)
       .first();
 
     if (existing) {
@@ -1097,12 +1099,22 @@ export default function TodaySection() {
         endedAt: nowMs,
         excludedFromStats: false,
         projectId: task.projectId,
+        stageId: task.stageId,
         isTrouble: task.isTrouble,
       });
     }
 
     await recomputeEstimateFromRecords(masterTaskId);
     if (overrunTask?.id === task.id) setOverrunTask(null);
+  }
+
+  // 案件の段階から追加された作業を完了させた場合、その段階自体も完了とみなせるか確認する
+  // （まだ続く場合は確認せず、作業時間の記録だけ残す）
+  function maybePromptStageConfirm(task: DailyTask) {
+    if (!task.stageId || !task.projectId) return;
+    const project = projectMap.get(task.projectId);
+    const stage = project?.stages?.find((s) => s.id === task.stageId);
+    if (stage && !stage.completed) setStageConfirmTask(task);
   }
 
   async function finishTask(task: DailyTask) {
@@ -1115,6 +1127,7 @@ export default function TodaySection() {
     const segmentsMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
     const accumulatedMs = segmentsMs + (task.manualAdjustmentMs ?? 0);
     await commitFinish(task, segments, accumulatedMs);
+    maybePromptStageConfirm(task);
     // トラブル対応・予定の自動差し込みなどで中断した作業（仮計測含む、複数ある場合も全て）を自動的に再開する
     if (task.resumeTaskIds && task.resumeTaskIds.length > 0) {
       for (const id of task.resumeTaskIds) {
@@ -1174,6 +1187,7 @@ export default function TodaySection() {
     const startedAt = nowMs - manualSeconds * 1000;
     const segments: TimeSegment[] = [{ start: startedAt, end: nowMs }];
     await commitFinish(task, segments, manualSeconds * 1000, startedAt);
+    maybePromptStageConfirm(task);
   }
 
   // 体調を記録する。その時点で計測中の作業があれば一緒に紐付けて残す
@@ -1981,6 +1995,38 @@ export default function TodaySection() {
           </div>
         </Modal>
       )}
+
+      {stageConfirmTask &&
+        (() => {
+          const project = stageConfirmTask.projectId ? projectMap.get(stageConfirmTask.projectId) : undefined;
+          const stage = project?.stages?.find((s) => s.id === stageConfirmTask.stageId);
+          if (!project || !stage) return null;
+          return (
+            <Modal title="段階の完了確認" onClose={() => setStageConfirmTask(null)}>
+              <p className="mb-1 text-sm text-cream/80">「{stageConfirmTask.name}」の作業を完了しました。</p>
+              <p className="mb-4 text-sm text-cream/80">
+                案件「{project.title}」の段階「{stage.title}」はこれで完了ですか?
+              </p>
+              <div className="flex justify-end gap-2">
+                <button className="btn-pill-outline text-sm" onClick={() => setStageConfirmTask(null)}>
+                  まだ続く（時間だけ記録）
+                </button>
+                <button
+                  className="btn-pill text-sm"
+                  onClick={async () => {
+                    const stages = (project.stages ?? []).map((s) =>
+                      s.id === stage.id ? { ...s, completed: true } : s
+                    );
+                    await db.projects.update(project.id, { stages });
+                    setStageConfirmTask(null);
+                  }}
+                >
+                  この段階を完了にする
+                </button>
+              </div>
+            </Modal>
+          );
+        })()}
     </div>
   );
 }
