@@ -34,6 +34,7 @@ import AddTimeDialog from "@/components/sections/AddTimeDialog";
 import EditTaskDialog from "@/components/sections/EditTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
+import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
@@ -1346,6 +1347,13 @@ export default function TodaySection() {
           </button>
         </div>
       )}
+      <TodayStatusPanel
+        tasks={tasks ?? []}
+        conditionLogs={conditionLogs ?? []}
+        now={now}
+        standardWorkStart={standardWorkStart}
+        standardWorkEnd={standardWorkEnd}
+      />
       {conditionEnabled && (
         <div className="panel p-4">
           <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
