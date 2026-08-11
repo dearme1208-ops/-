@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { db } from "@/lib/db";
-import type { ProjectItem } from "@/lib/types";
+import { db, uid } from "@/lib/db";
+import type { ProjectItem, ProjectStage } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
 export default function EditProjectDialog({ project, onClose }: { project: ProjectItem; onClose: () => void }) {
@@ -11,6 +11,20 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   const [workName, setWorkName] = useState(project.workName);
   const [dueDate, setDueDate] = useState(project.dueDate);
   const [hourlyRateStr, setHourlyRateStr] = useState(project.hourlyRate?.toString() ?? "");
+  const [stages, setStages] = useState<ProjectStage[]>(project.stages ?? []);
+  const [newStageTitle, setNewStageTitle] = useState("");
+
+  function addStage() {
+    if (!newStageTitle.trim()) return;
+    setStages((prev) => [...prev, { id: uid(), title: newStageTitle.trim(), completed: false }]);
+    setNewStageTitle("");
+  }
+  function toggleStage(id: string) {
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, completed: !s.completed } : s)));
+  }
+  function removeStage(id: string) {
+    setStages((prev) => prev.filter((s) => s.id !== id));
+  }
 
   async function save() {
     if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) return;
@@ -21,6 +35,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       workName: workName.trim(),
       dueDate,
       hourlyRate: hourlyRateStr.trim() !== "" && Number.isFinite(rate) && rate >= 0 ? rate : undefined,
+      stages,
     });
     onClose();
   }
@@ -68,6 +83,49 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
             className="w-28 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-right text-sm text-cream"
           />
           <span className="text-xs text-cream/60">円/時間</span>
+        </div>
+        <div className="border-t border-cream/10 pt-2">
+          <h4 className="mb-1.5 text-xs font-bold text-cream/70">
+            段階（マイルストーン）
+            {stages.length > 0 && (
+              <span className="ml-2 font-normal text-cream/50">
+                {stages.filter((s) => s.completed).length}/{stages.length}完了（
+                {Math.round((stages.filter((s) => s.completed).length / stages.length) * 100)}%）
+              </span>
+            )}
+          </h4>
+          <div className="space-y-1.5">
+            {stages.map((stage) => (
+              <div key={stage.id} className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
+                <button
+                  onClick={() => toggleStage(stage.id)}
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+                    stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+                  }`}
+                >
+                  {stage.completed ? "✓" : ""}
+                </button>
+                <span className={`flex-1 text-xs text-cream ${stage.completed ? "text-cream/40 line-through" : ""}`}>
+                  {stage.title}
+                </span>
+                <button className="text-cream/40 hover:text-alert" onClick={() => removeStage(stage.id)} aria-label="削除">
+                  ✕
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2">
+              <input
+                value={newStageTitle}
+                onChange={(e) => setNewStageTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addStage()}
+                placeholder="+ 段階を追加（例: 要件定義）"
+                className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+              />
+              <button className="btn-pill-outline text-xs" onClick={addStage}>
+                追加
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <div className="mt-4 flex justify-end gap-2">

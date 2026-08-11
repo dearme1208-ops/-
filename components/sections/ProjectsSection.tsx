@@ -593,6 +593,26 @@ function ProjectRow({
             ⚠ ペースに遅れの可能性
           </div>
         )}
+        {project.stages && project.stages.length > 0 && (
+          <div className="mt-1 max-w-[220px]">
+            <div className="mb-0.5 flex items-center justify-between text-[10px] text-cream/50">
+              <span>
+                進捗 {project.stages.filter((s) => s.completed).length}/{project.stages.length}段階
+              </span>
+              <span className="font-bold tabular-nums text-cream/70">
+                {Math.round((project.stages.filter((s) => s.completed).length / project.stages.length) * 100)}%
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-cream/5">
+              <div
+                className="h-1.5 rounded-full bg-cream"
+                style={{
+                  width: `${Math.round((project.stages.filter((s) => s.completed).length / project.stages.length) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
         {totalSeconds > 0 && (
           <div className="text-xs text-cream/70">
             累計作業時間 <span className="font-bold tabular-nums text-cream">{formatHms(totalSeconds)}</span>

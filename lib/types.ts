@@ -109,6 +109,12 @@ export interface ConditionLog {
   name?: string; // 記録時点で計測中だった作業の詳細作業名
 }
 
+export interface ProjectStage {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
 export interface ProjectItem {
   id: string;
   title: string; // 件名
@@ -120,6 +126,7 @@ export interface ProjectItem {
   fromImport?: boolean; // CSVインポートで作成/更新された案件かどうか。次回インポートで
   // 行が見当たらなくなった場合の自動完了判定はこのフラグが立っている案件だけに適用する
   hourlyRate?: number; // この案件専用の時給/単価（円）。無ければカテゴリ別/デフォルト単価を使う
+  stages?: ProjectStage[]; // 案件を段階（マイルストーン）に分けて進捗管理する場合に使う
 }
 
 // ---- ToDo ----
