@@ -19,6 +19,7 @@ import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
+import { isStageDone } from "@/lib/projectStage";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -1114,7 +1115,7 @@ export default function TodaySection() {
     if (!task.stageId || !task.projectId) return;
     const project = projectMap.get(task.projectId);
     const stage = project?.stages?.find((s) => s.id === task.stageId);
-    if (stage && !stage.completed) setStageConfirmTask(task);
+    if (stage && !isStageDone(stage)) setStageConfirmTask(task);
   }
 
   async function finishTask(task: DailyTask) {
@@ -2001,27 +2002,43 @@ export default function TodaySection() {
           const project = stageConfirmTask.projectId ? projectMap.get(stageConfirmTask.projectId) : undefined;
           const stage = project?.stages?.find((s) => s.id === stageConfirmTask.stageId);
           if (!project || !stage) return null;
+          const isCountBased = stage.targetCount != null;
           return (
-            <Modal title="段階の完了確認" onClose={() => setStageConfirmTask(null)}>
+            <Modal title="段階の進捗確認" onClose={() => setStageConfirmTask(null)}>
               <p className="mb-1 text-sm text-cream/80">「{stageConfirmTask.name}」の作業を完了しました。</p>
-              <p className="mb-4 text-sm text-cream/80">
-                案件「{project.title}」の段階「{stage.title}」はこれで完了ですか?
-              </p>
+              {isCountBased ? (
+                <p className="mb-4 text-sm text-cream/80">
+                  案件「{project.title}」の段階「{stage.title}」は現在{" "}
+                  <span className="font-bold">
+                    {stage.completedCount ?? 0}/{stage.targetCount}件
+                  </span>
+                  です。この作業で1件進めますか?
+                </p>
+              ) : (
+                <p className="mb-4 text-sm text-cream/80">
+                  案件「{project.title}」の段階「{stage.title}」はこれで完了ですか?
+                </p>
+              )}
               <div className="flex justify-end gap-2">
                 <button className="btn-pill-outline text-sm" onClick={() => setStageConfirmTask(null)}>
-                  まだ続く（時間だけ記録）
+                  {isCountBased ? "件数はそのまま（時間だけ記録）" : "まだ続く（時間だけ記録）"}
                 </button>
                 <button
                   className="btn-pill text-sm"
                   onClick={async () => {
-                    const stages = (project.stages ?? []).map((s) =>
-                      s.id === stage.id ? { ...s, completed: true } : s
-                    );
+                    const stages = (project.stages ?? []).map((s) => {
+                      if (s.id !== stage.id) return s;
+                      if (isCountBased) {
+                        const next = Math.min(s.targetCount ?? 0, (s.completedCount ?? 0) + 1);
+                        return { ...s, completedCount: next };
+                      }
+                      return { ...s, completed: true };
+                    });
                     await db.projects.update(project.id, { stages });
                     setStageConfirmTask(null);
                   }}
                 >
-                  この段階を完了にする
+                  {isCountBased ? "1件進める" : "この段階を完了にする"}
                 </button>
               </div>
             </Modal>

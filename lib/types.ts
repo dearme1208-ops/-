@@ -116,6 +116,8 @@ export interface ProjectStage {
   title: string;
   completed: boolean;
   dueDate?: string; // YYYY-MM-DD（任意）
+  targetCount?: number; // 目標件数（見積り10件・チーム移籍20件など、件数で進捗管理したい場合に設定）
+  completedCount?: number; // targetCountを設定した場合の、これまでの完了件数
 }
 
 export interface ProjectItem {

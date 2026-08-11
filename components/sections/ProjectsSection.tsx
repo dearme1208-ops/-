@@ -9,6 +9,7 @@ import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
 import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
+import { computeProjectProgress, isStageDone } from "@/lib/projectStage";
 import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem, ProjectStage } from "@/lib/types";
@@ -194,8 +195,10 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   // 段階を本日の作業に追加する前に、案件の業務区分(大項目)を引き継ぎ、
   // 詳細作業名にはこの段階名がそのまま入ることを明示してから確認する
   async function addStageToTodayWithConfirm(project: ProjectItem, stage: ProjectStage) {
+    const countNote =
+      stage.targetCount != null ? `\n件数: ${stage.completedCount ?? 0}/${stage.targetCount}件（完了時に1件進みます）` : "";
     const ok = confirm(
-      `本日の作業に追加します。\n\n業務区分（大項目）: ${project.category || project.title}\n詳細作業名: ${stage.title}\n\nよろしいですか?`
+      `本日の作業に追加します。\n\n業務区分（大項目）: ${project.category || project.title}\n詳細作業名: ${stage.title}${countNote}\n\nよろしいですか?`
     );
     if (!ok) return;
     await addToToday(project, project.category, stage.title, stage.id);
@@ -499,8 +502,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                     const top = idx * ROW_H;
                     const left = r.barStart * pxPerDay;
                     const width = Math.max((r.barEnd - r.barStart) * pxPerDay, 3);
-                    const stages = r.project.stages ?? [];
-                    const progressPct = stages.length > 0 ? stages.filter((s) => s.completed).length / stages.length : null;
+                    const progressPct = computeProjectProgress(r.project.stages);
                     return (
                       <div key={r.project.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
                         <div
@@ -649,42 +651,57 @@ function ProjectRow({
         {project.stages && project.stages.length > 0 && (
           <div className="mt-1 max-w-[220px]">
             <div className="mb-0.5 flex items-center justify-between text-[10px] text-cream/50">
-              <span>
-                進捗 {project.stages.filter((s) => s.completed).length}/{project.stages.length}段階
-              </span>
+              <span>進捗 {project.stages.length}段階</span>
               <span className="font-bold tabular-nums text-cream/70">
-                {Math.round((project.stages.filter((s) => s.completed).length / project.stages.length) * 100)}%
+                {Math.round((computeProjectProgress(project.stages) ?? 0) * 100)}%
               </span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-cream/5">
               <div
                 className="h-1.5 rounded-full bg-cream"
                 style={{
-                  width: `${Math.round((project.stages.filter((s) => s.completed).length / project.stages.length) * 100)}%`,
+                  width: `${Math.round((computeProjectProgress(project.stages) ?? 0) * 100)}%`,
                 }}
               />
             </div>
             <div className="mt-1.5 space-y-1">
               {project.stages.map((stage) => {
                 const seconds = stageSecondsFor(stage.id);
+                const isCountBased = stage.targetCount != null;
+                const done = isStageDone(stage);
                 return (
                   <div key={stage.id} className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => onToggleStage(stage.id)}
-                      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
-                        stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-                      }`}
-                      aria-label={stage.completed ? "未完了に戻す" : "完了にする"}
-                    >
-                      {stage.completed ? "✓" : ""}
-                    </button>
-                    <span className={`flex-1 truncate text-[11px] ${stage.completed ? "text-cream/40 line-through" : "text-cream/80"}`}>
+                    {isCountBased ? (
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
+                          done ? "border-cream bg-cream text-ink" : "border-cream/40"
+                        }`}
+                      >
+                        {done ? "✓" : ""}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => onToggleStage(stage.id)}
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
+                          stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+                        }`}
+                        aria-label={stage.completed ? "未完了に戻す" : "完了にする"}
+                      >
+                        {stage.completed ? "✓" : ""}
+                      </button>
+                    )}
+                    <span className={`flex-1 truncate text-[11px] ${done ? "text-cream/40 line-through" : "text-cream/80"}`}>
                       {stage.title}
                     </span>
+                    {isCountBased && (
+                      <span className="shrink-0 text-[10px] font-bold tabular-nums text-cream/70">
+                        {stage.completedCount ?? 0}/{stage.targetCount}件
+                      </span>
+                    )}
                     {seconds > 0 && (
                       <span
                         className="shrink-0 text-[10px] tabular-nums text-cream/40"
-                        title={stage.completed ? "この段階に費やした累計作業時間" : "この段階にこれまで費やした作業時間（未完了）"}
+                        title={done ? "この段階に費やした累計作業時間" : "この段階にこれまで費やした作業時間（未完了）"}
                       >
                         {formatHms(seconds)}
                       </span>

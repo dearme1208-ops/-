@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { db, uid } from "@/lib/db";
 import type { ProjectItem, ProjectStage } from "@/lib/types";
+import { computeProjectProgress } from "@/lib/projectStage";
 import Modal from "@/components/ui/Modal";
 
 export default function EditProjectDialog({ project, onClose }: { project: ProjectItem; onClose: () => void }) {
@@ -13,11 +14,23 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   const [hourlyRateStr, setHourlyRateStr] = useState(project.hourlyRate?.toString() ?? "");
   const [stages, setStages] = useState<ProjectStage[]>(project.stages ?? []);
   const [newStageTitle, setNewStageTitle] = useState("");
+  const [newStageTargetCount, setNewStageTargetCount] = useState("");
 
   function addStage() {
     if (!newStageTitle.trim()) return;
-    setStages((prev) => [...prev, { id: uid(), title: newStageTitle.trim(), completed: false }]);
+    const target = Number(newStageTargetCount);
+    const hasTarget = newStageTargetCount.trim() !== "" && Number.isFinite(target) && target > 0;
+    setStages((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        title: newStageTitle.trim(),
+        completed: false,
+        ...(hasTarget ? { targetCount: target, completedCount: 0 } : {}),
+      },
+    ]);
     setNewStageTitle("");
+    setNewStageTargetCount("");
   }
   function toggleStage(id: string) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, completed: !s.completed } : s)));
@@ -27,6 +40,24 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   }
   function setStageDueDate(id: string, value: string) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, dueDate: value || undefined } : s)));
+  }
+  function setStageCompletedCount(id: string, value: string) {
+    const n = Math.max(0, Math.round(Number(value)));
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, completedCount: Number.isFinite(n) ? n : 0 } : s)));
+  }
+  function setStageTargetCount(id: string, value: string) {
+    const trimmed = value.trim();
+    setStages((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        if (trimmed === "") {
+          const { targetCount, completedCount, ...rest } = s;
+          return rest;
+        }
+        const n = Math.max(1, Math.round(Number(trimmed)));
+        return { ...s, targetCount: Number.isFinite(n) ? n : undefined, completedCount: s.completedCount ?? 0 };
+      })
+    );
   }
 
   async function save() {
@@ -92,36 +123,80 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
             段階（マイルストーン）
             {stages.length > 0 && (
               <span className="ml-2 font-normal text-cream/50">
-                {stages.filter((s) => s.completed).length}/{stages.length}完了（
-                {Math.round((stages.filter((s) => s.completed).length / stages.length) * 100)}%）
+                進捗 {Math.round((computeProjectProgress(stages) ?? 0) * 100)}%
               </span>
             )}
           </h4>
           <div className="space-y-1.5">
-            {stages.map((stage) => (
-              <div key={stage.id} className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
-                <button
-                  onClick={() => toggleStage(stage.id)}
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-                    stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-                  }`}
-                >
-                  {stage.completed ? "✓" : ""}
-                </button>
-                <span className={`flex-1 text-xs text-cream ${stage.completed ? "text-cream/40 line-through" : ""}`}>
-                  {stage.title}
-                </span>
-                <input
-                  type="date"
-                  value={stage.dueDate ?? ""}
-                  onChange={(e) => setStageDueDate(stage.id, e.target.value)}
-                  className="w-32 shrink-0 rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
-                />
-                <button className="text-cream/40 hover:text-alert" onClick={() => removeStage(stage.id)} aria-label="削除">
-                  ✕
-                </button>
-              </div>
-            ))}
+            {stages.map((stage) => {
+              const isCountBased = stage.targetCount != null;
+              const isDone = isCountBased
+                ? (stage.completedCount ?? 0) >= (stage.targetCount ?? 0)
+                : stage.completed;
+              return (
+                <div key={stage.id} className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
+                  {!isCountBased && (
+                    <button
+                      onClick={() => toggleStage(stage.id)}
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+                        stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+                      }`}
+                    >
+                      {stage.completed ? "✓" : ""}
+                    </button>
+                  )}
+                  {isCountBased && (
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+                        isDone ? "border-cream bg-cream text-ink" : "border-cream/40"
+                      }`}
+                    >
+                      {isDone ? "✓" : ""}
+                    </span>
+                  )}
+                  <span className={`flex-1 text-xs text-cream ${isDone ? "text-cream/40 line-through" : ""}`}>
+                    {stage.title}
+                  </span>
+                  {isCountBased ? (
+                    <div className="flex shrink-0 items-center gap-1 text-[11px] text-cream/70">
+                      <input
+                        type="number"
+                        min={0}
+                        value={stage.completedCount ?? 0}
+                        onChange={(e) => setStageCompletedCount(stage.id, e.target.value)}
+                        className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
+                      />
+                      <span>/</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={stage.targetCount ?? ""}
+                        onChange={(e) => setStageTargetCount(stage.id, e.target.value)}
+                        className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
+                      />
+                      <span>件</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setStageTargetCount(stage.id, "1")}
+                      className="shrink-0 text-[10px] text-cream/40 hover:text-cream"
+                      title="この段階を件数（見積り件数など）で進捗管理する"
+                    >
+                      件数管理にする
+                    </button>
+                  )}
+                  <input
+                    type="date"
+                    value={stage.dueDate ?? ""}
+                    onChange={(e) => setStageDueDate(stage.id, e.target.value)}
+                    className="w-32 shrink-0 rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
+                  />
+                  <button className="text-cream/40 hover:text-alert" onClick={() => removeStage(stage.id)} aria-label="削除">
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
             <div className="flex items-center gap-2">
               <input
                 value={newStageTitle}
@@ -130,10 +205,22 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
                 placeholder="+ 段階を追加（例: 要件定義）"
                 className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
               />
+              <input
+                type="number"
+                min={1}
+                value={newStageTargetCount}
+                onChange={(e) => setNewStageTargetCount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addStage()}
+                placeholder="目標件数(任意)"
+                className="w-24 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+              />
               <button className="btn-pill-outline text-xs" onClick={addStage}>
                 追加
               </button>
             </div>
+            <p className="text-[10px] text-cream/40">
+              目標件数を入力すると、見積り件数・チーム移籍数のように「件数」で進捗を管理できます（未入力ならチェックのみの通常の段階になります）。
+            </p>
           </div>
         </div>
       </div>
