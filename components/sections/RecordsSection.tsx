@@ -45,6 +45,13 @@ export default function RecordsSection() {
       const newName = (patch.name ?? r.name).trim();
       if (masterEditMode === "rename") {
         await db.masterTasks.update(r.masterTaskId, { category: newCategory, name: newName, updatedAt: Date.now() });
+        // マスタ自体をリネームする設定の場合、同じマスタに紐づく他の実績も
+        // 表示上の名称・区分を新しいものに揃える(この実績自身への反映は下のupdateで行う)
+        await db.records
+          .where("masterTaskId")
+          .equals(r.masterTaskId)
+          .filter((other) => other.id !== r.id)
+          .modify({ category: newCategory, name: newName });
       } else {
         const master = await findOrCreateMasterTask(newCategory, newName, 0);
         if (master.id !== r.masterTaskId) {

@@ -948,6 +948,9 @@ export default function TodaySection() {
     if (masterEditMode === "rename") {
       if (oldMasterId) {
         await db.masterTasks.update(oldMasterId, { category, name, updatedAt: Date.now() });
+        // マスタ自体をリネームする設定の場合、同じマスタに紐づく他の日の実績も
+        // 表示上の名称・区分を新しいものに揃える(設定画面の説明通りの挙動にする)
+        await db.records.where("masterTaskId").equals(oldMasterId).modify({ category, name });
       }
       if (existingOld) {
         await db.records.update(existingOld.id, {
