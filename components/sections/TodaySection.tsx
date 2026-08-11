@@ -851,6 +851,17 @@ export default function TodaySection() {
     setPendingStart(null);
   }
 
+  // 指定した作業より前(order昇順)で、直近に完了した作業の終了時刻を返す。
+  // 完了作業の時刻編集ダイアログで「前の作業の終了時刻を開始時刻に使う」ための参照値
+  function findPreviousTaskEndedAt(task: DailyTask): number | null {
+    const candidates = (tasks ?? []).filter(
+      (t) => t.id !== task.id && !t.isProvisional && t.order < task.order && t.endedAt !== undefined
+    );
+    if (candidates.length === 0) return null;
+    const prev = candidates.reduce((a, b) => (b.order > a.order ? b : a));
+    return prev.endedAt ?? null;
+  }
+
   // 作業内容の編集を保存する。完了済み(done)の場合は、既に作成済みの実績(WorkRecord)にも反映する。
   // 同じ区分/作業名の実績は日付ごとに1件へ合算されているため、実績時間の変更は差分(delta)を
   // その実績にそのまま加減することで、他の作業から合算された分にも影響を与えず正しく反映できる。
@@ -1901,6 +1912,7 @@ export default function TodaySection() {
       {editingTask && (
         <EditTaskDialog
           task={editingTask}
+          previousTaskEndedAt={findPreviousTaskEndedAt(editingTask)}
           onSave={(category, name, actualSeconds, note, startedAt, endedAt) =>
             applyTaskEdit(editingTask, category, name, actualSeconds, note, startedAt, endedAt)
           }

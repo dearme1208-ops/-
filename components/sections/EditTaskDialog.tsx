@@ -17,10 +17,12 @@ function toEpoch(date: string, hm: string): number {
 
 export default function EditTaskDialog({
   task,
+  previousTaskEndedAt,
   onSave,
   onClose,
 }: {
   task: DailyTask;
+  previousTaskEndedAt?: number | null;
   onSave: (
     category: string,
     name: string,
@@ -119,6 +121,19 @@ export default function EditTaskDialog({
                 }}
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
+              {previousTaskEndedAt != null && (
+                <button
+                  type="button"
+                  className="btn-pill-outline text-xs"
+                  title="直前に完了した作業の終了時刻を開始時刻として使います"
+                  onClick={() => {
+                    setStartTime(formatClock(previousTaskEndedAt));
+                    setStartTouched(true);
+                  }}
+                >
+                  前の作業の終了({formatClock(previousTaskEndedAt)})を使う
+                </button>
+              )}
               <span className="text-cream/50">〜</span>
               <input
                 type="time"
