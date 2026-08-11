@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
-import { computeTodayNarrative } from "@/lib/narrative";
+import { computeTodayNarrative, computeTodaySummarySentence } from "@/lib/narrative";
 import { formatHms, parseHourStr } from "@/lib/time";
 import type { ConditionLog, DailyTask } from "@/lib/types";
 import DonutChart from "@/components/charts/DonutChart";
@@ -67,7 +67,11 @@ export default function TodayStatusPanel({
     return [...map.entries()].map(([label, value]) => ({ label, value }));
   }, [realTasks, now]);
 
-  const narrativeLines = useMemo(() => computeTodayNarrative(realTasks, conditionLogs, now), [realTasks, conditionLogs, now]);
+  const narrativeItems = useMemo(() => computeTodayNarrative(realTasks, conditionLogs, now), [realTasks, conditionLogs, now]);
+  const summarySentence = useMemo(
+    () => computeTodaySummarySentence(realTasks, conditionLogs, now),
+    [realTasks, conditionLogs, now]
+  );
 
   if (totalCount === 0) return null;
 
@@ -119,11 +123,36 @@ export default function TodayStatusPanel({
       )}
 
       {showNarrative && (
-        <div className="space-y-1 border-t border-cream/10 pt-3 text-xs text-cream/70">
-          {narrativeLines.length === 0 ? (
-            <p className="text-cream/50">まだ今日の記録はありません。</p>
-          ) : (
-            narrativeLines.map((line, i) => <p key={i}>{line}</p>)
+        <div className="space-y-3 border-t border-cream/10 pt-3">
+          <p className="text-sm font-bold text-cream">{summarySentence}</p>
+          {narrativeItems.length > 0 && (
+            <div className="ml-2 space-y-3 border-l border-cream/15 pl-5">
+              {narrativeItems.map((item, i) => (
+                <div key={i} className="relative">
+                  <span
+                    className={`absolute -left-[27px] top-0 flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                      item.type === "gap"
+                        ? "border border-dashed border-cream/25 bg-ink text-cream/40"
+                        : "border border-cream/30 bg-ink"
+                    }`}
+                  >
+                    {item.icon}
+                  </span>
+                  <div
+                    className={
+                      item.type === "gap"
+                        ? "text-xs italic text-cream/40"
+                        : item.type === "condition"
+                          ? "text-xs text-cream/60"
+                          : "text-xs text-cream"
+                    }
+                  >
+                    <div className={item.type === "task" ? "font-bold" : ""}>{item.title}</div>
+                    {item.subtitle && <div className="text-[10px] tabular-nums text-cream/40">{item.subtitle}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
