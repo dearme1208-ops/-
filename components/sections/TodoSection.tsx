@@ -84,6 +84,9 @@ export default function TodoSection() {
   const scrollRef = useRef<HTMLDivElement>(null);
   // このタグが選択されたタスクは自動的に重要にする（設定タブで変更可能。空なら無効）
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
+  // ガントチャートを開いた際の初期表示位置。「今日」を基準にするか、登録されている
+  // 一番古い期日（開始日/作成日）を基準にするかを選べるようにする
+  const [ganttAnchor, setGanttAnchor] = useSetting("todo.ganttAnchor", "today");
 
   const today = todayStr();
 
@@ -509,6 +512,15 @@ export default function TodoSection() {
     setPxPerDay(Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, +fit.toFixed(3))));
   }
 
+  // 「今日」を初期位置にする設定の場合、ガントチャート表示時・拡大縮小時に
+  // 今日の位置が見える所までスクロールする(「一番古い期日」の場合は既定の左端=0のままにする)
+  useEffect(() => {
+    if (displayMode !== "gantt") return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = ganttAnchor === "today" ? Math.max(0, ganttTodayIndex * pxPerDay - el.clientWidth / 2) : 0;
+  }, [displayMode, ganttAnchor, ganttTodayIndex, pxPerDay, ganttTotalDays]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
@@ -775,6 +787,20 @@ export default function TodoSection() {
             ) : (
               <>
                 <div className="mb-2 flex items-center justify-end gap-1">
+                  <span className="mr-1 text-xs text-cream/50">初期位置</span>
+                  <button
+                    className={ganttAnchor === "today" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setGanttAnchor("today")}
+                  >
+                    今日
+                  </button>
+                  <button
+                    className={ganttAnchor === "oldest" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setGanttAnchor("oldest")}
+                  >
+                    一番古い期日
+                  </button>
+                  <span className="mx-1 h-4 border-l border-cream/15" />
                   <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
                     －
                   </button>

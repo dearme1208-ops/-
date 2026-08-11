@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
@@ -33,6 +33,9 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   const [dueDate, setDueDate] = useState(todayStr());
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
+  // ガントチャートを開いた際の初期表示位置。「今日」を基準にするか、登録されている
+  // 一番古い期日（案件の中で最も早いcreatedAt/dueDate）を基準にするかを選べるようにする
+  const [ganttAnchor, setGanttAnchor] = useSetting("projects.ganttAnchor", "today");
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
   const [completionReport, setCompletionReport] = useState<{
@@ -260,6 +263,15 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     setPxPerDay(Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, +fit.toFixed(3))));
   }
 
+  // 「今日」を初期位置にする設定の場合、ガントチャート表示時・拡大縮小時に
+  // 今日の位置が見える所までスクロールする(「一番古い期日」の場合は既定の左端=0のままにする)
+  useEffect(() => {
+    if (viewMode !== "gantt") return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = ganttAnchor === "today" ? Math.max(0, todayIndex * pxPerDay - el.clientWidth / 2) : 0;
+  }, [viewMode, ganttAnchor, todayIndex, pxPerDay, totalDays]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap justify-end gap-2">
@@ -432,9 +444,23 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
             <ProjectsCalendarView projects={timelineRows.map((r) => r.project)} today={today} />
           ) : (
             <>
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-display text-base font-bold">期日ガントチャート</h3>
                 <div className="flex items-center gap-1">
+                  <span className="mr-1 text-xs text-cream/50">初期位置</span>
+                  <button
+                    className={ganttAnchor === "today" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setGanttAnchor("today")}
+                  >
+                    今日
+                  </button>
+                  <button
+                    className={ganttAnchor === "oldest" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setGanttAnchor("oldest")}
+                  >
+                    一番古い期日
+                  </button>
+                  <span className="mx-1 h-4 border-l border-cream/15" />
                   <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
                     －
                   </button>
