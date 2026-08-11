@@ -492,11 +492,14 @@ export default function TodoSection() {
     end = todayStr(new Date(new Date(end + "T00:00:00").getTime() + 2 * 86400000));
     const total = Math.max(daysBetweenDateStrs(start, end), 1);
     const rows = list.map((t) => {
+      // 開始日(または作成日)が期日より後になっているタスク(期日を過ぎてから登録された
+      // 期限切れタスク等)でも、バーが開始日側に潰れて期日が見えなくなることがないよう、
+      // 2つの日付のうち早い方・遅い方でバーの左端・右端を決める
       const barStartStr = t.startDate ?? todayStr(new Date(t.createdAt));
-      const barStart = daysBetweenDateStrs(start, barStartStr);
-      const barEnd = daysBetweenDateStrs(start, t.dueDate!);
+      const a = daysBetweenDateStrs(start, barStartStr);
+      const b = daysBetweenDateStrs(start, t.dueDate!);
       const overdue = !t.completed && t.dueDate! < today;
-      return { task: t, barStart, barEnd: Math.max(barEnd, barStart), overdue };
+      return { task: t, barStart: Math.min(a, b), barEnd: Math.max(a, b), overdue };
     });
     return { ganttStart: start, ganttTotalDays: total, ganttRows: rows };
   }, [tasksForTimeline, today]);

@@ -247,9 +247,12 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     end = todayStr(new Date(new Date(end + "T00:00:00").getTime() + 2 * 86400000));
     const total = Math.max(daysBetweenDateStrs(start, end), 1);
     const computedTimelineRows = timelineSourceRows.map((r) => {
-      const barStart = daysBetweenDateStrs(start, r.createdStr);
-      const barEnd = daysBetweenDateStrs(start, r.project.dueDate);
-      return { ...r, barStart, barEnd: Math.max(barEnd, barStart) };
+      // 登録日(createdAt)が期日より後になっている案件(CSVインポート等で、実際の期日より
+      // 後に登録された場合)でも、バーが登録日の位置に潰れて期日側が見えなくなることが
+      // ないよう、2つの日付のうち早い方・遅い方でバーの左端・右端を決める
+      const a = daysBetweenDateStrs(start, r.createdStr);
+      const b = daysBetweenDateStrs(start, r.project.dueDate);
+      return { ...r, barStart: Math.min(a, b), barEnd: Math.max(a, b) };
     });
     return { rangeStartStr: start, totalDays: total, timelineRows: computedTimelineRows };
   }, [timelineSourceRows, today]);
