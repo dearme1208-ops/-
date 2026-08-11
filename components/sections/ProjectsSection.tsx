@@ -179,6 +179,16 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     await db.projects.update(project.id, { stages });
   }
 
+  // 段階を本日の作業に追加する前に、案件の業務区分(大項目)を引き継ぎ、
+  // 詳細作業名にはこの段階名がそのまま入ることを明示してから確認する
+  async function addStageToTodayWithConfirm(project: ProjectItem, stage: ProjectStage) {
+    const ok = confirm(
+      `本日の作業に追加します。\n\n業務区分（大項目）: ${project.category || project.title}\n詳細作業名: ${stage.title}\n\nよろしいですか?`
+    );
+    if (!ok) return;
+    await addToToday(project, project.category, stage.title);
+  }
+
   const { rangeStartStr, totalDays, rows } = useMemo(() => {
     const list = projects ?? [];
     let start = today;
@@ -329,7 +339,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
             onEdit={() => setEditingProject(project)}
             onDelete={() => deleteProject(project)}
             onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
-            onAddStageToToday={(stage) => addToToday(project, project.category, stage.title)}
+            onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
           />
         ))}
         {activeRows.length === 0 && completedRows.length === 0 && (
@@ -363,7 +373,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
                   onEdit={() => setEditingProject(project)}
                   onDelete={() => deleteProject(project)}
                   onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
-                  onAddStageToToday={(stage) => addToToday(project, project.category, stage.title)}
+                  onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
                 />
               ))}
             </div>
@@ -658,7 +668,7 @@ function ProjectRow({
                   )}
                   <button
                     onClick={() => onAddStageToToday(stage)}
-                    className="shrink-0 text-[10px] text-cream/40 hover:text-cream"
+                    className="btn-pill-outline shrink-0 px-2.5 py-1 text-xs"
                     title="この段階を本日の作業に追加"
                   >
                     ＋本日
