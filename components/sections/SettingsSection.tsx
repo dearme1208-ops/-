@@ -688,7 +688,16 @@ export default function SettingsSection() {
           >
             🌻 ぼくのなつやすみ風
           </button>
+          <button
+            className={visualMode === "powerpro" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("powerpro")}
+          >
+            ⚾ パワプロ風
+          </button>
         </div>
+        <p className="text-xs text-cream/50">
+          演出テーマを選ぶと、色や装飾だけでなくアプリ名・タブの呼び名までテーマの世界観のものに総入れ替えされます（例: ぼくのなつやすみ風では「ToDo」が「しゅくだい」に、アプリ名も「なつやすみの しゅくだい」になります）。
+        </p>
         {visualMode === "lobotomy" && (
           <p className="text-xs text-cream/50">
             画面全体にCRT風の走査線・ノイズ、アプリタイトルの色収差グリッチ、パネル四隅のリベット、見出しの走査ブロック装飾が有効になります。予測を大幅に超過した作業には「収容の不安定化」警戒表示（画面端のビネット・横スクロールする警告ティッカー・危険階級バッジ ZAYIN〜ALEPH）が出ます。
@@ -706,7 +715,12 @@ export default function SettingsSection() {
         )}
         {visualMode === "natsuyasumi" && (
           <p className="text-xs text-cream/50">
-            画面全体が暖色の紙焼き写真風ライトテーマに丸ごと反転し、他の演出テーマとは対照的な見た目になります。パネルは角丸の写真カード風、警告は夏の天気（そよ風〜夕立警報）になぞらえたのんびりした表示に変わります。
+            画面全体が暖色の紙焼き写真風ライトテーマに丸ごと反転し、他の演出テーマとは対照的な見た目になります。パネルは角丸の写真カード風、警告は夏の天気（そよ風〜夕立警報）になぞらえたのんびりした表示に変わります。アプリ名は「なつやすみの しゅくだい」、ToDoは「しゅくだい」、ガントチャートは「生活記録表」など、タブの呼び名も総入れ替えされます。
+          </p>
+        )}
+        {visualMode === "powerpro" && (
+          <p className="text-xs text-cream/50">
+            画面全体が白地に緑・紺・金を効かせたスコアボード風ライトテーマに丸ごと反転します。パネルには球場グリーンの太枠、査定ランクのようなメダル型バッジ（G〜S）、球場の芝目模様が入ります。アプリ名は「球団ノート」、ToDoは「伝令メモ」、ガントチャートは「スタメン表」など、タブの呼び名も野球用語に総入れ替えされます。
           </p>
         )}
         {visualMode === "off" && (

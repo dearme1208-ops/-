@@ -3,6 +3,7 @@ import { Oswald, Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 import HeaderArt from "@/components/HeaderArt";
 import BadgeUpdater from "@/components/BadgeUpdater";
+import AppTitle from "@/components/AppTitle";
 
 const oswald = Oswald({
   subsets: ["latin"],
@@ -61,9 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="relative overflow-hidden border-b border-cream/10">
           <HeaderArt />
           <div className="absolute inset-0 flex items-end px-6 pb-3 sm:px-10">
-            <h1 className="app-title font-display text-2xl font-bold tracking-wide text-cream sm:text-3xl" data-text="工程表">
-              工程表
-            </h1>
+            <AppTitle />
           </div>
         </header>
         <main className="mx-auto max-w-6xl px-4 pb-24 pt-4 sm:px-8">{children}</main>

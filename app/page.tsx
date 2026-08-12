@@ -13,6 +13,7 @@ import ThemeInit from "@/components/ThemeInit";
 import VisualModeInit from "@/components/VisualModeInit";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
+import { tabLabel, useVisualMode } from "@/lib/theme";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
@@ -51,6 +52,8 @@ const TABS: TabDef[] = [
 export default function HomePage() {
   const [active, setActive] = useState("today");
   const [showCloseCheck, setShowCloseCheck] = useState(false);
+  const { mode } = useVisualMode();
+  const tabs = useMemo(() => TABS.map((t) => ({ key: t.key, label: tabLabel(t.key, mode, t.label) })), [mode]);
 
   const date = todayStr();
   const todayTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
@@ -93,7 +96,7 @@ export default function HomePage() {
       <VisualModeInit />
       <OrphanTaskModal />
       <TodoReminderModal />
-      <TabNav tabs={TABS} active={active} onChange={setActive} />
+      <TabNav tabs={tabs} active={active} onChange={setActive} />
       {active === "today" && <TodaySection />}
       {active === "todo" && <TodoSection />}
       {active === "projects" && <ProjectsSection onAddedToToday={() => setActive("today")} />}

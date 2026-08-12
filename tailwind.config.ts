@@ -21,6 +21,9 @@ const config: Config = {
         "nat-sea": "rgb(var(--nat-sea-rgb) / <alpha-value>)",
         "nat-sun": "rgb(var(--nat-sun-rgb) / <alpha-value>)",
         "nat-leaf": "rgb(var(--nat-leaf-rgb) / <alpha-value>)",
+        // パワプロ風演出テーマ専用の球場グリーン・査定ランクゴールド(固定色)
+        "pp-green": "rgb(var(--pp-green-rgb) / <alpha-value>)",
+        "pp-gold": "rgb(var(--pp-gold-rgb) / <alpha-value>)",
       },
       fontFamily: {
         display: ["var(--font-oswald)", "sans-serif"],
