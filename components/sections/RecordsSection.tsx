@@ -13,8 +13,18 @@ import { setManualOverride, clearManualOverride } from "@/lib/outliers";
 import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
+import { formatClock, formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
+
+// 時刻入力(HH:MM)の変更を、元のタイムスタンプの日付部分は保ったまま時刻だけ差し替える。
+// 日をまたいだ実績(例: 23:42開始〜翌7:02終了)でも、開始・終了それぞれの本来の日付がずれないようにする
+function withNewTime(epochMs: number, timeStr: string): number {
+  const [hh, mm] = timeStr.split(":").map(Number);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return epochMs;
+  const d = new Date(epochMs);
+  d.setHours(hh, mm, 0, 0);
+  return d.getTime();
+}
 
 export default function RecordsSection() {
   const [search, setSearch] = useState("");
@@ -82,6 +92,22 @@ export default function RecordsSection() {
     for (const id of affected) {
       await recomputeEstimateFromRecords(id);
     }
+  }
+
+  // 開始・終了時刻を編集した場合、実績時間(seconds)もその2時刻の差に合わせて再計算する
+  // (時刻と実績時間の表示がずれて見えないようにするため)
+  async function updateRecordStartTime(r: WorkRecord, timeStr: string) {
+    if (!timeStr) return;
+    const startedAt = withNewTime(r.startedAt, timeStr);
+    const seconds = Math.max(0, Math.round((r.endedAt - startedAt) / 1000));
+    await updateRecord(r, { startedAt, seconds });
+  }
+
+  async function updateRecordEndTime(r: WorkRecord, timeStr: string) {
+    if (!timeStr) return;
+    const endedAt = withNewTime(r.endedAt, timeStr);
+    const seconds = Math.max(0, Math.round((endedAt - r.startedAt) / 1000));
+    await updateRecord(r, { endedAt, seconds });
   }
 
   async function deleteRecord(r: WorkRecord) {
@@ -187,6 +213,23 @@ export default function RecordsSection() {
                 onBlur={(e) => e.target.value && updateRecord(r, { date: e.target.value })}
                 className="rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
+              <div className="flex items-center gap-1 text-xs text-cream/50">
+                <input
+                  key={`start-${r.startedAt}`}
+                  type="time"
+                  defaultValue={formatClock(r.startedAt)}
+                  onBlur={(e) => updateRecordStartTime(r, e.target.value)}
+                  className="rounded-md border border-cream/20 bg-ink px-2 py-1 text-cream tabular-nums"
+                />
+                <span>〜</span>
+                <input
+                  key={`end-${r.endedAt}`}
+                  type="time"
+                  defaultValue={formatClock(r.endedAt)}
+                  onBlur={(e) => updateRecordEndTime(r, e.target.value)}
+                  className="rounded-md border border-cream/20 bg-ink px-2 py-1 text-cream tabular-nums"
+                />
+              </div>
               <input
                 key={`category-${r.category}`}
                 defaultValue={r.category}
