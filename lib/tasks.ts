@@ -44,25 +44,29 @@ export async function computeRemainingEstimatedSeconds(
 }
 
 // 実行中/一時停止中の作業をその場で完了として確定する（アプリを閉じる際の一括完了などに使用）。
-// TodaySection内のcommitFinishと同じ内容だが、UI状態を持たない箇所からも呼べるよう独立させたもの
-export async function finishDailyTask(task: DailyTask): Promise<void> {
+// TodaySection内のcommitFinishと同じ内容だが、UI状態を持たない箇所からも呼べるよう独立させたもの。
+// endAtMsを指定すると、計測中セグメントをその時刻で打ち切る（例: 日をまたいで放置された
+// 作業を、実際の停止時刻が分からないため元の日の24:00で打ち切って確定する場合など）。
+// 省略時は現在時刻で打ち切る（通常の完了操作と同じ挙動）
+export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promise<void> {
+  const nowMs = Date.now();
+  const closeAt = endAtMs ?? nowMs;
   let segments = task.segments;
   if (task.status === "running") {
     segments = task.segments.map((s, i) =>
-      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
+      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(s.start, closeAt) } : s
     );
   }
-  const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
+  const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
   const seconds = Math.round(accumulatedMs / 1000);
-  const nowMs = Date.now();
-  const startedAt = task.startedAt ?? nowMs;
+  const startedAt = task.startedAt ?? closeAt;
 
   await db.dailyTasks.update(task.id, {
     segments,
     status: "done",
     accumulatedMs,
     startedAt,
-    endedAt: nowMs,
+    endedAt: closeAt,
     isProvisional: false,
   });
 
@@ -75,13 +79,13 @@ export async function finishDailyTask(task: DailyTask): Promise<void> {
   const existing = await db.records
     .where("date")
     .equals(task.date)
-    .filter((r) => r.masterTaskId === masterTaskId && r.projectId === task.projectId)
+    .filter((r) => r.masterTaskId === masterTaskId && r.projectId === task.projectId && r.stageId === task.stageId)
     .first();
 
   if (existing) {
     await db.records.update(existing.id, {
       seconds: existing.seconds + seconds,
-      endedAt: nowMs,
+      endedAt: closeAt,
       isTrouble: existing.isTrouble || task.isTrouble,
     });
   } else {
@@ -93,14 +97,39 @@ export async function finishDailyTask(task: DailyTask): Promise<void> {
       masterTaskId,
       seconds,
       startedAt,
-      endedAt: nowMs,
+      endedAt: closeAt,
       excludedFromStats: false,
       projectId: task.projectId,
+      stageId: task.stageId,
       isTrouble: task.isTrouble,
     });
   }
 
   await recomputeEstimateFromRecords(masterTaskId);
+}
+
+// 日をまたいで「計測中」「一時停止中」のまま放置されたタスクを探す（statusが running/paused で、
+// dateが本日より前のもの）。本日の作業タブは日付ごとに絞り込んで表示するため、これらは
+// 画面上からは見えなくなる一方、running のものは内部的に経過時間が計測され続けてしまう
+export async function findOrphanedDailyTasks(todayDateStr: string): Promise<DailyTask[]> {
+  return db.dailyTasks
+    .where("date")
+    .below(todayDateStr)
+    .filter((t) => t.status === "running" || t.status === "paused")
+    .toArray();
+}
+
+// 放置されていた作業を、実際の停止時刻が分からないため元の日の24:00(23:59:59)で打ち切って完了にする
+export async function finishOrphanedDailyTask(task: DailyTask): Promise<void> {
+  const dayEndMs = new Date(task.date + "T23:59:59").getTime();
+  await finishDailyTask(task, dayEndMs);
+}
+
+// 放置されていた作業を、今日の作業として引き継いで計測を続ける（日付を今日に付け替えるのみ。
+// 計測中のセグメントはそのままなので、経過時間の計測は途切れず続く）
+export async function moveDailyTaskToToday(task: DailyTask, todayDateStr: string): Promise<void> {
+  const count = (await db.dailyTasks.where("date").equals(todayDateStr).toArray()).length;
+  await db.dailyTasks.update(task.id, { date: todayDateStr, order: count });
 }
 
 // カレンダー予定などをCSVから「本日の作業」に取り込む。scheduledTimeを持つ
