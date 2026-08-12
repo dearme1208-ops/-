@@ -92,7 +92,7 @@ export default function TodaySection() {
   const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
-  const { lobotomyMode, va11hallaMode, themedMode } = useVisualMode();
+  const { lobotomyMode, va11hallaMode, themedMode, wordingThemedMode } = useVisualMode();
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -1625,23 +1625,30 @@ export default function TodaySection() {
           <div className="warning-ticker-track">
             {(() => {
               const names = runningOverrunTasks.map((t) => `${t.category}/${t.name}`).join("、");
-              const tierName = worstRiskTier?.name;
+              // 文言表示がオフの時はタイマーの階級名(ALEPH等)も出さず、通常の言い回しにする
+              const tierName = wordingThemedMode ? worstRiskTier?.name : undefined;
               const message =
-                themedMode === "va11halla"
+                wordingThemedMode === "va11halla"
                   ? `⚡ GLITCH CITY NETWORK ⚡ 予測時間を超過して稼働中の注文が${runningOverrunTasks.length}件${
                       tierName ? `（最大: ${tierName}）` : ""
                     }： ${names}`
-                  : themedMode === "persona5"
+                  : wordingThemedMode === "persona5"
                     ? `★ 予告状 ★ 潜入予定時間を超過している作業が${runningOverrunTasks.length}件${
                         tierName ? `（最大階級: ${tierName}）` : ""
                       }： ${names}`
-                    : themedMode === "natsuyasumi"
+                    : wordingThemedMode === "natsuyasumi"
                       ? `☀ 夏休みの日記帳より ☀ 予定より長引いている作業が${runningOverrunTasks.length}件あります${
                           tierName ? `（今日のお天気: ${tierName}）` : ""
                         }： ${names}`
-                      : `⚠ 収容の不安定化を検知 ⚠ 予測を超過して計測中の作業が${runningOverrunTasks.length}件あります${
-                          tierName ? `（最大警戒階級: ${tierName}）` : ""
-                        }： ${names}`;
+                      : wordingThemedMode === "powerpro"
+                        ? `⚾ 延長戦のお知らせ ⚾ 予測時間を超過している試合が${runningOverrunTasks.length}件${
+                            tierName ? `（最大査定: ${tierName}）` : ""
+                          }： ${names}`
+                        : wordingThemedMode === "lobotomy"
+                          ? `⚠ 収容の不安定化を検知 ⚠ 予測を超過して計測中の作業が${runningOverrunTasks.length}件あります${
+                              tierName ? `（最大警戒階級: ${tierName}）` : ""
+                            }： ${names}`
+                          : `⚠ 予測を超過して計測中の作業が${runningOverrunTasks.length}件あります： ${names}`;
               return `${message}　${message}`;
             })()}
           </div>
@@ -2040,7 +2047,7 @@ export default function TodaySection() {
                       {task.status === "running" && !isRunningOverrun && (
                         <span className={`flex items-center gap-1 font-bold ${va11hallaMode ? "text-v11-cyan" : "text-cream"}`}>
                           <span className={`h-2 w-2 animate-pulse rounded-full ${va11hallaMode ? "bg-v11-cyan" : "bg-alert"}`} />
-                          {themedMode ? runningLabel(themedMode) : "計測中"}
+                          {runningLabel(wordingThemedMode)}
                         </span>
                       )}
                       {isRunningOverrun && (
@@ -2048,23 +2055,27 @@ export default function TodaySection() {
                           className={`overrun-badge flex items-center gap-1 font-bold ${va11hallaMode ? "text-v11-pink" : themedMode ? emphasisTextClass(themedMode) : "text-alert"}`}
                         >
                           <span className={`h-2 w-2 rounded-full ${va11hallaMode ? "bg-v11-pink" : "bg-alert"}`} />
-                          {themedMode ? overrunLabel(themedMode) : "⚠ 計測中・予測超過"}
+                          {overrunLabel(wordingThemedMode)}
                         </span>
                       )}
                       {riskTier && themedMode && (
                         <span
                           className={riskBadgeClasses(riskTier.level, themedMode)}
                           title={
-                            themedMode === "va11halla"
+                            wordingThemedMode === "va11halla"
                               ? "VA-11 HALL-A風モード: 予測超過の度合いに応じた注文階級"
-                              : themedMode === "persona5"
+                              : wordingThemedMode === "persona5"
                                 ? "ペルソナ5風モード: 予告状に至るまでの盛り上がり階級"
-                                : themedMode === "natsuyasumi"
+                                : wordingThemedMode === "natsuyasumi"
                                   ? "ぼくのなつやすみ風モード: 夏の天気になぞらえた進み具合"
-                                  : "ロボトミーコーポレーション風モード: 予測超過の度合いに応じた警戒階級"
+                                  : wordingThemedMode === "powerpro"
+                                    ? "パワプロ風モード: 予測超過の度合いに応じた査定ランク"
+                                    : wordingThemedMode === "lobotomy"
+                                      ? "ロボトミーコーポレーション風モード: 予測超過の度合いに応じた警戒階級"
+                                      : "予測超過の度合いに応じた危険度バッジです"
                           }
                         >
-                          {riskBadgeLabel(riskTier, themedMode)}
+                          {riskBadgeLabel(riskTier, wordingThemedMode)}
                         </span>
                       )}
                       {task.status === "paused" && <span className="text-cream/70">‖ 一時停止中</span>}

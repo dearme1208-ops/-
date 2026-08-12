@@ -38,9 +38,18 @@ export function useVisualMode(): {
   natsuyasumiMode: boolean;
   powerproMode: boolean;
   themedMode: ThemedMode | null;
+  // 色・形・アニメーションは常にthemedMode通りに適用される一方、
+  // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
+  // この設定でオフにでき、その場合は通常の言い回しに戻る
+  wordingEnabled: boolean;
+  wordingMode: VisualMode; // appTitle/tabLabel用。wordingEnabled=falseなら常に"off"
+  wordingThemedMode: ThemedMode | null; // riskBadgeLabel/runningLabel/overrunLabel用
 } {
   const [raw] = useSetting("theme.visualMode", "off");
+  const [wordingRaw] = useSetting("theme.applyWording", "true");
   const mode: VisualMode = (THEMED_MODES as string[]).includes(raw) ? (raw as VisualMode) : "off";
+  const themedMode = mode === "off" ? null : (mode as ThemedMode);
+  const wordingEnabled = wordingRaw !== "false";
   return {
     mode,
     lobotomyMode: mode === "lobotomy",
@@ -48,7 +57,10 @@ export function useVisualMode(): {
     persona5Mode: mode === "persona5",
     natsuyasumiMode: mode === "natsuyasumi",
     powerproMode: mode === "powerpro",
-    themedMode: mode === "off" ? null : (mode as ThemedMode),
+    themedMode,
+    wordingEnabled,
+    wordingMode: wordingEnabled ? mode : "off",
+    wordingThemedMode: wordingEnabled ? themedMode : null,
   };
 }
 
@@ -132,7 +144,11 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
   return `risk-badge risk-badge-${level} border ${roundness} py-0.5 text-[10px] font-bold ${shape}`;
 }
 
-export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode): string {
+// 文言表示がオフの時に使う、テーマに依存しないニュートラルな階級ラベル(レベル0〜4)
+const NEUTRAL_TIER_LABELS = ["低", "やや高", "高", "警戒", "危険"];
+
+export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode | null): string {
+  if (mode === null) return `危険度 ${NEUTRAL_TIER_LABELS[tier.level] ?? tier.level}`;
   if (mode === "va11halla") return tier.name;
   if (mode === "persona5") return tier.name;
   if (mode === "natsuyasumi") return tier.name;
@@ -193,17 +209,18 @@ export function emphasisTextClass(mode: ThemedMode): string {
   return mode === "va11halla" ? "text-v11-pink" : "text-alert";
 }
 
-// テーマの世界観に合わせた「計測中」表示ラベル
-export function runningLabel(mode: ThemedMode): string {
+// テーマの世界観に合わせた「計測中」表示ラベル。modeがnull(文言オフ)の時は通常表記
+export function runningLabel(mode: ThemedMode | null): string {
   if (mode === "va11halla") return "営業中";
   if (mode === "persona5") return "潜入中";
   if (mode === "natsuyasumi") return "観察中";
   if (mode === "powerpro") return "出場中";
+  if (mode === "lobotomy") return "計測中";
   return "計測中";
 }
 
-// テーマの世界観に合わせた「予測超過」表示ラベル
-export function overrunLabel(mode: ThemedMode): string {
+// テーマの世界観に合わせた「予測超過」表示ラベル。modeがnull(文言オフ)の時は通常表記
+export function overrunLabel(mode: ThemedMode | null): string {
   if (mode === "va11halla") return "⚡ 稼働中・時間超過";
   if (mode === "persona5") return "🔴 潜入時間・超過警告";
   if (mode === "natsuyasumi") return "🌻 予定より長引き中";

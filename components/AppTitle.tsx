@@ -7,8 +7,8 @@ import { appTitle, useVisualMode } from "@/lib/theme";
 // 「工程表」という名乗り自体をテーマの世界観に合わせることで、色や装飾だけでなく
 // アプリのアイデンティティそのものが変わったように感じられるようにするため
 export default function AppTitle() {
-  const { mode } = useVisualMode();
-  const title = appTitle(mode);
+  const { wordingMode } = useVisualMode();
+  const title = appTitle(wordingMode);
 
   useEffect(() => {
     document.title = title;

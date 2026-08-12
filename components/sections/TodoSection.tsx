@@ -1029,7 +1029,7 @@ function OverdueBulkList({
   onOpenDetail: (id: string) => void;
 }) {
   const allSelected = tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id));
-  const { themedMode } = useVisualMode();
+  const { themedMode, wordingThemedMode } = useVisualMode();
 
   if (tasks.length === 0) {
     return <p className="px-1 py-4 text-sm text-cream/50">期限切れのタスクはありません。</p>;
@@ -1112,15 +1112,17 @@ function OverdueBulkList({
                 {task.dueDate ? formatDateJp(task.dueDate) : ""}
                 {daysOverdue !== null && daysOverdue > 0 && (
                   <div className={`text-[10px] ${themedMode ? "overrun-flicker" : ""}`}>
-                    {themedMode === "va11halla"
+                    {wordingThemedMode === "va11halla"
                       ? `${daysOverdue}日 オーダー未処理`
-                      : themedMode === "persona5"
+                      : wordingThemedMode === "persona5"
                         ? `${daysOverdue}日 未接触の標的`
-                        : themedMode === "natsuyasumi"
+                        : wordingThemedMode === "natsuyasumi"
                           ? `日記が${daysOverdue}日分たまってます`
-                          : themedMode === "lobotomy"
-                            ? `${daysOverdue}日 業務逸脱`
-                            : `${daysOverdue}日超過`}
+                          : wordingThemedMode === "powerpro"
+                            ? `${daysOverdue}日 戦力外候補`
+                            : wordingThemedMode === "lobotomy"
+                              ? `${daysOverdue}日 業務逸脱`
+                              : `${daysOverdue}日超過`}
                   </div>
                 )}
               </div>

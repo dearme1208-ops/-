@@ -647,20 +647,29 @@ body {
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(115deg, transparent 40%, rgb(255 255 255 / 0.7) 50%, transparent 60%);
+    background: linear-gradient(115deg, transparent 44%, rgb(255 255 255 / 0.35) 50%, transparent 56%);
     background-size: 250% 100%;
     background-position: 200% 0;
+    opacity: 0;
     pointer-events: none;
   }
   html[data-visual-mode="persona5"] .btn-pill-outline:hover::after {
     animation: p5-button-shine 0.5s ease-out 1;
   }
   @keyframes p5-button-shine {
-    from {
+    0% {
       background-position: 200% 0;
+      opacity: 0;
     }
-    to {
+    15% {
+      opacity: 1;
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
       background-position: -50% 0;
+      opacity: 0;
     }
   }
   html[data-visual-mode="persona5"] .btn-pill-outline:hover {

@@ -22,7 +22,7 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 const AVG_COMPARE_TYPE_LABELS: Record<AvgComparePeriodType, string> = { year: "年度", h1: "上期", h2: "下期" };
 
 export default function AttentionSection() {
-  const { themedMode } = useVisualMode();
+  const { themedMode, wordingThemedMode } = useVisualMode();
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
   const conditionLogs = useLiveQuery(() => db.conditionLogs.toArray(), []);
@@ -259,7 +259,7 @@ export default function AttentionSection() {
                           <div className="flex items-center gap-1.5 text-sm text-cream">
                             {row.name}
                             {tier && themedMode && (
-                              <span className={riskBadgeClasses(tier.level, themedMode)}>{riskBadgeLabel(tier, themedMode)}</span>
+                              <span className={riskBadgeClasses(tier.level, themedMode)}>{riskBadgeLabel(tier, wordingThemedMode)}</span>
                             )}
                           </div>
                         </div>
@@ -291,7 +291,7 @@ export default function AttentionSection() {
                 <div className="flex items-center gap-1.5 text-sm text-cream">
                   {row.name}
                   {tier && themedMode && (
-                    <span className={riskBadgeClasses(tier.level, themedMode)}>{riskBadgeLabel(tier, themedMode)}</span>
+                    <span className={riskBadgeClasses(tier.level, themedMode)}>{riskBadgeLabel(tier, wordingThemedMode)}</span>
                   )}
                 </div>
                 <div className="text-xs text-cream/40">サンプル数 {row.sampleCount}</div>

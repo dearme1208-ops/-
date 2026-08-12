@@ -118,6 +118,8 @@ export default function SettingsSection() {
   );
   const [accentRgb, setAccentRgb] = useSetting("theme.accentRgb", DEFAULT_ACCENT_RGB);
   const [visualMode, setVisualMode] = useSetting("theme.visualMode", "off");
+  const [applyWordingStr, setApplyWordingStr] = useSetting("theme.applyWording", "true");
+  const applyWording = applyWordingStr !== "false";
   const [dailySummaryEnabledStr, setDailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
   const dailySummaryEnabled = dailySummaryEnabledStr === "true";
   const [dailySummaryTime, setDailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
@@ -698,6 +700,22 @@ export default function SettingsSection() {
         <p className="text-xs text-cream/50">
           演出テーマを選ぶと、色や装飾だけでなくアプリ名・タブの呼び名までテーマの世界観のものに総入れ替えされます（例: ぼくのなつやすみ風では「ToDo」が「しゅくだい」に、アプリ名も「なつやすみの しゅくだい」になります）。
         </p>
+        {visualMode !== "off" && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/40 px-3 py-2">
+            <div>
+              <p className="text-xs font-bold text-cream/80">テーマに合わせた文言を使う</p>
+              <p className="text-[11px] text-cream/50">
+                オフにすると、色・形・アニメーションはテーマのまま、アプリ名・タブ名・バッジや通知の文言だけ通常表記に戻ります。
+              </p>
+            </div>
+            <button
+              className={applyWording ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setApplyWordingStr(applyWording ? "false" : "true")}
+            >
+              文言の変更: {applyWording ? "ON" : "OFF"}
+            </button>
+          </div>
+        )}
         {visualMode === "lobotomy" && (
           <p className="text-xs text-cream/50">
             画面全体にCRT風の走査線・ノイズ、アプリタイトルの色収差グリッチ、パネル四隅のリベット、見出しの走査ブロック装飾が有効になります。予測を大幅に超過した作業には「収容の不安定化」警戒表示（画面端のビネット・横スクロールする警告ティッカー・危険階級バッジ ZAYIN〜ALEPH）が出ます。

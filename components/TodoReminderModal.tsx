@@ -25,7 +25,7 @@ export default function TodoReminderModal() {
   const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
   const [dismissedAll, setDismissedAll] = useState(false);
   const [notifiedOnce, setNotifiedOnce] = useState(false);
-  const { themedMode } = useVisualMode();
+  const { themedMode, wordingThemedMode } = useVisualMode();
 
   const subtasksByParent = useMemo(() => {
     const map = new Map<string, TodoTask[]>();
@@ -69,25 +69,29 @@ export default function TodoReminderModal() {
   if (!reminderEnabled || dueSoonTasks.length === 0 || dismissedAll) return null;
 
   const title =
-    themedMode === "va11halla"
+    wordingThemedMode === "va11halla"
       ? "ラストコールです"
-      : themedMode === "persona5"
+      : wordingThemedMode === "persona5"
         ? "予告状を出す時間です"
-        : themedMode === "natsuyasumi"
+        : wordingThemedMode === "natsuyasumi"
           ? "宿題の締め切りが近づいています"
-          : themedMode === "lobotomy"
-            ? "警告：期限監視対象があります"
-            : "期日が近いTodoがあります";
+          : wordingThemedMode === "powerpro"
+            ? "選手交代のタイミングです"
+            : wordingThemedMode === "lobotomy"
+              ? "警告：期限監視対象があります"
+              : "期日が近いTodoがあります";
   const bodyText =
-    themedMode === "va11halla"
+    wordingThemedMode === "va11halla"
       ? `閉店（期日）まであと${daysBefore}日以内、またはすでに閉店時刻を過ぎている未完了のオーダーです。`
-      : themedMode === "persona5"
+      : wordingThemedMode === "persona5"
         ? `決行（期日）まであと${daysBefore}日以内、またはすでに期限を過ぎている未完了のターゲットです。`
-        : themedMode === "natsuyasumi"
+        : wordingThemedMode === "natsuyasumi"
           ? `夏休みの終わり（期日）まであと${daysBefore}日以内、またはもう終わってしまっている宿題です。`
-          : themedMode === "lobotomy"
-            ? `管理限界まであと${daysBefore}日以内、または既に管理限界を超過している未処理案件です。`
-            : `期日まであと${daysBefore}日以内、または既に期日を過ぎている未完了のタスクです。`;
+          : wordingThemedMode === "powerpro"
+            ? `試合終了（期日）まであと${daysBefore}日以内、またはすでに登板期限を過ぎている未完了の案件です。`
+            : wordingThemedMode === "lobotomy"
+              ? `管理限界まであと${daysBefore}日以内、または既に管理限界を超過している未処理案件です。`
+              : `期日まであと${daysBefore}日以内、または既に期日を過ぎている未完了のタスクです。`;
 
   return (
     <Modal title={title} onClose={() => setDismissedAll(true)}>

@@ -52,8 +52,11 @@ const TABS: TabDef[] = [
 export default function HomePage() {
   const [active, setActive] = useState("today");
   const [showCloseCheck, setShowCloseCheck] = useState(false);
-  const { mode } = useVisualMode();
-  const tabs = useMemo(() => TABS.map((t) => ({ key: t.key, label: tabLabel(t.key, mode, t.label) })), [mode]);
+  const { wordingMode } = useVisualMode();
+  const tabs = useMemo(
+    () => TABS.map((t) => ({ key: t.key, label: tabLabel(t.key, wordingMode, t.label) })),
+    [wordingMode]
+  );
 
   const date = todayStr();
   const todayTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
