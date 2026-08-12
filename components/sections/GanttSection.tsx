@@ -171,10 +171,15 @@ export default function GanttSection() {
       }
     }
 
+    // 詰めて配置するためのカーソル: 既に完了した作業は理論上の予測幅ではなく実際に
+    // かかった時間ぶんだけカーソルを進める。そうしないと、超過した作業があった場合に
+    // 後続の予測位置が現実とずれ、間延びして見えたり終了時刻を正しく可視化できなくなる。
+    // まだ完了していない作業は、これからの見込みとして予定/予測の大きい方を使う
     let cursor = 0; // minutes from timelineBase
     const withLayout = base.map((r) => {
       const predictedSeconds = predictedByTaskId.get(r.task.id) ?? r.rawPredictedSeconds;
-      const layoutDurationMin = Math.max(r.task.estimatedSeconds, predictedSeconds) / 60;
+      const layoutDurationMin =
+        r.task.status === "done" ? r.actualSeconds / 60 : Math.max(r.task.estimatedSeconds, predictedSeconds) / 60;
       const scheduledStartMin = cursor;
       cursor += Math.max(layoutDurationMin, 1);
       return { ...r, predictedSeconds, scheduledStartMin };
@@ -280,7 +285,13 @@ export default function GanttSection() {
       for (const item of items) {
         if (!item.showPlan) continue;
         item.scheduledStartMin = cursor;
-        cursor += Math.max(Math.max(item.task.estimatedSeconds, item.predictedSeconds) / 60, 1);
+        // 完了済みの作業は、理論上の予測幅ではなく実際にかかった時間ぶんだけカーソルを
+        // 進める（詰めて配置し、超過があっても後続位置・終了時刻を正しく可視化するため）
+        const durationMin =
+          item.task.status === "done" && item.block
+            ? item.block.end - item.block.start
+            : Math.max(item.task.estimatedSeconds, item.predictedSeconds) / 60;
+        cursor += Math.max(durationMin, 1);
       }
     }
 
@@ -640,15 +651,16 @@ export default function GanttSection() {
               {compactView ? (
                 <>
                   {/* 予測行: 全作業の予測バーを1本の行にまとめて表示（実績ベースの見込みを主役にする）。
-                      すでに着手済みの作業は、理論上の順送りカーソルではなく実際の開始時刻を基準に
-                      詰めて配置する。そうしないと超過時に予測同士が実際の経過と噛み合わず、
-                      間延びして見えたり終了時刻が正しく可視化できなくなるため */}
+                      完了済みの作業は、幅も理論上の予測ではなく実際にかかった時間で描画し、
+                      隙間や重なりが出ないよう隣同士がぴったり詰まるようにする（詰めて配置
+                      することで、超過があっても後続の位置・終了時刻を正しく可視化できる） */}
                   {rows.map((r) => {
-                    const startMin = r.actualStartMin ?? r.scheduledStartMin;
+                    const layoutSeconds = r.task.status === "done" ? r.actualSeconds : r.predictedSeconds;
+                    const startMin = r.scheduledStartMin;
                     const planLeft = startMin * pxPerMin;
                     const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
-                    const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
-                    const predEndMin = startMin + r.predictedSeconds / 60;
+                    const predWidth = Math.max((layoutSeconds / 60) * pxPerMin, 3);
+                    const predEndMin = startMin + layoutSeconds / 60;
                     const predEndLabel = formatClock(timelineBase + predEndMin * 60000);
                     const gapLeft = planLeft + COMPACT_BAR_GAP_PX / 2;
                     const gapPredWidth = Math.max(predWidth - COMPACT_BAR_GAP_PX, 3);
@@ -741,10 +753,16 @@ export default function GanttSection() {
                   return (
                     <div key={row.key} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
                       {row.items.map((item, itemIdx) => {
+                        // 完了済みの作業は、幅も理論上の予測ではなく実際にかかった時間(ブロックの長さ)で
+                        // 描画し、後続の位置・終了時刻とぴったり詰まるようにする
+                        const layoutDurationMin =
+                          item.task.status === "done" && item.block
+                            ? item.block.end - item.block.start
+                            : item.predictedSeconds / 60;
                         const planLeft = item.scheduledStartMin * pxPerMin;
                         const planWidth = Math.max((item.task.estimatedSeconds / 60) * pxPerMin, 3);
-                        const predWidth = Math.max((item.predictedSeconds / 60) * pxPerMin, 3);
-                        const predEndMin = item.scheduledStartMin + item.predictedSeconds / 60;
+                        const predWidth = Math.max(layoutDurationMin * pxPerMin, 3);
+                        const predEndMin = item.scheduledStartMin + layoutDurationMin;
                         const hasActual = item.block !== null;
                         const nameLeft = hasActual ? item.block!.start * pxPerMin : planLeft;
                         const endMin = hasActual ? item.block!.end : predEndMin;
