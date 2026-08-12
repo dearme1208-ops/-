@@ -1447,6 +1447,12 @@ function TaskDetailModal({
     await db.todoTasks.update(sub.id, { dueDate: dueDate || undefined });
   }
 
+  async function updateSubtaskTitle(sub: TodoTask, title: string) {
+    const trimmed = title.trim();
+    if (!trimmed || trimmed === sub.title) return;
+    await db.todoTasks.update(sub.id, { title: trimmed });
+  }
+
   return (
     <Modal title="タスクの詳細" onClose={onClose}>
       <div className="max-h-[70vh] space-y-3 overflow-y-auto">
@@ -1791,9 +1797,15 @@ function TaskDetailModal({
                 >
                   {sub.completed ? "✓" : ""}
                 </button>
-                <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
-                  {sub.title}
-                </span>
+                <input
+                  key={sub.id}
+                  defaultValue={sub.title}
+                  onBlur={(e) => updateSubtaskTitle(sub, e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                  className={`flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-xs text-cream hover:border-cream/20 focus:border-cream/30 focus:bg-ink focus:outline-none ${
+                    sub.completed ? "text-cream/40 line-through" : ""
+                  }`}
+                />
                 <input
                   type="date"
                   defaultValue={sub.dueDate ?? ""}

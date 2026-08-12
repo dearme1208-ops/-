@@ -91,6 +91,9 @@ export default function GanttSection() {
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
   const [startHourStr, setStartHourStr] = useSetting("gantt.startHour", "8");
   const [rangeMode, setRangeMode] = useSetting("gantt.rangeMode", "auto");
+  // ガントチャートを開いた際の初期スクロール位置。「現在時刻」を基準にするか、
+  // 従来通り左端(「表示開始時刻」設定・または最初の実績/体調記録の時刻)のままにするかを選べる
+  const [initialAnchor, setInitialAnchor] = useSetting("gantt.initialAnchor", "start");
   const [stackBarsStr, setStackBarsStr] = useSetting("gantt.stackBars", "false");
   const [compactViewStr, setCompactViewStr] = useSetting("gantt.compactView", "false");
   const [groupModeStr, setGroupModeStr] = useSetting("gantt.groupMode", "detail");
@@ -453,6 +456,19 @@ export default function GanttSection() {
     setPxPerMin(Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +fit.toFixed(3))));
   }
 
+  // 「現在時刻」を初期位置にする設定の場合、日付・拡大縮小を変えるたびに
+  // 現在時刻の位置が見える所までスクロールする(「設定時刻」の場合は既定の左端=0のままにする)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (initialAnchor !== "now") {
+      el.scrollLeft = 0;
+      return;
+    }
+    const nowMin = (Date.now() - timelineBase) / 60000;
+    el.scrollLeft = Math.max(0, nowMin * pxPerMin - el.clientWidth / 2);
+  }, [date, initialAnchor, pxPerMin, totalMinutes, timelineBase]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -477,6 +493,21 @@ export default function GanttSection() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-cream/60">初期表示位置</label>
+          <button
+            className={initialAnchor === "start" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setInitialAnchor("start")}
+          >
+            設定時刻
+          </button>
+          <button
+            className={initialAnchor === "now" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setInitialAnchor("now")}
+          >
+            現在時刻
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">表示開始時刻（未着手の日のみ）</label>
           <select
