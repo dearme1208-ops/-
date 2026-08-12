@@ -83,9 +83,11 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
     .first();
 
   if (existing) {
+    // endAtMsで打ち切り時刻を過去方向に指定した場合(放置作業の復旧時など)でも、
+    // 既存の実績の終了時刻をそれより後退させてしまわないようにする
     await db.records.update(existing.id, {
       seconds: existing.seconds + seconds,
-      endedAt: closeAt,
+      endedAt: Math.max(existing.endedAt, closeAt),
       isTrouble: existing.isTrouble || task.isTrouble,
     });
   } else {
