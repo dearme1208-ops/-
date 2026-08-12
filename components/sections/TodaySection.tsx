@@ -41,6 +41,19 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
 
+// ロボトミーコーポレーション風モードで、予測超過の度合いに応じて表示する
+// 警戒階級(実績が予測の何倍かで判定。数字が大きいほど危険度が高い)
+const RISK_TIERS = [
+  { threshold: 4, name: "ALEPH", level: 4 },
+  { threshold: 2.5, name: "WAW", level: 3 },
+  { threshold: 1.8, name: "HE", level: 2 },
+  { threshold: 1.3, name: "TETH", level: 1 },
+  { threshold: 1, name: "ZAYIN", level: 0 },
+] as const;
+function getRiskTier(ratio: number) {
+  return RISK_TIERS.find((t) => ratio >= t.threshold) ?? RISK_TIERS[RISK_TIERS.length - 1];
+}
+
 export default function TodaySection() {
   const date = todayStr();
   const [now, setNow] = useState(() => Date.now());
@@ -80,6 +93,8 @@ export default function TodaySection() {
   const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
+  const [lobotomyModeStr] = useSetting("theme.lobotomyMode", "false");
+  const lobotomyMode = lobotomyModeStr === "true";
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -347,6 +362,28 @@ export default function TodaySection() {
     }
     return map;
   }, [tasks, allMasterTasks, now]);
+
+  // ロボトミーコーポレーション風モードの警告表示(ティッカー・ビネット)用に、
+  // 現在計測中かつ予測を超過している作業と、その中で最も危険度の高い階級をまとめておく
+  const runningOverrunTasks = useMemo(() => {
+    return (tasks ?? []).filter((t) => {
+      if (t.status !== "running") return false;
+      const predSec = predictedSecondsByTaskId.get(t.id) ?? 0;
+      if (predSec <= 0) return false;
+      return segmentsAccumulatedMs(t, now) / 1000 > predSec;
+    });
+  }, [tasks, predictedSecondsByTaskId, now]);
+  const worstRiskTier = useMemo(() => {
+    let worst: (typeof RISK_TIERS)[number] | null = null;
+    for (const t of runningOverrunTasks) {
+      const predSec = predictedSecondsByTaskId.get(t.id) ?? 0;
+      if (predSec <= 0) continue;
+      const ratio = segmentsAccumulatedMs(t, now) / 1000 / predSec;
+      const tier = getRiskTier(ratio);
+      if (!worst || tier.level > worst.level) worst = tier;
+    }
+    return worst;
+  }, [runningOverrunTasks, predictedSecondsByTaskId, now]);
 
   // ライブモード時のみ、常に現在時刻を基準に自動配分を再計算する
   const liveAllocation = useMemo(() => {
@@ -1572,6 +1609,22 @@ export default function TodaySection() {
 
   return (
     <div className="space-y-4">
+      {lobotomyMode && (
+        <div
+          className={`containment-vignette ${runningOverrunTasks.length > 0 ? "is-active" : ""}`}
+          aria-hidden="true"
+        />
+      )}
+      {lobotomyMode && runningOverrunTasks.length > 0 && (
+        <div className="warning-ticker panel border border-alert/60 bg-alert/10 px-3 py-2 text-xs font-bold text-alert">
+          <div className="warning-ticker-track">
+            ⚠ 収容の不安定化を検知 ⚠ 予測を超過して計測中の作業が{runningOverrunTasks.length}件あります
+            {worstRiskTier && `（最大警戒階級: ${worstRiskTier.name}）`}： {runningOverrunTasks.map((t) => `${t.category}/${t.name}`).join("、")}
+            　⚠ 収容の不安定化を検知 ⚠ 予測を超過して計測中の作業が{runningOverrunTasks.length}件あります
+            {worstRiskTier && `（最大警戒階級: ${worstRiskTier.name}）`}： {runningOverrunTasks.map((t) => `${t.category}/${t.name}`).join("、")}
+          </div>
+        </div>
+      )}
       {quickActionMessage && (
         <div className="panel flex items-center justify-between gap-2 border border-cream/30 p-4">
           <p className="text-sm font-bold text-cream">{quickActionMessage}</p>
@@ -1914,6 +1967,10 @@ export default function TodaySection() {
           const taskRankKey = task.masterTaskId ?? `${task.category}::${task.name}`;
           const topRank = topRankedKeys.get(taskRankKey);
           const isRunningOverrun = task.status === "running" && overEstimate;
+          const riskTier =
+            lobotomyMode && isRunningOverrun && predictedSecondsForTask > 0
+              ? getRiskTier(elapsedMs / predMs)
+              : null;
           const cardClass =
             task.status === "running"
               ? isRunningOverrun
@@ -1960,6 +2017,14 @@ export default function TodaySection() {
                         <span className="overrun-badge flex items-center gap-1 font-bold text-alert">
                           <span className="h-2 w-2 rounded-full bg-alert" />
                           ⚠ 計測中・予測超過
+                        </span>
+                      )}
+                      {riskTier && (
+                        <span
+                          className={`risk-badge risk-badge-${riskTier.level} rounded border border-alert/70 bg-alert/20 px-1.5 py-0.5 text-[10px] font-bold text-alert`}
+                          title="ロボトミーコーポレーション風モード: 予測超過の度合いに応じた警戒階級"
+                        >
+                          危険度 {riskTier.name}
                         </span>
                       )}
                       {task.status === "paused" && <span className="text-cream/70">‖ 一時停止中</span>}
@@ -2056,7 +2121,7 @@ export default function TodaySection() {
                 <div className="text-right">
                   <div
                     className={`font-display text-2xl font-bold tabular-nums ${overEstimate ? "text-alert" : "text-cream"} ${
-                      isRunningOverrun ? "overrun-flicker" : ""
+                      isRunningOverrun ? (lobotomyMode ? "overrun-flicker-intense" : "overrun-flicker") : ""
                     }`}
                   >
                     {formatMsClock(elapsedMs)}

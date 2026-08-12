@@ -117,6 +117,8 @@ export default function SettingsSection() {
     "5"
   );
   const [accentRgb, setAccentRgb] = useSetting("theme.accentRgb", DEFAULT_ACCENT_RGB);
+  const [lobotomyModeStr, setLobotomyModeStr] = useSetting("theme.lobotomyMode", "false");
+  const lobotomyMode = lobotomyModeStr === "true";
   const [dailySummaryEnabledStr, setDailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
   const dailySummaryEnabled = dailySummaryEnabledStr === "true";
   const [dailySummaryTime, setDailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
@@ -651,6 +653,21 @@ export default function SettingsSection() {
         </div>
         <p className="text-xs text-cream/50">
           警告・重要・強調表示に使う単色アクセントの色相を変更します（配色方針自体は単色のまま維持されます）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">🩸 ロボトミーコーポレーション風モード</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={lobotomyMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setLobotomyModeStr(lobotomyMode ? "false" : "true")}
+          >
+            {lobotomyMode ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          ONにすると、画面全体にCRT風の走査線・ノイズ、アプリタイトルの色収差グリッチ、予測を大幅に超過した作業への「収容の不安定化」警戒表示（画面端のビネット・横スクロールする警告ティッカー・リスク階級バッジ ZAYIN〜ALEPH）が有効になります。常時表示させたくない場合はOFFのままにしてください。
         </p>
       </div>
 

@@ -10,6 +10,7 @@ import { finishDailyTask } from "@/lib/tasks";
 import { todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 import ThemeInit from "@/components/ThemeInit";
+import LobotomyModeInit from "@/components/LobotomyModeInit";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
 
@@ -89,6 +90,7 @@ export default function HomePage() {
   return (
     <div>
       <ThemeInit />
+      <LobotomyModeInit />
       <OrphanTaskModal />
       <TodoReminderModal />
       <TabNav tabs={TABS} active={active} onChange={setActive} />

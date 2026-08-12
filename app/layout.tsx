@@ -49,6 +49,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja" className={`${oswald.variable} ${notoSansJp.variable}`}>
       <body className="min-h-screen bg-ink font-sans text-cream antialiased">
         <BadgeUpdater />
+        {/* ロボトミーコーポレーション風モード(設定でON時のみCSSで可視化)の
+            走査線・ノイズのオーバーレイ。常時DOMには存在させ、表示はCSS側で切り替える */}
+        <div className="crt-scanlines" aria-hidden="true" />
+        <div className="crt-noise" aria-hidden="true" />
         <div className="frame-corners">
           <span className="corner-tr" />
           <span className="corner-br" />
@@ -56,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="relative overflow-hidden border-b border-cream/10">
           <HeaderArt />
           <div className="absolute inset-0 flex items-end px-6 pb-3 sm:px-10">
-            <h1 className="font-display text-2xl font-bold tracking-wide text-cream sm:text-3xl">
+            <h1 className="app-title font-display text-2xl font-bold tracking-wide text-cream sm:text-3xl" data-text="工程表">
               工程表
             </h1>
           </div>
