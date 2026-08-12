@@ -128,7 +128,7 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
           : mode === "powerpro"
             ? "risk-badge-pp-medal border-2 border-pp-gold bg-pp-gold/15 text-pp-gold font-black"
             : "border-alert/70 bg-alert/20 text-alert";
-  const roundness = mode === "powerpro" ? "rounded-full px-2" : "rounded px-1.5";
+  const roundness = mode === "powerpro" ? "px-2.5" : "rounded px-1.5";
   return `risk-badge risk-badge-${level} border ${roundness} py-0.5 text-[10px] font-bold ${shape}`;
 }
 

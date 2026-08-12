@@ -76,6 +76,9 @@ function NatsuyasumiArt() {
         d="M0,220 L0,190 Q200,150 420,185 T840,180 T1200,175 L1200,220 Z"
         fill="rgb(var(--nat-leaf-rgb))"
       />
+      <text x="0" y="110" fontSize="26" className="nat-butterfly">
+        🦋
+      </text>
     </svg>
   );
 }

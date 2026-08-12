@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Oswald, Noto_Sans_JP } from "next/font/google";
+import { Oswald, Noto_Sans_JP, Yomogi, VT323, Anton, Special_Elite } from "next/font/google";
 import "./globals.css";
 import HeaderArt from "@/components/HeaderArt";
 import BadgeUpdater from "@/components/BadgeUpdater";
@@ -16,6 +16,38 @@ const notoSansJp = Noto_Sans_JP({
   subsets: ["latin"],
   weight: ["400", "500", "700", "900"],
   variable: "--font-noto-sans-jp",
+  display: "swap",
+});
+
+// 演出テーマごとの元ネタらしさを出すための追加書体。
+// 日本語グリフを持たないラテン専用書体(vt323/anton/specialElite)は見出し等の日本語には
+// 効かないため、時刻・数字・パーセンテージ等の tabular-nums 要素にのみ当てて効果を出す。
+// ぼくのなつやすみ風のyomogiは手書き風の日本語フォントなので見出し・ボタンにも直接使う
+const yomogi = Yomogi({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-yomogi",
+  display: "swap",
+});
+
+const vt323 = VT323({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-vt323",
+  display: "swap",
+});
+
+const anton = Anton({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-anton",
+  display: "swap",
+});
+
+const specialElite = Special_Elite({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-special-elite",
   display: "swap",
 });
 
@@ -47,7 +79,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ja" className={`${oswald.variable} ${notoSansJp.variable}`}>
+    <html
+      lang="ja"
+      className={`${oswald.variable} ${notoSansJp.variable} ${yomogi.variable} ${vt323.variable} ${anton.variable} ${specialElite.variable}`}
+    >
       <body className="min-h-screen bg-ink font-sans text-cream antialiased">
         <BadgeUpdater />
         {/* 演出テーマ(設定でON時のみCSSで可視化)の走査線・ノイズ・グリッドの

@@ -225,6 +225,46 @@ body {
     --panel-rgb: 255 255 255;
   }
 
+  /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
+     vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
+     日本語には効かず数字・記号にしか効かない。そこで時刻・パーセンテージ等の
+     tabular-nums要素に絞って適用し、「数字だけ本家の書体になる」形で効果を出す。
+     ぼくのなつやすみ風のyomogiのみ日本語グリフを持つ手書き風フォントなので、
+     見出し・アプリ名・ボタンといった短い日本語テキストにも直接使う --- */
+  html[data-visual-mode="natsuyasumi"] .app-title,
+  html[data-visual-mode="natsuyasumi"] h2.font-display,
+  html[data-visual-mode="natsuyasumi"] h3.font-display,
+  html[data-visual-mode="natsuyasumi"] .btn-pill,
+  html[data-visual-mode="natsuyasumi"] .btn-pill-outline {
+    font-family: var(--font-yomogi), var(--font-noto-sans-jp), sans-serif;
+    font-weight: 400;
+  }
+  html[data-visual-mode="natsuyasumi"] .tabular-nums {
+    font-family: var(--font-yomogi), var(--font-noto-sans-jp), sans-serif;
+    letter-spacing: 0.02em;
+  }
+  html[data-visual-mode="va11halla"] .tabular-nums,
+  html[data-visual-mode="powerpro"] .tabular-nums {
+    font-family: var(--font-vt323), var(--font-noto-sans-jp), monospace;
+    letter-spacing: 0.03em;
+  }
+  html[data-visual-mode="persona5"] .tabular-nums {
+    font-family: var(--font-anton), var(--font-noto-sans-jp), sans-serif;
+    letter-spacing: 0.01em;
+  }
+  html[data-visual-mode="lobotomy"] .tabular-nums {
+    font-family: var(--font-special-elite), var(--font-noto-sans-jp), monospace;
+  }
+  /* VA-11 HALL-A風・ロボトミー風の危険階級バッジ名は英字なので、そちらにも書体を効かせる */
+  html[data-visual-mode="va11halla"] .risk-badge {
+    font-family: var(--font-vt323), monospace;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+  html[data-visual-mode="lobotomy"] .risk-badge {
+    font-family: var(--font-special-elite), monospace;
+  }
+
   /* --- 画面全体のオーバーレイ(走査線・ノイズ・グリッド)。共通の器を5テーマで使い回す --- */
   .crt-scanlines {
     position: fixed;
@@ -341,6 +381,31 @@ body {
     -webkit-mask-image: none;
     mask-image: none;
   }
+  /* ヘッダーの蝶々が、ゆらゆらと画面を横切っていく */
+  .nat-butterfly {
+    opacity: 0;
+  }
+  html[data-visual-mode="natsuyasumi"] .nat-butterfly {
+    opacity: 1;
+    animation: nat-butterfly-drift 14s linear infinite;
+  }
+  @keyframes nat-butterfly-drift {
+    0% {
+      transform: translate(0, 0) rotate(0deg);
+    }
+    25% {
+      transform: translate(320px, -18px) rotate(6deg);
+    }
+    50% {
+      transform: translate(680px, 10px) rotate(-4deg);
+    }
+    75% {
+      transform: translate(980px, -14px) rotate(5deg);
+    }
+    100% {
+      transform: translate(1260px, 0) rotate(0deg);
+    }
+  }
   /* パワプロ風: 同じ器を流用し、球場の芝刈り模様(斜めストライプ)を画面下に敷く */
   html[data-visual-mode="powerpro"] .synthwave-grid {
     opacity: 0.5;
@@ -356,9 +421,12 @@ body {
   }
 
   /* --- パネル・見出しの装飾強化 --- */
+  /* ロボトミーコーポレーション風: 管理局の書庫のような、角の無い無機質な矩形+二重枠に寄せる */
   html[data-visual-mode="lobotomy"] .panel {
     position: relative;
+    border-radius: 0 !important;
     border-color: rgb(var(--accent-rgb) / 0.22);
+    box-shadow: inset 0 0 0 3px rgb(var(--ink-rgb)), inset 0 0 0 4px rgb(var(--accent-rgb) / 0.18);
     background-image:
       radial-gradient(circle 2.5px at 11px 11px, rgb(var(--accent-rgb) / 0.55), transparent 100%),
       radial-gradient(circle 2.5px at calc(100% - 11px) 11px, rgb(var(--accent-rgb) / 0.55), transparent 100%),
@@ -366,10 +434,42 @@ body {
       radial-gradient(circle 2.5px at calc(100% - 11px) calc(100% - 11px), rgb(var(--accent-rgb) / 0.55), transparent 100%);
     background-repeat: no-repeat;
   }
+  html[data-visual-mode="lobotomy"] .panel:hover {
+    animation: panel-signal-glitch 0.35s steps(4, end) 1;
+  }
+  @keyframes panel-signal-glitch {
+    0%,
+    100% {
+      transform: translate(0, 0);
+      clip-path: inset(0 0 0 0);
+    }
+    20% {
+      transform: translate(-3px, 0);
+      clip-path: inset(10% 0 60% 0);
+    }
+    40% {
+      transform: translate(3px, 0);
+      clip-path: inset(60% 0 10% 0);
+    }
+    60% {
+      transform: translate(-2px, 0);
+      clip-path: inset(30% 0 30% 0);
+    }
+    80% {
+      transform: translate(0, 0);
+      clip-path: inset(0 0 0 0);
+    }
+  }
+  /* VA-11 HALL-A風: ドット感のある多重ステップ枠で、ピクセルアートのウィンドウ風に寄せる */
   html[data-visual-mode="va11halla"] .panel {
     position: relative;
     border-color: rgb(var(--v11-cyan-rgb) / 0.3);
-    box-shadow: 0 0 0 1px rgb(var(--v11-pink-rgb) / 0.08), 0 0 18px -6px rgb(var(--v11-cyan-rgb) / 0.35);
+    box-shadow:
+      0 0 0 1px rgb(var(--ink-rgb)),
+      0 0 0 2px rgb(var(--v11-cyan-rgb) / 0.5),
+      0 0 0 3px rgb(var(--ink-rgb)),
+      0 0 0 4px rgb(var(--v11-pink-rgb) / 0.25),
+      0 0 18px -6px rgb(var(--v11-cyan-rgb) / 0.35);
   }
   /* ペルソナ5風: パネル左上に切り絵風の赤い斜めリボンをあしらう(切り取り線イメージ) */
   html[data-visual-mode="persona5"] .panel {
@@ -390,13 +490,34 @@ body {
     box-shadow: 0 0 0 2px rgb(var(--ink-rgb));
   }
   /* ぼくのなつやすみ風: パネルを紙焼き写真の角丸カード風に。優しい影と暖色の縁取り */
+  /* ぼくのなつやすみ風: 色鉛筆で塗ったような紙の質感を重ね、右上に先生のはんこ(済)を添える */
   html[data-visual-mode="natsuyasumi"] .panel {
     position: relative;
     border-radius: 1.25rem;
     border: 2px solid rgb(var(--nat-leaf-rgb) / 0.3);
     box-shadow: 0 4px 0 0 rgb(var(--nat-sun-rgb) / 0.35), 0 10px 20px -8px rgb(60 42 24 / 0.25);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
   }
-  /* パワプロ風: スコアボード風の太い緑枠+左上に小さなダイヤモンド(球場)のアイコンを添える */
+  html[data-visual-mode="natsuyasumi"] .panel::after {
+    content: "済";
+    position: absolute;
+    bottom: 10px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    border: 2px solid rgb(var(--accent-rgb) / 0.5);
+    border-radius: 50%;
+    color: rgb(var(--accent-rgb) / 0.55);
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: rotate(-14deg);
+    pointer-events: none;
+  }
+  /* パワプロ風: スコアボード風の太い緑枠+左上に小さなダイヤモンド(球場)のアイコンを添える。
+     パネル内側の上辺には、バッターボックスの白線を思わせる破線を重ねる */
   html[data-visual-mode="powerpro"] .panel {
     position: relative;
     border: 3px solid rgb(var(--pp-green-rgb) / 0.55);
@@ -436,16 +557,66 @@ body {
     content: "// ";
     color: rgb(var(--v11-cyan-rgb) / 0.85);
   }
+  /* ネオンサインが時々ジジッと明滅するような、不規則なちらつきを見出しに与える */
+  html[data-visual-mode="va11halla"] h2.font-display,
+  html[data-visual-mode="va11halla"] h3.font-display {
+    text-shadow: 0 0 6px rgb(var(--v11-cyan-rgb) / 0.4);
+    animation: neon-sign-flicker 6s linear infinite;
+  }
+  @keyframes neon-sign-flicker {
+    0%,
+    3%,
+    6%,
+    100% {
+      opacity: 1;
+      text-shadow: 0 0 6px rgb(var(--v11-cyan-rgb) / 0.4), 0 0 14px rgb(var(--v11-pink-rgb) / 0.2);
+    }
+    4% {
+      opacity: 0.4;
+      text-shadow: none;
+    }
+    5% {
+      opacity: 1;
+    }
+    38% {
+      opacity: 1;
+    }
+    39% {
+      opacity: 0.5;
+    }
+    40% {
+      opacity: 1;
+    }
+  }
   html[data-visual-mode="persona5"] h2.font-display,
   html[data-visual-mode="persona5"] h3.font-display {
+    position: relative;
     display: inline-block;
     transform: skew(-8deg);
     font-style: italic;
+    padding-bottom: 6px;
   }
   html[data-visual-mode="persona5"] h2.font-display::before,
   html[data-visual-mode="persona5"] h3.font-display::before {
     content: "★ ";
     color: rgb(var(--p5-red-rgb));
+  }
+  /* 筆で殴り書きしたような、太さの不揃いな下線を見出しの下に添える */
+  html[data-visual-mode="persona5"] h2.font-display::after,
+  html[data-visual-mode="persona5"] h3.font-display::after {
+    content: "";
+    position: absolute;
+    left: -4px;
+    right: -10%;
+    bottom: 0;
+    height: 5px;
+    background: linear-gradient(
+      100deg,
+      rgb(var(--p5-red-rgb)) 0%,
+      rgb(var(--p5-red-rgb)) 70%,
+      transparent 100%
+    );
+    clip-path: polygon(0 20%, 100% 0, 100% 60%, 0 100%);
   }
   html[data-visual-mode="natsuyasumi"] h2.font-display::before,
   html[data-visual-mode="natsuyasumi"] h3.font-display::before {
@@ -468,7 +639,29 @@ body {
   }
   html[data-visual-mode="persona5"] .btn-pill,
   html[data-visual-mode="persona5"] .btn-pill-outline {
+    position: relative;
+    overflow: hidden;
     clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  }
+  html[data-visual-mode="persona5"] .btn-pill-outline::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 40%, rgb(255 255 255 / 0.7) 50%, transparent 60%);
+    background-size: 250% 100%;
+    background-position: 200% 0;
+    pointer-events: none;
+  }
+  html[data-visual-mode="persona5"] .btn-pill-outline:hover::after {
+    animation: p5-button-shine 0.5s ease-out 1;
+  }
+  @keyframes p5-button-shine {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
   }
   html[data-visual-mode="persona5"] .btn-pill-outline:hover {
     background-color: rgb(var(--p5-red-rgb) / 0.15);
@@ -1050,11 +1243,16 @@ body {
       transform: translateY(-2px);
     }
   }
-  /* パワプロ風: 査定メダルらしく、光沢が横切るシャインアニメーションにする */
+  /* パワプロ風: 査定メダルらしく、六角形の実績アイコン+光沢が横切るシャインアニメーションにする */
   html[data-visual-mode="powerpro"] .risk-badge {
     position: relative;
     overflow: hidden;
     animation: none;
+  }
+  html[data-visual-mode="powerpro"] .risk-badge-pp-medal {
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    padding-left: 12px;
+    padding-right: 12px;
   }
   html[data-visual-mode="powerpro"] .risk-badge-pp-medal::after {
     content: "";
@@ -1222,7 +1420,12 @@ body {
   .frame-corners::after,
   .frame-corners .corner-tr,
   .frame-corners .corner-br,
-  .btn-pill-outline:hover {
+  .btn-pill-outline:hover,
+  .btn-pill-outline::after,
+  .panel:hover,
+  h2.font-display,
+  h3.font-display,
+  .nat-butterfly {
     animation: none !important;
   }
   .crt-scanlines,
