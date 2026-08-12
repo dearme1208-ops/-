@@ -318,7 +318,10 @@ export default function TodaySection() {
       const rawPredicted = master?.estimatedSeconds ?? sorted[0]?.estimatedSeconds ?? 0;
       let cumulative = 0;
       for (const t of sorted) {
-        map.set(t.id, Math.max(0, rawPredicted - cumulative));
+        // 前のインスタンスまでの実績がすでに想定時間を使い切っている場合、残りを0にすると
+        // 「データ不足」に見えてしまうため、新しい試行として改めて生の平均値を予測とする
+        const remaining = rawPredicted - cumulative;
+        map.set(t.id, remaining > 0 ? remaining : rawPredicted);
         cumulative += segmentsAccumulatedMs(t, now) / 1000;
       }
     }

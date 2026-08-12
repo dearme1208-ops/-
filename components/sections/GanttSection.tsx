@@ -162,7 +162,10 @@ export default function GanttSection() {
       const rawPredicted = sorted[0]?.rawPredictedSeconds ?? 0;
       let cumulative = 0;
       for (const r of sorted) {
-        predictedByTaskId.set(r.task.id, Math.max(0, rawPredicted - cumulative));
+        // 前のインスタンスまでの実績がすでに想定時間を使い切っている場合、残りを0にすると
+        // 予測バーが潰れてしまうため、新しい試行として改めて生の平均値を予測とする
+        const remaining = rawPredicted - cumulative;
+        predictedByTaskId.set(r.task.id, remaining > 0 ? remaining : rawPredicted);
         cumulative += r.actualSeconds;
         overPlanByTaskId.set(r.task.id, rawPredicted > 0 && cumulative > rawPredicted);
       }
