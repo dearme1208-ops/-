@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib/todo";
@@ -37,6 +39,16 @@ export default function SettingsSection() {
   const [geoCategory, setGeoCategory] = useSetting("today.geoCategory", "移動");
   const [geoTaskName, setGeoTaskName] = useSetting("today.geoTaskName", "移動");
   const [geoStillMinutesStr, setGeoStillMinutesStr] = useSetting("today.geoStillMinutes", "10");
+  const [geoArrivalEnabledStr, setGeoArrivalEnabledStr] = useSetting("today.geoArrivalEnabled", "false");
+  const geoArrivalEnabled = geoArrivalEnabledStr === "true";
+  const geoPlaces = useLiveQuery(() => db.geoPlaces.orderBy("createdAt").toArray(), []);
+  const [newPlaceLabel, setNewPlaceLabel] = useState("");
+  const [newPlaceCategory, setNewPlaceCategory] = useState("");
+  const [newPlaceName, setNewPlaceName] = useState("");
+  const [newPlaceRadius, setNewPlaceRadius] = useState("150");
+  const [newPlaceLat, setNewPlaceLat] = useState("");
+  const [newPlaceLon, setNewPlaceLon] = useState("");
+  const [geoPlaceStatus, setGeoPlaceStatus] = useState("");
   const [quickStartEnabledStr, setQuickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
   const quickStartEnabled = quickStartEnabledStr === "true";
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
@@ -120,6 +132,56 @@ export default function SettingsSection() {
   }
   function removeBreakRange(index: number) {
     setBreakRangesStr(serializeBreakRanges(breakRanges.filter((_, i) => i !== index)));
+  }
+
+  // 地点登録フォームの緯度・経度に、今いる場所の座標を自動入力する
+  // （利用者が緯度経度を自分で調べて入力するのは非現実的なため、現在地から登録できるようにする）
+  function useCurrentLocationForNewPlace() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoPlaceStatus("この端末・ブラウザは位置情報の取得に対応していません");
+      return;
+    }
+    setGeoPlaceStatus("現在地を取得中...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setNewPlaceLat(pos.coords.latitude.toFixed(6));
+        setNewPlaceLon(pos.coords.longitude.toFixed(6));
+        setGeoPlaceStatus("現在地を取得しました。内容を確認して登録してください。");
+      },
+      () => setGeoPlaceStatus("現在地を取得できませんでした（権限をご確認ください）"),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  async function addGeoPlace() {
+    const lat = Number(newPlaceLat);
+    const lon = Number(newPlaceLon);
+    const radius = Math.max(10, Number(newPlaceRadius) || 150);
+    if (!newPlaceLabel.trim() || !newPlaceCategory.trim() || !newPlaceName.trim() || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      setGeoPlaceStatus("地点名・業務区分・作業名・緯度経度（現在地を登録）を入力してください。");
+      return;
+    }
+    await db.geoPlaces.add({
+      id: uid(),
+      label: newPlaceLabel.trim(),
+      lat,
+      lon,
+      radiusMeters: radius,
+      category: newPlaceCategory.trim(),
+      name: newPlaceName.trim(),
+      createdAt: Date.now(),
+    });
+    setNewPlaceLabel("");
+    setNewPlaceCategory("");
+    setNewPlaceName("");
+    setNewPlaceRadius("150");
+    setNewPlaceLat("");
+    setNewPlaceLon("");
+    setGeoPlaceStatus("地点を登録しました。");
+  }
+
+  async function removeGeoPlace(id: string) {
+    await db.geoPlaces.delete(id);
   }
 
   async function downloadBackup() {
@@ -326,6 +388,108 @@ export default function SettingsSection() {
             <p className="text-[10px] text-cream/40">
               自動開始された仮計測は「本日の作業」画面の仮計測カードから、通常の仮計測と同様に既存の作業へ割り当てたり、新しい作業として確定できます。他の作業を計測中・仮計測中は移動検知による自動開始は行われません。
             </p>
+          </div>
+        )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">位置情報による地点到着検知（自動開始）</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={geoArrivalEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setGeoArrivalEnabledStr(geoArrivalEnabled ? "false" : "true")}
+          >
+            地点到着検知の自動開始: {geoArrivalEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-[10px] text-cream/40">
+          客先など、あらかじめ座標を登録した地点に近づくと、紐づく作業を自動的に開始します（上の「移動検知」とは別の機能です）。ONにするとブラウザから位置情報の利用許可を求められます。ブラウザ/PWAの仕様上、この画面(タブ)を開いている間だけ動作し、バックグラウンドに回すと数十秒〜数分で位置情報の取得が止まります。既に他の作業を計測中の場合は自動で割り込まず、停止して開始するか確認します。
+        </p>
+        {geoArrivalEnabled && (
+          <div className="space-y-2 border-t border-cream/10 pt-3">
+            {(geoPlaces ?? []).length > 0 && (
+              <div className="space-y-1.5">
+                {(geoPlaces ?? []).map((p) => (
+                  <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 text-xs">
+                    <span className="font-bold text-cream">{p.label}</span>
+                    <span className="text-cream/60">
+                      {p.category} / {p.name}
+                    </span>
+                    <span className="text-cream/40">半径{p.radiusMeters}m</span>
+                    <span className="text-cream/30">
+                      ({p.lat.toFixed(4)}, {p.lon.toFixed(4)})
+                    </span>
+                    <button className="ml-auto text-cream/40 hover:text-alert" onClick={() => removeGeoPlace(p.id)} aria-label="削除">
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="space-y-2 rounded-lg border border-cream/10 p-3 text-xs text-cream/70">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={newPlaceLabel}
+                  onChange={(e) => setNewPlaceLabel(e.target.value)}
+                  placeholder="地点名（例: A社本社）"
+                  className="w-40 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+                <input
+                  type="text"
+                  value={newPlaceCategory}
+                  onChange={(e) => setNewPlaceCategory(e.target.value)}
+                  placeholder="業務区分"
+                  className="w-32 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+                <span>/</span>
+                <input
+                  type="text"
+                  value={newPlaceName}
+                  onChange={(e) => setNewPlaceName(e.target.value)}
+                  placeholder="作業名"
+                  className="w-32 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>半径</span>
+                <input
+                  type="number"
+                  min={10}
+                  step={10}
+                  value={newPlaceRadius}
+                  onChange={(e) => setNewPlaceRadius(e.target.value)}
+                  className="w-20 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+                />
+                <span>m以内で到着とみなす</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="btn-pill-outline text-xs" onClick={useCurrentLocationForNewPlace}>
+                  📍 現在地を登録
+                </button>
+                <input
+                  type="number"
+                  value={newPlaceLat}
+                  onChange={(e) => setNewPlaceLat(e.target.value)}
+                  placeholder="緯度"
+                  className="w-28 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+                <input
+                  type="number"
+                  value={newPlaceLon}
+                  onChange={(e) => setNewPlaceLon(e.target.value)}
+                  placeholder="経度"
+                  className="w-28 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+                <button className="btn-pill text-xs" onClick={addGeoPlace}>
+                  地点を追加
+                </button>
+              </div>
+              {geoPlaceStatus && <p className="text-[10px] text-cream/40">{geoPlaceStatus}</p>}
+              <p className="text-[10px] text-cream/40">
+                現地で「現在地を登録」を押すと緯度経度が自動で入ります。地点情報は端末内にのみ保存されます。
+              </p>
+            </div>
           </div>
         )}
       </div>

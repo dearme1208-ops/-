@@ -27,7 +27,7 @@ import {
   notify,
   requestNotificationPermission,
 } from "@/lib/notifications";
-import type { DailyTask, TimeSegment, Weekday } from "@/lib/types";
+import type { DailyTask, GeoPlace, TimeSegment, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
@@ -113,6 +113,16 @@ export default function TodaySection() {
   const geoLastMovedAtRef = useRef<number>(Date.now());
   const geoTaskIdRef = useRef<string | null>(null);
   const geoFinishInFlightRef = useRef(false);
+  // 位置情報: 登録地点への到着検知(自動開始)。移動検知(仮計測)とは別の独立した機能
+  const [geoArrivalEnabledStr] = useSetting("today.geoArrivalEnabled", "false");
+  const geoArrivalEnabled = geoArrivalEnabledStr === "true";
+  const geoPlaces = useLiveQuery(() => db.geoPlaces.toArray(), []);
+  const [geoArrivalError, setGeoArrivalError] = useState<string | null>(null);
+  const geoArrivalWatchIdRef = useRef<number | null>(null);
+  // 地点ごとに「現在圏内にいるか」を保持し、圏内に入った瞬間だけ自動開始をトリガーする。
+  // 退出判定にはヒステリシス(半径の1.5倍)を設け、境界付近でのGPS誤差による連続トリガーを防ぐ
+  const geoInsidePlaceIdsRef = useRef<Set<string>>(new Set());
+  const [geoArrivalConflict, setGeoArrivalConflict] = useState<{ place: GeoPlace; runningTasks: DailyTask[] } | null>(null);
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [conditionEnabledStr] = useSetting("condition.enabled", "true");
@@ -607,6 +617,62 @@ export default function TodaySection() {
     };
   }, [geoTrackingEnabled, geoDistanceThresholdMeters]);
 
+  // 位置情報: 登録地点への到着検知。GPSコールバックは頻繁に発火するため、ここでは
+  // 圏内に入ったことだけを検知してstateに記録し、実際の自動開始処理は別のuseEffectに委ねる
+  // (tasksなど最新のstateを使って判定する必要があるため、コールバック内で直接処理しない)
+  const [arrivedPlaceEvent, setArrivedPlaceEvent] = useState<{ placeId: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!geoArrivalEnabled || !geoPlaces || geoPlaces.length === 0) {
+      if (geoArrivalWatchIdRef.current !== null && typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(geoArrivalWatchIdRef.current);
+      }
+      geoArrivalWatchIdRef.current = null;
+      geoInsidePlaceIdsRef.current = new Set();
+      setGeoArrivalError(null);
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoArrivalError("この端末・ブラウザは位置情報の取得に対応していません");
+      return;
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setGeoArrivalError(null);
+        const { latitude, longitude } = pos.coords;
+        for (const place of geoPlaces) {
+          const dist = haversineDistanceMeters(place.lat, place.lon, latitude, longitude);
+          const wasInside = geoInsidePlaceIdsRef.current.has(place.id);
+          if (dist <= place.radiusMeters) {
+            if (!wasInside) {
+              geoInsidePlaceIdsRef.current.add(place.id);
+              setArrivedPlaceEvent({ placeId: place.id, at: Date.now() });
+            }
+          } else if (dist > place.radiusMeters * 1.5) {
+            // 退出判定には半径の1.5倍のヒステリシスを設け、境界付近のGPS誤差による連続トリガーを防ぐ
+            geoInsidePlaceIdsRef.current.delete(place.id);
+          }
+        }
+      },
+      () => setGeoArrivalError("位置情報を取得できませんでした（権限をご確認ください）"),
+      { enableHighAccuracy: false, maximumAge: 30000, timeout: 20000 }
+    );
+    geoArrivalWatchIdRef.current = watchId;
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      geoArrivalWatchIdRef.current = null;
+    };
+  }, [geoArrivalEnabled, geoPlaces]);
+
+  // 到着イベント(arrivedPlaceEvent)を受けて、実際に作業を自動開始する。
+  // ここは通常のレンダーサイクルで動くため、tasks等の最新stateを安全に参照できる
+  useEffect(() => {
+    if (!geoArrivalEnabled || !arrivedPlaceEvent || !geoPlaces) return;
+    const place = geoPlaces.find((p) => p.id === arrivedPlaceEvent.placeId);
+    if (!place) return;
+    handleGeoArrival(place);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivedPlaceEvent]);
+
   // 移動を検知した(geoMovementTickが進んだ)ら、他に計測中/仮計測中の作業がなければ
   // 「移動」の仮計測タスクを自動的に開始する。仕組みは未計測の自動計測と同じ仮計測枠を使う
   useEffect(() => {
@@ -901,6 +967,36 @@ export default function TodaySection() {
       await db.dailyTasks.add(task);
     };
     await gateFirstStart(doInsert);
+  }
+
+  // 登録地点に対応する作業を、実際に開始する。マスタが無ければ作成し、同日中の
+  // 繰り越し分を差し引いた残り予測時間を初期の想定時間として使う（お気に入り起動と同じ考え方）
+  async function startGeoArrivalTask(place: GeoPlace) {
+    const master = await findOrCreateMasterTask(place.category, place.name, 0);
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(date, place.category, place.name, master.estimatedSeconds);
+    await insertRunningTask(place.category, place.name, estimatedSeconds, master.id, Date.now());
+  }
+
+  // 登録地点への到着を検知した際の入口。予定インポートの自動開始と同様、既に計測中の
+  // 作業があれば自動で割り込まず、停止して開始するか確認する
+  async function handleGeoArrival(place: GeoPlace) {
+    const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
+    notify("到着を検知しました", `${place.label}: ${place.category} / ${place.name}`, `geo-arrival-${place.id}-${Date.now()}`);
+    if (runningTasks.length > 0) {
+      setGeoArrivalConflict({ place, runningTasks });
+      return;
+    }
+    await startGeoArrivalTask(place);
+  }
+
+  // 地点到着の自動開始と、計測中の作業がバッティングした際の確認モーダルへの回答を反映する
+  async function resolveGeoArrivalConflict(startHere: boolean) {
+    if (!geoArrivalConflict) return;
+    const { place, runningTasks } = geoArrivalConflict;
+    setGeoArrivalConflict(null);
+    if (!startHere) return;
+    for (const r of runningTasks) await pauseTask(r);
+    await startGeoArrivalTask(place);
   }
 
   // 新規作業（突発作業の追加・お気に入り）をすぐ開始しようとした際、未計測(仮計測)が
@@ -1599,6 +1695,18 @@ export default function TodaySection() {
         </div>
       )}
 
+      {geoArrivalEnabled && (
+        <div className="panel flex items-center gap-2 p-3 text-xs">
+          {geoArrivalError ? (
+            <span className="text-alert">📍 {geoArrivalError}</span>
+          ) : (
+            <span className="text-cream/50">
+              📍 地点到着検知中（登録地点{(geoPlaces ?? []).length}件。到着すると紐づく作業を自動開始）
+            </span>
+          )}
+        </div>
+      )}
+
       {suggestedTask && (
         <div className="panel flex flex-wrap items-center justify-between gap-2 p-4">
           <div>
@@ -2213,6 +2321,24 @@ export default function TodaySection() {
               今の作業を続ける
             </button>
             <button className="btn-pill text-sm" onClick={() => resolveScheduleConflict(true)}>
+              一時停止して開始する
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {geoArrivalConflict && (
+        <Modal title="位置情報: 到着を検知しました" onClose={() => resolveGeoArrivalConflict(false)}>
+          <p className="mb-3 text-sm text-cream/80">
+            「{geoArrivalConflict.place.label}」（{geoArrivalConflict.place.category} / {geoArrivalConflict.place.name}）
+            への到着を検知しましたが、現在「{geoArrivalConflict.runningTasks.map((t) => t.name).join("、")}」を計測中です。
+            一時停止してこちらを開始しますか?
+          </p>
+          <div className="flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => resolveGeoArrivalConflict(false)}>
+              今の作業を続ける
+            </button>
+            <button className="btn-pill text-sm" onClick={() => resolveGeoArrivalConflict(true)}>
               一時停止して開始する
             </button>
           </div>

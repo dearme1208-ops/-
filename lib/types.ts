@@ -22,6 +22,19 @@ export interface MasterTask {
   quickSlot?: number; // 1〜4。ホーム画面ショートカット(?quickstart=N)から開始/終了できる枠に割り当て済みの場合に設定
 }
 
+// 位置情報による地点到着検知(自動開始)で使う、事前登録した場所。
+// 到着(半径圏内に入る)を検知すると、紐づく業務区分/作業名で自動的に計測を開始する
+export interface GeoPlace {
+  id: string;
+  label: string; // 表示名（例: A社本社）
+  lat: number;
+  lon: number;
+  radiusMeters: number;
+  category: string;
+  name: string;
+  createdAt: number;
+}
+
 export interface TemplateItem {
   id: string;
   weekday: Weekday;
