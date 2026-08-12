@@ -26,7 +26,7 @@ import {
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { useVisualMode } from "@/lib/theme";
+import { cardOverrunClass, emphasisTextClass, useVisualMode } from "@/lib/theme";
 import { daysBetweenDateStrs, todayStr, formatDateJp } from "@/lib/time";
 import type { ProjectItem, RecurrenceRule, RecurrenceType, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
@@ -1029,7 +1029,7 @@ function OverdueBulkList({
   onOpenDetail: (id: string) => void;
 }) {
   const allSelected = tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id));
-  const { themedMode, va11hallaMode } = useVisualMode();
+  const { themedMode } = useVisualMode();
 
   if (tasks.length === 0) {
     return <p className="px-1 py-4 text-sm text-cream/50">期限切れのタスクはありません。</p>;
@@ -1088,7 +1088,7 @@ function OverdueBulkList({
             <div
               key={task.id}
               className={`flex items-center gap-3 rounded-lg border border-alert/30 bg-alert/5 px-3 py-2 ${
-                themedMode ? (va11hallaMode ? "card-overrun-v11" : "card-overrun") : ""
+                themedMode ? cardOverrunClass(themedMode) : ""
               }`}
             >
               <button
@@ -1108,15 +1108,19 @@ function OverdueBulkList({
                   {task.customer && <span>{task.customer}</span>}
                 </div>
               </button>
-              <div className={`shrink-0 text-right text-xs font-bold ${va11hallaMode ? "text-v11-pink" : "text-alert"}`}>
+              <div className={`shrink-0 text-right text-xs font-bold ${themedMode ? emphasisTextClass(themedMode) : "text-alert"}`}>
                 {task.dueDate ? formatDateJp(task.dueDate) : ""}
                 {daysOverdue !== null && daysOverdue > 0 && (
                   <div className={`text-[10px] ${themedMode ? "overrun-flicker" : ""}`}>
-                    {themedMode
-                      ? va11hallaMode
-                        ? `${daysOverdue}日 オーダー未処理`
-                        : `${daysOverdue}日 業務逸脱`
-                      : `${daysOverdue}日超過`}
+                    {themedMode === "va11halla"
+                      ? `${daysOverdue}日 オーダー未処理`
+                      : themedMode === "persona5"
+                        ? `${daysOverdue}日 未接触の標的`
+                        : themedMode === "natsuyasumi"
+                          ? `日記が${daysOverdue}日分たまってます`
+                          : themedMode === "lobotomy"
+                            ? `${daysOverdue}日 業務逸脱`
+                            : `${daysOverdue}日超過`}
                   </div>
                 )}
               </div>
@@ -1243,14 +1247,14 @@ function TaskRow({
 }) {
   const today = todayStr();
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
-  const { themedMode, va11hallaMode } = useVisualMode();
+  const { themedMode } = useVisualMode();
   const dueDate = effectiveDueDate(task, subtasks);
   const overdue = !task.completed && !!dueDate && dueDate < today;
   const doneCount = subtasks.filter((s) => s.completed).length;
   return (
     <div
       className={`flex items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 ${task.completed ? "opacity-50" : ""} ${
-        overdue && themedMode ? (va11hallaMode ? "card-overrun-v11" : "card-overrun") : ""
+        overdue && themedMode ? cardOverrunClass(themedMode) : ""
       }`}
     >
       <button
@@ -1302,7 +1306,7 @@ function TaskRow({
             <span
               className={
                 overdue
-                  ? `font-bold ${va11hallaMode ? "text-v11-pink" : "text-alert"} ${themedMode ? "overrun-flicker" : ""}`
+                  ? `font-bold ${themedMode ? emphasisTextClass(themedMode) : "text-alert"} ${themedMode ? "overrun-flicker" : ""}`
                   : "text-cream/50"
               }
             >

@@ -7,7 +7,7 @@ import { useSetting } from "@/lib/settings";
 import { completeTodoTask, effectiveDueDate } from "@/lib/todo";
 import { daysBetweenDateStrs, formatDateJp, todayStr } from "@/lib/time";
 import { notify } from "@/lib/notifications";
-import { useVisualMode } from "@/lib/theme";
+import { cardOverrunClass, emphasisTextClass, useVisualMode } from "@/lib/theme";
 import type { TodoTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
@@ -25,7 +25,7 @@ export default function TodoReminderModal() {
   const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
   const [dismissedAll, setDismissedAll] = useState(false);
   const [notifiedOnce, setNotifiedOnce] = useState(false);
-  const { themedMode, va11hallaMode } = useVisualMode();
+  const { themedMode } = useVisualMode();
 
   const subtasksByParent = useMemo(() => {
     const map = new Map<string, TodoTask[]>();
@@ -68,24 +68,30 @@ export default function TodoReminderModal() {
 
   if (!reminderEnabled || dueSoonTasks.length === 0 || dismissedAll) return null;
 
+  const title =
+    themedMode === "va11halla"
+      ? "ラストコールです"
+      : themedMode === "persona5"
+        ? "予告状を出す時間です"
+        : themedMode === "natsuyasumi"
+          ? "宿題の締め切りが近づいています"
+          : themedMode === "lobotomy"
+            ? "警告：期限監視対象があります"
+            : "期日が近いTodoがあります";
+  const bodyText =
+    themedMode === "va11halla"
+      ? `閉店（期日）まであと${daysBefore}日以内、またはすでに閉店時刻を過ぎている未完了のオーダーです。`
+      : themedMode === "persona5"
+        ? `決行（期日）まであと${daysBefore}日以内、またはすでに期限を過ぎている未完了のターゲットです。`
+        : themedMode === "natsuyasumi"
+          ? `夏休みの終わり（期日）まであと${daysBefore}日以内、またはもう終わってしまっている宿題です。`
+          : themedMode === "lobotomy"
+            ? `管理限界まであと${daysBefore}日以内、または既に管理限界を超過している未処理案件です。`
+            : `期日まであと${daysBefore}日以内、または既に期日を過ぎている未完了のタスクです。`;
+
   return (
-    <Modal
-      title={
-        themedMode
-          ? va11hallaMode
-            ? "ラストコールです"
-            : "警告：期限監視対象があります"
-          : "期日が近いTodoがあります"
-      }
-      onClose={() => setDismissedAll(true)}
-    >
-      <p className="mb-3 text-sm text-cream/70">
-        {themedMode
-          ? va11hallaMode
-            ? `閉店（期日）まであと${daysBefore}日以内、またはすでに閉店時刻を過ぎている未完了のオーダーです。`
-            : `管理限界まであと${daysBefore}日以内、または既に管理限界を超過している未処理案件です。`
-          : `期日まであと${daysBefore}日以内、または既に期日を過ぎている未完了のタスクです。`}
-      </p>
+    <Modal title={title} onClose={() => setDismissedAll(true)}>
+      <p className="mb-3 text-sm text-cream/70">{bodyText}</p>
       <div className="max-h-96 space-y-2 overflow-y-auto">
         {dueSoonTasks.map(({ task, due }) => {
           const overdue = due < today;
@@ -93,12 +99,14 @@ export default function TodoReminderModal() {
             <div
               key={task.id}
               className={`rounded-lg border border-alert/30 bg-ink/50 p-3 ${
-                overdue && themedMode ? (va11hallaMode ? "card-overrun-v11" : "card-overrun") : ""
+                overdue && themedMode ? cardOverrunClass(themedMode) : ""
               }`}
             >
               <div
                 className={`text-xs ${
-                  overdue ? `font-bold ${va11hallaMode ? "text-v11-pink" : "text-alert"} ${themedMode ? "overrun-flicker" : ""}` : "text-cream/50"
+                  overdue
+                    ? `font-bold ${themedMode ? emphasisTextClass(themedMode) : "text-alert"} ${themedMode ? "overrun-flicker" : ""}`
+                    : "text-cream/50"
                 }`}
               >
                 {formatDateJp(due)}

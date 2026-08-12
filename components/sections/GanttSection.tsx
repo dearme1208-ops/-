@@ -9,7 +9,7 @@ import { formatClock, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
-import { useVisualMode } from "@/lib/theme";
+import { ganttOverrunClass, useVisualMode } from "@/lib/theme";
 
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 0.05;
@@ -99,7 +99,7 @@ export default function GanttSection() {
   const [compactViewStr, setCompactViewStr] = useSetting("gantt.compactView", "false");
   const [groupModeStr, setGroupModeStr] = useSetting("gantt.groupMode", "detail");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { va11hallaMode, themedMode } = useVisualMode();
+  const { themedMode } = useVisualMode();
 
   const startHour = Math.min(23, Math.max(0, Number(startHourStr) || 0));
   const stackBars = stackBarsStr === "true";
@@ -772,7 +772,7 @@ export default function GanttSection() {
                           height={20}
                           className={`rounded ${
                             iv.overPlan
-                              ? `bg-alert ${themedMode ? (va11hallaMode ? "gantt-bar-overrun-v11" : "gantt-bar-overrun") : ""}`
+                              ? `bg-alert ${themedMode ? ganttOverrunClass(themedMode) : ""}`
                               : "bg-cream"
                           } opacity-90`}
                           style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
@@ -862,7 +862,7 @@ export default function GanttSection() {
                                 height={actualBarHeight}
                                 className={`rounded ${
                                   item.overPlan
-                                    ? `bg-alert ${themedMode ? (va11hallaMode ? "gantt-bar-overrun-v11" : "gantt-bar-overrun") : ""}`
+                                    ? `bg-alert ${themedMode ? ganttOverrunClass(themedMode) : ""}`
                                     : "bg-cream"
                                 } opacity-90`}
                                 style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}

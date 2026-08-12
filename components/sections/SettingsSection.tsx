@@ -676,6 +676,18 @@ export default function SettingsSection() {
           >
             🍸 VA-11 HALL-A風
           </button>
+          <button
+            className={visualMode === "persona5" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("persona5")}
+          >
+            ★ ペルソナ5風
+          </button>
+          <button
+            className={visualMode === "natsuyasumi" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("natsuyasumi")}
+          >
+            🌻 ぼくのなつやすみ風
+          </button>
         </div>
         {visualMode === "lobotomy" && (
           <p className="text-xs text-cream/50">
@@ -685,6 +697,16 @@ export default function SettingsSection() {
         {visualMode === "va11halla" && (
           <p className="text-xs text-cream/50">
             画面全体にネオンのシンセウェイブグリッド・VHS風走査線、パネル枠のネオングロー、アプリタイトルのネオン色収差が有効になります。予測を大幅に超過した作業には「システムオーバーロード」警戒表示（ネオンビネット・横スクロールする警告ティッカー・注文階級バッジ REGULAR〜BAD TOUCH）が出ます。
+          </p>
+        )}
+        {visualMode === "persona5" && (
+          <p className="text-xs text-cream/50">
+            画面全体が黒地に赤・白を基調にした切り絵風の配色に丸ごと変わり、パネル左上の斜め切り取りリボン・見出しの斜体強調・角を落とした鋭いボタンが有効になります。予測を大幅に超過した作業には「予告状」警戒表示（高速ストロボのビネット・横スクロールする警告ティッカー・階級バッジ 順調〜予告状）が出ます。
+          </p>
+        )}
+        {visualMode === "natsuyasumi" && (
+          <p className="text-xs text-cream/50">
+            画面全体が暖色の紙焼き写真風ライトテーマに丸ごと反転し、他の演出テーマとは対照的な見た目になります。パネルは角丸の写真カード風、警告は夏の天気（そよ風〜夕立警報）になぞらえたのんびりした表示に変わります。
           </p>
         )}
         {visualMode === "off" && (

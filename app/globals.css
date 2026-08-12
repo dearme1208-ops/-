@@ -5,9 +5,21 @@
 :root {
   color-scheme: dark;
   --accent-rgb: 194 59 59;
+  /* 基調色(背景/文字/パネル)。演出テーマ選択時はhtml[data-visual-mode]側でこれらを
+     丸ごと差し替えることで、コンポーネント側を一切変更せずに全タブの配色を反転できる */
+  --ink-rgb: 11 11 12;
+  --cream-rgb: 233 230 189;
+  --panel-rgb: 21 21 23;
   /* VA-11 HALL-A風演出テーマ専用のネオンパレット(固定色) */
   --v11-pink-rgb: 255 45 149;
   --v11-cyan-rgb: 0 229 255;
+  /* ペルソナ5風演出テーマ専用の赤・白(固定色) */
+  --p5-red-rgb: 230 20 30;
+  --p5-white-rgb: 245 245 240;
+  /* ぼくのなつやすみ風演出テーマ専用の夏空・陽射し・葉の色(固定色) */
+  --nat-sea-rgb: 90 175 205;
+  --nat-sun-rgb: 235 170 60;
+  --nat-leaf-rgb: 95 150 70;
 }
 
 html,
@@ -180,10 +192,29 @@ body {
   }
 
   /* ===== 演出テーマ（設定でON時のみ有効） =====
-     html[data-visual-mode="lobotomy"] / "va11halla" 配下でのみ効果を持つため、
-     設定でオフにすれば通常の見た目に戻る */
+     html[data-visual-mode="lobotomy" / "va11halla" / "persona5" / "natsuyasumi"] 配下でのみ
+     効果を持つため、設定でオフにすれば通常の見た目に戻る */
 
-  /* --- 画面全体のオーバーレイ(走査線・ノイズ・グリッド)。共通の器を2テーマで使い回す --- */
+  /* ペルソナ5風: 黒地に赤・白を効かせた切り絵風の配色に、基調色そのものを差し替える。
+     alertを使っている警告表示は自動的に真紅になる */
+  html[data-visual-mode="persona5"] {
+    color-scheme: dark;
+    --accent-rgb: var(--p5-red-rgb);
+    --ink-rgb: 6 6 8;
+    --cream-rgb: 245 245 240;
+    --panel-rgb: 16 16 18;
+  }
+  /* ぼくのなつやすみ風: 画面全体を暖色の紙焼き写真風ライトテーマへ丸ごと反転する。
+     ダーク基調の他テーマとは対照的に、ここだけ全く違う見た目になる */
+  html[data-visual-mode="natsuyasumi"] {
+    color-scheme: light;
+    --accent-rgb: 205 95 40;
+    --ink-rgb: 250 239 213;
+    --cream-rgb: 63 45 26;
+    --panel-rgb: 255 249 232;
+  }
+
+  /* --- 画面全体のオーバーレイ(走査線・ノイズ・グリッド)。共通の器を4テーマで使い回す --- */
   .crt-scanlines {
     position: fixed;
     inset: 0;
@@ -214,6 +245,13 @@ body {
     );
     mix-blend-mode: screen;
   }
+  /* ペルソナ5風: 走査線の代わりに、コミック風のハーフトーン斜めドットを薄く重ねる */
+  html[data-visual-mode="persona5"] .crt-scanlines {
+    opacity: 0.12;
+    background-image: radial-gradient(rgb(var(--p5-red-rgb) / 0.9) 1px, transparent 1px);
+    background-size: 5px 5px;
+    mix-blend-mode: multiply;
+  }
 
   .crt-noise {
     position: fixed;
@@ -232,6 +270,11 @@ body {
   html[data-visual-mode="va11halla"] .crt-noise {
     opacity: 0.08;
     animation: crt-noise-shift 0.6s steps(2) infinite;
+  }
+  html[data-visual-mode="natsuyasumi"] .crt-noise {
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    animation: none;
   }
   @keyframes crt-noise-shift {
     0%,
@@ -262,6 +305,31 @@ body {
   html[data-visual-mode="va11halla"] .synthwave-grid {
     opacity: 0.35;
   }
+  /* ペルソナ5風: 同じ器を流用し、画面下からせり上がる赤黒の斜めストライプ(予告状イメージ)に差し替える */
+  html[data-visual-mode="persona5"] .synthwave-grid {
+    opacity: 0.5;
+    background-image: repeating-linear-gradient(
+      -35deg,
+      rgb(var(--p5-red-rgb) / 0.5) 0px,
+      rgb(var(--p5-red-rgb) / 0.5) 14px,
+      transparent 14px,
+      transparent 42px
+    );
+    background-size: auto;
+    -webkit-mask-image: linear-gradient(to top, black, transparent 22%);
+    mask-image: linear-gradient(to top, black, transparent 22%);
+  }
+  /* ぼくのなつやすみ風: 同じ器を流用し、画面下からやわらかく差し込む陽射しのグラデーションに差し替える */
+  html[data-visual-mode="natsuyasumi"] .synthwave-grid {
+    opacity: 0.6;
+    background-image: radial-gradient(
+      ellipse 80% 60% at 50% 110%,
+      rgb(var(--nat-sun-rgb) / 0.35),
+      transparent 70%
+    );
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
 
   /* --- パネル・見出しの装飾強化 --- */
   html[data-visual-mode="lobotomy"] .panel {
@@ -279,10 +347,39 @@ body {
     border-color: rgb(var(--v11-cyan-rgb) / 0.3);
     box-shadow: 0 0 0 1px rgb(var(--v11-pink-rgb) / 0.08), 0 0 18px -6px rgb(var(--v11-cyan-rgb) / 0.35);
   }
+  /* ペルソナ5風: パネル左上に切り絵風の赤い斜めリボンをあしらう(切り取り線イメージ) */
+  html[data-visual-mode="persona5"] .panel {
+    position: relative;
+    border-color: rgb(var(--p5-red-rgb) / 0.35);
+    border-width: 2px;
+    overflow: hidden;
+  }
+  html[data-visual-mode="persona5"] .panel::before {
+    content: "";
+    position: absolute;
+    top: -18px;
+    left: -34px;
+    width: 90px;
+    height: 26px;
+    background: rgb(var(--p5-red-rgb));
+    transform: rotate(-45deg);
+    box-shadow: 0 0 0 2px rgb(var(--ink-rgb));
+  }
+  /* ぼくのなつやすみ風: パネルを紙焼き写真の角丸カード風に。優しい影と暖色の縁取り */
+  html[data-visual-mode="natsuyasumi"] .panel {
+    position: relative;
+    border-radius: 1.25rem;
+    border: 2px solid rgb(var(--nat-leaf-rgb) / 0.3);
+    box-shadow: 0 4px 0 0 rgb(var(--nat-sun-rgb) / 0.35), 0 10px 20px -8px rgb(60 42 24 / 0.25);
+  }
   html[data-visual-mode="lobotomy"] h2.font-display,
   html[data-visual-mode="lobotomy"] h3.font-display,
   html[data-visual-mode="va11halla"] h2.font-display,
-  html[data-visual-mode="va11halla"] h3.font-display {
+  html[data-visual-mode="va11halla"] h3.font-display,
+  html[data-visual-mode="persona5"] h2.font-display,
+  html[data-visual-mode="persona5"] h3.font-display,
+  html[data-visual-mode="natsuyasumi"] h2.font-display,
+  html[data-visual-mode="natsuyasumi"] h3.font-display {
     letter-spacing: 0.03em;
   }
   html[data-visual-mode="lobotomy"] h2.font-display::before,
@@ -295,6 +392,22 @@ body {
     content: "// ";
     color: rgb(var(--v11-cyan-rgb) / 0.85);
   }
+  html[data-visual-mode="persona5"] h2.font-display,
+  html[data-visual-mode="persona5"] h3.font-display {
+    display: inline-block;
+    transform: skew(-8deg);
+    font-style: italic;
+  }
+  html[data-visual-mode="persona5"] h2.font-display::before,
+  html[data-visual-mode="persona5"] h3.font-display::before {
+    content: "★ ";
+    color: rgb(var(--p5-red-rgb));
+  }
+  html[data-visual-mode="natsuyasumi"] h2.font-display::before,
+  html[data-visual-mode="natsuyasumi"] h3.font-display::before {
+    content: "☀ ";
+    color: rgb(var(--nat-sun-rgb));
+  }
 
   /* ボタンにテーマ色のホバーグロー・わずかなジッターを付与 */
   html[data-visual-mode="lobotomy"] .btn-pill-outline:hover {
@@ -303,6 +416,24 @@ body {
   }
   html[data-visual-mode="va11halla"] .btn-pill-outline:hover {
     box-shadow: 0 0 0 1px rgb(var(--v11-cyan-rgb) / 0.6), 0 0 14px rgb(var(--v11-pink-rgb) / 0.4);
+  }
+  html[data-visual-mode="persona5"] .btn-pill,
+  html[data-visual-mode="persona5"] .btn-pill-outline {
+    clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  }
+  html[data-visual-mode="persona5"] .btn-pill-outline:hover {
+    background-color: rgb(var(--p5-red-rgb) / 0.15);
+    box-shadow: 2px 2px 0 0 rgb(var(--p5-red-rgb));
+    animation: button-jitter 0.15s steps(2) 1;
+  }
+  html[data-visual-mode="natsuyasumi"] .btn-pill,
+  html[data-visual-mode="natsuyasumi"] .btn-pill-outline {
+    border-radius: 999px;
+    border-style: dashed;
+  }
+  html[data-visual-mode="natsuyasumi"] .btn-pill-outline:hover {
+    box-shadow: 0 2px 0 0 rgb(var(--nat-leaf-rgb) / 0.6);
+    transform: translateY(-1px);
   }
   @keyframes button-jitter {
     0% {
@@ -331,6 +462,30 @@ body {
     border-color: rgb(var(--v11-cyan-rgb) / 0.7);
     animation: corner-glow-pulse 3s ease-in-out infinite;
   }
+  html[data-visual-mode="persona5"] .frame-corners::before,
+  html[data-visual-mode="persona5"] .frame-corners::after,
+  html[data-visual-mode="persona5"] .frame-corners .corner-tr,
+  html[data-visual-mode="persona5"] .frame-corners .corner-br {
+    border-color: rgb(var(--p5-red-rgb) / 0.85);
+    border-width: 3px;
+  }
+  html[data-visual-mode="natsuyasumi"] .frame-corners::before,
+  html[data-visual-mode="natsuyasumi"] .frame-corners::after,
+  html[data-visual-mode="natsuyasumi"] .frame-corners .corner-tr,
+  html[data-visual-mode="natsuyasumi"] .frame-corners .corner-br {
+    border-color: rgb(var(--nat-leaf-rgb) / 0.6);
+    border-style: dashed;
+    animation: corner-sway 4s ease-in-out infinite;
+  }
+  @keyframes corner-sway {
+    0%,
+    100% {
+      transform: rotate(0deg);
+    }
+    50% {
+      transform: rotate(1deg);
+    }
+  }
   @keyframes corner-glow-pulse {
     0%,
     100% {
@@ -348,7 +503,9 @@ body {
   html[data-visual-mode="lobotomy"] .app-title::before,
   html[data-visual-mode="lobotomy"] .app-title::after,
   html[data-visual-mode="va11halla"] .app-title::before,
-  html[data-visual-mode="va11halla"] .app-title::after {
+  html[data-visual-mode="va11halla"] .app-title::after,
+  html[data-visual-mode="persona5"] .app-title::before,
+  html[data-visual-mode="persona5"] .app-title::after {
     content: attr(data-text);
     position: absolute;
     inset: 0;
@@ -372,6 +529,21 @@ body {
   }
   html[data-visual-mode="va11halla"] .app-title {
     text-shadow: 0 0 8px rgb(var(--v11-cyan-rgb) / 0.5), 0 0 16px rgb(var(--v11-pink-rgb) / 0.25);
+  }
+  html[data-visual-mode="persona5"] .app-title::before {
+    color: rgb(var(--p5-red-rgb));
+    animation: title-glitch-1 5s steps(1, end) infinite;
+  }
+  html[data-visual-mode="persona5"] .app-title::after {
+    color: rgb(var(--p5-white-rgb));
+    animation: title-glitch-2 5s steps(1, end) infinite;
+  }
+  html[data-visual-mode="persona5"] .app-title {
+    transform: skew(-6deg);
+    display: inline-block;
+  }
+  html[data-visual-mode="natsuyasumi"] .app-title {
+    text-shadow: 2px 2px 0 rgb(var(--nat-sun-rgb) / 0.5);
   }
   @keyframes title-glitch-1 {
     0%,
@@ -469,6 +641,80 @@ body {
     }
   }
 
+  /* --- ペルソナ5風: 計測中/超過中カードのスポットライト演出。予告状さながらの強いコントラスト --- */
+  .card-running-p5 {
+    animation: card-running-p5-glow 1.8s ease-in-out infinite;
+  }
+  @keyframes card-running-p5-glow {
+    0%,
+    100% {
+      box-shadow: 2px 2px 0 0 rgb(var(--p5-red-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: 4px 4px 0 0 rgb(var(--p5-red-rgb) / 0.9);
+    }
+  }
+  .card-overrun-p5 {
+    animation: card-overrun-p5-flash 0.9s steps(2, end) infinite;
+  }
+  @keyframes card-overrun-p5-flash {
+    0%,
+    100% {
+      box-shadow: 3px 3px 0 0 rgb(var(--p5-red-rgb)), -1px -1px 0 0 rgb(var(--p5-white-rgb) / 0.4);
+    }
+    50% {
+      box-shadow: 6px 6px 0 0 rgb(var(--p5-red-rgb)), -2px -2px 0 0 rgb(var(--p5-white-rgb) / 0.7);
+    }
+  }
+  .hazard-bar-p5 {
+    height: 6px;
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgb(var(--p5-red-rgb)) 0 8px,
+      #000 8px 16px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 1s linear infinite;
+  }
+
+  /* --- ぼくのなつやすみ風: 計測中/超過中カードを、優しい木漏れ日のような揺らぎで表す --- */
+  .card-running-nat {
+    animation: card-running-nat-sway 3s ease-in-out infinite;
+  }
+  @keyframes card-running-nat-sway {
+    0%,
+    100% {
+      box-shadow: 0 2px 0 0 rgb(var(--nat-sea-rgb) / 0.4);
+    }
+    50% {
+      box-shadow: 0 5px 14px -4px rgb(var(--nat-sea-rgb) / 0.55);
+    }
+  }
+  .card-overrun-nat {
+    animation: card-overrun-nat-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes card-overrun-nat-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.4), 0 4px 0 0 rgb(var(--nat-sun-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.7), 0 6px 16px -4px rgb(var(--accent-rgb) / 0.4);
+    }
+  }
+  .hazard-bar-nat {
+    height: 6px;
+    border-radius: 999px;
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--nat-sun-rgb)) 0%,
+      rgb(var(--accent-rgb)) 50%,
+      rgb(var(--nat-sun-rgb)) 100%
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-v11-scroll 2.6s linear infinite;
+  }
+
   /* --- Ganttチャートで想定を超過した実績バー。警戒度をバー自体の見た目で示す --- */
   .gantt-bar-overrun {
     background-image: repeating-linear-gradient(
@@ -511,6 +757,26 @@ body {
       box-shadow: 0 0 12px 3px rgb(var(--v11-cyan-rgb) / 0.6);
     }
   }
+  .gantt-bar-overrun-p5 {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgb(var(--p5-red-rgb)) 0 6px,
+      #000 6px 12px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 0.9s linear infinite;
+  }
+  .gantt-bar-overrun-nat {
+    border-radius: 999px;
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--nat-sun-rgb)) 0%,
+      rgb(var(--accent-rgb)) 50%,
+      rgb(var(--nat-sun-rgb)) 100%
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-v11-scroll 2.6s linear infinite;
+  }
 
   /* 予測超過中のタイマー数字を、より強く色収差させて明滅させる(通常のoverrun-flickerより過激) */
   .overrun-flicker-intense {
@@ -522,6 +788,14 @@ body {
     animation:
       overrun-flicker 3.2s linear infinite,
       overrun-chroma-v11 2.1s steps(1, end) infinite;
+  }
+  html[data-visual-mode="persona5"] .overrun-flicker-intense {
+    animation:
+      overrun-flicker 2.4s linear infinite,
+      overrun-chroma-p5 1.4s steps(1, end) infinite;
+  }
+  html[data-visual-mode="natsuyasumi"] .overrun-flicker-intense {
+    animation: overrun-shimmer-nat 2.6s ease-in-out infinite;
   }
   @keyframes overrun-chroma {
     0%,
@@ -553,6 +827,30 @@ body {
       text-shadow: none;
     }
   }
+  @keyframes overrun-chroma-p5 {
+    0%,
+    85%,
+    100% {
+      text-shadow: none;
+    }
+    86% {
+      text-shadow: -3px 0 rgb(var(--p5-red-rgb)), 3px 0 rgb(var(--p5-white-rgb) / 0.8);
+    }
+    89% {
+      text-shadow: none;
+    }
+  }
+  @keyframes overrun-shimmer-nat {
+    0%,
+    100% {
+      text-shadow: 0 0 0 transparent;
+      opacity: 1;
+    }
+    50% {
+      text-shadow: 0 0 10px rgb(var(--nat-sun-rgb) / 0.7);
+      opacity: 0.85;
+    }
+  }
 
   /* 警告リスク階級バッジ。階級が上がるほど脈動を速くする(両テーマ共通の器) */
   .risk-badge {
@@ -576,6 +874,54 @@ body {
       opacity: 0.5;
     }
   }
+  /* ペルソナ5風: バッジは角を落とさず斜めに傾け、スポットライトのような高速ストロボにする */
+  html[data-visual-mode="persona5"] .risk-badge {
+    animation: risk-badge-strobe-p5 0.55s steps(1, end) infinite;
+    border-radius: 0;
+    transform: skewX(-8deg);
+  }
+  html[data-visual-mode="persona5"] .risk-badge-2 {
+    animation-duration: 0.38s;
+  }
+  html[data-visual-mode="persona5"] .risk-badge-3 {
+    animation-duration: 0.24s;
+  }
+  html[data-visual-mode="persona5"] .risk-badge-4 {
+    animation-duration: 0.12s;
+  }
+  @keyframes risk-badge-strobe-p5 {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+  /* ぼくのなつやすみ風: バッジは点滅させず、うちわで扇ぐようなゆったりした揺れにする */
+  html[data-visual-mode="natsuyasumi"] .risk-badge {
+    animation: risk-badge-bob-nat 2.2s ease-in-out infinite;
+    border-radius: 999px;
+    border-style: dashed;
+  }
+  html[data-visual-mode="natsuyasumi"] .risk-badge-2 {
+    animation-duration: 1.7s;
+  }
+  html[data-visual-mode="natsuyasumi"] .risk-badge-3 {
+    animation-duration: 1.3s;
+  }
+  html[data-visual-mode="natsuyasumi"] .risk-badge-4 {
+    animation-duration: 0.9s;
+  }
+  @keyframes risk-badge-bob-nat {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-2px);
+    }
+  }
 
   /* 画面端の脈動するビネット。超過中の作業が1つでもあれば表示される */
   .containment-vignette {
@@ -595,6 +941,14 @@ body {
     opacity: 1;
     animation: containment-vignette-v11-pulse 2.4s ease-in-out infinite;
   }
+  html[data-visual-mode="persona5"] .containment-vignette.is-active {
+    opacity: 1;
+    animation: containment-vignette-p5-pulse 0.9s ease-in-out infinite;
+  }
+  html[data-visual-mode="natsuyasumi"] .containment-vignette.is-active {
+    opacity: 1;
+    animation: containment-vignette-nat-pulse 3.4s ease-in-out infinite;
+  }
   @keyframes containment-vignette-pulse {
     0%,
     100% {
@@ -613,6 +967,24 @@ body {
       box-shadow: inset 0 0 110px 20px rgb(var(--v11-cyan-rgb) / 0.35);
     }
   }
+  @keyframes containment-vignette-p5-pulse {
+    0%,
+    100% {
+      box-shadow: inset 0 0 0 6px rgb(var(--p5-red-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: inset 0 0 0 10px rgb(var(--p5-red-rgb) / 0.85);
+    }
+  }
+  @keyframes containment-vignette-nat-pulse {
+    0%,
+    100% {
+      box-shadow: inset 0 0 70px 0px rgb(var(--nat-sun-rgb) / 0.25);
+    }
+    50% {
+      box-shadow: inset 0 0 120px 10px rgb(var(--nat-sun-rgb) / 0.4);
+    }
+  }
 
   /* 警告ティッカー(横スクロールする警戒テキスト) */
   .warning-ticker {
@@ -624,6 +996,15 @@ body {
     display: inline-block;
     padding-left: 100%;
     animation: warning-ticker-scroll 14s linear infinite;
+  }
+  html[data-visual-mode="persona5"] .warning-ticker-track {
+    font-weight: 800;
+    font-style: italic;
+    animation-duration: 9s;
+  }
+  html[data-visual-mode="natsuyasumi"] .warning-ticker-track {
+    font-weight: 600;
+    animation-duration: 22s;
   }
   @keyframes warning-ticker-scroll {
     from {
@@ -640,10 +1021,18 @@ body {
   .card-overrun,
   .card-running-v11,
   .card-overrun-v11,
+  .card-running-p5,
+  .card-overrun-p5,
+  .card-running-nat,
+  .card-overrun-nat,
   .hazard-bar,
   .hazard-bar-v11,
+  .hazard-bar-p5,
+  .hazard-bar-nat,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
+  .gantt-bar-overrun-p5,
+  .gantt-bar-overrun-nat,
   .overrun-flicker,
   .overrun-flicker-intense,
   .overrun-badge,

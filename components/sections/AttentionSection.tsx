@@ -14,7 +14,7 @@ import {
 import { computeConditionVarianceByTask, computeProductivityByCondition, CONDITION_LEVELS } from "@/lib/condition";
 import { currentFiscalYear } from "@/lib/period";
 import { formatHms } from "@/lib/time";
-import { getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
+import { emphasisTextClass, getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
@@ -297,7 +297,7 @@ export default function AttentionSection() {
                 <div className="text-xs text-cream/40">サンプル数 {row.sampleCount}</div>
               </div>
               <div className="text-right text-sm tabular-nums">
-                <div className={`font-display text-base font-bold ${themedMode === "va11halla" ? "text-v11-pink" : "text-alert"}`}>
+                <div className={`font-display text-base font-bold ${themedMode ? emphasisTextClass(themedMode) : "text-alert"}`}>
                   +{Math.round(row.overRatio * 100)}%
                 </div>
                 <div className="text-cream/50 text-xs">
