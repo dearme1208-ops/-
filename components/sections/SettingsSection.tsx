@@ -66,6 +66,9 @@ export default function SettingsSection() {
   const tagPresets = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
   const [categoryPresetsJson, setCategoryPresetsJson] = useSetting("todo.categoryPresets", "[]");
   const categoryPresets = useMemo(() => parsePresetList(categoryPresetsJson), [categoryPresetsJson]);
+  const [todoReminderEnabledStr, setTodoReminderEnabledStr] = useSetting("todo.reminderEnabled", "true");
+  const todoReminderEnabled = todoReminderEnabledStr === "true";
+  const [todoReminderDaysBefore, setTodoReminderDaysBefore] = useSetting("todo.reminderDaysBefore", "1");
   const [voiceEnabledStr, setVoiceEnabledStr] = useSetting("today.voiceEnabled", "false");
   const voiceEnabled = voiceEnabledStr === "true";
   const [defaultHourlyRateStr, setDefaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
@@ -848,6 +851,32 @@ export default function SettingsSection() {
               : "自動重要化は無効です。対応状況を選んでも★重要は自動では変わりません。"}
           </p>
         </div>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">ToDoの期日リマインダー</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={todoReminderEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setTodoReminderEnabledStr(todoReminderEnabled ? "false" : "true")}
+          >
+            期日リマインダー: {todoReminderEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        {todoReminderEnabled && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+            <span>期日の</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={todoReminderDaysBefore}
+              onChange={(e) => setTodoReminderDaysBefore(e.target.value)}
+              className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+            />
+            <span>日前から（期限切れは常に）、タブに関わらずポップアップで知らせます。</span>
+          </div>
+        )}
       </div>
 
       <div className="panel space-y-3 p-4">

@@ -16,8 +16,8 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
 import {
+  completeTodoTask,
   computeDateOrderedPosition,
-  computeNextDueDate,
   DEFAULT_TAG_PRESETS,
   effectiveDueDate,
   parsePresetList,
@@ -360,18 +360,11 @@ export default function TodoSection() {
   }
 
   async function toggleComplete(task: TodoTask) {
-    if (!task.completed && task.recurrence) {
-      const nextDue = computeNextDueDate(task.recurrence, task.dueDate ?? today);
-      const updates: Partial<TodoTask> = { dueDate: nextDue };
-      // 繰り返しタスクは完了扱いにならず次回の期日に進むだけだが、その日のマイデイからは外す
-      if (task.myDayDate === today) updates.myDayDate = undefined;
-      await db.todoTasks.update(task.id, updates);
+    if (!task.completed) {
+      await completeTodoTask(task, today);
       return;
     }
-    await db.todoTasks.update(task.id, {
-      completed: !task.completed,
-      completedAt: !task.completed ? Date.now() : undefined,
-    });
+    await db.todoTasks.update(task.id, { completed: false, completedAt: undefined });
   }
 
   async function toggleImportant(task: TodoTask) {

@@ -11,6 +11,7 @@ import { todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 import ThemeInit from "@/components/ThemeInit";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
+import TodoReminderModal from "@/components/TodoReminderModal";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
@@ -89,6 +90,7 @@ export default function HomePage() {
     <div>
       <ThemeInit />
       <OrphanTaskModal />
+      <TodoReminderModal />
       <TabNav tabs={TABS} active={active} onChange={setActive} />
       {active === "today" && <TodaySection />}
       {active === "todo" && <TodoSection />}

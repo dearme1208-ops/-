@@ -28,6 +28,19 @@ export function effectiveDueDate(task: TodoTask, subtasks: TodoTask[]): string |
   return dates.reduce((min, d) => (d < min ? d : min));
 }
 
+// タスクを完了にする(未完了 -> 完了の一方向)。繰り返しタスクは完了扱いにはならず、
+// 次回の期日に進むだけ。一覧のチェックボックスと期日リマインダーの両方から呼べるよう共通化する
+export async function completeTodoTask(task: TodoTask, today: string): Promise<void> {
+  if (task.recurrence) {
+    const nextDue = computeNextDueDate(task.recurrence, task.dueDate ?? today);
+    const updates: Partial<TodoTask> = { dueDate: nextDue };
+    if (task.myDayDate === today) updates.myDayDate = undefined;
+    await db.todoTasks.update(task.id, updates);
+    return;
+  }
+  await db.todoTasks.update(task.id, { completed: true, completedAt: Date.now() });
+}
+
 function toDate(dateStr: string): Date {
   return new Date(dateStr + "T00:00:00");
 }
