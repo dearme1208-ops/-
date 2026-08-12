@@ -639,12 +639,16 @@ export default function GanttSection() {
               ))}
               {compactView ? (
                 <>
-                  {/* 予測行: 全作業の予測バーを1本の行にまとめて表示（実績ベースの見込みを主役にする） */}
+                  {/* 予測行: 全作業の予測バーを1本の行にまとめて表示（実績ベースの見込みを主役にする）。
+                      すでに着手済みの作業は、理論上の順送りカーソルではなく実際の開始時刻を基準に
+                      詰めて配置する。そうしないと超過時に予測同士が実際の経過と噛み合わず、
+                      間延びして見えたり終了時刻が正しく可視化できなくなるため */}
                   {rows.map((r) => {
-                    const planLeft = r.scheduledStartMin * pxPerMin;
+                    const startMin = r.actualStartMin ?? r.scheduledStartMin;
+                    const planLeft = startMin * pxPerMin;
                     const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
                     const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
-                    const predEndMin = r.scheduledStartMin + r.predictedSeconds / 60;
+                    const predEndMin = startMin + r.predictedSeconds / 60;
                     const predEndLabel = formatClock(timelineBase + predEndMin * 60000);
                     const gapLeft = planLeft + COMPACT_BAR_GAP_PX / 2;
                     const gapPredWidth = Math.max(predWidth - COMPACT_BAR_GAP_PX, 3);
@@ -665,7 +669,7 @@ export default function GanttSection() {
                           className="rounded bg-cream/70"
                           tooltip={predictedTooltip(
                             r.task.name,
-                            timelineBase + r.scheduledStartMin * 60000,
+                            timelineBase + startMin * 60000,
                             timelineBase + predEndMin * 60000,
                             r.predictedSeconds
                           )}

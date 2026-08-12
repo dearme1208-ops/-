@@ -56,6 +56,12 @@ export default function TodaySection() {
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
   const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
   const [conditionEditTaskId, setConditionEditTaskId] = useState<string | null>(null);
+  // 当日最初の作業を開始する直前に体調を選ばせるための保留アクション。
+  // nullでなければ「体調を記録してから開始しますか」モーダルを表示する
+  const [pendingConditionStart, setPendingConditionStart] = useState<(() => void | Promise<void>) | null>(null);
+  // 予定インポートの自動開始時刻になった際、既に計測中の作業があった場合に
+  // 強制的に差し込まず、停止して開始するか確認するための保留状態
+  const [scheduleConflict, setScheduleConflict] = useState<{ task: DailyTask; runningTasks: DailyTask[] } | null>(null);
   const [voiceEnabledStr] = useSetting("today.voiceEnabled", "false");
   const voiceEnabled = voiceEnabledStr === "true";
   const [voiceListening, setVoiceListening] = useState(false);
@@ -834,18 +840,39 @@ export default function TodaySection() {
     await db.dailyTasks.bulkAdd(newTasks);
   }
 
+  // 当日まだ何も開始しておらず、体調記録も未設定の状態で最初の作業を開始しようとした場合、
+  // 体調を選んでから開始できるよう一旦保留する。体調記録がOFF・すでに何か開始済み・
+  // すでに体調を記録済みのいずれかならそのまま実行する。呼び出し元がawaitできるよう、
+  // 保留された場合はモーダルでの選択/スキップが終わるまで解決しないPromiseを返す
+  function gateFirstStart(action: () => void | Promise<void>): Promise<void> {
+    const alreadyStartedSomething = (tasks ?? []).some((t) => t.status !== "pending");
+    const alreadyLoggedCondition = (conditionLogs ?? []).length > 0;
+    if (conditionEnabled && !alreadyStartedSomething && !alreadyLoggedCondition) {
+      return new Promise<void>((resolve) => {
+        setPendingConditionStart(() => async () => {
+          await action();
+          resolve();
+        });
+      });
+    }
+    return Promise.resolve(action());
+  }
+
   async function startTask(task: DailyTask, startAt: number = Date.now()) {
-    const segments = [...task.segments, { start: startAt }];
-    // さかのぼって開始/再開した場合、その時点で既に「予定超過+20分」を
-    // 超えていることがあり得るが、開始直後に超過確認ダイアログが出るのは
-    // 紛らわしいため、この時点では抑制しておく（超過が続けば通常どおり後で再表示される）
-    const isRetroactive = startAt < Date.now() - 5000;
-    await db.dailyTasks.update(task.id, {
-      segments,
-      status: "running",
-      startedAt: task.startedAt ?? startAt,
-      ...(isRetroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
-    });
+    const doStart = async () => {
+      const segments = [...task.segments, { start: startAt }];
+      // さかのぼって開始/再開した場合、その時点で既に「予定超過+20分」を
+      // 超えていることがあり得るが、開始直後に超過確認ダイアログが出るのは
+      // 紛らわしいため、この時点では抑制しておく（超過が続けば通常どおり後で再表示される）
+      const isRetroactive = startAt < Date.now() - 5000;
+      await db.dailyTasks.update(task.id, {
+        segments,
+        status: "running",
+        startedAt: task.startedAt ?? startAt,
+        ...(isRetroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
+      });
+    };
+    await gateFirstStart(doStart);
   }
 
   async function insertRunningTask(
@@ -855,22 +882,25 @@ export default function TodaySection() {
     masterTaskId: string | undefined,
     startAt: number
   ) {
-    const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
-    const task: DailyTask = {
-      id: uid(),
-      date,
-      order: count,
-      masterTaskId,
-      category,
-      name,
-      estimatedSeconds,
-      status: "running",
-      segments: [{ start: startAt }],
-      accumulatedMs: 0,
-      startedAt: startAt,
-      isSpontaneous: true,
+    const doInsert = async () => {
+      const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
+      const task: DailyTask = {
+        id: uid(),
+        date,
+        order: count,
+        masterTaskId,
+        category,
+        name,
+        estimatedSeconds,
+        status: "running",
+        segments: [{ start: startAt }],
+        accumulatedMs: 0,
+        startedAt: startAt,
+        isSpontaneous: true,
+      };
+      await db.dailyTasks.add(task);
     };
-    await db.dailyTasks.add(task);
+    await gateFirstStart(doInsert);
   }
 
   // 新規作業（突発作業の追加・お気に入り）をすぐ開始しようとした際、未計測(仮計測)が
@@ -1363,19 +1393,40 @@ export default function TodaySection() {
   }
 
   // 予定インポートで登録した作業(scheduledTime)がその時刻になったら、計測中の作業を
-  // すべて一時停止して差し込み開始する。トラブル対応と異なり、予定終了後に元の作業を
-  // 自動再開はしない（予定の内容によって次にやることが変わり得るため、判断はユーザーに委ねる）
+  // 計測中の作業が無ければそのまま差し込み開始する。トラブル対応と異なり、予定終了後に
+  // 元の作業を自動再開はしない（予定の内容によって次にやることが変わり得るため、判断は
+  // ユーザーに委ねる）。既に計測中の作業がある場合は、強制的に止めて差し込むのではなく、
+  // 停止して開始するかどうかを確認する
   async function autoStartScheduledTask(task: DailyTask) {
     const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
-    const nowMs = Date.now();
     notify("予定の時刻になりました", `${task.category} / ${task.name}`, `schedule-${task.id}`);
+    if (runningTasks.length > 0) {
+      await db.dailyTasks.update(task.id, { autoStartNotified: true });
+      setScheduleConflict({ task, runningTasks });
+      return;
+    }
+    const nowMs = Date.now();
+    await db.dailyTasks.update(task.id, {
+      status: "running",
+      segments: [{ start: nowMs }],
+      startedAt: nowMs,
+      autoStartNotified: true,
+    });
+  }
+
+  // 予定インポートの自動開始と、計測中の作業がバッティングした際の確認モーダルへの回答を反映する
+  async function resolveScheduleConflict(startScheduled: boolean) {
+    if (!scheduleConflict) return;
+    const { task, runningTasks } = scheduleConflict;
+    setScheduleConflict(null);
+    if (!startScheduled) return;
+    const nowMs = Date.now();
     await db.transaction("rw", db.dailyTasks, async () => {
       for (const r of runningTasks) await pauseTask(r);
       await db.dailyTasks.update(task.id, {
         status: "running",
         segments: [{ start: nowMs }],
         startedAt: nowMs,
-        autoStartNotified: true,
       });
     });
   }
@@ -2102,6 +2153,67 @@ export default function TodaySection() {
               }}
             >
               終了する
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {pendingConditionStart && (
+        <Modal
+          title="体調を記録してから始めますか?"
+          onClose={async () => {
+            const action = pendingConditionStart;
+            setPendingConditionStart(null);
+            await action?.();
+          }}
+        >
+          <p className="mb-3 text-sm text-cream/80">今日最初の作業を開始します。今の体調を記録しておきますか?</p>
+          <div className="flex flex-wrap gap-2">
+            {CONDITION_LEVELS.map((c) => (
+              <button
+                key={c.level}
+                className="btn-pill-outline p-1.5"
+                aria-label={c.label}
+                title={c.label}
+                onClick={async () => {
+                  const action = pendingConditionStart;
+                  setPendingConditionStart(null);
+                  await logCondition(c.level);
+                  await action?.();
+                }}
+              >
+                <ConditionGlyph level={c.level} size={28} />
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button
+              className="text-xs text-cream/50 hover:text-cream"
+              onClick={async () => {
+                const action = pendingConditionStart;
+                setPendingConditionStart(null);
+                await action?.();
+              }}
+            >
+              スキップして開始
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {scheduleConflict && (
+        <Modal title="予定の時刻になりました" onClose={() => resolveScheduleConflict(false)}>
+          <p className="mb-3 text-sm text-cream/80">
+            予定「{scheduleConflict.task.category} / {scheduleConflict.task.name}」の時刻になりましたが、
+            現在「{scheduleConflict.runningTasks.map((t) => t.name).join("、")}」を計測中です。
+            一時停止してこちらを開始しますか?
+          </p>
+          <div className="flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => resolveScheduleConflict(false)}>
+              今の作業を続ける
+            </button>
+            <button className="btn-pill text-sm" onClick={() => resolveScheduleConflict(true)}>
+              一時停止して開始する
             </button>
           </div>
         </Modal>
