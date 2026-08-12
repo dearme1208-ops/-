@@ -10,7 +10,6 @@ import RankingBarChart from "@/components/charts/RankingBarChart";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import DonutChart from "@/components/charts/DonutChart";
 import Modal from "@/components/ui/Modal";
-import type { WorkRecord } from "@/lib/types";
 
 type BreakdownMode = "category" | "project";
 type BreakdownStyle = "bar" | "donut";
@@ -73,16 +72,15 @@ export default function OvertimeSection() {
     return (records ?? []).filter((r) => r.date.startsWith(currentMonth));
   }, [records, currentMonth]);
 
-  // 外れ値詳細モーダル用: 日付ごとに、その日の実績一覧をまとめておく
-  const recordsByDate = useMemo(() => {
-    const map = new Map<string, WorkRecord[]>();
-    for (const r of records ?? []) {
+  // 外れ値詳細モーダル用: 除外した個々の実績を日付ごとにまとめておく
+  const excludedRecordsByDate = useMemo(() => {
+    const map = new Map<string, { date: string; category: string; name: string; seconds: number }[]>();
+    for (const r of monthlyMap.get(outlierDetailMonth ?? "")?.excludedRecords ?? []) {
       if (!map.has(r.date)) map.set(r.date, []);
       map.get(r.date)!.push(r);
     }
-    for (const list of map.values()) list.sort((a, b) => b.seconds - a.seconds);
     return map;
-  }, [records]);
+  }, [monthlyMap, outlierDetailMonth]);
 
   const breakdownRows = useMemo(() => {
     return breakdownMode === "category"
@@ -146,7 +144,7 @@ export default function OvertimeSection() {
         />
         <span className="text-xs text-cream/60">時間</span>
         <p className="ml-2 text-xs text-cream/40">
-          概算残業は、実績（作業記録）から日ごとにこの時間を超えた分を積み上げて計算します。実際の残業時間が分かる場合は「手入力残業」に入力すると、そちらが優先して表示されます。
+          概算残業は、実績（作業記録）から日ごとにこの時間を超えた分を積み上げて計算します。同じ作業の他の日・平均と比べて突出して長い実績（タイマーの消し忘れなど）は、その実績分だけを外れ値として計算から除外します。実際の残業時間が分かる場合は「手入力残業」に入力すると、そちらが優先して表示されます。
         </p>
       </div>
 
@@ -183,17 +181,17 @@ export default function OvertimeSection() {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-cream/70">
                     {row ? formatHoursJp(row.autoOvertimeSeconds) : "-"}
-                    {row && row.excludedOutlierDays > 0 && (
+                    {row && row.excludedRecords.length > 0 && (
                       <button
                         type="button"
                         className="ml-1 text-[10px] text-cream/40 underline decoration-dotted hover:text-cream"
-                        title="タイマーの消し忘れなどで突出して長い日を外れ値として概算から除外しています。クリックすると内訳を表示します"
+                        title="同じ作業の他の日や平均と比べて突出して長い実績(タイマーの消し忘れなど)を外れ値として概算から除外しています。クリックすると内訳を表示します"
                         onClick={(e) => {
                           e.stopPropagation();
                           setOutlierDetailMonth(month);
                         }}
                       >
-                        （外れ値{row.excludedOutlierDays}日除外）
+                        （外れ値{row.excludedRecords.length}件除外）
                       </button>
                     )}
                   </td>
@@ -295,26 +293,23 @@ export default function OvertimeSection() {
 
       {outlierDetailMonth && (
         <Modal
-          title={`${monthLabel(outlierDetailMonth).year}年${monthLabel(outlierDetailMonth).m}月の外れ値（除外日）`}
+          title={`${monthLabel(outlierDetailMonth).year}年${monthLabel(outlierDetailMonth).m}月の外れ値（除外した実績）`}
           onClose={() => setOutlierDetailMonth(null)}
         >
           <p className="mb-3 text-xs text-cream/50">
-            以下の日は、実績合計が他の日と比べて突出して大きかったため、概算残業の計算からのみ除外しています（実績合計・実績自体はそのまま残っています）。タイマーの消し忘れなどが原因であれば、実績タブから該当する記録を修正・削除してください。
+            以下の実績は、同じ作業の他の日・平均と比べて突出して長かったため、概算残業の計算からのみ除外しています（実績合計・実績自体はそのまま残っています。日をまるごと除外するのではなく、この実績分だけを差し引いて計算します）。タイマーの消し忘れなどが原因であれば、実績編集タブから該当する記録を修正・削除してください。
           </p>
           <div className="space-y-3">
-            {(monthlyMap.get(outlierDetailMonth)?.excludedOutlierDates ?? []).map(({ date, seconds }) => (
+            {[...excludedRecordsByDate.entries()].map(([date, items]) => (
               <div key={date} className="rounded-lg bg-ink/50 p-3">
-                <div className="mb-1.5 flex items-center justify-between text-sm">
-                  <span className="font-bold text-cream">{formatDateJp(date)}</span>
-                  <span className="tabular-nums text-alert">{formatHoursJp(seconds)}</span>
-                </div>
+                <div className="mb-1.5 text-sm font-bold text-cream">{formatDateJp(date)}</div>
                 <div className="space-y-1">
-                  {(recordsByDate.get(date) ?? []).map((r) => (
-                    <div key={r.id} className="flex items-center justify-between text-xs text-cream/60">
+                  {items.map((r, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs text-cream/60">
                       <span className="truncate">
                         {r.category} / {r.name}
                       </span>
-                      <span className="shrink-0 tabular-nums">{formatHoursJp(r.seconds)}</span>
+                      <span className="shrink-0 tabular-nums text-alert">{formatHoursJp(r.seconds)}</span>
                     </div>
                   ))}
                 </div>

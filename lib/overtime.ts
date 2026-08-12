@@ -1,51 +1,58 @@
 import type { WorkRecord } from "./types";
-import { computeIqrBounds } from "./stats";
+import { computeRecordOutliers } from "./outliers";
+
+export interface ExcludedOvertimeRecord {
+  date: string;
+  category: string;
+  name: string;
+  seconds: number;
+}
 
 export interface MonthlyOvertimeRow {
   month: string; // YYYY-MM
-  autoOvertimeSeconds: number; // 所定時間を超えた分の概算残業（日ごとの超過分を合算、外れ値の日は除く）
+  autoOvertimeSeconds: number; // 所定時間を超えた分の概算残業（日ごとの超過分を合算、外れ値の実績は除く）
   totalTrackedSeconds: number; // その月の実績合計（外れ値も含む、純粋な合計）
-  excludedOutlierDays: number; // 外れ値として概算から除外した日数
-  excludedOutlierDates: { date: string; seconds: number }[]; // 除外した日の内訳（日付・その日の実績合計）
+  excludedRecords: ExcludedOvertimeRecord[]; // 外れ値として概算から除外した個々の実績
 }
 
 // 実績を日ごとに合算し、所定時間を超えた分を概算残業として月単位で積み上げる。
-// タイマーの消し忘れなど突出して大きい日はIQRで外れ値判定し、概算残業の計算からは除く
-// （実績合計には含めたまま表示し、透明性を保つ）
+// 「1日をまるごと」ではなく、個々の実績を同じ作業の他の日・平均と比較してIQRで
+// 外れ値判定し(タイマーの消し忘れなどが原因のことが多い)、その実績分だけを概算から
+// 除外する。同じ日の他の（外れ値でない）作業はそのまま概算に含まれる
+// （実績合計には外れ値も含めたまま表示し、透明性を保つ）
 export function computeMonthlyOvertime(
   records: WorkRecord[],
   standardDailySeconds: number
 ): Map<string, MonthlyOvertimeRow> {
-  const byDate = new Map<string, number>();
+  const outlierFlags = computeRecordOutliers(records);
+
+  const totalByDate = new Map<string, number>();
+  const netByDate = new Map<string, number>();
   for (const r of records) {
-    byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.seconds);
+    totalByDate.set(r.date, (totalByDate.get(r.date) ?? 0) + r.seconds);
+    if (!outlierFlags.get(r.id)) {
+      netByDate.set(r.date, (netByDate.get(r.date) ?? 0) + r.seconds);
+    }
   }
-  const bounds = computeIqrBounds([...byDate.values()]);
 
   const result = new Map<string, MonthlyOvertimeRow>();
-  for (const [date, seconds] of byDate) {
+  for (const [date, totalSeconds] of totalByDate) {
     const month = date.slice(0, 7);
     if (!result.has(month)) {
-      result.set(month, {
-        month,
-        autoOvertimeSeconds: 0,
-        totalTrackedSeconds: 0,
-        excludedOutlierDays: 0,
-        excludedOutlierDates: [],
-      });
+      result.set(month, { month, autoOvertimeSeconds: 0, totalTrackedSeconds: 0, excludedRecords: [] });
     }
     const row = result.get(month)!;
-    row.totalTrackedSeconds += seconds;
-    // 高すぎる日（上振れの外れ値）のみ除外する。低い日は超過分が0なので元々概算に影響しない
-    if (bounds !== null && seconds > bounds.upper) {
-      row.excludedOutlierDays += 1;
-      row.excludedOutlierDates.push({ date, seconds });
-    } else {
-      row.autoOvertimeSeconds += Math.max(0, seconds - standardDailySeconds);
-    }
+    row.totalTrackedSeconds += totalSeconds;
+    const netSeconds = netByDate.get(date) ?? 0;
+    row.autoOvertimeSeconds += Math.max(0, netSeconds - standardDailySeconds);
+  }
+  for (const r of records) {
+    if (!outlierFlags.get(r.id)) continue;
+    const row = result.get(r.date.slice(0, 7));
+    row?.excludedRecords.push({ date: r.date, category: r.category, name: r.name, seconds: r.seconds });
   }
   for (const row of result.values()) {
-    row.excludedOutlierDates.sort((a, b) => a.date.localeCompare(b.date));
+    row.excludedRecords.sort((a, b) => a.date.localeCompare(b.date) || b.seconds - a.seconds);
   }
   return result;
 }
