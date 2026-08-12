@@ -7,6 +7,7 @@ import { useSetting } from "@/lib/settings";
 import { completeTodoTask, effectiveDueDate } from "@/lib/todo";
 import { daysBetweenDateStrs, formatDateJp, todayStr } from "@/lib/time";
 import { notify } from "@/lib/notifications";
+import { useVisualMode } from "@/lib/theme";
 import type { TodoTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
@@ -24,6 +25,7 @@ export default function TodoReminderModal() {
   const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
   const [dismissedAll, setDismissedAll] = useState(false);
   const [notifiedOnce, setNotifiedOnce] = useState(false);
+  const { themedMode, va11hallaMode } = useVisualMode();
 
   const subtasksByParent = useMemo(() => {
     const map = new Map<string, TodoTask[]>();
@@ -67,16 +69,38 @@ export default function TodoReminderModal() {
   if (!reminderEnabled || dueSoonTasks.length === 0 || dismissedAll) return null;
 
   return (
-    <Modal title="期日が近いTodoがあります" onClose={() => setDismissedAll(true)}>
+    <Modal
+      title={
+        themedMode
+          ? va11hallaMode
+            ? "ラストコールです"
+            : "警告：期限監視対象があります"
+          : "期日が近いTodoがあります"
+      }
+      onClose={() => setDismissedAll(true)}
+    >
       <p className="mb-3 text-sm text-cream/70">
-        期日まであと{daysBefore}日以内、または既に期日を過ぎている未完了のタスクです。
+        {themedMode
+          ? va11hallaMode
+            ? `閉店（期日）まであと${daysBefore}日以内、またはすでに閉店時刻を過ぎている未完了のオーダーです。`
+            : `管理限界まであと${daysBefore}日以内、または既に管理限界を超過している未処理案件です。`
+          : `期日まであと${daysBefore}日以内、または既に期日を過ぎている未完了のタスクです。`}
       </p>
       <div className="max-h-96 space-y-2 overflow-y-auto">
         {dueSoonTasks.map(({ task, due }) => {
           const overdue = due < today;
           return (
-            <div key={task.id} className="rounded-lg border border-alert/30 bg-ink/50 p-3">
-              <div className={`text-xs ${overdue ? "font-bold text-alert" : "text-cream/50"}`}>
+            <div
+              key={task.id}
+              className={`rounded-lg border border-alert/30 bg-ink/50 p-3 ${
+                overdue && themedMode ? (va11hallaMode ? "card-overrun-v11" : "card-overrun") : ""
+              }`}
+            >
+              <div
+                className={`text-xs ${
+                  overdue ? `font-bold ${va11hallaMode ? "text-v11-pink" : "text-alert"} ${themedMode ? "overrun-flicker" : ""}` : "text-cream/50"
+                }`}
+              >
                 {formatDateJp(due)}
                 {overdue ? "（期限切れ）" : due === today ? "（本日）" : ""}
               </div>

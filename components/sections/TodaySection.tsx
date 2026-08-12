@@ -7,6 +7,7 @@ import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
 import { adjustStopTimeForBreaks, computeEffectiveElapsedMs, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
 import { useSetting } from "@/lib/settings";
+import { getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
 import { baseAccumulatedMs, computeRemainingEstimatedSeconds, importScheduleRows, segmentsAccumulatedMs } from "@/lib/tasks";
 import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
 import { downloadTextFile } from "@/lib/report";
@@ -40,28 +41,6 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
-
-// 演出テーマで、予測超過の度合いに応じて表示する階級バッジ
-// (実績が予測の何倍かで判定。数字が大きいほど危険度が高い)
-const RISK_TIERS_LOBOTOMY = [
-  { threshold: 4, name: "ALEPH", level: 4 },
-  { threshold: 2.5, name: "WAW", level: 3 },
-  { threshold: 1.8, name: "HE", level: 2 },
-  { threshold: 1.3, name: "TETH", level: 1 },
-  { threshold: 1, name: "ZAYIN", level: 0 },
-] as const;
-// VA-11 HALL-A風: 注文(=作業)が捌ききれず溜まっていく様子をカクテル名になぞらえた階級
-const RISK_TIERS_VA11HALLA = [
-  { threshold: 4, name: "BAD TOUCH", level: 4 },
-  { threshold: 2.5, name: "MOONBLAST", level: 3 },
-  { threshold: 1.8, name: "LAST CALL", level: 2 },
-  { threshold: 1.3, name: "ON THE ROCKS", level: 1 },
-  { threshold: 1, name: "REGULAR", level: 0 },
-] as const;
-function getRiskTier(ratio: number, mode: "lobotomy" | "va11halla") {
-  const tiers = mode === "va11halla" ? RISK_TIERS_VA11HALLA : RISK_TIERS_LOBOTOMY;
-  return tiers.find((t) => ratio >= t.threshold) ?? tiers[tiers.length - 1];
-}
 
 export default function TodaySection() {
   const date = todayStr();
@@ -102,10 +81,7 @@ export default function TodaySection() {
   const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
-  const [visualMode] = useSetting("theme.visualMode", "off");
-  const lobotomyMode = visualMode === "lobotomy";
-  const va11hallaMode = visualMode === "va11halla";
-  const themedMode = lobotomyMode ? "lobotomy" : va11hallaMode ? "va11halla" : null;
+  const { lobotomyMode, va11hallaMode, themedMode } = useVisualMode();
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -2053,16 +2029,14 @@ export default function TodaySection() {
                       )}
                       {riskTier && (
                         <span
-                          className={`risk-badge risk-badge-${riskTier.level} rounded border px-1.5 py-0.5 text-[10px] font-bold ${
-                            va11hallaMode ? "border-v11-pink/70 bg-v11-pink/20 text-v11-pink" : "border-alert/70 bg-alert/20 text-alert"
-                          }`}
+                          className={riskBadgeClasses(riskTier.level, themedMode ?? "lobotomy")}
                           title={
                             va11hallaMode
                               ? "VA-11 HALL-A風モード: 予測超過の度合いに応じた注文階級"
                               : "ロボトミーコーポレーション風モード: 予測超過の度合いに応じた警戒階級"
                           }
                         >
-                          {va11hallaMode ? riskTier.name : `危険度 ${riskTier.name}`}
+                          {riskBadgeLabel(riskTier, themedMode ?? "lobotomy")}
                         </span>
                       )}
                       {task.status === "paused" && <span className="text-cream/70">‖ 一時停止中</span>}

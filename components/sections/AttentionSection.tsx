@@ -14,6 +14,7 @@ import {
 import { computeConditionVarianceByTask, computeProductivityByCondition, CONDITION_LEVELS } from "@/lib/condition";
 import { currentFiscalYear } from "@/lib/period";
 import { formatHms } from "@/lib/time";
+import { getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
@@ -21,6 +22,7 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 const AVG_COMPARE_TYPE_LABELS: Record<AvgComparePeriodType, string> = { year: "年度", h1: "上期", h2: "下期" };
 
 export default function AttentionSection() {
+  const { themedMode } = useVisualMode();
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
   const conditionLogs = useLiveQuery(() => db.conditionLogs.toArray(), []);
@@ -245,23 +247,32 @@ export default function AttentionSection() {
               <p className="text-sm text-cream/50">該当する作業はありません。</p>
             ) : (
               <div className="space-y-2">
-                {avgComparison.regressed.slice(0, 10).map((row, idx) => (
-                  <div key={row.key} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 shrink-0 text-center text-sm">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
-                      <div>
-                        <div className="text-xs text-cream/50">{row.category}</div>
-                        <div className="text-sm text-cream">{row.name}</div>
+                {avgComparison.regressed.slice(0, 10).map((row, idx) => {
+                  const ratio = row.prevAvgSeconds > 0 ? row.avgSeconds / row.prevAvgSeconds : 1;
+                  const tier = themedMode && ratio >= 1.3 ? getRiskTier(ratio, themedMode) : null;
+                  return (
+                    <div key={row.key} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 shrink-0 text-center text-sm">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
+                        <div>
+                          <div className="text-xs text-cream/50">{row.category}</div>
+                          <div className="flex items-center gap-1.5 text-sm text-cream">
+                            {row.name}
+                            {tier && themedMode && (
+                              <span className={riskBadgeClasses(tier.level, themedMode)}>{riskBadgeLabel(tier, themedMode)}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right text-xs tabular-nums">
+                        <div className="font-display text-base font-bold text-alert">+{formatHms(row.deltaSeconds)}</div>
+                        <div className="text-cream/40">
+                          {formatHms(row.prevAvgSeconds)} → {formatHms(row.avgSeconds)}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right text-xs tabular-nums">
-                      <div className="font-display text-base font-bold text-alert">+{formatHms(row.deltaSeconds)}</div>
-                      <div className="text-cream/40">
-                        {formatHms(row.prevAvgSeconds)} → {formatHms(row.avgSeconds)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -270,23 +281,32 @@ export default function AttentionSection() {
 
       <p className="text-sm text-cream/60">想定時間に対して実績平均が30%以上超過している作業です。</p>
       <div className="panel divide-y divide-cream/10">
-        {rows.map((row) => (
-          <div key={row.masterTaskId} className="flex items-center justify-between gap-3 px-4 py-3">
-            <div>
-              <div className="text-xs text-cream/50">{row.category}</div>
-              <div className="text-sm text-cream">{row.name}</div>
-              <div className="text-xs text-cream/40">サンプル数 {row.sampleCount}</div>
-            </div>
-            <div className="text-right text-sm tabular-nums">
-              <div className="text-alert font-display text-base font-bold">
-                +{Math.round(row.overRatio * 100)}%
+        {rows.map((row) => {
+          const ratio = 1 + row.overRatio;
+          const tier = themedMode ? getRiskTier(ratio, themedMode) : null;
+          return (
+            <div key={row.masterTaskId} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div>
+                <div className="text-xs text-cream/50">{row.category}</div>
+                <div className="flex items-center gap-1.5 text-sm text-cream">
+                  {row.name}
+                  {tier && themedMode && (
+                    <span className={riskBadgeClasses(tier.level, themedMode)}>{riskBadgeLabel(tier, themedMode)}</span>
+                  )}
+                </div>
+                <div className="text-xs text-cream/40">サンプル数 {row.sampleCount}</div>
               </div>
-              <div className="text-cream/50 text-xs">
-                想定 {formatHms(row.estimatedSeconds)} → 平均 {formatHms(row.avgSeconds)}
+              <div className="text-right text-sm tabular-nums">
+                <div className={`font-display text-base font-bold ${themedMode === "va11halla" ? "text-v11-pink" : "text-alert"}`}>
+                  +{Math.round(row.overRatio * 100)}%
+                </div>
+                <div className="text-cream/50 text-xs">
+                  想定 {formatHms(row.estimatedSeconds)} → 平均 {formatHms(row.avgSeconds)}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {rows.length === 0 && (
           <p className="px-4 py-6 text-sm text-cream/50">該当する作業はありません。</p>
         )}
