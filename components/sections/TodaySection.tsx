@@ -20,6 +20,7 @@ import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
+import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
 import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
@@ -66,6 +67,11 @@ export default function TodaySection() {
   const quickStartEnabled = quickStartEnabledStr === "true";
   const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
   const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
+  // 自動配分: 残業務時間内に未完了作業(予測)を収めるための目標ペースを自動計算する機能。
+  // 「オフ」「ライブ（常に再計算）」「手動（ボタンを押した時だけ計算）」を切り替えられる
+  const [autoAllocateMode, setAutoAllocateMode] = useSetting("today.autoAllocateMode", "off");
+  const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
+  const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
     { category: string; name: string; estimatedSeconds: number; masterTaskId: string | undefined } | null
   >(null);
@@ -318,6 +324,21 @@ export default function TodaySection() {
     }
     return map;
   }, [tasks, allMasterTasks, now]);
+
+  // ライブモード時のみ、常に現在時刻を基準に自動配分を再計算する
+  const liveAllocation = useMemo(() => {
+    if (autoAllocateMode !== "live" || !tasks) return null;
+    return computeAutoAllocation(tasks, predictedSecondsByTaskId, date, standardWorkEnd, now);
+  }, [autoAllocateMode, tasks, predictedSecondsByTaskId, date, standardWorkEnd, now]);
+
+  const effectiveAllocation =
+    autoAllocateMode === "live" ? liveAllocation : autoAllocateMode === "manual" ? manualAllocation : null;
+
+  function runManualAllocation() {
+    if (!tasks) return;
+    setManualAllocation(computeAutoAllocation(tasks, predictedSecondsByTaskId, date, standardWorkEnd, Date.now()));
+    setManualAllocationAt(Date.now());
+  }
 
   // 予測超過チェック（通知 + 20分超過の画面確認）
   useEffect(() => {
@@ -1412,6 +1433,51 @@ export default function TodaySection() {
         standardWorkStart={standardWorkStart}
         standardWorkEnd={standardWorkEnd}
       />
+      <div className="panel p-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-display text-sm font-bold text-cream/80">
+            自動配分
+            <span className="ml-1 font-normal text-cream/40">
+              （{standardWorkEnd}までの残り時間に、未完了作業の予測を収めるための目標ペース）
+            </span>
+          </h3>
+          <div className="flex items-center gap-1">
+            {(["off", "live", "manual"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setAutoAllocateMode(m)}
+                className={autoAllocateMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              >
+                {m === "off" ? "オフ" : m === "live" ? "ライブ" : "手動"}
+              </button>
+            ))}
+            {autoAllocateMode === "manual" && (
+              <button className="btn-pill-outline text-xs" onClick={runManualAllocation}>
+                配分を計算
+              </button>
+            )}
+          </div>
+        </div>
+        {autoAllocateMode === "manual" && !manualAllocation && (
+          <p className="text-xs text-cream/50">「配分を計算」を押すと、その時点の残業務時間から配分を計算します。</p>
+        )}
+        {effectiveAllocation && (
+          <div className="text-xs text-cream/60">
+            {autoAllocateMode === "manual" && manualAllocationAt && (
+              <div className="mb-1 text-cream/40">{formatClock(manualAllocationAt)} 時点で計算</div>
+            )}
+            <div>
+              {standardWorkEnd}までの残り {formatMsClock(effectiveAllocation.remainingWorkMs)} / 未完了作業の予測合計{" "}
+              {formatMsClock(effectiveAllocation.totalRemainingPredictedMs)}
+            </div>
+            <div className={effectiveAllocation.scale < 1 ? "text-alert" : "text-cream/60"}>
+              {effectiveAllocation.scale < 1
+                ? `ペース ${Math.round(effectiveAllocation.scale * 100)}%（業務時間に収めるには、この比率まで各作業を圧縮する必要があります）`
+                : "業務時間内に収まる見込みです（圧縮なし）"}
+            </div>
+          </div>
+        )}
+      </div>
       {conditionEnabled && (
         <div className="panel p-4">
           <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
@@ -1769,6 +1835,14 @@ export default function TodaySection() {
                     {projectedFinishByTaskId.has(task.id) && (
                       <span className="ml-2 text-cream/70">
                         終了予定 {formatClock(projectedFinishByTaskId.get(task.id)!)}
+                      </span>
+                    )}
+                    {effectiveAllocation?.allocatedMsByTaskId.has(task.id) && (
+                      <span
+                        className="ml-2 text-cream/50"
+                        title={`${standardWorkEnd}までに収めるための目標ペース（自動配分）`}
+                      >
+                        配分目安 {formatMsClock(effectiveAllocation.allocatedMsByTaskId.get(task.id)!)}
                       </span>
                     )}
                   </div>
