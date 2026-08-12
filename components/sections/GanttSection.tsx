@@ -116,12 +116,9 @@ export default function GanttSection() {
 
   const rows = useMemo(() => {
     if (!tasks) return [];
-    let cursor = 0; // minutes from timelineBase
     const base = tasks.map((task) => {
-      const predictedSeconds = task.masterTaskId ? masterMap.get(task.masterTaskId)?.estimatedSeconds ?? task.estimatedSeconds : task.estimatedSeconds;
-      const layoutDurationMin = Math.max(task.estimatedSeconds, predictedSeconds) / 60;
-      const scheduledStartMin = cursor;
-      cursor += Math.max(layoutDurationMin, 1);
+      // マスタの平均から出る「予測」の生値（同日中の繰り越し調整前）
+      const rawPredictedSeconds = task.masterTaskId ? masterMap.get(task.masterTaskId)?.estimatedSeconds ?? task.estimatedSeconds : task.estimatedSeconds;
 
       // 一時停止・再開を挟んだ場合、区間ごとに実際の開始/終了を保持する。
       // 間に別の作業を挟んで後から再開したことが分かるよう、1本にまとめずセグメント単位で扱う
@@ -137,17 +134,18 @@ export default function GanttSection() {
 
       return {
         task,
-        predictedSeconds,
-        scheduledStartMin,
+        rawPredictedSeconds,
         actualSegments,
         actualStartMin: actualSegments.length > 0 ? actualSegments[0].startMin : null,
         actualSeconds,
       };
     });
 
-    // 同じ大項目・詳細作業名を同日中に複数回登録した場合、超過判定は個々のインスタンス
-    // 単体ではなく累計で行う。当日最初に登録されたインスタンスの想定時間を基準の
-    // 想定枠とし、登録順に実績を積み上げて、基準を超えた時点以降を超過扱いにする
+    // 同じ大項目・詳細作業名を同日中に複数回登録した場合:
+    // - 「予定」の超過判定は累計の実績で行う(従来通り)
+    // - 「予測」も、既に今日その作業に積み上がった実績分を差し引いた「残り予測」にする
+    //   (「予定」に対する繰り越し計算と同じ考え方を、マスタの生の平均値に対しても適用する)
+    const predictedByTaskId = new Map<string, number>();
     const overPlanByTaskId = new Map<string, boolean>();
     const groups = new Map<string, typeof base>();
     for (const r of base) {
@@ -158,14 +156,25 @@ export default function GanttSection() {
     for (const group of groups.values()) {
       const sorted = [...group].sort((a, b) => a.task.order - b.task.order);
       const totalBudget = sorted[0]?.task.estimatedSeconds ?? 0;
+      const rawPredicted = sorted[0]?.rawPredictedSeconds ?? 0;
       let cumulative = 0;
       for (const r of sorted) {
+        predictedByTaskId.set(r.task.id, Math.max(0, rawPredicted - cumulative));
         cumulative += r.actualSeconds;
         overPlanByTaskId.set(r.task.id, totalBudget > 0 && cumulative > totalBudget);
       }
     }
 
-    return base.map((r) => ({ ...r, overPlan: overPlanByTaskId.get(r.task.id) ?? false }));
+    let cursor = 0; // minutes from timelineBase
+    const withLayout = base.map((r) => {
+      const predictedSeconds = predictedByTaskId.get(r.task.id) ?? r.rawPredictedSeconds;
+      const layoutDurationMin = Math.max(r.task.estimatedSeconds, predictedSeconds) / 60;
+      const scheduledStartMin = cursor;
+      cursor += Math.max(layoutDurationMin, 1);
+      return { ...r, predictedSeconds, scheduledStartMin };
+    });
+
+    return withLayout.map((r) => ({ ...r, overPlan: overPlanByTaskId.get(r.task.id) ?? false }));
   }, [tasks, masterMap, now, timelineBase]);
 
   // 「予定・実績を1本ずつの行で表示」時、違う作業まで1本にまとめてしまうと
@@ -601,25 +610,29 @@ export default function GanttSection() {
                           className="absolute rounded border border-dashed border-cream/50"
                           style={{ left: gapLeft, width: gapPredWidth, top: 14, height: 20 }}
                         />
-                        <HoverBar
-                          left={gapLeft}
-                          width={gapPlanWidth}
-                          top={14}
-                          height={20}
-                          className="rounded bg-cream/70"
-                          tooltip={planTooltip(
-                            r.task.name,
-                            timelineBase + r.scheduledStartMin * 60000,
-                            timelineBase + planEndMin * 60000,
-                            r.task.estimatedSeconds
-                          )}
-                        />
-                        <div
-                          className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
-                          style={{ left: planLeft + planWidth + 3, top: 34 }}
-                        >
-                          {planEndLabel}
-                        </div>
+                        {r.task.hasPlan !== false && (
+                          <>
+                            <HoverBar
+                              left={gapLeft}
+                              width={gapPlanWidth}
+                              top={14}
+                              height={20}
+                              className="rounded bg-cream/70"
+                              tooltip={planTooltip(
+                                r.task.name,
+                                timelineBase + r.scheduledStartMin * 60000,
+                                timelineBase + planEndMin * 60000,
+                                r.task.estimatedSeconds
+                              )}
+                            />
+                            <div
+                              className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
+                              style={{ left: planLeft + planWidth + 3, top: 34 }}
+                            >
+                              {planEndLabel}
+                            </div>
+                          </>
+                        )}
                       </div>
                     );
                   })}
@@ -695,19 +708,21 @@ export default function GanttSection() {
                                   className="absolute rounded border border-dashed border-cream/50"
                                   style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
                                 />
-                                <HoverBar
-                                  left={planLeft}
-                                  width={planWidth}
-                                  top={planBarTop}
-                                  height={planBarHeight}
-                                  className="rounded bg-cream/70"
-                                  tooltip={planTooltip(
-                                    item.task.name,
-                                    timelineBase + item.scheduledStartMin * 60000,
-                                    timelineBase + planEndMin * 60000,
-                                    item.task.estimatedSeconds
-                                  )}
-                                />
+                                {item.task.hasPlan !== false && (
+                                  <HoverBar
+                                    left={planLeft}
+                                    width={planWidth}
+                                    top={planBarTop}
+                                    height={planBarHeight}
+                                    className="rounded bg-cream/70"
+                                    tooltip={planTooltip(
+                                      item.task.name,
+                                      timelineBase + item.scheduledStartMin * 60000,
+                                      timelineBase + planEndMin * 60000,
+                                      item.task.estimatedSeconds
+                                    )}
+                                  />
+                                )}
                               </>
                             )}
                             {/* 実績バー: 一時停止・再開で区切られた区間ごとに描画される */}

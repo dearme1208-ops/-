@@ -28,13 +28,18 @@ export default function AddTaskDialog({
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
   const [estimate, setEstimate] = useState("00:10:00");
+  // 登録時点では実際の所要時間が読めないことが多いため、既定では「予定」を設定しない
+  // （目安に近い「予測」はマスタの平均値から別途ガントチャートに自動表示される）。
+  // チェックした場合のみ、この作業に「予定」を設定する
+  const [setPlan, setSetPlan] = useState(false);
 
   async function insertTask(
     taskCategory: string,
     taskName: string,
     estimatedSeconds: number,
     masterTaskId: string | undefined,
-    startAt: number | undefined
+    startAt: number | undefined,
+    hasPlan: boolean
   ) {
     // 未計測(仮計測)が既に計測中の状態ですぐ開始しようとした場合、二重計測になって
     // しまうため、ここでは追加せず、呼び出し元（本日タブ）に判断を委ねる
@@ -51,7 +56,8 @@ export default function AddTaskDialog({
       masterTaskId,
       category: taskCategory,
       name: taskName,
-      estimatedSeconds,
+      estimatedSeconds: hasPlan ? estimatedSeconds : 0,
+      hasPlan,
       status: startAt !== undefined ? "running" : "pending",
       segments: startAt !== undefined ? [{ start: startAt }] : [],
       accumulatedMs: 0,
@@ -65,20 +71,17 @@ export default function AddTaskDialog({
   async function submitMaster(startAt: number | undefined) {
     if (!selectedMaster) return;
     // 同日中に同じ大項目・詳細作業名の作業が既にあれば、残りの想定時間を繰り越す
-    const estimatedSeconds = await computeRemainingEstimatedSeconds(
-      date,
-      selectedMaster.category,
-      selectedMaster.name,
-      selectedMaster.estimatedSeconds
-    );
-    await insertTask(selectedMaster.category, selectedMaster.name, estimatedSeconds, selectedMaster.id, startAt);
+    const estimatedSeconds = setPlan
+      ? await computeRemainingEstimatedSeconds(date, selectedMaster.category, selectedMaster.name, selectedMaster.estimatedSeconds)
+      : 0;
+    await insertTask(selectedMaster.category, selectedMaster.name, estimatedSeconds, selectedMaster.id, startAt, setPlan);
   }
 
   async function submitFreeform(startAt: number | undefined) {
     if (!category.trim() || !name.trim()) return;
-    const estimatedSeconds = parseHmsToSeconds(estimate);
+    const estimatedSeconds = setPlan ? parseHmsToSeconds(estimate) : 0;
     const master = await findOrCreateMasterTask(category, name, estimatedSeconds);
-    await insertTask(category.trim(), name.trim(), estimatedSeconds, master.id, startAt);
+    await insertTask(category.trim(), name.trim(), estimatedSeconds, master.id, startAt, setPlan);
   }
 
   return (
@@ -97,6 +100,17 @@ export default function AddTaskDialog({
           自由入力
         </button>
       </div>
+
+      <label className="mb-3 flex items-center gap-1.5 text-xs text-cream/60">
+        <input
+          type="checkbox"
+          checked={setPlan}
+          onChange={(e) => setSetPlan(e.target.checked)}
+          className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+        />
+        この作業の「予定」を設定する
+        <span className="text-cream/40">（登録時点では読めないことが多いためオフが既定です。マスタの平均から出る「予測」は別途表示されます）</span>
+      </label>
 
       {mode === "master" ? (
         <div className="space-y-2">
@@ -143,15 +157,17 @@ export default function AddTaskDialog({
               <VoiceInputButton onResult={(text) => setName((v) => (v ? `${v} ${text}` : text))} />
             </div>
           </div>
-          <div>
-            <label className="mb-1 block text-xs text-cream/60">想定時間</label>
-            <input
-              placeholder="hh:mm:ss"
-              value={estimate}
-              onChange={(e) => setEstimate(e.target.value)}
-              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-            />
-          </div>
+          {setPlan && (
+            <div>
+              <label className="mb-1 block text-xs text-cream/60">想定時間（予定）</label>
+              <input
+                placeholder="hh:mm:ss"
+                value={estimate}
+                onChange={(e) => setEstimate(e.target.value)}
+                className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+            </div>
+          )}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <button className="btn-pill-outline text-sm" onClick={() => submitFreeform(undefined)}>
               追加のみ

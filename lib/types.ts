@@ -68,6 +68,8 @@ export interface DailyTask {
   scheduledTime?: string; // HH:MM。カレンダー予定インポート等で設定され、その時刻になったら自動的に差し込み開始する
   autoStartNotified?: boolean; // scheduledTimeによる自動開始・通知をすでに行ったか（二重発火防止）
   autoStartDisabled?: boolean; // true の場合、scheduledTimeになっても自動開始せず時刻の目安表示のみにする
+  hasPlan?: boolean; // false の場合、この作業インスタンスには「予定」を設定しない（目安のestimatedSecondsは0扱い）。
+  // 未設定/trueは従来通り予定ありとして扱う（テンプレート・予定インポート・クイックスタート等は常に予定あり）
 }
 
 export interface WorkRecord {
