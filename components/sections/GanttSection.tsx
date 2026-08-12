@@ -33,8 +33,12 @@ function segmentTooltip(name: string, startMs: number, endMs: number, ongoing: b
   return `${name}（実績）\n開始 ${formatClock(startMs)} 〜 終了 ${endLabel}\n作業時間 ${formatHms(durSec)}`;
 }
 
-function planTooltip(name: string, startMs: number, endMs: number, estimatedSeconds: number): string {
-  return `${name}\n予定 ${formatClock(startMs)} 〜 ${formatClock(endMs)}\n想定時間 ${formatHms(estimatedSeconds)}`;
+function predictedTooltip(name: string, startMs: number, endMs: number, predictedSeconds: number): string {
+  return `${name}\n予測 ${formatClock(startMs)} 〜 ${formatClock(endMs)}\n実績ベースの見込み時間 ${formatHms(predictedSeconds)}`;
+}
+
+function personalPlanTooltip(name: string, estimatedSeconds: number): string {
+  return `${name}（個人目標）\n設定した予定時間 ${formatHms(estimatedSeconds)}`;
 }
 
 // バー自体が数pxしかないことがあり、ブラウザ標準のtitleツールチップは狙ってホバーしにくく
@@ -142,9 +146,9 @@ export default function GanttSection() {
     });
 
     // 同じ大項目・詳細作業名を同日中に複数回登録した場合:
-    // - 「予定」の超過判定は累計の実績で行う(従来通り)
-    // - 「予測」も、既に今日その作業に積み上がった実績分を差し引いた「残り予測」にする
-    //   (「予定」に対する繰り越し計算と同じ考え方を、マスタの生の平均値に対しても適用する)
+    // - 「予測」は、既に今日その作業に積み上がった実績分を差し引いた「残り予測」にする
+    // - 超過判定も予測を基準に行う（工程・改善は実績ベースの予測を軸にするという方針のため、
+    //   個人が設定した「予定」があっても超過判定の基準には使わない。予定はあくまで目標表示）
     const predictedByTaskId = new Map<string, number>();
     const overPlanByTaskId = new Map<string, boolean>();
     const groups = new Map<string, typeof base>();
@@ -155,13 +159,12 @@ export default function GanttSection() {
     }
     for (const group of groups.values()) {
       const sorted = [...group].sort((a, b) => a.task.order - b.task.order);
-      const totalBudget = sorted[0]?.task.estimatedSeconds ?? 0;
       const rawPredicted = sorted[0]?.rawPredictedSeconds ?? 0;
       let cumulative = 0;
       for (const r of sorted) {
         predictedByTaskId.set(r.task.id, Math.max(0, rawPredicted - cumulative));
         cumulative += r.actualSeconds;
-        overPlanByTaskId.set(r.task.id, totalBudget > 0 && cumulative > totalBudget);
+        overPlanByTaskId.set(r.task.id, rawPredicted > 0 && cumulative > rawPredicted);
       }
     }
 
@@ -399,6 +402,20 @@ export default function GanttSection() {
     .map((log) => ({ log, minutes: (log.loggedAt - timelineBase) / 60000 }))
     .filter((m) => m.minutes >= 0 && m.minutes <= totalMinutes);
 
+  // カレンダー予定インポート(scheduledTime)で登録された作業は、所要時間の積み上げではなく
+  // 実際の時刻に基づく別軸として表示する。予測・予定はあくまで所要時間の見込みだが、
+  // こちらは「その時刻に決まっている予定」という性質が異なるため区別する
+  const scheduleItems = (tasks ?? [])
+    .filter((t) => !!t.scheduledTime)
+    .map((t) => {
+      const [hh, mm] = t.scheduledTime!.split(":").map(Number);
+      const startMs = new Date(`${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`).getTime();
+      const startMin = (startMs - timelineBase) / 60000;
+      const durMin = Math.max(t.estimatedSeconds / 60, 1);
+      return { task: t, startMin, endMin: startMin + durMin };
+    })
+    .filter((it) => it.endMin > 0 && it.startMin < totalMinutes);
+
   function zoomIn() {
     setPxPerMin((v) => Math.min(MAX_PX_PER_MIN, +(v * 1.4).toFixed(2)));
   }
@@ -504,7 +521,7 @@ export default function GanttSection() {
           {compactView ? (
             <>
               <div className="flex items-center text-[11px] font-bold text-cream/70" style={{ height: ROW_H }}>
-                予定
+                予測
               </div>
               <div className="flex items-center text-[11px] font-bold text-cream/70" style={{ height: ROW_H }}>
                 実績
@@ -562,6 +579,25 @@ export default function GanttSection() {
               </div>
             )}
 
+            {/* カレンダー予定インポート: 所要時間の積み上げではなく、実際の時刻に基づく別軸として表示する */}
+            {scheduleItems.length > 0 && (
+              <div className="relative mb-2 pt-4" style={{ height: 20 }}>
+                <span className="absolute left-0 top-0 text-[10px] text-cream/40">カレンダー予定</span>
+                {scheduleItems.map(({ task, startMin, endMin }) => (
+                  <div
+                    key={`sched-${task.id}`}
+                    className="group absolute flex items-center overflow-hidden rounded border-2 border-cream/70 bg-ink/60 px-1 text-[10px] leading-none text-cream/90"
+                    style={{ left: startMin * pxPerMin, width: Math.max((endMin - startMin) * pxPerMin, 3), height: 20 }}
+                  >
+                    <span className="truncate">{task.name}</span>
+                    <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
+                      {`${task.name}（カレンダー予定）\n${task.scheduledTime} 〜 ${formatClock(timelineBase + endMin * 60000)}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="relative" style={{ height: (compactView ? 2 : ganttRows.length) * ROW_H }}>
               {minuteMarks.map((m) => (
                 <div
@@ -588,13 +624,13 @@ export default function GanttSection() {
               ))}
               {compactView ? (
                 <>
-                  {/* 予定行: 全作業の予定バーを1本の行にまとめて表示 */}
+                  {/* 予測行: 全作業の予測バーを1本の行にまとめて表示（実績ベースの見込みを主役にする） */}
                   {rows.map((r) => {
                     const planLeft = r.scheduledStartMin * pxPerMin;
                     const planWidth = Math.max((r.task.estimatedSeconds / 60) * pxPerMin, 3);
                     const predWidth = Math.max((r.predictedSeconds / 60) * pxPerMin, 3);
-                    const planEndMin = r.scheduledStartMin + r.task.estimatedSeconds / 60;
-                    const planEndLabel = formatClock(timelineBase + planEndMin * 60000);
+                    const predEndMin = r.scheduledStartMin + r.predictedSeconds / 60;
+                    const predEndLabel = formatClock(timelineBase + predEndMin * 60000);
                     const gapLeft = planLeft + COMPACT_BAR_GAP_PX / 2;
                     const gapPredWidth = Math.max(predWidth - COMPACT_BAR_GAP_PX, 3);
                     const gapPlanWidth = Math.max(planWidth - COMPACT_BAR_GAP_PX, 3);
@@ -606,33 +642,36 @@ export default function GanttSection() {
                         >
                           {r.task.name}
                         </div>
-                        <div
-                          className="absolute rounded border border-dashed border-cream/50"
-                          style={{ left: gapLeft, width: gapPredWidth, top: 14, height: 20 }}
+                        <HoverBar
+                          left={gapLeft}
+                          width={gapPredWidth}
+                          top={14}
+                          height={20}
+                          className="rounded bg-cream/70"
+                          tooltip={predictedTooltip(
+                            r.task.name,
+                            timelineBase + r.scheduledStartMin * 60000,
+                            timelineBase + predEndMin * 60000,
+                            r.predictedSeconds
+                          )}
                         />
-                        {r.task.hasPlan !== false && (
-                          <>
-                            <HoverBar
-                              left={gapLeft}
-                              width={gapPlanWidth}
-                              top={14}
-                              height={20}
-                              className="rounded bg-cream/70"
-                              tooltip={planTooltip(
-                                r.task.name,
-                                timelineBase + r.scheduledStartMin * 60000,
-                                timelineBase + planEndMin * 60000,
-                                r.task.estimatedSeconds
-                              )}
-                            />
-                            <div
-                              className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
-                              style={{ left: planLeft + planWidth + 3, top: 34 }}
-                            >
-                              {planEndLabel}
-                            </div>
-                          </>
+                        {/* 個人が設定した「予定」(任意)は、目標ラインとして予測バーに重ねて薄く表示するだけに留める */}
+                        {r.task.hasPlan === true && (
+                          <HoverBar
+                            left={gapLeft}
+                            width={gapPlanWidth}
+                            top={14}
+                            height={20}
+                            className="rounded border border-dashed border-cream/70"
+                            tooltip={personalPlanTooltip(r.task.name, r.task.estimatedSeconds)}
+                          />
                         )}
+                        <div
+                          className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
+                          style={{ left: planLeft + predWidth + 3, top: 34 }}
+                        >
+                          {predEndLabel}
+                        </div>
                       </div>
                     );
                   })}
@@ -686,10 +725,10 @@ export default function GanttSection() {
                         const planLeft = item.scheduledStartMin * pxPerMin;
                         const planWidth = Math.max((item.task.estimatedSeconds / 60) * pxPerMin, 3);
                         const predWidth = Math.max((item.predictedSeconds / 60) * pxPerMin, 3);
-                        const planEndMin = item.scheduledStartMin + item.task.estimatedSeconds / 60;
+                        const predEndMin = item.scheduledStartMin + item.predictedSeconds / 60;
                         const hasActual = item.block !== null;
                         const nameLeft = hasActual ? item.block!.start * pxPerMin : planLeft;
-                        const endMin = hasActual ? item.block!.end : planEndMin;
+                        const endMin = hasActual ? item.block!.end : predEndMin;
                         const endLeft = endMin * pxPerMin;
                         const endLabel = formatClock(timelineBase + endMin * 60000);
                         return (
@@ -701,26 +740,30 @@ export default function GanttSection() {
                             >
                               {item.task.name}
                             </div>
-                            {/* 予測枠（点線）・予定バー: 同じ作業の2回目以降のブロックでは重複表示しない */}
+                            {/* 予測バー（実線・主役）・個人が設定した予定(点線・任意): 同じ作業の2回目以降のブロックでは重複表示しない */}
                             {item.showPlan && (
                               <>
-                                <div
-                                  className="absolute rounded border border-dashed border-cream/50"
-                                  style={{ left: planLeft, width: predWidth, top: planBarTop, height: planBarHeight }}
+                                <HoverBar
+                                  left={planLeft}
+                                  width={predWidth}
+                                  top={planBarTop}
+                                  height={planBarHeight}
+                                  className="rounded bg-cream/70"
+                                  tooltip={predictedTooltip(
+                                    item.task.name,
+                                    timelineBase + item.scheduledStartMin * 60000,
+                                    timelineBase + predEndMin * 60000,
+                                    item.predictedSeconds
+                                  )}
                                 />
-                                {item.task.hasPlan !== false && (
+                                {item.task.hasPlan === true && (
                                   <HoverBar
                                     left={planLeft}
                                     width={planWidth}
                                     top={planBarTop}
                                     height={planBarHeight}
-                                    className="rounded bg-cream/70"
-                                    tooltip={planTooltip(
-                                      item.task.name,
-                                      timelineBase + item.scheduledStartMin * 60000,
-                                      timelineBase + planEndMin * 60000,
-                                      item.task.estimatedSeconds
-                                    )}
+                                    className="rounded border border-dashed border-cream/70"
+                                    tooltip={personalPlanTooltip(item.task.name, item.task.estimatedSeconds)}
                                   />
                                 )}
                               </>
@@ -762,10 +805,15 @@ export default function GanttSection() {
       </div>
 
       <div className="flex flex-wrap gap-4 text-xs text-cream/60">
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-cream/70" /> 予定</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded border border-dashed border-cream/50" /> 予測</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-cream/70" /> 予測（実績ベースの見込み）</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded border border-dashed border-cream/70" /> 予定（個人が設定した目標。任意）</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-cream" /> 実績</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-alert" /> 実績（超過）</span>
+        {scheduleItems.length > 0 && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded border-2 border-cream/70 bg-ink/60" /> カレンダー予定（実時刻）
+          </span>
+        )}
         <span className="flex items-center gap-1">
           <ConditionGlyph level="3" size={14} /> 体調の変化（縦線が記録時刻）
         </span>

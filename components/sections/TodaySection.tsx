@@ -293,27 +293,54 @@ export default function TodaySection() {
     setDailySummaryNotifiedDate,
   ]);
 
-  // 予定超過チェック（通知 + 20分超過の画面確認）
+  // 「予測」（マスタの平均想定時間）。ガントチャートと同じ考え方で、同日中に同じ作業を
+  // 複数回登録している場合は、既に今日積み上がった実績分を差し引いた残り予測にする。
+  // 工程・改善の判断は実績ベースの予測を軸にする方針のため、個人が設定した「予定」の
+  // 有無に関わらず、常にこちらを主役の目安として使う
+  const predictedSecondsByTaskId = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!tasks) return map;
+    const groups = new Map<string, DailyTask[]>();
+    for (const t of tasks) {
+      const key = `${t.category}::${t.name}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(t);
+    }
+    for (const group of groups.values()) {
+      const sorted = [...group].sort((a, b) => a.order - b.order);
+      const master = sorted[0]?.masterTaskId ? (allMasterTasks ?? []).find((m) => m.id === sorted[0].masterTaskId) : undefined;
+      const rawPredicted = master?.estimatedSeconds ?? sorted[0]?.estimatedSeconds ?? 0;
+      let cumulative = 0;
+      for (const t of sorted) {
+        map.set(t.id, Math.max(0, rawPredicted - cumulative));
+        cumulative += segmentsAccumulatedMs(t, now) / 1000;
+      }
+    }
+    return map;
+  }, [tasks, allMasterTasks, now]);
+
+  // 予測超過チェック（通知 + 20分超過の画面確認）
   useEffect(() => {
     if (!tasks) return;
     for (const task of tasks) {
-      if (task.status !== "running" || task.estimatedSeconds <= 0) continue;
+      const predicted = predictedSecondsByTaskId.get(task.id) ?? 0;
+      if (task.status !== "running" || predicted <= 0) continue;
       const elapsedMs = segmentsAccumulatedMs(task, now);
-      const estMs = task.estimatedSeconds * 1000;
-      if (elapsedMs > estMs && !task.notifiedOverrun) {
-        notify("予定時間を超過しました", `${task.category} / ${task.name}`);
+      const predMs = predicted * 1000;
+      if (elapsedMs > predMs && !task.notifiedOverrun) {
+        notify("予測時間を超過しました", `${task.category} / ${task.name}`);
         db.dailyTasks.update(task.id, { notifiedOverrun: true });
       }
       const sinceDismiss = task.overrunPromptDismissedAt ? now - task.overrunPromptDismissedAt : Infinity;
       if (
-        elapsedMs > estMs + OVERRUN_REPROMPT_MS &&
+        elapsedMs > predMs + OVERRUN_REPROMPT_MS &&
         (!task.overrunPromptShown || sinceDismiss > OVERRUN_REPROMPT_MS) &&
         !overrunTask
       ) {
         setOverrunTask(task);
       }
     }
-  }, [now, tasks, overrunTask]);
+  }, [now, tasks, overrunTask, predictedSecondsByTaskId]);
 
   // 予定インポートで登録した作業(scheduledTime)が指定時刻になったら自動的に差し込み開始する
   useEffect(() => {
@@ -337,55 +364,32 @@ export default function TodaySection() {
     return next?.id ?? null;
   }, [tasks]);
 
-  // 想定時間から、このまま順番どおり進めた場合の各作業の終了予定時刻を計算する
+  // 予測時間から、このまま順番どおり進めた場合の各作業の終了予定時刻を計算する
+  // （個人が設定した「予定」があっても、終了見込みの計算自体は常に予測を基準にする）
   const projectedFinishByTaskId = useMemo(() => {
     const map = new Map<string, number>();
     if (!tasks) return map;
     let cursor = now;
     for (const task of tasks) {
-      if (task.status === "done" || task.estimatedSeconds <= 0) continue;
+      const predicted = predictedSecondsByTaskId.get(task.id) ?? 0;
+      if (task.status === "done" || predicted <= 0) continue;
       if (task.status === "running") {
-        const remainingMs = Math.max(0, task.estimatedSeconds * 1000 - segmentsAccumulatedMs(task, now));
+        const remainingMs = Math.max(0, predicted * 1000 - segmentsAccumulatedMs(task, now));
         const finish = now + remainingMs;
         map.set(task.id, finish);
         cursor = Math.max(cursor, finish);
       } else if (task.status === "paused") {
-        const remainingMs = Math.max(0, task.estimatedSeconds * 1000 - baseAccumulatedMs(task));
+        const remainingMs = Math.max(0, predicted * 1000 - baseAccumulatedMs(task));
         const finish = now + remainingMs;
         map.set(task.id, finish);
         cursor = Math.max(cursor, finish);
       } else {
-        cursor += task.estimatedSeconds * 1000;
+        cursor += predicted * 1000;
         map.set(task.id, cursor);
       }
     }
     return map;
-  }, [tasks, now]);
-
-  // 「予測」（マスタの平均想定時間）。ガントチャートと同じ考え方で、同日中に同じ作業を
-  // 複数回登録している場合は、既に今日積み上がった実績分を差し引いた残り予測にする。
-  // 「予定」を設定していない作業（hasPlan===false）の目安表示に使う
-  const predictedSecondsByTaskId = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!tasks) return map;
-    const groups = new Map<string, DailyTask[]>();
-    for (const t of tasks) {
-      const key = `${t.category}::${t.name}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(t);
-    }
-    for (const group of groups.values()) {
-      const sorted = [...group].sort((a, b) => a.order - b.order);
-      const master = sorted[0]?.masterTaskId ? (allMasterTasks ?? []).find((m) => m.id === sorted[0].masterTaskId) : undefined;
-      const rawPredicted = master?.estimatedSeconds ?? sorted[0]?.estimatedSeconds ?? 0;
-      let cumulative = 0;
-      for (const t of sorted) {
-        map.set(t.id, Math.max(0, rawPredicted - cumulative));
-        cumulative += segmentsAccumulatedMs(t, now) / 1000;
-      }
-    }
-    return map;
-  }, [tasks, allMasterTasks, now]);
+  }, [tasks, now, predictedSecondsByTaskId]);
 
   // 計測中の作業を一番上に、完了済みを一番下に沈める。それ以外（一時停止中/未着手）はもとの順番のまま
   const sortedTasks = useMemo(() => {
@@ -1644,8 +1648,10 @@ export default function TodaySection() {
         {sortedTasks.filter((task) => !task.isProvisional).map((task) => {
           const elapsedMs = segmentsAccumulatedMs(task, now);
           const estMs = task.estimatedSeconds * 1000;
-          const overEstimate = task.estimatedSeconds > 0 && elapsedMs > estMs;
-          const remainingMs = estMs - elapsedMs;
+          const predictedSecondsForTask = predictedSecondsByTaskId.get(task.id) ?? 0;
+          const predMs = predictedSecondsForTask * 1000;
+          const overEstimate = predictedSecondsForTask > 0 && elapsedMs > predMs;
+          const remainingMs = predMs - elapsedMs;
           const isNext = task.id === nextTaskId;
           const taskRankKey = task.masterTaskId ?? `${task.category}::${task.name}`;
           const topRank = topRankedKeys.get(taskRankKey);
@@ -1748,32 +1754,17 @@ export default function TodaySection() {
                     </div>
                   )}
                   <div className="text-xs text-cream/50">
-                    {task.hasPlan === false ? (
-                      predictedSecondsByTaskId.has(task.id) && predictedSecondsByTaskId.get(task.id)! > 0 ? (
-                        <span
-                          className="text-cream/40"
-                          title="「予定」は設定されていません。これはマスタの平均実績（同日の繰り越し分を差し引いたもの）に基づく目安の「予測」です"
-                        >
-                          予測 {formatMsClock(predictedSecondsByTaskId.get(task.id)! * 1000)}
-                        </span>
-                      ) : (
-                        <span className="text-cream/40" title="この作業には「予定」を設定しておらず、マスタの実績もまだ十分ありません">
-                          予定 未設定
-                        </span>
-                      )
+                    {predictedSecondsForTask > 0 ? (
+                      <span className="font-bold text-cream/70">予測 {formatMsClock(predMs)}</span>
                     ) : (
-                      <>
-                        予定 {formatMsClock(estMs)}
-                        {task.estimatedSeconds === 0 &&
-                          (allMasterTasks ?? []).find((m) => m.id === task.masterTaskId)?.estimatedSeconds ? (
-                            <span
-                              className="ml-1 text-cream/40"
-                              title="同じ作業が今日すでに登録されていて、その合計がマスタの想定時間を超えているため、今日の残り想定時間が0になっています"
-                            >
-                              （今日の想定時間を使い切りました）
-                            </span>
-                          ) : null}
-                      </>
+                      <span className="text-cream/40" title="マスタの実績がまだ十分にないため、目安の「予測」を算出できません">
+                        予測 データ不足
+                      </span>
+                    )}
+                    {task.hasPlan === true && (
+                      <span className="ml-2 text-cream/40" title="この作業に個人で設定した目標時間です（工程の判断には使われません）">
+                        （個人目標 {formatMsClock(estMs)}）
+                      </span>
                     )}
                     {projectedFinishByTaskId.has(task.id) && (
                       <span className="ml-2 text-cream/70">
@@ -1790,7 +1781,7 @@ export default function TodaySection() {
                   <div className={`font-display text-2xl font-bold tabular-nums ${overEstimate ? "text-alert" : "text-cream"}`}>
                     {formatMsClock(elapsedMs)}
                   </div>
-                  {task.estimatedSeconds > 0 && (task.status === "running" || task.status === "paused") && (
+                  {predictedSecondsForTask > 0 && (task.status === "running" || task.status === "paused") && (
                     <div className={`text-xs tabular-nums ${remainingMs < 0 ? "text-alert" : "text-cream/60"}`}>
                       {remainingMs >= 0 ? `残り ${formatMsClock(remainingMs)}` : `超過 ${formatMsClock(-remainingMs)}`}
                     </div>
@@ -2012,7 +2003,7 @@ export default function TodaySection() {
       {overrunTask && (
         <Modal title="まだこの作業中ですか?">
           <p className="mb-4 text-sm text-cream/80">
-            「{overrunTask.name}」が予定時間を大幅に超過しています。
+            「{overrunTask.name}」が予測時間を大幅に超過しています。
           </p>
           <div className="flex justify-end gap-2">
             <button
