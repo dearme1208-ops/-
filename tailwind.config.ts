@@ -9,6 +9,9 @@ const config: Config = {
         cream: "#E9E6BD",
         alert: "rgb(var(--accent-rgb) / <alpha-value>)",
         panel: "#151517",
+        // VA-11 HALL-A風演出テーマ専用のネオンパレット(固定色、アクセントカラー設定とは独立)
+        "v11-pink": "rgb(255 45 149 / <alpha-value>)",
+        "v11-cyan": "rgb(0 229 255 / <alpha-value>)",
       },
       fontFamily: {
         display: ["var(--font-oswald)", "sans-serif"],

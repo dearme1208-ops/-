@@ -117,8 +117,7 @@ export default function SettingsSection() {
     "5"
   );
   const [accentRgb, setAccentRgb] = useSetting("theme.accentRgb", DEFAULT_ACCENT_RGB);
-  const [lobotomyModeStr, setLobotomyModeStr] = useSetting("theme.lobotomyMode", "false");
-  const lobotomyMode = lobotomyModeStr === "true";
+  const [visualMode, setVisualMode] = useSetting("theme.visualMode", "off");
   const [dailySummaryEnabledStr, setDailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
   const dailySummaryEnabled = dailySummaryEnabledStr === "true";
   const [dailySummaryTime, setDailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
@@ -657,18 +656,42 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">🩸 ロボトミーコーポレーション風モード</h3>
+        <h3 className="font-display text-sm font-bold text-cream/80">🎭 演出テーマ</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
-            className={lobotomyMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setLobotomyModeStr(lobotomyMode ? "false" : "true")}
+            className={visualMode === "off" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("off")}
           >
-            {lobotomyMode ? "ON" : "OFF"}
+            オフ
+          </button>
+          <button
+            className={visualMode === "lobotomy" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("lobotomy")}
+          >
+            🩸 ロボトミーコーポレーション風
+          </button>
+          <button
+            className={visualMode === "va11halla" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("va11halla")}
+          >
+            🍸 VA-11 HALL-A風
           </button>
         </div>
-        <p className="text-xs text-cream/50">
-          ONにすると、画面全体にCRT風の走査線・ノイズ、アプリタイトルの色収差グリッチ、予測を大幅に超過した作業への「収容の不安定化」警戒表示（画面端のビネット・横スクロールする警告ティッカー・リスク階級バッジ ZAYIN〜ALEPH）が有効になります。常時表示させたくない場合はOFFのままにしてください。
-        </p>
+        {visualMode === "lobotomy" && (
+          <p className="text-xs text-cream/50">
+            画面全体にCRT風の走査線・ノイズ、アプリタイトルの色収差グリッチ、パネル四隅のリベット、見出しの走査ブロック装飾が有効になります。予測を大幅に超過した作業には「収容の不安定化」警戒表示（画面端のビネット・横スクロールする警告ティッカー・危険階級バッジ ZAYIN〜ALEPH）が出ます。
+          </p>
+        )}
+        {visualMode === "va11halla" && (
+          <p className="text-xs text-cream/50">
+            画面全体にネオンのシンセウェイブグリッド・VHS風走査線、パネル枠のネオングロー、アプリタイトルのネオン色収差が有効になります。予測を大幅に超過した作業には「システムオーバーロード」警戒表示（ネオンビネット・横スクロールする警告ティッカー・注文階級バッジ REGULAR〜BAD TOUCH）が出ます。
+          </p>
+        )}
+        {visualMode === "off" && (
+          <p className="text-xs text-cream/50">
+            通常表示です。計測中・予測超過の強調表示自体は演出テーマに関わらず常に有効です。
+          </p>
+        )}
       </div>
 
       <div className="panel space-y-3 p-4">

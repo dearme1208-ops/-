@@ -41,17 +41,26 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
 
-// ロボトミーコーポレーション風モードで、予測超過の度合いに応じて表示する
-// 警戒階級(実績が予測の何倍かで判定。数字が大きいほど危険度が高い)
-const RISK_TIERS = [
+// 演出テーマで、予測超過の度合いに応じて表示する階級バッジ
+// (実績が予測の何倍かで判定。数字が大きいほど危険度が高い)
+const RISK_TIERS_LOBOTOMY = [
   { threshold: 4, name: "ALEPH", level: 4 },
   { threshold: 2.5, name: "WAW", level: 3 },
   { threshold: 1.8, name: "HE", level: 2 },
   { threshold: 1.3, name: "TETH", level: 1 },
   { threshold: 1, name: "ZAYIN", level: 0 },
 ] as const;
-function getRiskTier(ratio: number) {
-  return RISK_TIERS.find((t) => ratio >= t.threshold) ?? RISK_TIERS[RISK_TIERS.length - 1];
+// VA-11 HALL-A風: 注文(=作業)が捌ききれず溜まっていく様子をカクテル名になぞらえた階級
+const RISK_TIERS_VA11HALLA = [
+  { threshold: 4, name: "BAD TOUCH", level: 4 },
+  { threshold: 2.5, name: "MOONBLAST", level: 3 },
+  { threshold: 1.8, name: "LAST CALL", level: 2 },
+  { threshold: 1.3, name: "ON THE ROCKS", level: 1 },
+  { threshold: 1, name: "REGULAR", level: 0 },
+] as const;
+function getRiskTier(ratio: number, mode: "lobotomy" | "va11halla") {
+  const tiers = mode === "va11halla" ? RISK_TIERS_VA11HALLA : RISK_TIERS_LOBOTOMY;
+  return tiers.find((t) => ratio >= t.threshold) ?? tiers[tiers.length - 1];
 }
 
 export default function TodaySection() {
@@ -93,8 +102,10 @@ export default function TodaySection() {
   const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
-  const [lobotomyModeStr] = useSetting("theme.lobotomyMode", "false");
-  const lobotomyMode = lobotomyModeStr === "true";
+  const [visualMode] = useSetting("theme.visualMode", "off");
+  const lobotomyMode = visualMode === "lobotomy";
+  const va11hallaMode = visualMode === "va11halla";
+  const themedMode = lobotomyMode ? "lobotomy" : va11hallaMode ? "va11halla" : null;
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -363,8 +374,8 @@ export default function TodaySection() {
     return map;
   }, [tasks, allMasterTasks, now]);
 
-  // ロボトミーコーポレーション風モードの警告表示(ティッカー・ビネット)用に、
-  // 現在計測中かつ予測を超過している作業と、その中で最も危険度の高い階級をまとめておく
+  // 演出テーマの警告表示(ティッカー・ビネット)用に、現在計測中かつ予測を
+  // 超過している作業と、その中で最も危険度の高い階級をまとめておく
   const runningOverrunTasks = useMemo(() => {
     return (tasks ?? []).filter((t) => {
       if (t.status !== "running") return false;
@@ -374,16 +385,17 @@ export default function TodaySection() {
     });
   }, [tasks, predictedSecondsByTaskId, now]);
   const worstRiskTier = useMemo(() => {
-    let worst: (typeof RISK_TIERS)[number] | null = null;
+    if (!themedMode) return null;
+    let worst: ReturnType<typeof getRiskTier> | null = null;
     for (const t of runningOverrunTasks) {
       const predSec = predictedSecondsByTaskId.get(t.id) ?? 0;
       if (predSec <= 0) continue;
       const ratio = segmentsAccumulatedMs(t, now) / 1000 / predSec;
-      const tier = getRiskTier(ratio);
+      const tier = getRiskTier(ratio, themedMode);
       if (!worst || tier.level > worst.level) worst = tier;
     }
     return worst;
-  }, [runningOverrunTasks, predictedSecondsByTaskId, now]);
+  }, [runningOverrunTasks, predictedSecondsByTaskId, now, themedMode]);
 
   // ライブモード時のみ、常に現在時刻を基準に自動配分を再計算する
   const liveAllocation = useMemo(() => {
@@ -1609,19 +1621,31 @@ export default function TodaySection() {
 
   return (
     <div className="space-y-4">
-      {lobotomyMode && (
+      {themedMode && (
         <div
-          className={`containment-vignette ${runningOverrunTasks.length > 0 ? "is-active" : ""}`}
+          className={`containment-vignette ${va11hallaMode ? "vignette-v11" : ""} ${
+            runningOverrunTasks.length > 0 ? "is-active" : ""
+          }`}
           aria-hidden="true"
         />
       )}
-      {lobotomyMode && runningOverrunTasks.length > 0 && (
-        <div className="warning-ticker panel border border-alert/60 bg-alert/10 px-3 py-2 text-xs font-bold text-alert">
+      {themedMode && runningOverrunTasks.length > 0 && (
+        <div
+          className={`warning-ticker panel px-3 py-2 text-xs font-bold ${
+            va11hallaMode ? "border border-v11-pink/60 bg-v11-pink/10 text-v11-pink" : "border border-alert/60 bg-alert/10 text-alert"
+          }`}
+        >
           <div className="warning-ticker-track">
-            ⚠ 収容の不安定化を検知 ⚠ 予測を超過して計測中の作業が{runningOverrunTasks.length}件あります
-            {worstRiskTier && `（最大警戒階級: ${worstRiskTier.name}）`}： {runningOverrunTasks.map((t) => `${t.category}/${t.name}`).join("、")}
-            　⚠ 収容の不安定化を検知 ⚠ 予測を超過して計測中の作業が{runningOverrunTasks.length}件あります
-            {worstRiskTier && `（最大警戒階級: ${worstRiskTier.name}）`}： {runningOverrunTasks.map((t) => `${t.category}/${t.name}`).join("、")}
+            {(() => {
+              const message = va11hallaMode
+                ? `⚡ GLITCH CITY NETWORK ⚡ 予測時間を超過して稼働中の注文が${runningOverrunTasks.length}件${
+                    worstRiskTier ? `（最大: ${worstRiskTier.name}）` : ""
+                  }： ${runningOverrunTasks.map((t) => `${t.category}/${t.name}`).join("、")}`
+                : `⚠ 収容の不安定化を検知 ⚠ 予測を超過して計測中の作業が${runningOverrunTasks.length}件あります${
+                    worstRiskTier ? `（最大警戒階級: ${worstRiskTier.name}）` : ""
+                  }： ${runningOverrunTasks.map((t) => `${t.category}/${t.name}`).join("、")}`;
+              return `${message}　${message}`;
+            })()}
           </div>
         </div>
       )}
@@ -1968,14 +1992,18 @@ export default function TodaySection() {
           const topRank = topRankedKeys.get(taskRankKey);
           const isRunningOverrun = task.status === "running" && overEstimate;
           const riskTier =
-            lobotomyMode && isRunningOverrun && predictedSecondsForTask > 0
-              ? getRiskTier(elapsedMs / predMs)
+            themedMode && isRunningOverrun && predictedSecondsForTask > 0
+              ? getRiskTier(elapsedMs / predMs, themedMode)
               : null;
           const cardClass =
             task.status === "running"
               ? isRunningOverrun
-                ? "border-alert ring-2 ring-alert/70 bg-alert/[0.05] card-overrun"
-                : "border-cream ring-2 ring-cream/50 bg-cream/[0.04] card-running"
+                ? va11hallaMode
+                  ? "border-v11-pink ring-2 ring-v11-pink/70 bg-v11-pink/[0.06] card-overrun-v11"
+                  : "border-alert ring-2 ring-alert/70 bg-alert/[0.05] card-overrun"
+                : va11hallaMode
+                  ? "border-v11-cyan ring-2 ring-v11-cyan/50 bg-v11-cyan/[0.05] card-running-v11"
+                  : "border-cream ring-2 ring-cream/50 bg-cream/[0.04] card-running"
               : task.status === "paused"
                 ? "border-cream/40"
                 : isNext
@@ -1993,7 +2021,9 @@ export default function TodaySection() {
                 task.status === "done" ? "opacity-50" : dimmed ? "opacity-40" : ""
               }`}
             >
-              {isRunningOverrun && <div className="hazard-bar absolute inset-x-0 top-0 rounded-t-2xl" />}
+              {isRunningOverrun && (
+                <div className={`absolute inset-x-0 top-0 rounded-t-2xl ${va11hallaMode ? "hazard-bar-v11" : "hazard-bar"}`} />
+              )}
               {task.status !== "done" && (
                 <button
                   onClick={() => deleteTask(task)}
@@ -2008,23 +2038,31 @@ export default function TodaySection() {
                   <div className="flex items-center gap-2 text-xs text-cream/60">
                     <span className="flex items-center gap-1">
                       {task.status === "running" && !isRunningOverrun && (
-                        <span className="flex items-center gap-1 font-bold text-cream">
-                          <span className="h-2 w-2 animate-pulse rounded-full bg-alert" />
+                        <span className={`flex items-center gap-1 font-bold ${va11hallaMode ? "text-v11-cyan" : "text-cream"}`}>
+                          <span className={`h-2 w-2 animate-pulse rounded-full ${va11hallaMode ? "bg-v11-cyan" : "bg-alert"}`} />
                           計測中
                         </span>
                       )}
                       {isRunningOverrun && (
-                        <span className="overrun-badge flex items-center gap-1 font-bold text-alert">
-                          <span className="h-2 w-2 rounded-full bg-alert" />
-                          ⚠ 計測中・予測超過
+                        <span
+                          className={`overrun-badge flex items-center gap-1 font-bold ${va11hallaMode ? "text-v11-pink" : "text-alert"}`}
+                        >
+                          <span className={`h-2 w-2 rounded-full ${va11hallaMode ? "bg-v11-pink" : "bg-alert"}`} />
+                          {va11hallaMode ? "⚡ 稼働中・時間超過" : "⚠ 計測中・予測超過"}
                         </span>
                       )}
                       {riskTier && (
                         <span
-                          className={`risk-badge risk-badge-${riskTier.level} rounded border border-alert/70 bg-alert/20 px-1.5 py-0.5 text-[10px] font-bold text-alert`}
-                          title="ロボトミーコーポレーション風モード: 予測超過の度合いに応じた警戒階級"
+                          className={`risk-badge risk-badge-${riskTier.level} rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+                            va11hallaMode ? "border-v11-pink/70 bg-v11-pink/20 text-v11-pink" : "border-alert/70 bg-alert/20 text-alert"
+                          }`}
+                          title={
+                            va11hallaMode
+                              ? "VA-11 HALL-A風モード: 予測超過の度合いに応じた注文階級"
+                              : "ロボトミーコーポレーション風モード: 予測超過の度合いに応じた警戒階級"
+                          }
                         >
-                          危険度 {riskTier.name}
+                          {va11hallaMode ? riskTier.name : `危険度 ${riskTier.name}`}
                         </span>
                       )}
                       {task.status === "paused" && <span className="text-cream/70">‖ 一時停止中</span>}
@@ -2120,14 +2158,18 @@ export default function TodaySection() {
                 </div>
                 <div className="text-right">
                   <div
-                    className={`font-display text-2xl font-bold tabular-nums ${overEstimate ? "text-alert" : "text-cream"} ${
-                      isRunningOverrun ? (lobotomyMode ? "overrun-flicker-intense" : "overrun-flicker") : ""
-                    }`}
+                    className={`font-display text-2xl font-bold tabular-nums ${
+                      overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : "text-cream"
+                    } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
                   >
                     {formatMsClock(elapsedMs)}
                   </div>
                   {predictedSecondsForTask > 0 && (task.status === "running" || task.status === "paused") && (
-                    <div className={`text-xs tabular-nums ${remainingMs < 0 ? "text-alert" : "text-cream/60"}`}>
+                    <div
+                      className={`text-xs tabular-nums ${
+                        remainingMs < 0 ? (va11hallaMode ? "text-v11-pink" : "text-alert") : "text-cream/60"
+                      }`}
+                    >
                       {remainingMs >= 0 ? `残り ${formatMsClock(remainingMs)}` : `超過 ${formatMsClock(-remainingMs)}`}
                     </div>
                   )}

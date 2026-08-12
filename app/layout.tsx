@@ -49,10 +49,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja" className={`${oswald.variable} ${notoSansJp.variable}`}>
       <body className="min-h-screen bg-ink font-sans text-cream antialiased">
         <BadgeUpdater />
-        {/* ロボトミーコーポレーション風モード(設定でON時のみCSSで可視化)の
-            走査線・ノイズのオーバーレイ。常時DOMには存在させ、表示はCSS側で切り替える */}
+        {/* 演出テーマ(設定でON時のみCSSで可視化)の走査線・ノイズ・グリッドの
+            オーバーレイ。常時DOMには存在させ、表示はCSS側(html[data-visual-mode])で切り替える */}
         <div className="crt-scanlines" aria-hidden="true" />
         <div className="crt-noise" aria-hidden="true" />
+        <div className="synthwave-grid" aria-hidden="true" />
         <div className="frame-corners">
           <span className="corner-tr" />
           <span className="corner-br" />
