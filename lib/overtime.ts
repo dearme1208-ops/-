@@ -6,6 +6,7 @@ export interface MonthlyOvertimeRow {
   autoOvertimeSeconds: number; // 所定時間を超えた分の概算残業（日ごとの超過分を合算、外れ値の日は除く）
   totalTrackedSeconds: number; // その月の実績合計（外れ値も含む、純粋な合計）
   excludedOutlierDays: number; // 外れ値として概算から除外した日数
+  excludedOutlierDates: { date: string; seconds: number }[]; // 除外した日の内訳（日付・その日の実績合計）
 }
 
 // 実績を日ごとに合算し、所定時間を超えた分を概算残業として月単位で積み上げる。
@@ -25,16 +26,26 @@ export function computeMonthlyOvertime(
   for (const [date, seconds] of byDate) {
     const month = date.slice(0, 7);
     if (!result.has(month)) {
-      result.set(month, { month, autoOvertimeSeconds: 0, totalTrackedSeconds: 0, excludedOutlierDays: 0 });
+      result.set(month, {
+        month,
+        autoOvertimeSeconds: 0,
+        totalTrackedSeconds: 0,
+        excludedOutlierDays: 0,
+        excludedOutlierDates: [],
+      });
     }
     const row = result.get(month)!;
     row.totalTrackedSeconds += seconds;
     // 高すぎる日（上振れの外れ値）のみ除外する。低い日は超過分が0なので元々概算に影響しない
     if (bounds !== null && seconds > bounds.upper) {
       row.excludedOutlierDays += 1;
+      row.excludedOutlierDates.push({ date, seconds });
     } else {
       row.autoOvertimeSeconds += Math.max(0, seconds - standardDailySeconds);
     }
+  }
+  for (const row of result.values()) {
+    row.excludedOutlierDates.sort((a, b) => a.date.localeCompare(b.date));
   }
   return result;
 }

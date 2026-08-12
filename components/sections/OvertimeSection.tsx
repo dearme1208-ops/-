@@ -5,9 +5,12 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { breakdownByCategory, breakdownByProject, computeMonthlyOvertime, formatHoursJp } from "@/lib/overtime";
+import { formatDateJp } from "@/lib/time";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import DonutChart from "@/components/charts/DonutChart";
+import Modal from "@/components/ui/Modal";
+import type { WorkRecord } from "@/lib/types";
 
 type BreakdownMode = "category" | "project";
 type BreakdownStyle = "bar" | "donut";
@@ -23,6 +26,8 @@ export default function OvertimeSection() {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [breakdownMode, setBreakdownMode] = useState<BreakdownMode>("category");
   const [breakdownStyle, setBreakdownStyle] = useState<BreakdownStyle>("bar");
+  // 外れ値として概算残業から除外された日の内訳を表示するモーダル
+  const [outlierDetailMonth, setOutlierDetailMonth] = useState<string | null>(null);
 
   const projectTitleById = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.title])), [projects]);
 
@@ -67,6 +72,17 @@ export default function OvertimeSection() {
     if (!currentMonth) return [];
     return (records ?? []).filter((r) => r.date.startsWith(currentMonth));
   }, [records, currentMonth]);
+
+  // 外れ値詳細モーダル用: 日付ごとに、その日の実績一覧をまとめておく
+  const recordsByDate = useMemo(() => {
+    const map = new Map<string, WorkRecord[]>();
+    for (const r of records ?? []) {
+      if (!map.has(r.date)) map.set(r.date, []);
+      map.get(r.date)!.push(r);
+    }
+    for (const list of map.values()) list.sort((a, b) => b.seconds - a.seconds);
+    return map;
+  }, [records]);
 
   const breakdownRows = useMemo(() => {
     return breakdownMode === "category"
@@ -168,12 +184,17 @@ export default function OvertimeSection() {
                   <td className="px-3 py-2 text-right tabular-nums text-cream/70">
                     {row ? formatHoursJp(row.autoOvertimeSeconds) : "-"}
                     {row && row.excludedOutlierDays > 0 && (
-                      <span
-                        className="ml-1 text-[10px] text-cream/40"
-                        title="タイマーの消し忘れなどで突出して長い日を外れ値として概算から除外しています"
+                      <button
+                        type="button"
+                        className="ml-1 text-[10px] text-cream/40 underline decoration-dotted hover:text-cream"
+                        title="タイマーの消し忘れなどで突出して長い日を外れ値として概算から除外しています。クリックすると内訳を表示します"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOutlierDetailMonth(month);
+                        }}
                       >
                         （外れ値{row.excludedOutlierDays}日除外）
-                      </span>
+                      </button>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
@@ -271,6 +292,37 @@ export default function OvertimeSection() {
           <DiffLineChart points={diffPoints} formatValue={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)} 時間`} />
         </div>
       </div>
+
+      {outlierDetailMonth && (
+        <Modal
+          title={`${monthLabel(outlierDetailMonth).year}年${monthLabel(outlierDetailMonth).m}月の外れ値（除外日）`}
+          onClose={() => setOutlierDetailMonth(null)}
+        >
+          <p className="mb-3 text-xs text-cream/50">
+            以下の日は、実績合計が他の日と比べて突出して大きかったため、概算残業の計算からのみ除外しています（実績合計・実績自体はそのまま残っています）。タイマーの消し忘れなどが原因であれば、実績タブから該当する記録を修正・削除してください。
+          </p>
+          <div className="space-y-3">
+            {(monthlyMap.get(outlierDetailMonth)?.excludedOutlierDates ?? []).map(({ date, seconds }) => (
+              <div key={date} className="rounded-lg bg-ink/50 p-3">
+                <div className="mb-1.5 flex items-center justify-between text-sm">
+                  <span className="font-bold text-cream">{formatDateJp(date)}</span>
+                  <span className="tabular-nums text-alert">{formatHoursJp(seconds)}</span>
+                </div>
+                <div className="space-y-1">
+                  {(recordsByDate.get(date) ?? []).map((r) => (
+                    <div key={r.id} className="flex items-center justify-between text-xs text-cream/60">
+                      <span className="truncate">
+                        {r.category} / {r.name}
+                      </span>
+                      <span className="shrink-0 tabular-nums">{formatHoursJp(r.seconds)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

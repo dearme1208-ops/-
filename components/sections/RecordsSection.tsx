@@ -18,6 +18,8 @@ import type { WorkRecord } from "@/lib/types";
 
 export default function RecordsSection() {
   const [search, setSearch] = useState("");
+  // 外れ値・手動除外として集計から除外されている実績だけを絞り込んで見られるようにする
+  const [showExcludedOnly, setShowExcludedOnly] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importStatus, setImportStatus] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -27,9 +29,15 @@ export default function RecordsSection() {
 
   const filtered = useMemo(() => {
     if (!records) return [];
-    if (!search.trim()) return records;
-    return records.filter((r) => r.category.includes(search) || r.name.includes(search) || r.date.includes(search));
-  }, [records, search]);
+    let list = records;
+    if (showExcludedOnly) list = list.filter((r) => r.excludedFromStats);
+    if (search.trim()) {
+      list = list.filter((r) => r.category.includes(search) || r.name.includes(search) || r.date.includes(search));
+    }
+    return list;
+  }, [records, search, showExcludedOnly]);
+
+  const excludedCount = useMemo(() => (records ?? []).filter((r) => r.excludedFromStats).length, [records]);
 
   // 名称・区分を変更した場合、設定に応じて紐づく作業マスタもリネームするか、
   // 新しい名称・区分のマスタ（既存 or 新規）に繋ぎ変える。時間変更時は紐づくマスタの想定時間を再計算する
@@ -120,12 +128,24 @@ export default function RecordsSection() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <input
-          placeholder="日付・区分・作業名で検索"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            placeholder="日付・区分・作業名で検索"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+          <label className="flex items-center gap-1.5 text-xs text-cream/60">
+            <input
+              type="checkbox"
+              checked={showExcludedOnly}
+              onChange={(e) => setShowExcludedOnly(e.target.checked)}
+              className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+            />
+            除外中のみ表示（外れ値・手動除外
+            {excludedCount > 0 && `：${excludedCount}件`}）
+          </label>
+        </div>
         <div className="flex gap-2">
           <button className="btn-pill-outline text-sm" onClick={exportCsv}>
             CSVエクスポート
