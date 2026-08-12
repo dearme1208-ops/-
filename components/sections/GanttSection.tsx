@@ -521,6 +521,15 @@ export default function GanttSection() {
         {/* 固定ラベル列: 横スクロールしても常に見える */}
         <div className="w-32 shrink-0 pr-2 sm:w-44">
           <div className="mb-2 h-6 border-b border-cream/20" />
+          {/* 右側のタイムライン列に体調マーカー・カレンダー予定レーンがある場合、ラベル列がずれないよう
+              同じマークアップ(見えない状態)で同じ高さのスペーサーを確保する */}
+          {conditionMarkers.length > 0 && <div className="mb-1 h-5" />}
+          {scheduleItems.length > 0 && (
+            <div className="mb-4">
+              <div className="mb-1 text-[10px] leading-normal opacity-0">カレンダー予定</div>
+              <div style={{ height: 24 }} />
+            </div>
+          )}
           {compactView ? (
             <>
               <div className="flex items-center text-[11px] font-bold text-cream/70" style={{ height: ROW_H }}>
@@ -582,22 +591,25 @@ export default function GanttSection() {
               </div>
             )}
 
-            {/* カレンダー予定インポート: 所要時間の積み上げではなく、実際の時刻に基づく別軸として表示する */}
+            {/* カレンダー予定インポート: 所要時間の積み上げではなく、実際の時刻に基づく別軸として表示する。
+                下の予測/実績の帯と重ならないよう、ラベルは通常フロー・バー領域は独立した高さで確保する */}
             {scheduleItems.length > 0 && (
-              <div className="relative mb-2 pt-4" style={{ height: 20 }}>
-                <span className="absolute left-0 top-0 text-[10px] text-cream/40">カレンダー予定</span>
-                {scheduleItems.map(({ task, startMin, endMin }) => (
-                  <div
-                    key={`sched-${task.id}`}
-                    className="group absolute flex items-center overflow-hidden rounded border-2 border-cream/70 bg-ink/60 px-1 text-[10px] leading-none text-cream/90"
-                    style={{ left: startMin * pxPerMin, width: Math.max((endMin - startMin) * pxPerMin, 3), height: 20 }}
-                  >
-                    <span className="truncate">{task.name}</span>
-                    <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
-                      {`${task.name}（カレンダー予定）\n${task.scheduledTime} 〜 ${formatClock(timelineBase + endMin * 60000)}`}
+              <div className="mb-4">
+                <div className="mb-1 text-[10px] text-cream/40">カレンダー予定</div>
+                <div className="relative" style={{ height: 24 }}>
+                  {scheduleItems.map(({ task, startMin, endMin }) => (
+                    <div
+                      key={`sched-${task.id}`}
+                      className="group absolute flex items-center overflow-hidden rounded border-2 border-cream/70 bg-ink/60 px-1 text-[10px] leading-none text-cream/90"
+                      style={{ left: startMin * pxPerMin, width: Math.max((endMin - startMin) * pxPerMin, 3), top: 0, height: 20 }}
+                    >
+                      <span className="truncate">{task.name}</span>
+                      <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
+                        {`${task.name}（カレンダー予定）\n${task.scheduledTime} 〜 ${formatClock(timelineBase + endMin * 60000)}`}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
 
