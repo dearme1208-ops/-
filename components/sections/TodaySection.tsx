@@ -362,6 +362,31 @@ export default function TodaySection() {
     return map;
   }, [tasks, now]);
 
+  // 「予測」（マスタの平均想定時間）。ガントチャートと同じ考え方で、同日中に同じ作業を
+  // 複数回登録している場合は、既に今日積み上がった実績分を差し引いた残り予測にする。
+  // 「予定」を設定していない作業（hasPlan===false）の目安表示に使う
+  const predictedSecondsByTaskId = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!tasks) return map;
+    const groups = new Map<string, DailyTask[]>();
+    for (const t of tasks) {
+      const key = `${t.category}::${t.name}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(t);
+    }
+    for (const group of groups.values()) {
+      const sorted = [...group].sort((a, b) => a.order - b.order);
+      const master = sorted[0]?.masterTaskId ? (allMasterTasks ?? []).find((m) => m.id === sorted[0].masterTaskId) : undefined;
+      const rawPredicted = master?.estimatedSeconds ?? sorted[0]?.estimatedSeconds ?? 0;
+      let cumulative = 0;
+      for (const t of sorted) {
+        map.set(t.id, Math.max(0, rawPredicted - cumulative));
+        cumulative += segmentsAccumulatedMs(t, now) / 1000;
+      }
+    }
+    return map;
+  }, [tasks, allMasterTasks, now]);
+
   // 計測中の作業を一番上に、完了済みを一番下に沈める。それ以外（一時停止中/未着手）はもとの順番のまま
   const sortedTasks = useMemo(() => {
     if (!tasks) return [];
@@ -1724,9 +1749,18 @@ export default function TodaySection() {
                   )}
                   <div className="text-xs text-cream/50">
                     {task.hasPlan === false ? (
-                      <span className="text-cream/40" title="この作業には「予定」を設定していません（マスタの平均に基づく「予測」はガントチャートに表示されます）">
-                        予定 未設定
-                      </span>
+                      predictedSecondsByTaskId.has(task.id) && predictedSecondsByTaskId.get(task.id)! > 0 ? (
+                        <span
+                          className="text-cream/40"
+                          title="「予定」は設定されていません。これはマスタの平均実績（同日の繰り越し分を差し引いたもの）に基づく目安の「予測」です"
+                        >
+                          予測 {formatMsClock(predictedSecondsByTaskId.get(task.id)! * 1000)}
+                        </span>
+                      ) : (
+                        <span className="text-cream/40" title="この作業には「予定」を設定しておらず、マスタの実績もまだ十分ありません">
+                          予定 未設定
+                        </span>
+                      )
                     ) : (
                       <>
                         予定 {formatMsClock(estMs)}
