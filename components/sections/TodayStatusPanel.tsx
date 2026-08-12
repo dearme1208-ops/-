@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeTodayNarrative, computeTodaySummarySentence } from "@/lib/narrative";
+import { useSetting } from "@/lib/settings";
 import { formatHms, parseHourStr } from "@/lib/time";
 import type { ConditionLog, DailyTask } from "@/lib/types";
 import DonutChart from "@/components/charts/DonutChart";
@@ -26,6 +27,9 @@ export default function TodayStatusPanel({
 }) {
   const [showDonut, setShowDonut] = useState(false);
   const [showNarrative, setShowNarrative] = useState(false);
+  // パネル全体の開閉。ホーム画面を簡潔にしたい場合に畳めるよう、次回以降も畳んだままにする
+  const [collapsedStr, setCollapsedStr] = useSetting("today.collapseStatusPanel", "false");
+  const collapsed = collapsedStr === "true";
 
   const realTasks = useMemo(() => tasks.filter((t) => !t.isProvisional), [tasks]);
 
@@ -77,8 +81,16 @@ export default function TodayStatusPanel({
 
   return (
     <div className="panel space-y-3 p-4">
-      <h3 className="font-display text-sm font-bold text-cream/80">📊 本日の作業状況</h3>
+      <button
+        className="flex w-full items-center justify-between text-left"
+        onClick={() => setCollapsedStr(collapsed ? "false" : "true")}
+      >
+        <h3 className="font-display text-sm font-bold text-cream/80">📊 本日の作業状況</h3>
+        <span className="text-xs text-cream/40">{collapsed ? "▶" : "▼"}</span>
+      </button>
 
+      {!collapsed && (
+        <>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="text-cream/70">
           完了 <span className="font-display text-lg font-bold text-cream">{doneCount}</span> / {totalCount}件
@@ -155,6 +167,8 @@ export default function TodayStatusPanel({
             </div>
           )}
         </div>
+      )}
+        </>
       )}
     </div>
   );

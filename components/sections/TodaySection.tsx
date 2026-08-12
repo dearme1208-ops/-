@@ -76,6 +76,10 @@ export default function TodaySection() {
   // 自動配分: 残業務時間内に未完了作業(予測)を収めるための目標ペースを自動計算する機能。
   // 「オフ」「ライブ（常に再計算）」「手動（ボタンを押した時だけ計算）」を切り替えられる
   const [autoAllocateMode, setAutoAllocateMode] = useSetting("today.autoAllocateMode", "off");
+  const [autoAllocateCollapsedStr, setAutoAllocateCollapsedStr] = useSetting("today.collapseAutoAllocate", "false");
+  const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
+  const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
+  const favoritesCollapsed = favoritesCollapsedStr === "true";
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -1584,48 +1588,61 @@ export default function TodaySection() {
         standardWorkEnd={standardWorkEnd}
       />
       <div className="panel p-4">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <button
+          className="flex w-full items-center justify-between gap-2 text-left"
+          onClick={() => setAutoAllocateCollapsedStr(autoAllocateCollapsed ? "false" : "true")}
+        >
           <h3 className="font-display text-sm font-bold text-cream/80">
             自動配分
-            <span className="ml-1 font-normal text-cream/40">
-              （{standardWorkEnd}までの残り時間に、未完了作業の予測を収めるための目標ペース）
-            </span>
+            {autoAllocateCollapsed && autoAllocateMode !== "off" && (
+              <span className="ml-1 font-normal text-cream/40">（{autoAllocateMode === "live" ? "ライブ" : "手動"}）</span>
+            )}
           </h3>
-          <div className="flex items-center gap-1">
-            {(["off", "live", "manual"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setAutoAllocateMode(m)}
-                className={autoAllocateMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              >
-                {m === "off" ? "オフ" : m === "live" ? "ライブ" : "手動"}
-              </button>
-            ))}
-            {autoAllocateMode === "manual" && (
-              <button className="btn-pill-outline text-xs" onClick={runManualAllocation}>
-                配分を計算
-              </button>
-            )}
-          </div>
-        </div>
-        {autoAllocateMode === "manual" && !manualAllocation && (
-          <p className="text-xs text-cream/50">「配分を計算」を押すと、その時点の残業務時間から配分を計算します。</p>
-        )}
-        {effectiveAllocation && (
-          <div className="text-xs text-cream/60">
-            {autoAllocateMode === "manual" && manualAllocationAt && (
-              <div className="mb-1 text-cream/40">{formatClock(manualAllocationAt)} 時点で計算</div>
-            )}
-            <div>
-              {standardWorkEnd}までの残り {formatMsClock(effectiveAllocation.remainingWorkMs)} / 未完了作業の予測合計{" "}
-              {formatMsClock(effectiveAllocation.totalRemainingPredictedMs)}
+          <span className="text-xs text-cream/40">{autoAllocateCollapsed ? "▶" : "▼"}</span>
+        </button>
+        {!autoAllocateCollapsed && (
+          <>
+            <div className="mb-2 mt-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-normal text-cream/40">
+                {standardWorkEnd}までの残り時間に、未完了作業の予測を収めるための目標ペース
+              </span>
+              <div className="flex items-center gap-1">
+                {(["off", "live", "manual"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setAutoAllocateMode(m)}
+                    className={autoAllocateMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  >
+                    {m === "off" ? "オフ" : m === "live" ? "ライブ" : "手動"}
+                  </button>
+                ))}
+                {autoAllocateMode === "manual" && (
+                  <button className="btn-pill-outline text-xs" onClick={runManualAllocation}>
+                    配分を計算
+                  </button>
+                )}
+              </div>
             </div>
-            <div className={effectiveAllocation.scale < 1 ? "text-alert" : "text-cream/60"}>
-              {effectiveAllocation.scale < 1
-                ? `ペース ${Math.round(effectiveAllocation.scale * 100)}%（業務時間に収めるには、この比率まで各作業を圧縮する必要があります）`
-                : "業務時間内に収まる見込みです（圧縮なし）"}
-            </div>
-          </div>
+            {autoAllocateMode === "manual" && !manualAllocation && (
+              <p className="text-xs text-cream/50">「配分を計算」を押すと、その時点の残業務時間から配分を計算します。</p>
+            )}
+            {effectiveAllocation && (
+              <div className="text-xs text-cream/60">
+                {autoAllocateMode === "manual" && manualAllocationAt && (
+                  <div className="mb-1 text-cream/40">{formatClock(manualAllocationAt)} 時点で計算</div>
+                )}
+                <div>
+                  {standardWorkEnd}までの残り {formatMsClock(effectiveAllocation.remainingWorkMs)} / 未完了作業の予測合計{" "}
+                  {formatMsClock(effectiveAllocation.totalRemainingPredictedMs)}
+                </div>
+                <div className={effectiveAllocation.scale < 1 ? "text-alert" : "text-cream/60"}>
+                  {effectiveAllocation.scale < 1
+                    ? `ペース ${Math.round(effectiveAllocation.scale * 100)}%（業務時間に収めるには、この比率まで各作業を圧縮する必要があります）`
+                    : "業務時間内に収まる見込みです（圧縮なし）"}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
       {conditionEnabled && (
@@ -1726,42 +1743,55 @@ export default function TodaySection() {
 
       {favorites && favorites.length > 0 && (
         <div className="panel p-4">
-          <h3 className="mb-2 font-display text-sm font-bold text-cream/80">★ お気に入り（ワンタップで追加+開始）</h3>
-          <div className="flex flex-wrap gap-2">
-            {favorites.map((f) => (
-              <div
-                key={f.id}
-                className="flex items-center gap-1 rounded-full border border-cream/30 bg-ink py-1 pl-1 pr-2"
-              >
-                <button
-                  onClick={() => addFavoriteAndStart(f.id)}
-                  className="rounded-full px-3 py-1 text-sm text-cream hover:bg-cream/10"
-                >
-                  ★ {f.category} / {f.name}
-                </button>
-                {quickStartEnabled && (
-                  <div className="flex gap-0.5">
-                    {[1, 2, 3, 4].map((slot) => (
-                      <button
-                        key={slot}
-                        onClick={() => toggleQuickSlot(f.id, slot)}
-                        title={`ホーム画面ショートカット${slot}に割り当て`}
-                        className={`h-5 w-5 rounded text-[10px] font-bold ${
-                          f.quickSlot === slot ? "bg-alert text-ink" : "text-cream/30 hover:text-cream/70"
-                        }`}
-                      >
-                        {slot}
-                      </button>
-                    ))}
+          <button
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setFavoritesCollapsedStr(favoritesCollapsed ? "false" : "true")}
+          >
+            <h3 className="font-display text-sm font-bold text-cream/80">
+              ★ お気に入り（ワンタップで追加+開始）
+              {favoritesCollapsed && <span className="ml-1 font-normal text-cream/40">（{favorites.length}件）</span>}
+            </h3>
+            <span className="text-xs text-cream/40">{favoritesCollapsed ? "▶" : "▼"}</span>
+          </button>
+          {!favoritesCollapsed && (
+            <>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {favorites.map((f) => (
+                  <div
+                    key={f.id}
+                    className="flex items-center gap-1 rounded-full border border-cream/30 bg-ink py-1 pl-1 pr-2"
+                  >
+                    <button
+                      onClick={() => addFavoriteAndStart(f.id)}
+                      className="rounded-full px-3 py-1 text-sm text-cream hover:bg-cream/10"
+                    >
+                      ★ {f.category} / {f.name}
+                    </button>
+                    {quickStartEnabled && (
+                      <div className="flex gap-0.5">
+                        {[1, 2, 3, 4].map((slot) => (
+                          <button
+                            key={slot}
+                            onClick={() => toggleQuickSlot(f.id, slot)}
+                            title={`ホーム画面ショートカット${slot}に割り当て`}
+                            className={`h-5 w-5 rounded text-[10px] font-bold ${
+                              f.quickSlot === slot ? "bg-alert text-ink" : "text-cream/30 hover:text-cream/70"
+                            }`}
+                          >
+                            {slot}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
-          {quickStartEnabled && (
-            <p className="mt-2 text-[10px] text-cream/40">
-              番号を押すと、ホーム画面に追加したこのアプリのアイコンを長押しして出てくる「クイック起動①〜④」ショートカットにその作業を割り当てられます。ショートカットをタップすると、計測中なら終了・一時停止中なら再開・それ以外なら新規開始、とワンタップで切り替わります(対応はAndroidのChrome/Edge等。iOS Safariのホーム画面追加ではショートカットメニュー自体が利用できません)。設定画面でOFFにできます。
-            </p>
+              {quickStartEnabled && (
+                <p className="mt-2 text-[10px] text-cream/40">
+                  番号を押すと、ホーム画面に追加したこのアプリのアイコンを長押しして出てくる「クイック起動①〜④」ショートカットにその作業を割り当てられます。ショートカットをタップすると、計測中なら終了・一時停止中なら再開・それ以外なら新規開始、とワンタップで切り替わります(対応はAndroidのChrome/Edge等。iOS Safariのホーム画面追加ではショートカットメニュー自体が利用できません)。設定画面でOFFにできます。
+                </p>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1899,11 +1929,20 @@ export default function TodaySection() {
           return (
             <div
               key={task.id}
-              className={`panel p-4 transition-opacity ${cardClass} ${
+              className={`panel relative p-4 transition-opacity ${cardClass} ${
                 task.status === "done" ? "opacity-50" : dimmed ? "opacity-40" : ""
               }`}
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              {task.status !== "done" && (
+                <button
+                  onClick={() => deleteTask(task)}
+                  className="absolute right-3 top-3 text-cream/40 hover:text-alert"
+                  aria-label="削除"
+                >
+                  ✕
+                </button>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3 pr-6">
                 <div>
                   <div className="flex items-center gap-2 text-xs text-cream/60">
                     <span className="flex items-center gap-1">
@@ -1932,15 +1971,6 @@ export default function TodaySection() {
                     >
                       ✎
                     </button>
-                    {task.status !== "done" && (
-                      <button
-                        onClick={() => deleteTask(task)}
-                        className="text-cream/40 hover:text-alert"
-                        aria-label="削除"
-                      >
-                        ✕
-                      </button>
-                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-display text-base font-bold">{task.name}</span>
