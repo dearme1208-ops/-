@@ -88,4 +88,101 @@ body {
     border-bottom: 2px solid;
     border-right: 2px solid;
   }
+
+  /* 計測中カードの「生きている」感を出す、控えめな呼吸するような光彩 */
+  .card-running {
+    animation: card-running-glow 2.4s ease-in-out infinite;
+  }
+  @keyframes card-running-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(233, 230, 189, 0.15);
+    }
+    50% {
+      box-shadow: 0 0 20px 2px rgba(233, 230, 189, 0.22);
+    }
+  }
+
+  /* 予測を実績が超過した際の警告表示。診断ブラウザ的な不穏さを狙い、
+     警告色の脈動する光彩・斜線の警戒バー・数値のわずかな明滅を組み合わせる */
+  .card-overrun {
+    animation: card-overrun-pulse 1.15s ease-in-out infinite;
+  }
+  @keyframes card-overrun-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 1px rgb(var(--accent-rgb) / 0.5),
+        0 0 18px 2px rgb(var(--accent-rgb) / 0.35),
+        inset 0 0 24px rgb(var(--accent-rgb) / 0.06);
+    }
+    50% {
+      box-shadow:
+        0 0 0 1px rgb(var(--accent-rgb) / 0.85),
+        0 0 32px 8px rgb(var(--accent-rgb) / 0.6),
+        inset 0 0 36px rgb(var(--accent-rgb) / 0.14);
+    }
+  }
+  .hazard-bar {
+    height: 6px;
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgb(var(--accent-rgb) / 0.95) 0 10px,
+      rgba(0, 0, 0, 0.85) 10px 20px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 1.4s linear infinite;
+  }
+  @keyframes hazard-bar-scroll {
+    from {
+      background-position: 0 0;
+    }
+    to {
+      background-position: -28px 0;
+    }
+  }
+  .overrun-flicker {
+    animation: overrun-flicker 3.2s linear infinite;
+  }
+  @keyframes overrun-flicker {
+    0%,
+    89%,
+    100% {
+      opacity: 1;
+    }
+    90% {
+      opacity: 0.45;
+    }
+    91% {
+      opacity: 1;
+    }
+    93% {
+      opacity: 0.6;
+    }
+    94% {
+      opacity: 1;
+    }
+  }
+  .overrun-badge {
+    animation: overrun-badge-blink 1s steps(1, end) infinite;
+  }
+  @keyframes overrun-badge-blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-running,
+  .card-overrun,
+  .hazard-bar,
+  .overrun-flicker,
+  .overrun-badge {
+    animation: none !important;
+  }
 }

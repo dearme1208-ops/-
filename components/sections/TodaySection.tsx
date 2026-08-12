@@ -1913,9 +1913,12 @@ export default function TodaySection() {
           const isNext = task.id === nextTaskId;
           const taskRankKey = task.masterTaskId ?? `${task.category}::${task.name}`;
           const topRank = topRankedKeys.get(taskRankKey);
+          const isRunningOverrun = task.status === "running" && overEstimate;
           const cardClass =
             task.status === "running"
-              ? "border-cream ring-2 ring-cream/50 bg-cream/[0.04]"
+              ? isRunningOverrun
+                ? "border-alert ring-2 ring-alert/70 bg-alert/[0.05] card-overrun"
+                : "border-cream ring-2 ring-cream/50 bg-cream/[0.04] card-running"
               : task.status === "paused"
                 ? "border-cream/40"
                 : isNext
@@ -1933,6 +1936,7 @@ export default function TodaySection() {
                 task.status === "done" ? "opacity-50" : dimmed ? "opacity-40" : ""
               }`}
             >
+              {isRunningOverrun && <div className="hazard-bar absolute inset-x-0 top-0 rounded-t-2xl" />}
               {task.status !== "done" && (
                 <button
                   onClick={() => deleteTask(task)}
@@ -1946,10 +1950,16 @@ export default function TodaySection() {
                 <div>
                   <div className="flex items-center gap-2 text-xs text-cream/60">
                     <span className="flex items-center gap-1">
-                      {task.status === "running" && (
+                      {task.status === "running" && !isRunningOverrun && (
                         <span className="flex items-center gap-1 font-bold text-cream">
                           <span className="h-2 w-2 animate-pulse rounded-full bg-alert" />
                           計測中
+                        </span>
+                      )}
+                      {isRunningOverrun && (
+                        <span className="overrun-badge flex items-center gap-1 font-bold text-alert">
+                          <span className="h-2 w-2 rounded-full bg-alert" />
+                          ⚠ 計測中・予測超過
                         </span>
                       )}
                       {task.status === "paused" && <span className="text-cream/70">‖ 一時停止中</span>}
@@ -2044,7 +2054,11 @@ export default function TodaySection() {
                   )}
                 </div>
                 <div className="text-right">
-                  <div className={`font-display text-2xl font-bold tabular-nums ${overEstimate ? "text-alert" : "text-cream"}`}>
+                  <div
+                    className={`font-display text-2xl font-bold tabular-nums ${overEstimate ? "text-alert" : "text-cream"} ${
+                      isRunningOverrun ? "overrun-flicker" : ""
+                    }`}
+                  >
                     {formatMsClock(elapsedMs)}
                   </div>
                   {predictedSecondsForTask > 0 && (task.status === "running" || task.status === "paused") && (
