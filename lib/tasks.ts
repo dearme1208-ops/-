@@ -127,6 +127,18 @@ export async function finishOrphanedDailyTask(task: DailyTask): Promise<void> {
   await finishDailyTask(task, dayEndMs);
 }
 
+// 放置されていた作業を、確認している「今この瞬間」まで計測して元の日(task.date)の実績として完了する。
+// 睡眠など日をまたいで実際に継続していた作業を、24:00で打ち切らず起きた時点までまとめて
+// 前日実績にしたい場合に使う(finishDailyTaskはendAtMs省略時に現在時刻を使う点を利用している)
+export async function finishOrphanedDailyTaskNow(task: DailyTask): Promise<void> {
+  await finishDailyTask(task);
+}
+
+// 放置されていた作業を、実績に一切反映せずに削除する(記録せず取り消したい場合)
+export async function discardOrphanedDailyTask(task: DailyTask): Promise<void> {
+  await db.dailyTasks.delete(task.id);
+}
+
 // 放置されていた作業を、今日の作業として引き継いで計測を続ける（日付を今日に付け替えるのみ。
 // 計測中のセグメントはそのままなので、経過時間の計測は途切れず続く）
 export async function moveDailyTaskToToday(task: DailyTask, todayDateStr: string): Promise<void> {

@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   baseAccumulatedMs,
+  discardOrphanedDailyTask,
   findOrphanedDailyTasks,
   finishOrphanedDailyTask,
+  finishOrphanedDailyTaskNow,
   moveDailyTaskToToday,
   segmentsAccumulatedMs,
 } from "@/lib/tasks";
@@ -79,6 +81,23 @@ export default function OrphanTaskModal() {
               <div className="mt-2 flex flex-wrap justify-end gap-2">
                 <button className="btn-pill-outline text-xs" onClick={() => finishOrphanedDailyTask(task)}>
                   終了する（{formatDateJp(task.date)} 24:00で打ち切り）
+                </button>
+                <button
+                  className="btn-pill-outline text-xs"
+                  onClick={() => finishOrphanedDailyTaskNow(task)}
+                  title="睡眠など日をまたいで続いていた作業を、今の時刻まで計測して前日の実績にします"
+                >
+                  今の時刻で完了（{formatDateJp(task.date)}実績として計測）
+                </button>
+                <button
+                  className="btn-pill-outline text-xs text-alert"
+                  onClick={() => {
+                    if (confirm(`「${task.name}」を実績に反映せず削除しますか?この操作は取り消せません。`)) {
+                      discardOrphanedDailyTask(task);
+                    }
+                  }}
+                >
+                  記録せず削除
                 </button>
                 <button className="btn-pill text-xs" onClick={() => moveDailyTaskToToday(task, today)}>
                   今日の作業として続ける
