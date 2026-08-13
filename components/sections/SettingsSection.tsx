@@ -53,6 +53,12 @@ export default function SettingsSection() {
   const quickStartEnabled = quickStartEnabledStr === "true";
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
+  const [showStatusPanelStr, setShowStatusPanelStr] = useSetting("today.showStatusPanel", "true");
+  const showStatusPanel = showStatusPanelStr === "true";
+  const [showAutoAllocateStr, setShowAutoAllocateStr] = useSetting("today.showAutoAllocate", "true");
+  const showAutoAllocate = showAutoAllocateStr === "true";
+  const [showSuggestedTaskStr, setShowSuggestedTaskStr] = useSetting("today.showSuggestedTask", "true");
+  const showSuggestedTask = showSuggestedTaskStr === "true";
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
   const [standardWorkStart, setStandardWorkStart] = useSetting("today.standardWorkStart", "08:00");
   const [standardWorkEnd, setStandardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
@@ -608,6 +614,33 @@ export default function SettingsSection() {
             <b className="text-cream">T</b> = トラブル発生
           </p>
         )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">本日タブのパネル表示</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={showStatusPanel ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowStatusPanelStr(showStatusPanel ? "false" : "true")}
+          >
+            本日の作業状況: {showStatusPanel ? "ON" : "OFF"}
+          </button>
+          <button
+            className={showAutoAllocate ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowAutoAllocateStr(showAutoAllocate ? "false" : "true")}
+          >
+            自動配分: {showAutoAllocate ? "ON" : "OFF"}
+          </button>
+          <button
+            className={showSuggestedTask ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowSuggestedTaskStr(showSuggestedTask ? "false" : "true")}
+          >
+            そろそろこの作業では?: {showSuggestedTask ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          OFFにしたパネルは本日タブに表示されなくなります（記録や設定自体は消えません。自動配分はモード自体を「オフ」にしても止められますが、ここでOFFにするとパネルごと非表示にできます）。
+        </p>
       </div>
 
       <div className="panel space-y-3 p-4">

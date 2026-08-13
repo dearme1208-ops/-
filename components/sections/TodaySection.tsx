@@ -89,6 +89,12 @@ export default function TodaySection() {
   // 「オフ」「ライブ（常に再計算）」「手動（ボタンを押した時だけ計算）」を切り替えられる
   const [autoAllocateMode, setAutoAllocateMode] = useSetting("today.autoAllocateMode", "off");
   const [autoAllocateCollapsedStr, setAutoAllocateCollapsedStr] = useSetting("today.collapseAutoAllocate", "false");
+  const [showStatusPanelStr] = useSetting("today.showStatusPanel", "true");
+  const showStatusPanel = showStatusPanelStr === "true";
+  const [showAutoAllocateStr] = useSetting("today.showAutoAllocate", "true");
+  const showAutoAllocate = showAutoAllocateStr === "true";
+  const [showSuggestedTaskStr] = useSetting("today.showSuggestedTask", "true");
+  const showSuggestedTask = showSuggestedTaskStr === "true";
   const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
@@ -1718,71 +1724,75 @@ export default function TodaySection() {
           </button>
         </div>
       )}
-      <TodayStatusPanel
-        tasks={tasks ?? []}
-        conditionLogs={conditionLogs ?? []}
-        now={now}
-        standardWorkStart={standardWorkStart}
-        standardWorkEnd={standardWorkEnd}
-      />
-      <div className="panel p-4">
-        <button
-          className="flex w-full items-center justify-between gap-2 text-left"
-          onClick={() => setAutoAllocateCollapsedStr(autoAllocateCollapsed ? "false" : "true")}
-        >
-          <h3 className="font-display text-sm font-bold text-cream/80">
-            自動配分
-            {autoAllocateCollapsed && autoAllocateMode !== "off" && (
-              <span className="ml-1 font-normal text-cream/40">（{autoAllocateMode === "live" ? "ライブ" : "手動"}）</span>
-            )}
-          </h3>
-          <span className="text-xs text-cream/40">{autoAllocateCollapsed ? "▶" : "▼"}</span>
-        </button>
-        {!autoAllocateCollapsed && (
-          <>
-            <div className="mb-2 mt-2 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-normal text-cream/40">
-                {standardWorkEnd}までの残り時間に、未完了作業の予測を収めるための目標ペース
-              </span>
-              <div className="flex items-center gap-1">
-                {(["off", "live", "manual"] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setAutoAllocateMode(m)}
-                    className={autoAllocateMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                  >
-                    {m === "off" ? "オフ" : m === "live" ? "ライブ" : "手動"}
-                  </button>
-                ))}
-                {autoAllocateMode === "manual" && (
-                  <button className="btn-pill-outline text-xs" onClick={runManualAllocation}>
-                    配分を計算
-                  </button>
-                )}
-              </div>
-            </div>
-            {autoAllocateMode === "manual" && !manualAllocation && (
-              <p className="text-xs text-cream/50">「配分を計算」を押すと、その時点の残業務時間から配分を計算します。</p>
-            )}
-            {effectiveAllocation && (
-              <div className="text-xs text-cream/60">
-                {autoAllocateMode === "manual" && manualAllocationAt && (
-                  <div className="mb-1 text-cream/40">{formatClock(manualAllocationAt)} 時点で計算</div>
-                )}
-                <div>
-                  {standardWorkEnd}までの残り {formatMsClock(effectiveAllocation.remainingWorkMs)} / 未完了作業の予測合計{" "}
-                  {formatMsClock(effectiveAllocation.totalRemainingPredictedMs)}
-                </div>
-                <div className={effectiveAllocation.scale < 1 ? "text-alert" : "text-cream/60"}>
-                  {effectiveAllocation.scale < 1
-                    ? `ペース ${Math.round(effectiveAllocation.scale * 100)}%（業務時間に収めるには、この比率まで各作業を圧縮する必要があります）`
-                    : "業務時間内に収まる見込みです（圧縮なし）"}
+      {showStatusPanel && (
+        <TodayStatusPanel
+          tasks={tasks ?? []}
+          conditionLogs={conditionLogs ?? []}
+          now={now}
+          standardWorkStart={standardWorkStart}
+          standardWorkEnd={standardWorkEnd}
+        />
+      )}
+      {showAutoAllocate && (
+        <div className="panel p-4">
+          <button
+            className="flex w-full items-center justify-between gap-2 text-left"
+            onClick={() => setAutoAllocateCollapsedStr(autoAllocateCollapsed ? "false" : "true")}
+          >
+            <h3 className="font-display text-sm font-bold text-cream/80">
+              自動配分
+              {autoAllocateCollapsed && autoAllocateMode !== "off" && (
+                <span className="ml-1 font-normal text-cream/40">（{autoAllocateMode === "live" ? "ライブ" : "手動"}）</span>
+              )}
+            </h3>
+            <span className="text-xs text-cream/40">{autoAllocateCollapsed ? "▶" : "▼"}</span>
+          </button>
+          {!autoAllocateCollapsed && (
+            <>
+              <div className="mb-2 mt-2 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-normal text-cream/40">
+                  {standardWorkEnd}までの残り時間に、未完了作業の予測を収めるための目標ペース
+                </span>
+                <div className="flex items-center gap-1">
+                  {(["off", "live", "manual"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setAutoAllocateMode(m)}
+                      className={autoAllocateMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    >
+                      {m === "off" ? "オフ" : m === "live" ? "ライブ" : "手動"}
+                    </button>
+                  ))}
+                  {autoAllocateMode === "manual" && (
+                    <button className="btn-pill-outline text-xs" onClick={runManualAllocation}>
+                      配分を計算
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
-          </>
-        )}
-      </div>
+              {autoAllocateMode === "manual" && !manualAllocation && (
+                <p className="text-xs text-cream/50">「配分を計算」を押すと、その時点の残業務時間から配分を計算します。</p>
+              )}
+              {effectiveAllocation && (
+                <div className="text-xs text-cream/60">
+                  {autoAllocateMode === "manual" && manualAllocationAt && (
+                    <div className="mb-1 text-cream/40">{formatClock(manualAllocationAt)} 時点で計算</div>
+                  )}
+                  <div>
+                    {standardWorkEnd}までの残り {formatMsClock(effectiveAllocation.remainingWorkMs)} / 未完了作業の予測合計{" "}
+                    {formatMsClock(effectiveAllocation.totalRemainingPredictedMs)}
+                  </div>
+                  <div className={effectiveAllocation.scale < 1 ? "text-alert" : "text-cream/60"}>
+                    {effectiveAllocation.scale < 1
+                      ? `ペース ${Math.round(effectiveAllocation.scale * 100)}%（業務時間に収めるには、この比率まで各作業を圧縮する必要があります）`
+                      : "業務時間内に収まる見込みです（圧縮なし）"}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
       {conditionEnabled && (
         <div className="panel p-4">
           <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
@@ -1867,7 +1877,7 @@ export default function TodaySection() {
         </div>
       )}
 
-      {suggestedTask && (
+      {showSuggestedTask && suggestedTask && (
         <div className="panel flex flex-wrap items-center justify-between gap-2 p-4">
           <div>
             <h3 className="font-display text-sm font-bold text-cream/80">💡 そろそろこの作業では?</h3>
