@@ -56,6 +56,17 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   const records = useLiveQuery(() => db.records.toArray(), []);
   const today = todayStr();
 
+  // Todoタブから「案件に反映」された案件は、そのTodoタスク側にprojectIdが立つ。
+  // 本日の作業に追加する際、逆引きして元のTodoタスクIDをDailyTask.todoTaskIdに引き継ぐ
+  const linkedTodoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
+  const todoTaskIdByProjectId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of linkedTodoTasks ?? []) {
+      if (t.projectId) map.set(t.projectId, t.id);
+    }
+    return map;
+  }, [linkedTodoTasks]);
+
   const [defaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
   const defaultHourlyRate = Number(defaultHourlyRateStr) > 0 ? Number(defaultHourlyRateStr) : null;
   const [categoryRatesJson] = useSetting("cost.categoryRates", "{}");
@@ -185,6 +196,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
       isSpontaneous: true,
       projectId: item.id,
       stageId,
+      todoTaskId: todoTaskIdByProjectId.get(item.id),
     };
     await db.dailyTasks.add(task);
     onAddedToToday?.();

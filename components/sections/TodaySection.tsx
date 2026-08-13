@@ -27,6 +27,7 @@ import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
 import { CONDITION_LEVELS, dominantConditionLevel } from "@/lib/condition";
+import { completeTodoTask } from "@/lib/todo";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
@@ -53,7 +54,7 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
 
-export default function TodaySection() {
+export default function TodaySection({ onOpenTodoDetail }: { onOpenTodoDetail: (taskId: string) => void }) {
   const date = todayStr();
   const [now, setNow] = useState(() => Date.now());
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
@@ -198,8 +199,12 @@ export default function TodaySection() {
     () => db.conditionLogs.where("date").equals(date).sortBy("loggedAt"),
     [date]
   );
+  // 案件・Todoから「本日の作業」に反映されたタスクは、元のTodoタスクを作業カード上に
+  // 表示し、その場で完了チェック・編集(Todoタブへ遷移)ができるようにする
+  const linkedTodoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
 
   const projectMap = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p])), [projects]);
+  const todoTaskMap = useMemo(() => new Map((linkedTodoTasks ?? []).map((t) => [t.id, t])), [linkedTodoTasks]);
   // 案件ごとの累計作業時間（全期間の実績を合算）。案件から追加した作業のモチベーション表示に使う
   const projectTotalSeconds = useMemo(() => {
     const map = new Map<string, number>();
@@ -1308,6 +1313,13 @@ export default function TodaySection() {
     await db.dailyTasks.update(task.id, { autoStartDisabled: !task.autoStartDisabled });
   }
 
+  // この作業カードに紐づく元のTodoタスクを完了にする（繰り返しタスクは次回期日に進む）
+  async function completeLinkedTodo(todoTaskId: string) {
+    const todoTask = todoTaskMap.get(todoTaskId);
+    if (!todoTask) return;
+    await completeTodoTask(todoTask, date);
+  }
+
   async function deleteTask(task: DailyTask) {
     if (!confirm(`「${task.name}」を本日の作業リストから削除しますか?`)) return;
     await db.dailyTasks.delete(task.id);
@@ -2189,6 +2201,42 @@ export default function TodaySection() {
                       )}
                     </div>
                   )}
+                  {task.todoTaskId &&
+                    todoTaskMap.get(task.todoTaskId) &&
+                    (() => {
+                      const linkedTodo = todoTaskMap.get(task.todoTaskId!)!;
+                      return (
+                        <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-cream/15 bg-ink/40 px-2.5 py-1.5 text-xs">
+                          <span className="text-cream/50">📌 元Todo:</span>
+                          <button
+                            onClick={() => onOpenTodoDetail(linkedTodo.id)}
+                            className={`font-bold hover:underline ${
+                              linkedTodo.completed ? "text-cream/40 line-through" : "text-cream"
+                            }`}
+                          >
+                            {linkedTodo.title}
+                          </button>
+                          {linkedTodo.completed ? (
+                            <span className="text-[10px] text-cream/40">完了済み</span>
+                          ) : (
+                            <button
+                              className="btn-pill-outline px-2 py-0.5 text-[10px]"
+                              onClick={() => completeLinkedTodo(task.todoTaskId!)}
+                            >
+                              ✓ Todoを完了にする
+                            </button>
+                          )}
+                          <button
+                            className="text-cream/40 hover:text-cream"
+                            onClick={() => onOpenTodoDetail(linkedTodo.id)}
+                            aria-label="編集"
+                            title="Todoタブで詳細を編集"
+                          >
+                            ✎
+                          </button>
+                        </div>
+                      );
+                    })()}
                   {task.scheduledTime && task.status === "pending" && (
                     <div className="flex items-center gap-2 text-xs">
                       {task.autoStartDisabled ? (

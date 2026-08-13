@@ -108,7 +108,14 @@ export default function HomePage() {
         }}
       />
       <TabNav tabs={tabs} active={active} onChange={setActive} />
-      {active === "today" && <TodaySection />}
+      {active === "today" && (
+        <TodaySection
+          onOpenTodoDetail={(taskId) => {
+            setPendingTodoDetailId(taskId);
+            setActive("todo");
+          }}
+        />
+      )}
       {active === "todo" && (
         <TodoSection
           initialDetailTaskId={pendingTodoDetailId}

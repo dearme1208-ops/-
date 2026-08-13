@@ -75,6 +75,8 @@ export interface DailyTask {
   isProvisional?: boolean; // 未計測時間の自動仮計測タスク（作業未割り当て）
   projectId?: string; // 案件から追加された場合、その案件のID
   stageId?: string; // 案件の段階（マイルストーン）から追加された場合、その段階のID
+  todoTaskId?: string; // ToDoタスクから追加された場合、その元になったTodoTaskのID
+  // （案件経由の場合も、その案件がTodoタスクから反映されたものならここに元Todoが入る）
   isTrouble?: boolean; // トラブル対応タスクかどうか
   resumeTaskIds?: string[]; // 中断した（一時停止させられた）作業のID一覧。この作業の完了時にまとめて再開する
   note?: string; // 完了時の一言メモ

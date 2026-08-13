@@ -28,7 +28,9 @@ import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
 import { cardOverrunClass, emphasisTextClass, useVisualMode } from "@/lib/theme";
 import { daysBetweenDateStrs, todayStr, formatDateJp } from "@/lib/time";
-import type { ProjectItem, RecurrenceRule, RecurrenceType, TodoTask } from "@/lib/types";
+import { findOrCreateMasterTask } from "@/lib/master";
+import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
+import type { DailyTask, ProjectItem, RecurrenceRule, RecurrenceType, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
@@ -101,6 +103,14 @@ export default function TodoSection({
 
   const lists = useLiveQuery(() => db.todoLists.orderBy("order").toArray(), []);
   const allTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
+
+  // 本日すでに「本日の作業」へ追加済みのTodoタスクID一覧。詳細ダイアログの
+  // 「本日の作業に追加」ボタンの二重追加防止・状態表示に使う
+  const todayDailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
+  const addedTodoTaskIdsToday = useMemo(
+    () => new Set((todayDailyTasks ?? []).filter((t) => !!t.todoTaskId).map((t) => t.todoTaskId!)),
+    [todayDailyTasks]
+  );
 
   // 初回は既定のリストを1つ用意しておく
   useEffect(() => {
@@ -455,6 +465,29 @@ export default function TodoSection({
     };
     await db.projects.add(item);
     await db.todoTasks.update(task.id, { projectId: item.id });
+  }
+
+  // Todoタスクを本日の作業に追加する。同じタスクを紐付けたDailyTask(todoTaskId)を作り、
+  // 作業側から元のTodoを表示・完了・編集できるようにする
+  async function addTaskToToday(task: TodoTask, category: string, workName: string) {
+    const master = await findOrCreateMasterTask(category, workName, 0);
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(today, category, workName, master.estimatedSeconds);
+    const count = (await db.dailyTasks.where("date").equals(today).toArray()).length;
+    const dailyTask: DailyTask = {
+      id: uid(),
+      date: today,
+      order: count,
+      masterTaskId: master.id,
+      category,
+      name: workName,
+      estimatedSeconds,
+      status: "pending",
+      segments: [],
+      accumulatedMs: 0,
+      isSpontaneous: true,
+      todoTaskId: task.id,
+    };
+    await db.dailyTasks.add(dailyTask);
   }
 
   function downloadTemplate() {
@@ -1012,6 +1045,8 @@ export default function TodoSection({
           onDelete={() => deleteTask(detailTask)}
           onCopy={() => copyTask(detailTask)}
           onReflectToProject={(category, workName) => reflectToProject(detailTask, category, workName)}
+          onAddToToday={(category, workName) => addTaskToToday(detailTask, category, workName)}
+          alreadyAddedToToday={addedTodoTaskIdsToday.has(detailTask.id)}
         />
       )}
     </div>
@@ -1387,6 +1422,8 @@ function TaskDetailModal({
   onDelete,
   onCopy,
   onReflectToProject,
+  onAddToToday,
+  alreadyAddedToToday,
 }: {
   task: TodoTask;
   subtasks: TodoTask[];
@@ -1399,9 +1436,12 @@ function TaskDetailModal({
   onDelete: () => void;
   onCopy: () => void;
   onReflectToProject: (category: string, workName: string) => void;
+  onAddToToday: (category: string, workName: string) => void;
+  alreadyAddedToToday: boolean;
 }) {
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [showReflectDialog, setShowReflectDialog] = useState(false);
+  const [showAddToTodayDialog, setShowAddToTodayDialog] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [action, setAction] = useState(task.action ?? "");
   const [url, setUrl] = useState(task.url ?? "");
@@ -1665,6 +1705,13 @@ function TaskDetailModal({
           >
             📁 {task.projectId ? "案件に反映済み" : "案件に反映"}
           </button>
+          <button
+            className={alreadyAddedToToday ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowAddToTodayDialog(true)}
+            disabled={alreadyAddedToToday}
+          >
+            📌 {alreadyAddedToToday ? "本日の作業に追加済み" : "本日の作業に追加"}
+          </button>
         </div>
 
         {showReflectDialog && (
@@ -1678,6 +1725,20 @@ function TaskDetailModal({
               setShowReflectDialog(false);
             }}
             onClose={() => setShowReflectDialog(false)}
+          />
+        )}
+
+        {showAddToTodayDialog && (
+          <CategoryWorkNameDialog
+            title="本日の作業に追加"
+            confirmLabel="追加する"
+            defaultCategory={task.category ?? task.tag ?? ""}
+            defaultWorkName={task.title}
+            onConfirm={(category, workName) => {
+              onAddToToday(category, workName);
+              setShowAddToTodayDialog(false);
+            }}
+            onClose={() => setShowAddToTodayDialog(false)}
           />
         )}
 
