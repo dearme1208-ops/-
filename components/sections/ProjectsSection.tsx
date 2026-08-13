@@ -267,6 +267,13 @@ export default function ProjectsSection({
     [rows, activeRows, showCompletedInTimeline]
   );
 
+  // 「今日」を初期位置にする場合、今日より前の実データ(登録日・期日)が少ないと
+  // 中央付近までスクロールできず、常に左端(今日を基準にしなかった場合と同じ位置)に
+  // 張り付いてしまう。今日の左側に十分な余白日数を確保しておくためのバッファ。
+  // 初期値は控えめにしておき、実際のスクロール領域の幅を見て後述のuseEffectが
+  // 必要な分だけ広げる(コンテナ幅に合わせて自動的に収束する)
+  const [centeringBufferDays, setCenteringBufferDays] = useState(14);
+
   // ガントチャートの表示範囲(左端の日付・全体日数、「一番古い期日」の基準位置)は、実際にチャートへ
   // 表示される案件(showCompletedInTimelineの設定に従う)だけを対象に計算する。完了済みを
   // 非表示にしている間は、非表示の完了済み案件の古い期日に範囲や基準位置が引きずられないようにする
@@ -277,6 +284,10 @@ export default function ProjectsSection({
       if (r.createdStr < start) start = r.createdStr;
       if (r.project.dueDate < start) start = r.project.dueDate;
       if (r.project.dueDate > end) end = r.project.dueDate;
+    }
+    if (ganttAnchor === "today") {
+      const buffered = todayStr(new Date(new Date(today + "T00:00:00").getTime() - centeringBufferDays * 86400000));
+      if (start > buffered) start = buffered;
     }
     end = todayStr(new Date(new Date(end + "T00:00:00").getTime() + 2 * 86400000));
     const total = Math.max(daysBetweenDateStrs(start, end), 1);
@@ -289,7 +300,7 @@ export default function ProjectsSection({
       return { ...r, barStart: Math.min(a, b), barEnd: Math.max(a, b) };
     });
     return { rangeStartStr: start, totalDays: total, timelineRows: computedTimelineRows };
-  }, [timelineSourceRows, today]);
+  }, [timelineSourceRows, today, ganttAnchor, centeringBufferDays]);
 
   const todayIndex = daysBetweenDateStrs(rangeStartStr, today);
   const dayMarks = Array.from({ length: totalDays + 1 }, (_, i) => i);
@@ -309,13 +320,24 @@ export default function ProjectsSection({
   }
 
   // 「今日」を初期位置にする設定の場合、ガントチャート表示時・拡大縮小時に
-  // 今日の位置が見える所までスクロールする(「一番古い期日」の場合は既定の左端=0のままにする)
+  // 今日の位置が見える所までスクロールする(「一番古い期日」の場合は既定の左端=0のままにする)。
+  // 今日を画面中央に置くために必要な余白日数が現在のバッファより大きい場合は、
+  // バッファを広げて再計算させる(コンテナの実幅が分かった時点で1往復だけ調整が入る)
   useEffect(() => {
     if (viewMode !== "gantt") return;
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollLeft = ganttAnchor === "today" ? Math.max(0, todayIndex * pxPerDay - el.clientWidth / 2) : 0;
-  }, [viewMode, ganttAnchor, todayIndex, pxPerDay, totalDays]);
+    if (ganttAnchor !== "today") {
+      el.scrollLeft = 0;
+      return;
+    }
+    const neededBufferDays = Math.ceil(el.clientWidth / 2 / pxPerDay) + 1;
+    if (neededBufferDays > centeringBufferDays) {
+      setCenteringBufferDays(neededBufferDays);
+      return;
+    }
+    el.scrollLeft = Math.max(0, todayIndex * pxPerDay - el.clientWidth / 2);
+  }, [viewMode, ganttAnchor, todayIndex, pxPerDay, totalDays, centeringBufferDays]);
 
   return (
     <div className="space-y-4">
