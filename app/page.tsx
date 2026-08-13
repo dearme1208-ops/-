@@ -52,6 +52,9 @@ const TABS: TabDef[] = [
 export default function HomePage() {
   const [active, setActive] = useState("today");
   const [showCloseCheck, setShowCloseCheck] = useState(false);
+  // 期日リマインダーポップアップの「詳細確認」から、ToDoタブへ切り替えつつ該当タスクの
+  // 詳細ダイアログを開いた状態にするための橋渡し。TodoSection側で消費されたらnullに戻す
+  const [pendingTodoDetailId, setPendingTodoDetailId] = useState<string | null>(null);
   const { wordingMode } = useVisualMode();
   const tabs = useMemo(
     () => TABS.map((t) => ({ key: t.key, label: tabLabel(t.key, wordingMode, t.label) })),
@@ -98,10 +101,20 @@ export default function HomePage() {
       <ThemeInit />
       <VisualModeInit />
       <OrphanTaskModal />
-      <TodoReminderModal />
+      <TodoReminderModal
+        onViewDetail={(taskId) => {
+          setPendingTodoDetailId(taskId);
+          setActive("todo");
+        }}
+      />
       <TabNav tabs={tabs} active={active} onChange={setActive} />
       {active === "today" && <TodaySection />}
-      {active === "todo" && <TodoSection />}
+      {active === "todo" && (
+        <TodoSection
+          initialDetailTaskId={pendingTodoDetailId}
+          onInitialDetailConsumed={() => setPendingTodoDetailId(null)}
+        />
+      )}
       {active === "projects" && <ProjectsSection onAddedToToday={() => setActive("today")} />}
       {active === "master" && <MasterSection />}
       {active === "template" && <TemplateSection />}

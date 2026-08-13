@@ -58,7 +58,15 @@ function normalizeUrl(url: string): string {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
-export default function TodoSection() {
+export default function TodoSection({
+  initialDetailTaskId,
+  onInitialDetailConsumed,
+}: {
+  // 他タブ(期日リマインダーポップアップ等)から「このタスクの詳細を開いた状態でToDoタブを表示したい」
+  // という要求を受け取るための初期値。consumeされたら親側でnullに戻してもらう
+  initialDetailTaskId?: string | null;
+  onInitialDetailConsumed?: () => void;
+} = {}) {
   const [view, setView] = useState<ViewKey>("myday");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("list");
   const [showNewList, setShowNewList] = useState(false);
@@ -100,6 +108,15 @@ export default function TodoSection() {
       db.todoLists.add({ id: uid(), title: DEFAULT_LIST_TITLE, order: 0, createdAt: Date.now() });
     }
   }, [lists]);
+
+  // 期日リマインダーポップアップ等から「このタスクの詳細を開いた状態で」遷移してきた場合、
+  // 詳細ダイアログを自動的に開く。開いたら親側の保持値を消費済みにしてもらう(再遷移時の再発火防止)
+  useEffect(() => {
+    if (!initialDetailTaskId) return;
+    setDetailTaskId(initialDetailTaskId);
+    onInitialDetailConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDetailTaskId]);
 
   useEffect(() => {
     if (view.startsWith("list:") && lists && lists.length > 0) {
