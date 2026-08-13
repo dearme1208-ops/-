@@ -212,13 +212,14 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
     return list.map((p) => {
       const createdStr = todayStr(new Date(p.createdAt));
       const overdue = !p.completedAt && p.dueDate < today;
+      const dueToday = !p.completedAt && p.dueDate === today;
       const daysLeft = daysBetweenDateStrs(today, p.dueDate);
       // 消化ペースの簡易判定: 想定工数が無いため「経過日数のうち何割の日に着手できているか」で代用する
       // (残り日数が僅かなのに、これまでほとんど着手できていない場合に注意を促す)
       const daysElapsed = Math.max(1, daysBetweenDateStrs(createdStr, today) + 1);
       const workDays = projectWorkDays.get(p.id)?.size ?? 0;
       const paceWarning = !p.completedAt && daysLeft <= 3 && daysLeft >= 0 && workDays / daysElapsed < 0.3;
-      return { project: p, createdStr, overdue, daysLeft, paceWarning };
+      return { project: p, createdStr, overdue, dueToday, daysLeft, paceWarning };
     });
   }, [projects, today, projectWorkDays]);
 
@@ -363,11 +364,12 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
 
 
       <div className="panel divide-y divide-cream/10">
-        {activeRows.map(({ project, overdue, daysLeft, paceWarning }) => (
+        {activeRows.map(({ project, overdue, dueToday, daysLeft, paceWarning }) => (
           <ProjectRow
             key={project.id}
             project={project}
             overdue={overdue}
+            dueToday={dueToday}
             daysLeft={daysLeft}
             paceWarning={paceWarning}
             totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
@@ -643,6 +645,7 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
 function ProjectRow({
   project,
   overdue,
+  dueToday,
   daysLeft,
   paceWarning,
   totalSeconds,
@@ -657,6 +660,7 @@ function ProjectRow({
 }: {
   project: ProjectItem;
   overdue: boolean;
+  dueToday?: boolean;
   daysLeft: number;
   paceWarning?: boolean;
   totalSeconds: number;
@@ -669,16 +673,31 @@ function ProjectRow({
   onToggleStage: (stageId: string) => void;
   onAddStageToToday: (stage: ProjectStage) => void;
 }) {
+  const today = todayStr();
   return (
-    <div className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""}`}>
+    <div
+      className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""} ${
+        dueToday ? "ring-1 ring-alert/50" : ""
+      }`}
+    >
       <div>
         <div className="text-xs text-cream/50">
           {project.title}
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
         </div>
         <div className="text-sm text-cream">{project.workName}</div>
-        <div className={`text-xs ${overdue ? "text-alert font-bold" : "text-cream/60"}`}>
-          期日 {project.dueDate} {project.completedAt ? "（完了）" : overdue ? `（${-daysLeft}日超過）` : `（残り${daysLeft}日）`}
+        <div className={`text-xs ${overdue || dueToday ? "font-bold text-alert" : "text-cream/60"}`}>
+          期日 {project.dueDate}{" "}
+          {project.completedAt
+            ? "（完了）"
+            : overdue
+              ? `（${-daysLeft}日超過）`
+              : dueToday
+                ? "（本日期限）"
+                : `（残り${daysLeft}日）`}
+          {dueToday && (
+            <span className="ml-1 rounded-full bg-alert/20 px-1.5 py-0.5 text-[9px] font-bold text-alert">本日</span>
+          )}
         </div>
         {paceWarning && (
           <div className="text-xs font-bold text-alert" title="残り日数が少ないですが、これまであまり着手できていないようです">
@@ -706,8 +725,13 @@ function ProjectRow({
                 const seconds = stageSecondsFor(stage.id);
                 const isCountBased = stage.targetCount != null;
                 const done = isStageDone(stage);
+                const stageOverdue = !done && !!stage.dueDate && stage.dueDate < today;
+                const stageDueToday = !done && !!stage.dueDate && stage.dueDate === today;
                 return (
-                  <div key={stage.id} className="flex items-center gap-1.5">
+                  <div
+                    key={stage.id}
+                    className={`flex items-center gap-1.5 ${stageDueToday ? "rounded bg-alert/10 ring-1 ring-alert/40" : ""}`}
+                  >
                     {isCountBased ? (
                       <span
                         className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
@@ -744,7 +768,19 @@ function ProjectRow({
                       </span>
                     )}
                     {stage.dueDate && (
-                      <span className="shrink-0 text-[10px] text-cream/40">{stage.dueDate}</span>
+                      <span
+                        className={`shrink-0 text-[10px] ${
+                          stageOverdue || stageDueToday ? "font-bold text-alert" : "text-cream/40"
+                        }`}
+                      >
+                        {stageOverdue && "⚠ "}
+                        {stage.dueDate}
+                        {stageDueToday && (
+                          <span className="ml-1 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">
+                            本日
+                          </span>
+                        )}
+                      </span>
                     )}
                     <button
                       onClick={() => onAddStageToToday(stage)}

@@ -1169,6 +1169,7 @@ function TaskBlock({
   onOpenDetail: () => void;
   onToggleSubtask: (sub: TodoTask) => void;
 }) {
+  const today = todayStr();
   return (
     <div className="space-y-1">
       <TaskRow
@@ -1181,34 +1182,43 @@ function TaskBlock({
       />
       {subtasks.length > 0 && (
         <div className="ml-7 space-y-1 border-l border-cream/10 pl-3">
-          {subtasks.map((sub) => (
-            <div
-              key={sub.id}
-              className={`flex items-center gap-2 rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""}`}
-            >
-              <button
-                onClick={() => onToggleSubtask(sub)}
-                aria-label="完了"
-                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-                  sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+          {subtasks.map((sub) => {
+            const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
+            const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
+            return (
+              <div
+                key={sub.id}
+                className={`flex items-center gap-2 rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
+                  subDueToday ? "ring-1 ring-alert/40" : ""
                 }`}
               >
-                {sub.completed ? "✓" : ""}
-              </button>
-              <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
-                {sub.title}
-              </span>
-              {sub.dueDate && (
-                <span
-                  className={`shrink-0 text-[10px] ${
-                    !sub.completed && sub.dueDate < todayStr() ? "font-bold text-alert" : "text-cream/40"
+                <button
+                  onClick={() => onToggleSubtask(sub)}
+                  aria-label="完了"
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+                    sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
                   }`}
                 >
-                  {formatDateJp(sub.dueDate)}
+                  {sub.completed ? "✓" : ""}
+                </button>
+                <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
+                  {sub.title}
                 </span>
-              )}
-            </div>
-          ))}
+                {sub.dueDate && (
+                  <span
+                    className={`shrink-0 text-[10px] ${
+                      subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
+                    }`}
+                  >
+                    {formatDateJp(sub.dueDate)}
+                    {subDueToday && (
+                      <span className="ml-1 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
+                    )}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1269,11 +1279,12 @@ function TaskRow({
   const { themedMode } = useVisualMode();
   const dueDate = effectiveDueDate(task, subtasks);
   const overdue = !task.completed && !!dueDate && dueDate < today;
+  const dueToday = !task.completed && !!dueDate && dueDate === today;
   const doneCount = subtasks.filter((s) => s.completed).length;
   return (
     <div
       className={`flex items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 ${task.completed ? "opacity-50" : ""} ${
-        overdue && themedMode ? cardOverrunClass(themedMode) : ""
+        overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""
       }`}
     >
       <button
@@ -1326,13 +1337,18 @@ function TaskRow({
               className={
                 overdue
                   ? `font-bold ${themedMode ? emphasisTextClass(themedMode) : "text-alert"} ${themedMode ? "overrun-flicker" : ""}`
-                  : "text-cream/50"
+                  : dueToday
+                    ? "font-bold text-alert"
+                    : "text-cream/50"
               }
             >
               {task.startDate && task.dueDate
                 ? `${formatDateJp(task.startDate)} → ${formatDateJp(task.dueDate)}`
                 : formatDateJp(dueDate)}
               {!task.dueDate && <span className="ml-1 text-cream/30">(サブタスク)</span>}
+              {dueToday && (
+                <span className="ml-1 rounded-full bg-alert/20 px-1.5 py-0.5 text-[9px] font-bold text-alert">本日</span>
+              )}
             </span>
           )}
           {subtasks.length > 0 && (
