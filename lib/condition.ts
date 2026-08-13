@@ -205,3 +205,85 @@ export function computeConditionVarianceByTask(
 
   return rows.sort((a, b) => b.rangePct - a.rangePct);
 }
+
+export interface ConditionShiftRow {
+  masterTaskId: string;
+  category: string;
+  name: string;
+  avgDelta: number; // 正: 作業後に体調が上向きやすい、負: 下向きやすい（体調レベルの変化量の平均）
+  sampleCount: number;
+  improvedCount: number;
+  worsenedCount: number;
+  unchangedCount: number;
+}
+
+// 各実績について「開始時点で有効だった体調」（前日以前からの繰り越しを含む）と
+// 「終了後、同日中に次に記録された体調」を比較し、作業ごとに体調レベルの変化量(後-前)を
+// 平均する。プラスが大きいほどその作業をした後に体調が上向きやすく、マイナスが大きいほど
+// 下向きやすい傾向を表す。終了後に同日中の体調記録が無い実績は判定不能として対象外にする
+// （翌日以降の体調変化を、関係のない作業のせいにしないため）
+export function computeConditionShiftByTask(
+  conditionLogs: ConditionLog[],
+  records: WorkRecord[],
+  masterTasks: MasterTask[],
+  minSamples = 3
+): ConditionShiftRow[] {
+  const masterById = new Map(masterTasks.map((m) => [m.id, m]));
+  const sortedLogs = [...conditionLogs].sort((a, b) => a.loggedAt - b.loggedAt);
+
+  function levelBefore(ms: number): string | null {
+    let active: string | null = null;
+    for (const log of sortedLogs) {
+      if (log.loggedAt > ms) break;
+      active = log.level;
+    }
+    return active;
+  }
+
+  function levelAfterSameDay(date: string, ms: number): string | null {
+    for (const log of sortedLogs) {
+      if (log.date === date && log.loggedAt > ms) return log.level;
+    }
+    return null;
+  }
+
+  const byTask = new Map<
+    string,
+    { sumDelta: number; count: number; improved: number; worsened: number; unchanged: number }
+  >();
+  for (const r of records) {
+    if (r.excludedFromStats || !r.masterTaskId || !r.startedAt || !r.endedAt || r.seconds <= 0) continue;
+    const before = levelBefore(r.startedAt);
+    const after = levelAfterSameDay(r.date, r.endedAt);
+    if (!before || !after) continue;
+    const delta = Number(after) - Number(before);
+    if (!byTask.has(r.masterTaskId)) {
+      byTask.set(r.masterTaskId, { sumDelta: 0, count: 0, improved: 0, worsened: 0, unchanged: 0 });
+    }
+    const entry = byTask.get(r.masterTaskId)!;
+    entry.sumDelta += delta;
+    entry.count += 1;
+    if (delta > 0) entry.improved += 1;
+    else if (delta < 0) entry.worsened += 1;
+    else entry.unchanged += 1;
+  }
+
+  const rows: ConditionShiftRow[] = [];
+  for (const [masterTaskId, { sumDelta, count, improved, worsened, unchanged }] of byTask) {
+    if (count < minSamples) continue;
+    const master = masterById.get(masterTaskId);
+    if (!master) continue;
+    rows.push({
+      masterTaskId,
+      category: master.category,
+      name: master.name,
+      avgDelta: Math.round((sumDelta / count) * 100) / 100,
+      sampleCount: count,
+      improvedCount: improved,
+      worsenedCount: worsened,
+      unchangedCount: unchanged,
+    });
+  }
+
+  return rows.sort((a, b) => b.avgDelta - a.avgDelta);
+}

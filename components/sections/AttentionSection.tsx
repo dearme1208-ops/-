@@ -11,7 +11,12 @@ import {
   type AvgComparePeriod,
   type AvgComparePeriodType,
 } from "@/lib/attention";
-import { computeConditionVarianceByTask, computeProductivityByCondition, CONDITION_LEVELS } from "@/lib/condition";
+import {
+  computeConditionShiftByTask,
+  computeConditionVarianceByTask,
+  computeProductivityByCondition,
+  CONDITION_LEVELS,
+} from "@/lib/condition";
 import { currentFiscalYear } from "@/lib/period";
 import { formatHms } from "@/lib/time";
 import { emphasisTextClass, getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
@@ -47,6 +52,15 @@ export default function AttentionSection() {
   const varianceRows = useMemo(
     () => (masterTasks && records && conditionLogs ? computeConditionVarianceByTask(conditionLogs, records, masterTasks) : []),
     [masterTasks, records, conditionLogs]
+  );
+  const shiftRows = useMemo(
+    () => (masterTasks && records && conditionLogs ? computeConditionShiftByTask(conditionLogs, records, masterTasks) : []),
+    [masterTasks, records, conditionLogs]
+  );
+  const goodShiftRows = useMemo(() => shiftRows.filter((r) => r.avgDelta > 0), [shiftRows]);
+  const badShiftRows = useMemo(
+    () => [...shiftRows].filter((r) => r.avgDelta < 0).sort((a, b) => a.avgDelta - b.avgDelta),
+    [shiftRows]
   );
   const avgComparison = useMemo(() => {
     if (!records) return null;
@@ -139,6 +153,71 @@ export default function AttentionSection() {
         <p className="mt-3 text-xs text-cream/40">
           体調レベルごとの平均達成度（想定÷実績）の最大差が大きい作業ほど、体調によって所要時間が大きく変わりやすいことを表します。
         </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">作業後の体調変化傾向</h3>
+        <p className="text-xs text-cream/50">
+          各実績の開始時点で有効だった体調と、終了後・同日中に次に記録された体調を比較し、作業ごとに体調レベルの変化（後－前）を平均したものです。プラスが大きいほどその作業をした後に好調になりやすく、マイナスが大きいほど不調になりやすい傾向を表します（同日中に前後の体調記録が揃っている実績が3件以上ある作業のみ対象）。
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <h4 className="mb-2 text-xs font-bold text-cream/70">📈 作業後に好調になりやすい</h4>
+            {goodShiftRows.length === 0 ? (
+              <p className="text-sm text-cream/50">該当する作業はまだありません。</p>
+            ) : (
+              <div className="space-y-2">
+                {goodShiftRows.slice(0, 10).map((row, idx) => (
+                  <div key={row.masterTaskId} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 shrink-0 text-center text-sm">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
+                      <div>
+                        <div className="text-xs text-cream/50">{row.category}</div>
+                        <div className="text-sm text-cream">{row.name}</div>
+                        <div className="text-[10px] text-cream/40">
+                          好転{row.improvedCount}件 / 悪化{row.worsenedCount}件 / 変化なし{row.unchangedCount}件
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right text-xs tabular-nums">
+                      <div className="font-display text-base font-bold text-cream">+{row.avgDelta.toFixed(1)}</div>
+                      <div className="text-cream/40">{row.sampleCount}件</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <h4 className="mb-2 text-xs font-bold text-cream/70">📉 作業後に不調になりやすい</h4>
+            {badShiftRows.length === 0 ? (
+              <p className="text-sm text-cream/50">該当する作業はまだありません。</p>
+            ) : (
+              <div className="space-y-2">
+                {badShiftRows.slice(0, 10).map((row, idx) => (
+                  <div key={row.masterTaskId} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 shrink-0 text-center text-sm">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
+                      <div>
+                        <div className="text-xs text-cream/50">{row.category}</div>
+                        <div className="text-sm text-cream">{row.name}</div>
+                        <div className="text-[10px] text-cream/40">
+                          好転{row.improvedCount}件 / 悪化{row.worsenedCount}件 / 変化なし{row.unchangedCount}件
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right text-xs tabular-nums">
+                      <div className={`font-display text-base font-bold ${themedMode ? emphasisTextClass(themedMode) : "text-alert"}`}>
+                        {row.avgDelta.toFixed(1)}
+                      </div>
+                      <div className="text-cream/40">{row.sampleCount}件</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="panel p-4">
