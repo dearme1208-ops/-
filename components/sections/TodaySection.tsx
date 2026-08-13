@@ -140,6 +140,11 @@ export default function TodaySection() {
   // 退出判定にはヒステリシス(半径の1.5倍)を設け、境界付近でのGPS誤差による連続トリガーを防ぐ
   const geoInsidePlaceIdsRef = useRef<Set<string>>(new Set());
   const [geoArrivalConflict, setGeoArrivalConflict] = useState<{ place: GeoPlace; runningTasks: DailyTask[] } | null>(null);
+  // 地点到着で自動開始がONの間だけ、画面消灯で位置監視が止まらないようWake Lockで画面を常時点灯させる。
+  // 対応ブラウザでのみ有効(非対応なら何もしない)。バッテリー消費が増えるため、ON時のみ限定で使う
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const [wakeLockActive, setWakeLockActive] = useState(false);
+  const [wakeLockError, setWakeLockError] = useState<string | null>(null);
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [conditionEnabledStr] = useSetting("condition.enabled", "true");
@@ -712,6 +717,57 @@ export default function TodaySection() {
     handleGeoArrival(place);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrivedPlaceEvent]);
+
+  // 地点到着で自動開始がONの間、Wake Lockで画面消灯を防ぐ。Wake Lockはタブが非表示になると
+  // ブラウザ側で自動解除されるため、再度表示された時にvisibilitychangeで再取得する
+  useEffect(() => {
+    if (!geoArrivalEnabled) {
+      wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current = null;
+      setWakeLockActive(false);
+      setWakeLockError(null);
+      return;
+    }
+    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) {
+      setWakeLockError("この端末・ブラウザは画面常時点灯(Wake Lock)に対応していません");
+      return;
+    }
+    let cancelled = false;
+    async function acquire() {
+      try {
+        const sentinel = await navigator.wakeLock.request("screen");
+        if (cancelled) {
+          await sentinel.release();
+          return;
+        }
+        wakeLockRef.current = sentinel;
+        setWakeLockActive(true);
+        setWakeLockError(null);
+        sentinel.addEventListener("release", () => {
+          if (wakeLockRef.current === sentinel) {
+            wakeLockRef.current = null;
+            setWakeLockActive(false);
+          }
+        });
+      } catch {
+        if (!cancelled) setWakeLockError("画面常時点灯を有効にできませんでした");
+      }
+    }
+    acquire();
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && !wakeLockRef.current) {
+        acquire();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current = null;
+      setWakeLockActive(false);
+    };
+  }, [geoArrivalEnabled]);
 
   // 移動を検知した(geoMovementTickが進んだ)ら、他に計測中/仮計測中の作業がなければ
   // 「移動」の仮計測タスクを自動的に開始する。仕組みは未計測の自動計測と同じ仮計測枠を使う
@@ -1795,7 +1851,7 @@ export default function TodaySection() {
       )}
 
       {geoArrivalEnabled && (
-        <div className="panel flex items-center gap-2 p-3 text-xs">
+        <div className="panel flex flex-wrap items-center gap-x-4 gap-y-1 p-3 text-xs">
           {geoArrivalError ? (
             <span className="text-alert">📍 {geoArrivalError}</span>
           ) : (
@@ -1803,6 +1859,11 @@ export default function TodaySection() {
               📍 地点到着検知中（登録地点{(geoPlaces ?? []).length}件。到着すると紐づく作業を自動開始）
             </span>
           )}
+          {wakeLockActive ? (
+            <span className="text-cream/50">💡 画面常時点灯 ON（バッテリー消費が増えます）</span>
+          ) : wakeLockError ? (
+            <span className="text-cream/40">💡 {wakeLockError}</span>
+          ) : null}
         </div>
       )}
 
