@@ -40,7 +40,7 @@ import {
   notify,
   requestNotificationPermission,
 } from "@/lib/notifications";
-import type { DailyTask, GeoPlace, TimeSegment, Weekday } from "@/lib/types";
+import type { DailyTask, GeoPlace, ProjectItem, TimeSegment, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
@@ -54,7 +54,13 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
 
-export default function TodaySection({ onOpenTodoDetail }: { onOpenTodoDetail: (taskId: string) => void }) {
+export default function TodaySection({
+  onOpenTodoDetail,
+  onOpenProjectEdit,
+}: {
+  onOpenTodoDetail: (taskId: string) => void;
+  onOpenProjectEdit: (projectId: string) => void;
+}) {
   const date = todayStr();
   const [now, setNow] = useState(() => Date.now());
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
@@ -1320,6 +1326,12 @@ export default function TodaySection({ onOpenTodoDetail }: { onOpenTodoDetail: (
     await completeTodoTask(todoTask, date);
   }
 
+  // 段階に紐付かず案件に直接追加された作業カードから、案件そのものを完了/未完了に切り替える
+  async function toggleLinkedProjectComplete(project: ProjectItem) {
+    if (!project.completedAt && !confirm(`案件「${project.title}」を完了にしますか?`)) return;
+    await db.projects.update(project.id, { completedAt: project.completedAt ? undefined : Date.now() });
+  }
+
   async function deleteTask(task: DailyTask) {
     if (!confirm(`「${task.name}」を本日の作業リストから削除しますか?`)) return;
     await db.dailyTasks.delete(task.id);
@@ -2189,18 +2201,71 @@ export default function TodaySection({ onOpenTodoDetail }: { onOpenTodoDetail: (
                       </span>
                     )}
                   </div>
-                  {task.projectId && projectMap.get(task.projectId) && (
-                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
-                      <span className="rounded-full border border-cream/30 px-2 py-0.5 text-cream/80">
-                        案件: {projectMap.get(task.projectId)!.title}
-                      </span>
-                      {(projectTotalSeconds.get(task.projectId) ?? 0) > 0 && (
-                        <span className="font-bold tabular-nums text-cream/70">
-                          この案件の累計 {formatHms(projectTotalSeconds.get(task.projectId)!)}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                  {task.projectId &&
+                    projectMap.get(task.projectId) &&
+                    (() => {
+                      const linkedProject = projectMap.get(task.projectId!)!;
+                      const linkedStage = task.stageId ? linkedProject.stages?.find((s) => s.id === task.stageId) : undefined;
+                      const stageDone = linkedStage ? isStageDone(linkedStage) : false;
+                      const stageCountBased = linkedStage?.targetCount != null;
+                      return (
+                        <>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                            <span className="rounded-full border border-cream/30 px-2 py-0.5 text-cream/80">
+                              案件: {linkedProject.title}
+                            </span>
+                            {(projectTotalSeconds.get(task.projectId!) ?? 0) > 0 && (
+                              <span className="font-bold tabular-nums text-cream/70">
+                                この案件の累計 {formatHms(projectTotalSeconds.get(task.projectId!)!)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-cream/15 bg-ink/40 px-2.5 py-1.5 text-xs">
+                            <span className="text-cream/50">📁 元案件:</span>
+                            <button
+                              onClick={() => onOpenProjectEdit(linkedProject.id)}
+                              className={`font-bold hover:underline ${
+                                linkedProject.completedAt ? "text-cream/40 line-through" : "text-cream"
+                              }`}
+                            >
+                              {linkedProject.title}
+                              {linkedStage && `／${linkedStage.title}`}
+                            </button>
+                            {linkedStage ? (
+                              stageDone ? (
+                                <span className="text-[10px] text-cream/40">
+                                  段階完了済み{stageCountBased && `（${linkedStage.completedCount ?? 0}/${linkedStage.targetCount}件）`}
+                                </span>
+                              ) : (
+                                <button
+                                  className="btn-pill-outline px-2 py-0.5 text-[10px]"
+                                  onClick={() => setStageConfirmTask(task)}
+                                >
+                                  {stageCountBased ? "件数を進める" : "✓ 段階を完了にする"}
+                                </button>
+                              )
+                            ) : linkedProject.completedAt ? (
+                              <span className="text-[10px] text-cream/40">案件完了済み</span>
+                            ) : (
+                              <button
+                                className="btn-pill-outline px-2 py-0.5 text-[10px]"
+                                onClick={() => toggleLinkedProjectComplete(linkedProject)}
+                              >
+                                ✓ 案件を完了にする
+                              </button>
+                            )}
+                            <button
+                              className="text-cream/40 hover:text-cream"
+                              onClick={() => onOpenProjectEdit(linkedProject.id)}
+                              aria-label="編集"
+                              title="案件タブで詳細を編集"
+                            >
+                              ✎
+                            </button>
+                          </div>
+                        </>
+                      );
+                    })()}
                   {task.todoTaskId &&
                     todoTaskMap.get(task.todoTaskId) &&
                     (() => {

@@ -55,6 +55,9 @@ export default function HomePage() {
   // 期日リマインダーポップアップの「詳細確認」から、ToDoタブへ切り替えつつ該当タスクの
   // 詳細ダイアログを開いた状態にするための橋渡し。TodoSection側で消費されたらnullに戻す
   const [pendingTodoDetailId, setPendingTodoDetailId] = useState<string | null>(null);
+  // 本日タブに表示された案件バッジの「編集」から、案件タブへ切り替えつつ該当案件の
+  // 編集ダイアログを開いた状態にするための橋渡し。上と同じ仕組み
+  const [pendingProjectEditId, setPendingProjectEditId] = useState<string | null>(null);
   const { wordingMode } = useVisualMode();
   const tabs = useMemo(
     () => TABS.map((t) => ({ key: t.key, label: tabLabel(t.key, wordingMode, t.label) })),
@@ -114,6 +117,10 @@ export default function HomePage() {
             setPendingTodoDetailId(taskId);
             setActive("todo");
           }}
+          onOpenProjectEdit={(projectId) => {
+            setPendingProjectEditId(projectId);
+            setActive("projects");
+          }}
         />
       )}
       {active === "todo" && (
@@ -122,7 +129,13 @@ export default function HomePage() {
           onInitialDetailConsumed={() => setPendingTodoDetailId(null)}
         />
       )}
-      {active === "projects" && <ProjectsSection onAddedToToday={() => setActive("today")} />}
+      {active === "projects" && (
+        <ProjectsSection
+          onAddedToToday={() => setActive("today")}
+          initialEditProjectId={pendingProjectEditId}
+          onInitialEditConsumed={() => setPendingProjectEditId(null)}
+        />
+      )}
       {active === "master" && <MasterSection />}
       {active === "template" && <TemplateSection />}
       {active === "gantt" && <GanttSection />}

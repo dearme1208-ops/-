@@ -26,7 +26,15 @@ const MAX_PX_PER_DAY = 80;
 const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
-export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: () => void }) {
+export default function ProjectsSection({
+  onAddedToToday,
+  initialEditProjectId,
+  onInitialEditConsumed,
+}: {
+  onAddedToToday?: () => void;
+  initialEditProjectId?: string | null;
+  onInitialEditConsumed?: () => void;
+}) {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("");
   const [workName, setWorkName] = useState("");
@@ -55,6 +63,17 @@ export default function ProjectsSection({ onAddedToToday }: { onAddedToToday?: (
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
   const today = todayStr();
+
+  // 本日タブの案件バッジの「編集」から遷移してきた場合、該当案件の編集ダイアログを自動的に開く。
+  // 開いたら親側の保持値を消費済みにしてもらう(再遷移時の再発火防止)
+  useEffect(() => {
+    if (!initialEditProjectId || !projects) return;
+    const target = projects.find((p) => p.id === initialEditProjectId);
+    if (target) {
+      setEditingProject(target);
+      onInitialEditConsumed?.();
+    }
+  }, [initialEditProjectId, projects, onInitialEditConsumed]);
 
   // Todoタブから「案件に反映」された案件は、そのTodoタスク側にprojectIdが立つ。
   // 本日の作業に追加する際、逆引きして元のTodoタスクIDをDailyTask.todoTaskIdに引き継ぐ
