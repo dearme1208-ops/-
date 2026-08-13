@@ -653,6 +653,41 @@ body {
     color: rgb(var(--pp-green-rgb));
   }
 
+  /* ペルソナ5風の見出しバナー・パネルのリボンタグはPCの横幅を前提にした装飾のため、
+     スマホ幅では長い見出しが折り返して不格好な縦長ブロックになったり、
+     リボンだけパネルから浮いて見えたりする。sm未満ではバナー化を解除して
+     プレーンな色文字+★プレフィックスに戻し、リボンタグも縮小する
+     （他の演出テーマは元々テキストプレフィックス中心の軽い装飾のみで、
+     この種の折り返し崩れは起きないため、狭幅時の調整はペルソナ5風のみで足りる） */
+  @media (max-width: 639px) {
+    html[data-visual-mode="persona5"] h2.font-display,
+    html[data-visual-mode="persona5"] h3.font-display {
+      display: inline;
+      transform: none;
+      font-style: italic;
+      font-weight: 700;
+      color: rgb(var(--p5-red-rgb)) !important;
+      background: none;
+      padding: 0;
+      clip-path: none;
+      filter: none;
+    }
+    html[data-visual-mode="persona5"] h2.font-display > *,
+    html[data-visual-mode="persona5"] h3.font-display > * {
+      font-style: inherit;
+    }
+    html[data-visual-mode="persona5"] h2.font-display::before,
+    html[data-visual-mode="persona5"] h3.font-display::before {
+      color: rgb(var(--p5-red-rgb));
+    }
+    html[data-visual-mode="persona5"] .panel::before {
+      width: 66px;
+      height: 18px;
+      top: -10px;
+      left: -23px;
+    }
+  }
+
   /* ボタンにテーマ色のホバーグロー・わずかなジッターを付与 */
   html[data-visual-mode="lobotomy"] .btn-pill-outline:hover {
     box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.5), 0 0 12px rgb(var(--accent-rgb) / 0.35);
