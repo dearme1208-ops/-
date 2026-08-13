@@ -217,11 +217,12 @@ export interface ConditionShiftRow {
   unchangedCount: number;
 }
 
-// 各実績について「開始時点で有効だった体調」（前日以前からの繰り越しを含む）と
-// 「終了後、同日中に次に記録された体調」を比較し、作業ごとに体調レベルの変化量(後-前)を
-// 平均する。プラスが大きいほどその作業をした後に体調が上向きやすく、マイナスが大きいほど
-// 下向きやすい傾向を表す。終了後に同日中の体調記録が無い実績は判定不能として対象外にする
-// （翌日以降の体調変化を、関係のない作業のせいにしないため）
+// 各実績について「開始時点で有効だった体調」と「終了時点から見て次に記録された体調」を比較し、
+// 作業ごとに体調レベルの変化量(後-前)を平均する。プラスが大きいほどその作業をした後に体調が
+// 上向きやすく、マイナスが大きいほど下向きやすい傾向を表す。体調は「記録した時点から、次に
+// 体調を変更するまで」有効なものとして扱う（アプリ全体で共通の考え方）ため、前後どちらも
+// 日をまたいで直前・直後の記録をそのまま引き継ぐ。作業のたびに記録し直さなくても、
+// 1日数回の記録があれば間の作業すべてに前後の体調が割り当てられる
 export function computeConditionShiftByTask(
   conditionLogs: ConditionLog[],
   records: WorkRecord[],
@@ -240,9 +241,9 @@ export function computeConditionShiftByTask(
     return active;
   }
 
-  function levelAfterSameDay(date: string, ms: number): string | null {
+  function levelAfter(ms: number): string | null {
     for (const log of sortedLogs) {
-      if (log.date === date && log.loggedAt > ms) return log.level;
+      if (log.loggedAt > ms) return log.level;
     }
     return null;
   }
@@ -254,7 +255,7 @@ export function computeConditionShiftByTask(
   for (const r of records) {
     if (r.excludedFromStats || !r.masterTaskId || !r.startedAt || !r.endedAt || r.seconds <= 0) continue;
     const before = levelBefore(r.startedAt);
-    const after = levelAfterSameDay(r.date, r.endedAt);
+    const after = levelAfter(r.endedAt);
     if (!before || !after) continue;
     const delta = Number(after) - Number(before);
     if (!byTask.has(r.masterTaskId)) {
