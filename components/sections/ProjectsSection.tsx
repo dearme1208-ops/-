@@ -11,6 +11,7 @@ import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { computeProjectProgress, isStageDone } from "@/lib/projectStage";
 import { useSetting } from "@/lib/settings";
+import { cardOverrunClass, useVisualMode, type ThemedMode } from "@/lib/theme";
 import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem, ProjectStage } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
@@ -63,6 +64,7 @@ export default function ProjectsSection({
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
   const today = todayStr();
+  const { themedMode } = useVisualMode();
 
   // 本日タブの案件バッジの「編集」から遷移してきた場合、該当案件の編集ダイアログを自動的に開く。
   // 開いたら親側の保持値を消費済みにしてもらう(再遷移時の再発火防止)
@@ -403,6 +405,7 @@ export default function ProjectsSection({
             dueToday={dueToday}
             daysLeft={daysLeft}
             paceWarning={paceWarning}
+            themedMode={themedMode}
             totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
             hourlyRate={resolveProjectRate(project)}
             stageSecondsFor={(stageId) => stageSeconds.get(`${project.id}::${stageId}`) ?? 0}
@@ -688,6 +691,7 @@ function ProjectRow({
   onDelete,
   onToggleStage,
   onAddStageToToday,
+  themedMode,
 }: {
   project: ProjectItem;
   overdue: boolean;
@@ -703,12 +707,19 @@ function ProjectRow({
   onDelete: () => void;
   onToggleStage: (stageId: string) => void;
   onAddStageToToday: (stage: ProjectStage) => void;
+  themedMode?: ThemedMode | null;
 }) {
   const today = todayStr();
   return (
     <div
       className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""} ${
-        dueToday ? "ring-1 ring-alert/50" : ""
+        overdue
+          ? themedMode
+            ? cardOverrunClass(themedMode)
+            : "ring-1 ring-alert/40"
+          : dueToday
+            ? "ring-1 ring-alert/50"
+            : ""
       }`}
     >
       <div>
@@ -761,7 +772,15 @@ function ProjectRow({
                 return (
                   <div
                     key={stage.id}
-                    className={`flex items-center gap-1.5 ${stageDueToday ? "rounded bg-alert/10 ring-1 ring-alert/40" : ""}`}
+                    className={`flex items-center gap-1.5 rounded ${
+                      stageOverdue
+                        ? themedMode
+                          ? `${cardOverrunClass(themedMode)} bg-alert/10`
+                          : "bg-alert/10 ring-1 ring-alert/40"
+                        : stageDueToday
+                          ? "bg-alert/10 ring-1 ring-alert/40"
+                          : ""
+                    }`}
                   >
                     {isCountBased ? (
                       <span
