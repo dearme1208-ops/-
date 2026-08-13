@@ -471,23 +471,51 @@ body {
       0 0 0 4px rgb(var(--v11-pink-rgb) / 0.25),
       0 0 18px -6px rgb(var(--v11-cyan-rgb) / 0.35);
   }
-  /* ペルソナ5風: パネル左上に切り絵風の赤い斜めリボンをあしらう(切り取り線イメージ) */
+  /* ペルソナ5風・強化版: パネルを黒縁+赤い切り絵リボンでコミック風の「一枚のカード」に。
+     左上のリボンは本家の警告タグを思わせるギザギザの左端付きにし、
+     右下にはハーフトーンの丸ドットをうっすら重ねて印刷物らしい質感を足す */
   html[data-visual-mode="persona5"] .panel {
     position: relative;
-    border-color: rgb(var(--p5-red-rgb) / 0.35);
+    border-color: #000;
     border-width: 2px;
+    box-shadow: 3px 3px 0 0 rgb(var(--p5-red-rgb) / 0.9);
     overflow: hidden;
   }
   html[data-visual-mode="persona5"] .panel::before {
     content: "";
     position: absolute;
-    top: -18px;
-    left: -34px;
-    width: 90px;
-    height: 26px;
+    top: -16px;
+    left: -38px;
+    width: 110px;
+    height: 30px;
     background: rgb(var(--p5-red-rgb));
+    clip-path: polygon(
+      0% 30%,
+      8% 0%,
+      16% 40%,
+      24% 5%,
+      32% 45%,
+      40% 0%,
+      48% 40%,
+      100% 40%,
+      100% 100%,
+      0% 100%
+    );
     transform: rotate(-45deg);
-    box-shadow: 0 0 0 2px rgb(var(--ink-rgb));
+    box-shadow: 0 0 0 2px #000;
+  }
+  html[data-visual-mode="persona5"] .panel::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 56px;
+    height: 56px;
+    background-image: radial-gradient(rgb(var(--p5-red-rgb) / 0.55) 1.5px, transparent 1.5px);
+    background-size: 7px 7px;
+    -webkit-mask-image: linear-gradient(-45deg, black 0%, black 35%, transparent 70%);
+    mask-image: linear-gradient(-45deg, black 0%, black 35%, transparent 70%);
+    pointer-events: none;
   }
   /* ぼくのなつやすみ風: パネルを紙焼き写真の角丸カード風に。優しい影と暖色の縁取り */
   /* ぼくのなつやすみ風: 色鉛筆で塗ったような紙の質感を重ね、右上に先生のはんこ(済)を添える */
@@ -588,35 +616,31 @@ body {
       opacity: 1;
     }
   }
+  /* ペルソナ5風・強化版: 見出しを「STORY」「SKILL」のような赤いベタ塗りバナーに
+     丸ごと変える。太い黒縁は clip-path でも欠けない drop-shadow の四方重ねで再現し、
+     右端は矢じり状にカットして予告状の切り紙感を出す */
   html[data-visual-mode="persona5"] h2.font-display,
   html[data-visual-mode="persona5"] h3.font-display {
     position: relative;
     display: inline-block;
-    transform: skew(-8deg);
+    transform: skew(-10deg);
     font-style: italic;
-    padding-bottom: 6px;
+    font-weight: 800;
+    color: rgb(var(--p5-white-rgb)) !important;
+    background: rgb(var(--p5-red-rgb));
+    padding: 3px 20px 3px 12px;
+    clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+    filter: drop-shadow(2px 0 0 #000) drop-shadow(-2px 0 0 #000) drop-shadow(0 2px 0 #000)
+      drop-shadow(0 -2px 0 #000);
+  }
+  html[data-visual-mode="persona5"] h2.font-display > *,
+  html[data-visual-mode="persona5"] h3.font-display > * {
+    font-style: normal;
   }
   html[data-visual-mode="persona5"] h2.font-display::before,
   html[data-visual-mode="persona5"] h3.font-display::before {
     content: "★ ";
-    color: rgb(var(--p5-red-rgb));
-  }
-  /* 筆で殴り書きしたような、太さの不揃いな下線を見出しの下に添える */
-  html[data-visual-mode="persona5"] h2.font-display::after,
-  html[data-visual-mode="persona5"] h3.font-display::after {
-    content: "";
-    position: absolute;
-    left: -4px;
-    right: -10%;
-    bottom: 0;
-    height: 5px;
-    background: linear-gradient(
-      100deg,
-      rgb(var(--p5-red-rgb)) 0%,
-      rgb(var(--p5-red-rgb)) 70%,
-      transparent 100%
-    );
-    clip-path: polygon(0 20%, 100% 0, 100% 60%, 0 100%);
+    color: rgb(var(--p5-white-rgb));
   }
   html[data-visual-mode="natsuyasumi"] h2.font-display::before,
   html[data-visual-mode="natsuyasumi"] h3.font-display::before {
@@ -809,8 +833,13 @@ body {
     animation: title-glitch-2 5s steps(1, end) infinite;
   }
   html[data-visual-mode="persona5"] .app-title {
-    transform: skew(-6deg);
+    transform: skew(-8deg);
     display: inline-block;
+    color: rgb(var(--p5-white-rgb)) !important;
+    background: rgb(var(--p5-red-rgb));
+    padding: 2px 22px 2px 12px;
+    clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+    box-shadow: 3px 3px 0 0 #000;
   }
   html[data-visual-mode="natsuyasumi"] .app-title {
     text-shadow: 2px 2px 0 rgb(var(--nat-sun-rgb) / 0.5);
