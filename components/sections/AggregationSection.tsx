@@ -22,6 +22,7 @@ import { computeTimeByTag } from "@/lib/tags";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { useSetting } from "@/lib/settings";
 import RankingBarChart from "@/components/charts/RankingBarChart";
+import DonutChart from "@/components/charts/DonutChart";
 import LineChart from "@/components/charts/LineChart";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
@@ -106,6 +107,16 @@ export default function AggregationSection() {
 
   const fiscalYearOptions = Array.from({ length: 8 }, (_, i) => currentFiscalYear() - 5 + i);
 
+  const categoryTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      map.set(r.category, (map.get(r.category) ?? 0) + r.totalSeconds);
+    }
+    return [...map.entries()]
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [rows]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -149,6 +160,14 @@ export default function AggregationSection() {
           </button>
         ))}
       </div>
+
+      <CollapsiblePanel
+        title="業務区分別の内訳"
+        collapsed={!!collapsed.categoryDonut}
+        onToggle={() => toggleSection("categoryDonut")}
+      >
+        <DonutChart data={categoryTotals} formatValue={formatHms} />
+      </CollapsiblePanel>
 
       {(period === "h1" || period === "h2") && (
         <div className="panel space-y-2 p-4">
