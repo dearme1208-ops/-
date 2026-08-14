@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
@@ -13,6 +13,7 @@ import { generateReportText, downloadTextFile, computeDailyOverlayComparison } f
 import { exportElementToPdf } from "@/lib/pdfExport";
 import { recordsToIcs } from "@/lib/ics";
 import { dailyAvgPrecipProbability } from "@/lib/weather";
+import { fireConfetti } from "@/lib/confetti";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { useSetting } from "@/lib/settings";
 import { effectiveDueDate } from "@/lib/todo";
@@ -58,6 +59,7 @@ export default function ReportSection() {
     return kind === "week" ? range.start.toISOString().slice(0, 10) : range.start.toISOString().slice(0, 7);
   }, [kind]);
   const [note, setNote] = useSetting(`report.note.${kind}.${periodKey}`, "");
+  const [goalCelebratedKey, setGoalCelebratedKey] = useSetting(`report.goalCelebrated.${kind}.${periodKey}`, "");
 
   const data = useMemo(() => {
     if (!records || !masterTasks) return null;
@@ -173,6 +175,18 @@ export default function ReportSection() {
     if (!records) return [];
     return computeDailyOverlayComparison(records, kind);
   }, [records, kind]);
+
+  // 今期の目標を達成したら、この期間で最初の1回だけ紙吹雪で祝う。設定書き込みの非同期反映による
+  // 二重発火を防ぐため同期的なrefで先にラッチする(月次ダイジェスト通知と同じパターン)
+  const goalCelebratedFiredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data || !goalSeconds || data.totalSeconds < goalSeconds) return;
+    if (goalCelebratedKey === periodKey) return;
+    if (goalCelebratedFiredRef.current === periodKey) return;
+    goalCelebratedFiredRef.current = periodKey;
+    fireConfetti();
+    setGoalCelebratedKey(periodKey);
+  }, [data, goalSeconds, goalCelebratedKey, periodKey, setGoalCelebratedKey]);
 
   function download() {
     if (!records || !masterTasks) return;

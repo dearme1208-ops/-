@@ -60,6 +60,23 @@ html[data-high-contrast="true"] :focus-visible {
   outline-offset: 2px;
 }
 
+/* 達成演出(紙吹雪)。上端から落下しつつ回転し、フェードアウトする */
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(105vh) rotate(540deg);
+    opacity: 0;
+  }
+}
+.confetti-piece {
+  animation-name: confetti-fall;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+}
+
 /* 週報・月報の「印刷用に表示」。#report-print-area以外を隠し、演出テーマの配色を
    無視した白背景/黒文字のシンプルな見た目で印刷する(html2canvasベースのPDF書き出しとは
    別に、テキストとして選択可能な素の印刷結果が欲しい場合向け) */

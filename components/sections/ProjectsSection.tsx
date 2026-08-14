@@ -19,6 +19,7 @@ import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import Modal from "@/components/ui/Modal";
 import { showUndoToast } from "@/lib/toast";
+import { fireConfetti } from "@/lib/confetti";
 
 type ViewMode = "gantt" | "calendar";
 
@@ -183,6 +184,7 @@ export default function ProjectsSection({
     const completedAt = nowCompleting ? Date.now() : undefined;
     await db.projects.update(item.id, { completedAt });
     if (nowCompleting) {
+      fireConfetti();
       const projectRecords = (records ?? []).filter((r) => r.projectId === item.id);
       const totalSeconds = projectRecords.reduce((s, r) => s + r.seconds, 0);
       const createdStr = todayStr(new Date(item.createdAt));

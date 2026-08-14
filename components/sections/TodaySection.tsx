@@ -32,6 +32,7 @@ import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
 import { refreshWeatherAndFindAlerts, type CurrentWeatherReading, type WeatherAlert } from "@/lib/weather";
+import { fireConfetti } from "@/lib/confetti";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
@@ -1463,7 +1464,9 @@ export default function TodaySection({
   // 段階に紐付かず案件に直接追加された作業カードから、案件そのものを完了/未完了に切り替える
   async function toggleLinkedProjectComplete(project: ProjectItem) {
     if (!project.completedAt && !confirm(`案件「${project.title}」を完了にしますか?`)) return;
-    await db.projects.update(project.id, { completedAt: project.completedAt ? undefined : Date.now() });
+    const nowCompleting = !project.completedAt;
+    await db.projects.update(project.id, { completedAt: nowCompleting ? Date.now() : undefined });
+    if (nowCompleting) fireConfetti();
   }
 
   async function deleteTask(task: DailyTask) {
