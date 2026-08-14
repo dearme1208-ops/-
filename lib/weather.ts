@@ -67,13 +67,13 @@ export interface WeatherAlert {
 // あればそれを使う(アプリを開いている間に取れた時点の情報、という前提のため)
 export async function refreshWeatherAndFindAlerts(
   places: WeatherPlace[],
-  opts: { leadHours: number; thresholdPct: number; nowMs: number; todayDateStr: string }
+  opts: { leadHours: number; thresholdPct: number; nowMs: number; todayDateStr: string; force?: boolean }
 ): Promise<WeatherAlert[]> {
   const alerts: WeatherAlert[] = [];
   for (const place of places) {
     const id = `${place.id}::${opts.todayDateStr}`;
     let record = await db.weatherForecasts.get(id);
-    const stale = !record || opts.nowMs - record.fetchedAt > 30 * 60000;
+    const stale = opts.force || !record || opts.nowMs - record.fetchedAt > 30 * 60000;
     if (stale) {
       try {
         const hourly = await fetchHourlyPrecipitation(place.lat, place.lon);

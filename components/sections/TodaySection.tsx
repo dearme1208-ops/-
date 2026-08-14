@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
@@ -159,6 +159,8 @@ export default function TodaySection({
   const weatherPlaces = useLiveQuery(() => db.weatherPlaces.toArray(), []);
   const [weatherAlert, setWeatherAlert] = useState<WeatherAlert | null>(null);
   const [weatherCheckError, setWeatherCheckError] = useState<string | null>(null);
+  const [weatherChecking, setWeatherChecking] = useState(false);
+  const [weatherLastCheckedAt, setWeatherLastCheckedAt] = useState<number | null>(null);
   const geoArrivalWatchIdRef = useRef<number | null>(null);
   // 地点ごとに「現在圏内にいるか」を保持し、圏内に入った瞬間だけ自動開始をトリガーする。
   // 退出判定にはヒステリシス(半径の1.5倍)を設け、境界付近でのGPS誤差による連続トリガーを防ぐ
@@ -799,25 +801,24 @@ export default function TodaySection({
 
   // 登録地点の天気変化通知。アプリを開いている間だけ、定期的に降水確率予報を取得・保存し、
   // 閾値を超える見込みの時刻が指定時間以内に近づいていれば通知する(地点到着検知と同じく
-  // ブラウザ/PWAの仕様上フォアグラウンドでのみ動作し、閉じている間は情報が更新されない)
-  useEffect(() => {
-    if (!weatherNotifyEnabled || !weatherPlaces || weatherPlaces.length === 0) {
-      setWeatherCheckError(null);
-      return;
-    }
-    let cancelled = false;
-    async function check() {
+  // ブラウザ/PWAの仕様上フォアグラウンドでのみ動作し、閉じている間は情報が更新されない)。
+  // force=trueなら「今すぐ取得」ボタンからの呼び出しで、30分キャッシュを無視して必ず再取得する
+  const checkWeather = useCallback(
+    async (force: boolean) => {
+      if (!weatherPlaces || weatherPlaces.length === 0) return;
       const leadHours = Math.max(0.5, Number(weatherLeadHoursStr) || 3);
       const thresholdPct = Math.min(100, Math.max(0, Number(weatherThresholdStr) || 50));
+      setWeatherChecking(true);
       try {
-        const alerts = await refreshWeatherAndFindAlerts(weatherPlaces!, {
+        const alerts = await refreshWeatherAndFindAlerts(weatherPlaces, {
           leadHours,
           thresholdPct,
           nowMs: Date.now(),
           todayDateStr: todayStr(),
+          force,
         });
-        if (cancelled) return;
         setWeatherCheckError(null);
+        setWeatherLastCheckedAt(Date.now());
         for (const alert of alerts) {
           const hourLabel = formatClock(new Date(alert.atIso).getTime());
           notify(
@@ -828,17 +829,24 @@ export default function TodaySection({
         }
         if (alerts.length > 0) setWeatherAlert(alerts[0]);
       } catch {
-        if (!cancelled) setWeatherCheckError("天気予報を取得できませんでした");
+        setWeatherCheckError("天気予報を取得できませんでした");
+      } finally {
+        setWeatherChecking(false);
       }
+    },
+    [weatherPlaces, weatherLeadHoursStr, weatherThresholdStr]
+  );
+
+  useEffect(() => {
+    if (!weatherNotifyEnabled || !weatherPlaces || weatherPlaces.length === 0) {
+      setWeatherCheckError(null);
+      return;
     }
-    check();
+    checkWeather(false);
     // 内部で30分キャッシュされるためAPI呼び出し自体はもっと少ない頻度になる
-    const id = setInterval(check, 15 * 60000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [weatherNotifyEnabled, weatherPlaces, weatherLeadHoursStr, weatherThresholdStr]);
+    const id = setInterval(() => checkWeather(false), 15 * 60000);
+    return () => clearInterval(id);
+  }, [weatherNotifyEnabled, weatherPlaces, checkWeather]);
 
   // 移動を検知した(geoMovementTickが進んだ)ら、他に計測中/仮計測中の作業がなければ
   // 「移動」の仮計測タスクを自動的に開始する。仕組みは未計測の自動計測と同じ仮計測枠を使う
@@ -1972,9 +1980,17 @@ export default function TodaySection({
             <span className="text-alert">🌤 {weatherCheckError}</span>
           ) : (
             <span className="text-cream/50">
-              🌤 天気変化の通知 ON（登録地点{(weatherPlaces ?? []).length}件。降水確率{weatherThresholdStr}%以上が{weatherLeadHoursStr}時間以内に近づくと通知）
+              🌤 天気変化の通知 ON（登録地点{(weatherPlaces ?? []).length}件。降水確率{weatherThresholdStr}%以上が{weatherLeadHoursStr}時間以内に近づくと通知
+              {weatherLastCheckedAt ? `・最終取得 ${formatClock(weatherLastCheckedAt)}` : ""}）
             </span>
           )}
+          <button
+            className="btn-pill-outline text-xs"
+            onClick={() => checkWeather(true)}
+            disabled={weatherChecking}
+          >
+            {weatherChecking ? "取得中..." : "🔄 今すぐ取得"}
+          </button>
         </div>
       )}
 
