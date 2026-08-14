@@ -157,6 +157,9 @@ export default function TodaySection({
   const [weatherThresholdStr] = useSetting("weather.precipThreshold", "50");
   // 天気変化の通知用の登録地点。地点到着検知(geoPlaces)とは別の独立した一覧
   const weatherPlaces = useLiveQuery(() => db.weatherPlaces.toArray(), []);
+  // 未着手(pending)の作業カードのドラッグ&ドロップ並べ替え用。計測中・完了は常に上/下に
+  // 固定されるため、並べ替え対象は未着手グループのみに限定する
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [weatherAlert, setWeatherAlert] = useState<WeatherAlert | null>(null);
   const [weatherCurrent, setWeatherCurrent] = useState<CurrentWeatherReading[]>([]);
   const [weatherNextCrossings, setWeatherNextCrossings] = useState<WeatherAlert[]>([]);
@@ -1403,6 +1406,20 @@ export default function TodaySection({
     await db.dailyTasks.delete(task.id);
   }
 
+  // 未着手(pending)の作業カードをドラッグ&ドロップで並べ替える。計測中・完了は表示上
+  // 常に上/下に固定されるため、同じ未着手グループ内での並べ替えのみを対象にする
+  async function reorderPendingTask(draggedId: string, targetId: string) {
+    if (draggedId === targetId || !tasks) return;
+    const group = tasks.filter((t) => t.status === "pending" && !t.isProvisional).sort((a, b) => a.order - b.order);
+    const fromIdx = group.findIndex((t) => t.id === draggedId);
+    const toIdx = group.findIndex((t) => t.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const reordered = [...group];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    await Promise.all(reordered.map((t, i) => db.dailyTasks.update(t.id, { order: i })));
+  }
+
   async function pauseTask(task: DailyTask) {
     const segments = task.segments.map((s, i) =>
       i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
@@ -2232,12 +2249,28 @@ export default function TodaySection({
           const duplicateRunning =
             task.status !== "running" && runningTaskKeys.has(`${task.category}::${task.name}`);
           const controlsDisabled = provisionalActive || isBlockedByEmphasis;
+          const isDraggable = task.status === "pending";
           return (
             <div
               key={task.id}
+              draggable={isDraggable}
+              onDragStart={isDraggable ? () => setDraggingTaskId(task.id) : undefined}
+              onDragEnd={isDraggable ? () => setDraggingTaskId(null) : undefined}
+              onDragOver={isDraggable ? (e) => e.preventDefault() : undefined}
+              onDrop={
+                isDraggable
+                  ? (e) => {
+                      e.preventDefault();
+                      if (draggingTaskId) reorderPendingTask(draggingTaskId, task.id);
+                      setDraggingTaskId(null);
+                    }
+                  : undefined
+              }
               className={`panel relative p-4 transition-opacity ${cardClass} ${
                 task.status === "done" ? "opacity-50" : dimmed ? "opacity-40" : ""
-              }`}
+              } ${isDraggable ? "cursor-grab active:cursor-grabbing" : ""} ${
+                draggingTaskId === task.id ? "opacity-30" : ""
+              } ${draggingTaskId && draggingTaskId !== task.id && isDraggable ? "border-dashed" : ""}`}
             >
               {isRunningOverrun && (
                 <div className={`absolute inset-x-0 top-0 rounded-t-2xl ${themedMode ? hazardBarClass(themedMode) : "hazard-bar"}`} />
@@ -2251,7 +2284,12 @@ export default function TodaySection({
                   ✕
                 </button>
               )}
-              <div className="flex flex-wrap items-center justify-between gap-3 pr-6">
+              {isDraggable && (
+                <span className="absolute left-1 top-3 text-cream/30" aria-hidden title="ドラッグで並べ替え">
+                  ⠿
+                </span>
+              )}
+              <div className={`flex flex-wrap items-center justify-between gap-3 pr-6 ${isDraggable ? "pl-4" : ""}`}>
                 <div>
                   <div className="flex items-center gap-2 text-xs text-cream/60">
                     <span className="flex items-center gap-1">
