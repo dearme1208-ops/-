@@ -81,21 +81,35 @@ export default function AttentionSection() {
           <div className="space-y-2">
             {productivityRows.map((row) => {
               const c = CONDITION_LEVELS.find((c) => c.level === row.level);
-              const pct = Math.min(150, row.avgProductivityPct);
+              const good = row.avgProductivityPct >= 100;
+              // トラックは0%〜150%を表す診断バー。中央より左寄り(100%位置)に基準線を引き、
+              // バーがそこから右に出ているか(速い)左に留まっているか(遅い)を一目で見せる
+              const barWidthPct = (Math.min(150, Math.max(0, row.avgProductivityPct)) / 150) * 100;
+              const baselineLeftPct = (100 / 150) * 100;
               return (
                 <div key={row.level} className="flex items-center gap-2">
                   <div className="flex w-24 shrink-0 items-center gap-1.5 text-sm text-cream/80">
                     <ConditionGlyph level={row.level} size={18} />
                     {c?.label}
                   </div>
-                  <div className="h-5 min-w-0 flex-1 rounded bg-cream/5">
+                  <div className="relative h-5 min-w-0 flex-1 rounded bg-cream/5">
                     <div
-                      className={`h-5 rounded-r ${row.avgProductivityPct >= 100 ? "bg-cream" : "bg-alert"}`}
-                      style={{ width: `${Math.min(100, pct)}%` }}
+                      className={`h-5 rounded-r ${good ? "bg-cream" : "bg-alert"}`}
+                      style={{ width: `${barWidthPct}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 w-px bg-cream/40"
+                      style={{ left: `${baselineLeftPct}%` }}
+                      title="想定通り(100%)の位置"
                     />
                   </div>
-                  <div className="w-28 shrink-0 text-right text-xs tabular-nums text-cream/70">
-                    {row.avgProductivityPct}%（{row.sampleCount}件）
+                  <div
+                    className={`w-40 shrink-0 text-right text-xs tabular-nums ${good ? "text-cream/80" : "font-bold text-alert"}`}
+                  >
+                    {good ? "▲" : "▼"} {row.avgProductivityPct}%
+                    <span className="text-cream/40">
+                      （想定より{Math.abs(row.avgProductivityPct - 100)}pt{good ? "速い" : "遅い"}・{row.sampleCount}件）
+                    </span>
                   </div>
                 </div>
               );
@@ -103,7 +117,7 @@ export default function AttentionSection() {
           </div>
         )}
         <p className="mt-3 text-xs text-cream/40">
-          体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱い、その間に開始した作業を対象に想定時間÷実績時間を算出し、体調レベルごとに平均したものです。100%が想定通り、100%を超えるほど想定より速く終えられている傾向を表します。
+          体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱い、その間に開始した作業を対象に想定時間÷実績時間を算出し、体調レベルごとに平均したものです。100%が想定通り、100%を超えるほど想定より速く終えられている傾向を表します（バーの縦線が100%の位置。▲=速い/▼=遅い）。
         </p>
       </div>
 
@@ -133,14 +147,20 @@ export default function AttentionSection() {
                 <div className="flex flex-wrap gap-2 pl-7">
                   {row.levels.map((l) => {
                     const c = CONDITION_LEVELS.find((cl) => cl.level === l.level);
+                    const good = l.avgProductivityPct >= 100;
                     return (
                       <div
                         key={l.level}
-                        className="flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 text-[11px] text-cream/70"
+                        className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] ${
+                          good ? "border-cream/15 text-cream/70" : "border-alert/30 text-cream/70"
+                        }`}
                       >
                         <ConditionGlyph level={l.level} size={14} />
                         <span>{c?.label}</span>
-                        <span className="font-bold text-cream">{l.avgProductivityPct}%</span>
+                        <span className={`font-bold ${good ? "text-cream" : "text-alert"}`}>
+                          {good ? "▲" : "▼"}
+                          {l.avgProductivityPct}%
+                        </span>
                         <span className="text-cream/40">({l.sampleCount}件)</span>
                       </div>
                     );
@@ -168,7 +188,10 @@ export default function AttentionSection() {
             ) : (
               <div className="space-y-2">
                 {goodShiftRows.slice(0, 10).map((row, idx) => (
-                  <div key={row.masterTaskId} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                  <div
+                    key={row.masterTaskId}
+                    className="flex items-center justify-between gap-2 rounded-lg border-l-2 border-cream/30 bg-ink/50 px-3 py-2"
+                  >
                     <div className="flex items-center gap-2">
                       <span className="w-5 shrink-0 text-center text-sm">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
                       <div>
@@ -180,7 +203,7 @@ export default function AttentionSection() {
                       </div>
                     </div>
                     <div className="text-right text-xs tabular-nums">
-                      <div className="font-display text-base font-bold text-cream">+{row.avgDelta.toFixed(1)}</div>
+                      <div className="font-display text-base font-bold text-cream">▲ +{row.avgDelta.toFixed(1)}</div>
                       <div className="text-cream/40">{row.sampleCount}件</div>
                     </div>
                   </div>
@@ -195,7 +218,10 @@ export default function AttentionSection() {
             ) : (
               <div className="space-y-2">
                 {badShiftRows.slice(0, 10).map((row, idx) => (
-                  <div key={row.masterTaskId} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                  <div
+                    key={row.masterTaskId}
+                    className="flex items-center justify-between gap-2 rounded-lg border-l-2 border-alert/40 bg-ink/50 px-3 py-2"
+                  >
                     <div className="flex items-center gap-2">
                       <span className="w-5 shrink-0 text-center text-sm">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
                       <div>
@@ -208,7 +234,7 @@ export default function AttentionSection() {
                     </div>
                     <div className="text-right text-xs tabular-nums">
                       <div className={`font-display text-base font-bold ${themedMode ? emphasisTextClass(themedMode) : "text-alert"}`}>
-                        {row.avgDelta.toFixed(1)}
+                        ▼ {row.avgDelta.toFixed(1)}
                       </div>
                       <div className="text-cream/40">{row.sampleCount}件</div>
                     </div>
