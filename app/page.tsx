@@ -13,6 +13,7 @@ import ThemeInit from "@/components/ThemeInit";
 import VisualModeInit from "@/components/VisualModeInit";
 import AccessibilityInit from "@/components/AccessibilityInit";
 import ToastHost from "@/components/ui/ToastHost";
+import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
 import { tabLabel, useVisualMode } from "@/lib/theme";
@@ -107,6 +108,18 @@ export default function HomePage() {
       <VisualModeInit />
       <AccessibilityInit />
       <ToastHost />
+      <CommandPalette
+        tabs={tabs}
+        onChangeTab={setActive}
+        onOpenTodoDetail={(taskId) => {
+          setPendingTodoDetailId(taskId);
+          setActive("todo");
+        }}
+        onOpenProjectEdit={(projectId) => {
+          setPendingProjectEditId(projectId);
+          setActive("projects");
+        }}
+      />
       <OrphanTaskModal />
       <TodoReminderModal
         onViewDetail={(taskId) => {
