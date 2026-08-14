@@ -17,6 +17,7 @@ import ConfettiHost from "@/components/ui/ConfettiHost";
 import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
+import OnboardingGuide from "@/components/OnboardingGuide";
 import { tabLabel, useVisualMode } from "@/lib/theme";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
@@ -110,6 +111,7 @@ export default function HomePage() {
       <AccessibilityInit />
       <ToastHost />
       <ConfettiHost />
+      <OnboardingGuide />
       <CommandPalette
         tabs={tabs}
         onChangeTab={setActive}
