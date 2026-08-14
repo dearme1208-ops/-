@@ -181,6 +181,17 @@ export default function TodoSection({
       }),
     [topLevelTasks, subtasksByParent, today]
   );
+  // 一覧表示(通常view)でのタスク複数選択+一括操作。期限超過ビューの一括操作とは別の独立した仕組み
+  const [bulkSelectionMode, setBulkSelectionMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  function toggleTaskSelect(id: string) {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [selectedOverdueIds, setSelectedOverdueIds] = useState<Set<string>>(new Set());
   const [bulkRescheduleDate, setBulkRescheduleDate] = useState(() =>
     todayStr(new Date(Date.now() + 86400000))
@@ -411,6 +422,43 @@ export default function TodoSection({
     showUndoToast(`「${task.title}」を削除しました`, async () => {
       await db.todoTasks.bulkAdd([task, ...subs]);
     });
+  }
+
+  // 選択中タスクの一括操作。タグ変更・マイデイ追加・完了・削除をこの1つの選択状態で共通に扱う
+  async function applyBulkTag(tagValue: string) {
+    const ids = [...selectedTaskIds];
+    if (ids.length === 0) return;
+    await db.transaction("rw", db.todoTasks, async () => {
+      for (const id of ids) await db.todoTasks.update(id, { tag: tagValue });
+    });
+  }
+
+  async function applyBulkMyDay() {
+    const ids = [...selectedTaskIds];
+    if (ids.length === 0) return;
+    await db.transaction("rw", db.todoTasks, async () => {
+      for (const id of ids) await db.todoTasks.update(id, { myDayDate: today });
+    });
+    setSelectedTaskIds(new Set());
+  }
+
+  async function applyBulkComplete() {
+    const targets = (allTasks ?? []).filter((t) => selectedTaskIds.has(t.id));
+    for (const t of targets) {
+      await completeTodoTask(t, today);
+    }
+    setSelectedTaskIds(new Set());
+  }
+
+  async function applyBulkDelete() {
+    const targets = (allTasks ?? []).filter((t) => selectedTaskIds.has(t.id));
+    if (targets.length === 0) return;
+    const subs = targets.flatMap((t) => subtasksByParent.get(t.id) ?? []);
+    await db.todoTasks.bulkDelete([...targets.map((t) => t.id), ...subs.map((s) => s.id)]);
+    showUndoToast(`${targets.length}件のタスクを削除しました`, async () => {
+      await db.todoTasks.bulkAdd([...targets, ...subs]);
+    });
+    setSelectedTaskIds(new Set());
   }
 
   // タスクをコピーして新規タスクとして追加する（よく使う内容をテンプレート的に使い回す用）。
@@ -743,6 +791,17 @@ export default function TodoSection({
                 完了済みも表示
               </label>
             )}
+            {displayMode === "list" && view !== "overdue" && (
+              <button
+                onClick={() => {
+                  setBulkSelectionMode((v) => !v);
+                  setSelectedTaskIds(new Set());
+                }}
+                className={bulkSelectionMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              >
+                ☑ 選択モード
+              </button>
+            )}
             {currentListId && !searchActive && (
               <button className="text-xs text-alert" onClick={() => deleteList(currentListId)}>
                 このリストを削除
@@ -968,8 +1027,61 @@ export default function TodoSection({
           />
         ) : (
           <>
+            {bulkSelectionMode && (
+              <div className="panel mb-3 flex flex-wrap items-center gap-2 p-3">
+                <span className="text-xs text-cream/60">{selectedTaskIds.size}件選択中</span>
+                <button
+                  className="btn-pill-outline text-xs"
+                  onClick={() => setSelectedTaskIds(new Set(incompleteTasks.map((t) => t.id)))}
+                >
+                  全選択
+                </button>
+                <button className="btn-pill-outline text-xs" onClick={() => setSelectedTaskIds(new Set())}>
+                  選択解除
+                </button>
+                <select
+                  disabled={selectedTaskIds.size === 0}
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) applyBulkTag(e.target.value);
+                    e.target.value = "";
+                  }}
+                  className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream disabled:opacity-40"
+                >
+                  <option value="" disabled>
+                    対応状況を変更...
+                  </option>
+                  {tagOptions.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="btn-pill-outline text-xs disabled:opacity-40"
+                  disabled={selectedTaskIds.size === 0}
+                  onClick={applyBulkMyDay}
+                >
+                  ☀ マイデイに追加
+                </button>
+                <button
+                  className="btn-pill-outline text-xs disabled:opacity-40"
+                  disabled={selectedTaskIds.size === 0}
+                  onClick={applyBulkComplete}
+                >
+                  ✓ 完了にする
+                </button>
+                <button
+                  className="btn-pill-outline text-xs text-alert disabled:opacity-40"
+                  disabled={selectedTaskIds.size === 0}
+                  onClick={applyBulkDelete}
+                >
+                  削除
+                </button>
+              </div>
+            )}
             <div className="space-y-1.5">
-              {reorderEnabled ? (
+              {reorderEnabled && !bulkSelectionMode ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={incompleteTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                     {incompleteTasks.map((task) => (
@@ -997,6 +1109,9 @@ export default function TodoSection({
                     onToggleImportant={() => toggleImportant(task)}
                     onOpenDetail={() => setDetailTaskId(task.id)}
                     onToggleSubtask={toggleSubtaskComplete}
+                    selectionMode={bulkSelectionMode}
+                    selected={selectedTaskIds.has(task.id)}
+                    onToggleSelect={() => toggleTaskSelect(task.id)}
                   />
                 ))
               )}
@@ -1198,6 +1313,9 @@ function TaskBlock({
   onToggleImportant,
   onOpenDetail,
   onToggleSubtask,
+  selectionMode,
+  selected,
+  onToggleSelect,
 }: {
   task: TodoTask;
   subtasks: TodoTask[];
@@ -1206,6 +1324,9 @@ function TaskBlock({
   onToggleImportant: () => void;
   onOpenDetail: () => void;
   onToggleSubtask: (sub: TodoTask) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const today = todayStr();
   const [showCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
@@ -1215,14 +1336,29 @@ function TaskBlock({
   const visibleSubtasks = showCompletedSubtasks ? subtasks : subtasks.filter((s) => !s.completed);
   return (
     <div className="space-y-1">
-      <TaskRow
-        task={task}
-        subtasks={subtasks}
-        listTitle={listTitle}
-        onToggleComplete={onToggleComplete}
-        onToggleImportant={onToggleImportant}
-        onOpenDetail={onOpenDetail}
-      />
+      <div className="flex items-start gap-2">
+        {selectionMode && (
+          <button
+            onClick={onToggleSelect}
+            aria-label="選択"
+            className={`mt-3 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 text-[10px] ${
+              selected ? "border-cream bg-cream text-ink" : "border-cream/40"
+            }`}
+          >
+            {selected ? "✓" : ""}
+          </button>
+        )}
+        <div className="min-w-0 flex-1">
+          <TaskRow
+            task={task}
+            subtasks={subtasks}
+            listTitle={listTitle}
+            onToggleComplete={onToggleComplete}
+            onToggleImportant={onToggleImportant}
+            onOpenDetail={onOpenDetail}
+          />
+        </div>
+      </div>
       {visibleSubtasks.length > 0 && (
         <div className="ml-7 space-y-1 border-l border-cream/10 pl-3">
           {!showCompletedSubtasks && visibleSubtasks.length < subtasks.length && (
