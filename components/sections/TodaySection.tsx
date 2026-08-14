@@ -2869,6 +2869,18 @@ export default function TodaySection({
                   案件「{project.title}」の段階「{stage.title}」はこれで完了ですか?
                 </p>
               )}
+              {!isCountBased &&
+                (() => {
+                  const stages = project.stages ?? [];
+                  const idx = stages.findIndex((s) => s.id === stage.id);
+                  const incompletePrevious = stages.slice(0, idx).filter((s) => !s.completed);
+                  if (incompletePrevious.length === 0) return null;
+                  return (
+                    <p className="mb-4 rounded-lg border border-alert/40 bg-alert/5 p-2 text-xs text-alert">
+                      ⚠ 前の段階「{incompletePrevious.map((s) => s.title).join("」「")}」がまだ完了していません。
+                    </p>
+                  );
+                })()}
               <div className="flex justify-end gap-2">
                 <button className="btn-pill-outline text-sm" onClick={() => setStageConfirmTask(null)}>
                   {isCountBased ? "件数はそのまま（時間だけ記録）" : "まだ続く（時間だけ記録）"}
