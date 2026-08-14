@@ -62,14 +62,41 @@ export interface WeatherAlert {
   precipProbability: number;
 }
 
+export interface CurrentWeatherReading {
+  placeId: string;
+  placeLabel: string;
+  atIso: string;
+  precipProbability: number;
+  fetchedAt: number;
+}
+
+// 「今」の時点(直近の過去、無ければ最初)の時間帯の予報を返す。変化の有無に関わらず
+// 「今の天気」を常時表示するために使う
+function findCurrentPrecip(hourly: HourlyPrecipPoint[], nowMs: number): HourlyPrecipPoint | null {
+  if (hourly.length === 0) return null;
+  const sorted = [...hourly].sort((a, b) => new Date(a.atIso).getTime() - new Date(b.atIso).getTime());
+  let current: HourlyPrecipPoint | null = null;
+  for (const p of sorted) {
+    if (new Date(p.atIso).getTime() <= nowMs) current = p;
+    else break;
+  }
+  return current ?? sorted[0];
+}
+
+export interface WeatherRefreshResult {
+  alerts: WeatherAlert[];
+  current: CurrentWeatherReading[];
+}
+
 // 登録地点ごとに、直近30分以内に取得済みでなければ天気予報を再取得してキャッシュし、
-// 通知すべき変化(閾値超え)があれば返す。取得に失敗した場合は保存済みの(古い)データが
-// あればそれを使う(アプリを開いている間に取れた時点の情報、という前提のため)
+// 通知すべき変化(閾値超え)と、変化の有無に関わらず「今の降水確率」を返す。取得に失敗した
+// 場合は保存済みの(古い)データがあればそれを使う(アプリを開いている間に取れた時点の情報、という前提のため)
 export async function refreshWeatherAndFindAlerts(
   places: WeatherPlace[],
   opts: { leadHours: number; thresholdPct: number; nowMs: number; todayDateStr: string; force?: boolean }
-): Promise<WeatherAlert[]> {
+): Promise<WeatherRefreshResult> {
   const alerts: WeatherAlert[] = [];
+  const current: CurrentWeatherReading[] = [];
   for (const place of places) {
     const id = `${place.id}::${opts.todayDateStr}`;
     let record = await db.weatherForecasts.get(id);
@@ -92,11 +119,21 @@ export async function refreshWeatherAndFindAlerts(
       }
     }
     if (!record) continue;
+    const currentPoint = findCurrentPrecip(record.hourly, opts.nowMs);
+    if (currentPoint) {
+      current.push({
+        placeId: place.id,
+        placeLabel: place.label,
+        atIso: currentPoint.atIso,
+        precipProbability: currentPoint.precipProbability,
+        fetchedAt: record.fetchedAt,
+      });
+    }
     const transition = findUpcomingRainStart(record.hourly, opts.nowMs, opts.leadHours, opts.thresholdPct);
     if (transition && record.notifiedForIso !== transition.atIso) {
       alerts.push({ placeId: place.id, placeLabel: place.label, ...transition });
       await db.weatherForecasts.update(id, { notifiedForIso: transition.atIso });
     }
   }
-  return alerts;
+  return { alerts, current };
 }

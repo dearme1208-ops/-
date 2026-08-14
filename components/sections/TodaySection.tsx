@@ -31,7 +31,7 @@ import { completeTodoTask } from "@/lib/todo";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
-import { refreshWeatherAndFindAlerts, type WeatherAlert } from "@/lib/weather";
+import { refreshWeatherAndFindAlerts, type CurrentWeatherReading, type WeatherAlert } from "@/lib/weather";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
@@ -158,6 +158,7 @@ export default function TodaySection({
   // 天気変化の通知用の登録地点。地点到着検知(geoPlaces)とは別の独立した一覧
   const weatherPlaces = useLiveQuery(() => db.weatherPlaces.toArray(), []);
   const [weatherAlert, setWeatherAlert] = useState<WeatherAlert | null>(null);
+  const [weatherCurrent, setWeatherCurrent] = useState<CurrentWeatherReading[]>([]);
   const [weatherCheckError, setWeatherCheckError] = useState<string | null>(null);
   const [weatherChecking, setWeatherChecking] = useState(false);
   const [weatherLastCheckedAt, setWeatherLastCheckedAt] = useState<number | null>(null);
@@ -810,7 +811,7 @@ export default function TodaySection({
       const thresholdPct = Math.min(100, Math.max(0, Number(weatherThresholdStr) || 50));
       setWeatherChecking(true);
       try {
-        const alerts = await refreshWeatherAndFindAlerts(weatherPlaces, {
+        const { alerts, current } = await refreshWeatherAndFindAlerts(weatherPlaces, {
           leadHours,
           thresholdPct,
           nowMs: Date.now(),
@@ -819,6 +820,7 @@ export default function TodaySection({
         });
         setWeatherCheckError(null);
         setWeatherLastCheckedAt(Date.now());
+        setWeatherCurrent(current);
         for (const alert of alerts) {
           const hourLabel = formatClock(new Date(alert.atIso).getTime());
           notify(
@@ -1975,22 +1977,33 @@ export default function TodaySection({
       )}
 
       {weatherNotifyEnabled && (weatherPlaces ?? []).length > 0 && (
-        <div className="panel flex flex-wrap items-center gap-x-4 gap-y-1 p-3 text-xs">
-          {weatherCheckError ? (
-            <span className="text-alert">🌤 {weatherCheckError}</span>
-          ) : (
-            <span className="text-cream/50">
-              🌤 天気変化の通知 ON（登録地点{(weatherPlaces ?? []).length}件。降水確率{weatherThresholdStr}%以上が{weatherLeadHoursStr}時間以内に近づくと通知
-              {weatherLastCheckedAt ? `・最終取得 ${formatClock(weatherLastCheckedAt)}` : ""}）
-            </span>
+        <div className="panel flex flex-col gap-1.5 p-3 text-xs">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {weatherCheckError ? (
+              <span className="text-alert">🌤 {weatherCheckError}</span>
+            ) : (
+              <span className="text-cream/50">
+                🌤 天気変化の通知 ON（登録地点{(weatherPlaces ?? []).length}件。降水確率{weatherThresholdStr}%以上が{weatherLeadHoursStr}時間以内に近づくと通知
+                {weatherLastCheckedAt ? `・最終取得 ${formatClock(weatherLastCheckedAt)}` : ""}）
+              </span>
+            )}
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={() => checkWeather(true)}
+              disabled={weatherChecking}
+            >
+              {weatherChecking ? "取得中..." : "🔄 今すぐ取得"}
+            </button>
+          </div>
+          {weatherCurrent.length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-cream/70">
+              {weatherCurrent.map((c) => (
+                <span key={c.placeId}>
+                  {c.placeLabel}: 降水確率{c.precipProbability}%（{formatClock(new Date(c.atIso).getTime())}時点）
+                </span>
+              ))}
+            </div>
           )}
-          <button
-            className="btn-pill-outline text-xs"
-            onClick={() => checkWeather(true)}
-            disabled={weatherChecking}
-          >
-            {weatherChecking ? "取得中..." : "🔄 今すぐ取得"}
-          </button>
         </div>
       )}
 
