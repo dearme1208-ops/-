@@ -42,6 +42,10 @@ export default function SettingsSection() {
   const [geoArrivalEnabledStr, setGeoArrivalEnabledStr] = useSetting("today.geoArrivalEnabled", "false");
   const geoArrivalEnabled = geoArrivalEnabledStr === "true";
   const geoPlaces = useLiveQuery(() => db.geoPlaces.orderBy("createdAt").toArray(), []);
+  const [weatherNotifyEnabledStr, setWeatherNotifyEnabledStr] = useSetting("weather.notifyEnabled", "false");
+  const weatherNotifyEnabled = weatherNotifyEnabledStr === "true";
+  const [weatherLeadHoursStr, setWeatherLeadHoursStr] = useSetting("weather.notifyLeadHours", "3");
+  const [weatherThresholdStr, setWeatherThresholdStr] = useSetting("weather.precipThreshold", "50");
   const [newPlaceLabel, setNewPlaceLabel] = useState("");
   const [newPlaceCategory, setNewPlaceCategory] = useState("");
   const [newPlaceName, setNewPlaceName] = useState("");
@@ -565,6 +569,43 @@ export default function SettingsSection() {
             </div>
           </div>
         )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">天気変化の通知（降水確率）</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={weatherNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setWeatherNotifyEnabledStr(weatherNotifyEnabled ? "false" : "true")}
+          >
+            天気変化の通知: {weatherNotifyEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        {weatherNotifyEnabled && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+            <input
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={weatherLeadHoursStr}
+              onChange={(e) => setWeatherLeadHoursStr(e.target.value)}
+              className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+            />
+            <span>時間以内に、降水確率が</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={weatherThresholdStr}
+              onChange={(e) => setWeatherThresholdStr(e.target.value)}
+              className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+            />
+            <span>%以上になる見込みなら通知します</span>
+          </div>
+        )}
+        <p className="text-[10px] text-cream/40">
+          上の「位置情報による地点到着検知」に登録した地点それぞれについて、無料の気象データ(Open-Meteo)から時間ごとの降水確率を取得し、まだ閾値未満の状態から指定時間以内に閾値以上になる時刻が近づいたら通知します。アプリを開いている間に取得できた情報をもとに判定するため、アプリを閉じている/バックグラウンドの間は情報が更新されません（その時点で取得できていた予報が前提になります）。地点が1件も登録されていない場合は動作しません。
+        </p>
       </div>
 
       <div className="panel space-y-3 p-4">

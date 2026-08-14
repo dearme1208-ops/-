@@ -35,6 +35,18 @@ export interface GeoPlace {
   createdAt: number;
 }
 
+// 登録地点(GeoPlace)ごとに、当日分として取得済みの時間帯別降水確率予報をキャッシュする。
+// アプリを開いている間に取得できた情報を保存しておくだけで、閉じている/バックグラウンドの間は
+// 更新されない(その時点の情報のまま)。notifiedForIsoで同じ変化を二重通知しないようにする
+export interface WeatherForecast {
+  id: string; // `${placeId}::${date}`
+  placeId: string;
+  date: string; // YYYY-MM-DD
+  fetchedAt: number;
+  hourly: { atIso: string; precipProbability: number }[];
+  notifiedForIso?: string;
+}
+
 export interface TemplateItem {
   id: string;
   weekday: Weekday;

@@ -10,6 +10,7 @@ import type {
   TodoTask,
   ConditionLog,
   GeoPlace,
+  WeatherForecast,
 } from "./types";
 
 export class KouteiDB extends Dexie {
@@ -23,6 +24,7 @@ export class KouteiDB extends Dexie {
   todoTasks!: Table<TodoTask, string>;
   conditionLogs!: Table<ConditionLog, string>;
   geoPlaces!: Table<GeoPlace, string>;
+  weatherForecasts!: Table<WeatherForecast, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -73,6 +75,19 @@ export class KouteiDB extends Dexie {
       todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
       conditionLogs: "id, date, loggedAt",
       geoPlaces: "id, createdAt",
+    });
+    this.version(6).stores({
+      masterTasks: "id, category, name, isFavorite",
+      templateItems: "id, weekday, order",
+      dailyTasks: "id, date, status, order",
+      records: "id, date, category, name, masterTaskId, excludedFromStats",
+      settings: "key",
+      projects: "id, dueDate, createdAt",
+      todoLists: "id, order",
+      todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+      conditionLogs: "id, date, loggedAt",
+      geoPlaces: "id, createdAt",
+      weatherForecasts: "id, placeId, date",
     });
   }
 }

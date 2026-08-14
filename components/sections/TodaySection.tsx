@@ -31,6 +31,7 @@ import { completeTodoTask } from "@/lib/todo";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
+import { refreshWeatherAndFindAlerts, type WeatherAlert } from "@/lib/weather";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
@@ -148,6 +149,14 @@ export default function TodaySection({
   const geoArrivalEnabled = geoArrivalEnabledStr === "true";
   const geoPlaces = useLiveQuery(() => db.geoPlaces.toArray(), []);
   const [geoArrivalError, setGeoArrivalError] = useState<string | null>(null);
+  // 登録地点の天気変化通知(降水確率が閾値を超える見込みが近づいたら通知)。
+  // アプリを開いている間だけ定期的にチェックする(地点到着検知と同じ制約)
+  const [weatherNotifyEnabledStr] = useSetting("weather.notifyEnabled", "false");
+  const weatherNotifyEnabled = weatherNotifyEnabledStr === "true";
+  const [weatherLeadHoursStr] = useSetting("weather.notifyLeadHours", "3");
+  const [weatherThresholdStr] = useSetting("weather.precipThreshold", "50");
+  const [weatherAlert, setWeatherAlert] = useState<WeatherAlert | null>(null);
+  const [weatherCheckError, setWeatherCheckError] = useState<string | null>(null);
   const geoArrivalWatchIdRef = useRef<number | null>(null);
   // 地点ごとに「現在圏内にいるか」を保持し、圏内に入った瞬間だけ自動開始をトリガーする。
   // 退出判定にはヒステリシス(半径の1.5倍)を設け、境界付近でのGPS誤差による連続トリガーを防ぐ
@@ -785,6 +794,49 @@ export default function TodaySection({
       setWakeLockActive(false);
     };
   }, [geoArrivalEnabled]);
+
+  // 登録地点の天気変化通知。アプリを開いている間だけ、定期的に降水確率予報を取得・保存し、
+  // 閾値を超える見込みの時刻が指定時間以内に近づいていれば通知する(地点到着検知と同じく
+  // ブラウザ/PWAの仕様上フォアグラウンドでのみ動作し、閉じている間は情報が更新されない)
+  useEffect(() => {
+    if (!weatherNotifyEnabled || !geoPlaces || geoPlaces.length === 0) {
+      setWeatherCheckError(null);
+      return;
+    }
+    let cancelled = false;
+    async function check() {
+      const leadHours = Math.max(0.5, Number(weatherLeadHoursStr) || 3);
+      const thresholdPct = Math.min(100, Math.max(0, Number(weatherThresholdStr) || 50));
+      try {
+        const alerts = await refreshWeatherAndFindAlerts(geoPlaces!, {
+          leadHours,
+          thresholdPct,
+          nowMs: Date.now(),
+          todayDateStr: todayStr(),
+        });
+        if (cancelled) return;
+        setWeatherCheckError(null);
+        for (const alert of alerts) {
+          const hourLabel = formatClock(new Date(alert.atIso).getTime());
+          notify(
+            "☔ 天気の変化が近づいています",
+            `${alert.placeLabel}: ${hourLabel}頃に降水確率${alert.precipProbability}%の見込みです`,
+            `weather-${alert.placeId}-${alert.atIso}`
+          );
+        }
+        if (alerts.length > 0) setWeatherAlert(alerts[0]);
+      } catch {
+        if (!cancelled) setWeatherCheckError("天気予報を取得できませんでした");
+      }
+    }
+    check();
+    // 内部で30分キャッシュされるためAPI呼び出し自体はもっと少ない頻度になる
+    const id = setInterval(check, 15 * 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [weatherNotifyEnabled, geoPlaces, weatherLeadHoursStr, weatherThresholdStr]);
 
   // 移動を検知した(geoMovementTickが進んだ)ら、他に計測中/仮計測中の作業がなければ
   // 「移動」の仮計測タスクを自動的に開始する。仕組みは未計測の自動計測と同じ仮計測枠を使う
@@ -1748,6 +1800,17 @@ export default function TodaySection({
           </button>
         </div>
       )}
+      {weatherAlert && (
+        <div className="panel flex items-center justify-between gap-2 border border-alert/40 p-4">
+          <p className="text-sm font-bold text-cream">
+            ☔ {weatherAlert.placeLabel}で{formatClock(new Date(weatherAlert.atIso).getTime())}頃、降水確率
+            {weatherAlert.precipProbability}%の見込みです（{Math.round(weatherAlert.hoursUntil * 10) / 10}時間後）
+          </p>
+          <button className="text-xs text-cream/50" onClick={() => setWeatherAlert(null)}>
+            閉じる
+          </button>
+        </div>
+      )}
       {showStatusPanel && (
         <TodayStatusPanel
           tasks={tasks ?? []}
@@ -1898,6 +1961,18 @@ export default function TodaySection({
           ) : wakeLockError ? (
             <span className="text-cream/40">💡 {wakeLockError}</span>
           ) : null}
+        </div>
+      )}
+
+      {weatherNotifyEnabled && (geoPlaces ?? []).length > 0 && (
+        <div className="panel flex flex-wrap items-center gap-x-4 gap-y-1 p-3 text-xs">
+          {weatherCheckError ? (
+            <span className="text-alert">🌤 {weatherCheckError}</span>
+          ) : (
+            <span className="text-cream/50">
+              🌤 天気変化の通知 ON（登録地点{(geoPlaces ?? []).length}件。降水確率{weatherThresholdStr}%以上が{weatherLeadHoursStr}時間以内に近づくと通知）
+            </span>
+          )}
         </div>
       )}
 
