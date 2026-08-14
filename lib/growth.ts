@@ -1,0 +1,78 @@
+import type { ThemedMode } from "./theme";
+
+export interface GrowthStage {
+  icon: string;
+  label: string;
+}
+
+// 本日の作業時間に応じて「育つ」ビジュアルの段階。演出テーマの世界観ごとに
+// 見た目・呼び名だけを出し分け、色相を増やさず既存のテーマ資産を流用する
+const DEFAULT_STAGES: GrowthStage[] = [
+  { icon: "🌰", label: "種" },
+  { icon: "🌱", label: "発芽" },
+  { icon: "🌿", label: "若葉" },
+  { icon: "🪴", label: "生長中" },
+  { icon: "🌳", label: "大樹" },
+  { icon: "🌲✨", label: "満開の大樹" },
+];
+
+const NATSUYASUMI_STAGES: GrowthStage[] = [
+  { icon: "🌰", label: "種まき" },
+  { icon: "🌱", label: "芽" },
+  { icon: "🌿", label: "つる" },
+  { icon: "🌼", label: "つぼみ" },
+  { icon: "🌻", label: "満開" },
+  { icon: "🌻✨", label: "大輪" },
+];
+
+const POWERPRO_STAGES: GrowthStage[] = [
+  { icon: "🥎", label: "新人" },
+  { icon: "⚾", label: "育成中" },
+  { icon: "🎽", label: "レギュラー入り" },
+  { icon: "🏅", label: "主力" },
+  { icon: "🏆", label: "エース" },
+  { icon: "🌟", label: "伝説" },
+];
+
+const LOBOTOMY_STAGES: GrowthStage[] = [
+  { icon: "🌀", label: "不安定" },
+  { icon: "🌀", label: "やや不安定" },
+  { icon: "🔒", label: "収容中" },
+  { icon: "🔒", label: "安定" },
+  { icon: "⚙️", label: "高度安定" },
+  { icon: "✨", label: "完全収容" },
+];
+
+const VA11HALLA_STAGES: GrowthStage[] = [
+  { icon: "🥃", label: "OPEN" },
+  { icon: "🍸", label: "軌道に乗る" },
+  { icon: "🍹", label: "盛況" },
+  { icon: "💫", label: "ネオンフル点灯" },
+  { icon: "🌃", label: "絶好調" },
+  { icon: "✨", label: "伝説のバーテンダー" },
+];
+
+const PERSONA5_STAGES: GrowthStage[] = [
+  { icon: "🎭", label: "潜入開始" },
+  { icon: "🗝️", label: "捜索中" },
+  { icon: "💎", label: "お宝発見" },
+  { icon: "🔥", label: "覚醒" },
+  { icon: "⭐", label: "変身" },
+  { icon: "👑", label: "完全犯罪" },
+];
+
+const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
+  natsuyasumi: NATSUYASUMI_STAGES,
+  powerpro: POWERPRO_STAGES,
+  lobotomy: LOBOTOMY_STAGES,
+  va11halla: VA11HALLA_STAGES,
+  persona5: PERSONA5_STAGES,
+};
+
+// 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り
+export function computeGrowthStage(themedMode: ThemedMode | null, totalSeconds: number): { stage: GrowthStage; index: number } {
+  const hours = totalSeconds / 3600;
+  const index = hours >= 8 ? 5 : hours >= 6 ? 4 : hours >= 4 ? 3 : hours >= 2 ? 2 : hours >= 1 ? 1 : 0;
+  const stages = themedMode ? STAGES_BY_MODE[themedMode] : DEFAULT_STAGES;
+  return { stage: stages[index], index };
+}

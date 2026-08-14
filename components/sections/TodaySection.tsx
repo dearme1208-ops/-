@@ -38,6 +38,7 @@ import {
   type WeatherAlert,
 } from "@/lib/weather";
 import { fireConfetti } from "@/lib/confetti";
+import { computeGrowthStage } from "@/lib/growth";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
@@ -2266,6 +2267,18 @@ export default function TodaySection({
               🔥 連続{streakDays}日
             </span>
           )}
+          {todayTotalSeconds > 0 &&
+            (() => {
+              const { stage } = computeGrowthStage(themedMode, todayTotalSeconds);
+              return (
+                <span
+                  className="rounded-full bg-cream/10 px-2 py-0.5 text-xs text-cream/70"
+                  title={`本日の作業時間(${formatHms(todayTotalSeconds)})に応じた育成度`}
+                >
+                  {stage.icon} {stage.label}
+                </span>
+              );
+            })()}
           {todayTotalSeconds > 0 && sameWeekdayAvg && sameWeekdayAvg.dayCount >= 2 && (
             <span
               className="rounded-full bg-cream/10 px-2 py-0.5 text-xs text-cream/70"
