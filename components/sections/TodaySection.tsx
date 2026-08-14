@@ -193,6 +193,12 @@ export default function TodaySection({
   const dailySummaryEnabled = dailySummaryEnabledStr === "true";
   const [dailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
   const [dailySummaryNotifiedDate, setDailySummaryNotifiedDate] = useSetting("notify.dailySummaryNotifiedDate", "");
+  const [monthlySummaryEnabledStr] = useSetting("notify.monthlySummaryEnabled", "false");
+  const monthlySummaryEnabled = monthlySummaryEnabledStr === "true";
+  const [monthlySummaryNotifiedMonth, setMonthlySummaryNotifiedMonth] = useSetting(
+    "notify.monthlySummaryNotifiedMonth",
+    ""
+  );
   const [shortcutsEnabledStr] = useSetting("today.shortcutsEnabled", "true");
   const shortcutsEnabled = shortcutsEnabledStr === "true";
   // 直近でマウス/キーボード操作があった時刻。放置検知で未計測を打ち切る起点に使う
@@ -371,6 +377,44 @@ export default function TodaySection({
     now,
     setDailySummaryNotifiedDate,
   ]);
+
+  // 月が変わって初めてアプリを開いたタイミングで、先月の合計時間・最多区分を通知する(月1回)。
+  // 日次サマリーと同じ「アプリを開いている間に判定する」方式で、特定の時刻は問わない
+  const monthlySummaryFiredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!monthlySummaryEnabled || !projectRecords) return;
+    const currentMonth = date.slice(0, 7);
+    if (monthlySummaryNotifiedMonth === currentMonth) return;
+    // 設定書き込みが非同期(IndexedDB経由)で反映に一拍かかるため、書き込み完了前に
+    // このeffectが再実行されて二重通知しないよう、同期的なrefで先にラッチする
+    if (monthlySummaryFiredRef.current === currentMonth) return;
+    monthlySummaryFiredRef.current = currentMonth;
+    const [y, m] = currentMonth.split("-").map(Number);
+    const prevMonthDate = new Date(y, m - 2, 1);
+    const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+    const prevRecords = projectRecords.filter((r) => r.date.startsWith(prevMonth) && !r.excludedFromStats);
+    if (prevRecords.length === 0) {
+      setMonthlySummaryNotifiedMonth(currentMonth);
+      return;
+    }
+    const totalSeconds = prevRecords.reduce((s, r) => s + r.seconds, 0);
+    const byCategory = new Map<string, number>();
+    for (const r of prevRecords) byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.seconds);
+    let topCategory = "";
+    let topCategorySeconds = 0;
+    for (const [cat, sec] of byCategory) {
+      if (sec > topCategorySeconds) {
+        topCategory = cat;
+        topCategorySeconds = sec;
+      }
+    }
+    notify(
+      `${prevMonth}のサマリー`,
+      `合計 ${formatHms(totalSeconds)}${topCategory ? `・最多区分「${topCategory}」${formatHms(topCategorySeconds)}` : ""}`,
+      "monthly-summary"
+    );
+    setMonthlySummaryNotifiedMonth(currentMonth);
+  }, [monthlySummaryEnabled, monthlySummaryNotifiedMonth, projectRecords, date, setMonthlySummaryNotifiedMonth]);
 
   // 「予測」（マスタの平均想定時間）。ガントチャートと同じ考え方で、同日中に同じ作業を
   // 複数回登録している場合は、既に今日積み上がった実績分を差し引いた残り予測にする。

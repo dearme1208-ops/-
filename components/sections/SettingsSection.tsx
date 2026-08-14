@@ -149,6 +149,8 @@ export default function SettingsSection() {
   const [dailySummaryEnabledStr, setDailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
   const dailySummaryEnabled = dailySummaryEnabledStr === "true";
   const [dailySummaryTime, setDailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
+  const [monthlySummaryEnabledStr, setMonthlySummaryEnabledStr] = useSetting("notify.monthlySummaryEnabled", "false");
+  const monthlySummaryEnabled = monthlySummaryEnabledStr === "true";
   const [shortcutsEnabledStr, setShortcutsEnabledStr] = useSetting("today.shortcutsEnabled", "true");
   const shortcutsEnabled = shortcutsEnabledStr === "true";
   const [weeklyGoalHoursStr, setWeeklyGoalHoursStr] = useSetting("report.weeklyGoalHours", "");
@@ -1135,6 +1137,17 @@ export default function SettingsSection() {
         <p className="text-xs text-cream/50">
           指定した時刻になったら、その日の合計作業時間（と体調を記録していればその内容）を通知します（1日1回）。
         </p>
+        <div className="border-t border-cream/10 pt-3">
+          <button
+            className={monthlySummaryEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setMonthlySummaryEnabledStr(monthlySummaryEnabled ? "false" : "true")}
+          >
+            月次ダイジェスト通知: {monthlySummaryEnabled ? "ON" : "OFF"}
+          </button>
+          <p className="mt-2 text-xs text-cream/50">
+            月が変わって初めてアプリを開いたタイミングで、先月の合計作業時間と最も時間を使った業務区分を通知します（月1回）。
+          </p>
+        </div>
       </div>
 
       <div className="panel space-y-3 p-4">
