@@ -224,6 +224,10 @@ export default function ProjectsSection({
   }
 
   async function toggleProjectStage(project: ProjectItem, stageId: string) {
+    const stage = project.stages?.find((s) => s.id === stageId);
+    // 完了にする方向だけ確認する（未完了に戻す操作は誤操作でも実害が小さいため確認しない）。
+    // チェックボックスが小さく、段階が多い案件では誤タップしやすいための保険
+    if (stage && !stage.completed && !confirm(`「${stage.title}」を完了にしますか?`)) return;
     const stages = (project.stages ?? []).map((s) => (s.id === stageId ? { ...s, completed: !s.completed } : s));
     await db.projects.update(project.id, { stages });
   }
