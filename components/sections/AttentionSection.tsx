@@ -20,6 +20,7 @@ import {
 import { currentFiscalYear } from "@/lib/period";
 import { formatHms } from "@/lib/time";
 import { emphasisTextClass, getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
+import { computeProductivityByWeather } from "@/lib/weather";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
@@ -31,6 +32,7 @@ export default function AttentionSection() {
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
   const conditionLogs = useLiveQuery(() => db.conditionLogs.toArray(), []);
+  const weatherForecasts = useLiveQuery(() => db.weatherForecasts.toArray(), []);
 
   const [avgPeriodType, setAvgPeriodType] = useState<AvgComparePeriodType>("h1");
   const [avgFiscalYear, setAvgFiscalYear] = useState(() => currentFiscalYear());
@@ -56,6 +58,10 @@ export default function AttentionSection() {
   const shiftRows = useMemo(
     () => (masterTasks && records && conditionLogs ? computeConditionShiftByTask(conditionLogs, records, masterTasks) : []),
     [masterTasks, records, conditionLogs]
+  );
+  const weatherProductivityRows = useMemo(
+    () => (masterTasks && records && weatherForecasts ? computeProductivityByWeather(weatherForecasts, records, masterTasks) : []),
+    [masterTasks, records, weatherForecasts]
   );
   const goodShiftRows = useMemo(() => shiftRows.filter((r) => r.avgDelta > 0), [shiftRows]);
   const badShiftRows = useMemo(
@@ -118,6 +124,52 @@ export default function AttentionSection() {
         )}
         <p className="mt-3 text-xs text-cream/40">
           体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱い、その間に開始した作業を対象に想定時間÷実績時間を算出し、体調レベルごとに平均したものです。100%が想定通り、100%を超えるほど想定より速く終えられている傾向を表します（バーの縦線が100%の位置。▲=速い/▼=遅い）。
+        </p>
+      </div>
+
+      <div className="panel p-4">
+        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">天気別の生産性（想定時間に対する達成度）</h3>
+        {weatherProductivityRows.length === 0 ? (
+          <p className="text-sm text-cream/50">
+            天気変化の通知機能で取得した予報データと、想定時間・実績が両方揃っているデータがまだありません（設定タブで天気変化の通知をONにし、地点を登録すると日々データが蓄積されます）。
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {weatherProductivityRows.map((row) => {
+              const good = row.avgProductivityPct >= 100;
+              const barWidthPct = (Math.min(150, Math.max(0, row.avgProductivityPct)) / 150) * 100;
+              const baselineLeftPct = (100 / 150) * 100;
+              return (
+                <div key={row.bucket} className="flex items-center gap-2">
+                  <div className="flex w-24 shrink-0 items-center gap-1.5 text-sm text-cream/80">
+                    {row.bucket === "rain" ? "☔ 雨の日" : "☀️ 晴れの日"}
+                  </div>
+                  <div className="relative h-5 min-w-0 flex-1 rounded bg-cream/5">
+                    <div
+                      className={`h-5 rounded-r ${good ? "bg-cream" : "bg-alert"}`}
+                      style={{ width: `${barWidthPct}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 w-px bg-cream/40"
+                      style={{ left: `${baselineLeftPct}%` }}
+                      title="想定通り(100%)の位置"
+                    />
+                  </div>
+                  <div
+                    className={`w-40 shrink-0 text-right text-xs tabular-nums ${good ? "text-cream/80" : "font-bold text-alert"}`}
+                  >
+                    {good ? "▲" : "▼"} {row.avgProductivityPct}%
+                    <span className="text-cream/40">
+                      （想定より{Math.abs(row.avgProductivityPct - 100)}pt{good ? "速い" : "遅い"}・{row.sampleCount}件）
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-cream/40">
+          天気変化の通知機能でキャッシュされた日ごとの降水確率予報(平均50%以上を「雨の日」)と、その日に行った作業の想定時間÷実績時間を突き合わせたものです。天気データが無い日の実績は対象外です。
         </p>
       </div>
 

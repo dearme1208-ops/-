@@ -1,5 +1,5 @@
 import { db } from "./db";
-import type { WeatherForecast, WeatherPlace } from "./types";
+import type { MasterTask, WeatherForecast, WeatherPlace, WorkRecord } from "./types";
 
 export interface HourlyPrecipPoint {
   atIso: string; // "YYYY-MM-DDTHH:mm" 現地時間(端末のローカル時刻と同じ前提で扱う。アプリ全体の時刻の扱いに合わせる)
@@ -106,6 +106,57 @@ export function findNextThresholdCrossing(
     }
   }
   return null;
+}
+
+export interface WeatherProductivityRow {
+  bucket: "rain" | "clear";
+  avgProductivityPct: number;
+  sampleCount: number;
+}
+
+// その日に記録された天気予報キャッシュ(複数地点・複数時間帯)の降水確率を平均し、
+// その日全体のおおよその降水確率とする(地点/時間帯を問わず均等に扱う簡易な指標)
+function dailyAvgPrecipProbability(weatherForecasts: WeatherForecast[], date: string): number | null {
+  const points = weatherForecasts.filter((w) => w.date === date).flatMap((w) => w.hourly);
+  if (points.length === 0) return null;
+  return points.reduce((s, p) => s + p.precipProbability, 0) / points.length;
+}
+
+// 天気変化の通知機能でキャッシュされた予報履歴(weatherForecasts)を使い、その日の平均降水確率が
+// 閾値以上だった「雨の日」と、それ未満だった「晴れの日」とで、想定時間に対する達成度(生産性)を比較する。
+// 天気データが無い日の実績は対象外(体調による生産性分析と同じ考え方の、天気版)
+export function computeProductivityByWeather(
+  weatherForecasts: WeatherForecast[],
+  records: WorkRecord[],
+  masterTasks: MasterTask[],
+  rainThresholdPct = 50
+): WeatherProductivityRow[] {
+  const estimatedByKey = new Map<string, number>();
+  for (const m of masterTasks) {
+    if (m.estimatedSeconds > 0) estimatedByKey.set(`${m.category}::${m.name}`, m.estimatedSeconds);
+  }
+  const avgPrecipByDate = new Map<string, number | null>();
+  const buckets: Record<"rain" | "clear", { sumPct: number; count: number }> = {
+    rain: { sumPct: 0, count: 0 },
+    clear: { sumPct: 0, count: 0 },
+  };
+  for (const r of records) {
+    const estimatedSeconds = estimatedByKey.get(`${r.category}::${r.name}`);
+    if (!estimatedSeconds || r.seconds <= 0) continue;
+    if (!avgPrecipByDate.has(r.date)) avgPrecipByDate.set(r.date, dailyAvgPrecipProbability(weatherForecasts, r.date));
+    const avgPrecip = avgPrecipByDate.get(r.date);
+    if (avgPrecip === null || avgPrecip === undefined) continue;
+    const bucket: "rain" | "clear" = avgPrecip >= rainThresholdPct ? "rain" : "clear";
+    buckets[bucket].sumPct += (estimatedSeconds / r.seconds) * 100;
+    buckets[bucket].count += 1;
+  }
+  return (["rain", "clear"] as const)
+    .filter((b) => buckets[b].count > 0)
+    .map((b) => ({
+      bucket: b,
+      avgProductivityPct: Math.round(buckets[b].sumPct / buckets[b].count),
+      sampleCount: buckets[b].count,
+    }));
 }
 
 export interface WeatherRefreshResult {
