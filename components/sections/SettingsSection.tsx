@@ -55,6 +55,13 @@ export default function SettingsSection() {
   const [geoPlaceStatus, setGeoPlaceStatus] = useState("");
   // nullなら新規登録、idが入っていればその地点を編集中（フォームを共用し、保存時の挙動だけ分ける）
   const [editingPlaceId, setEditingPlaceId] = useState<string | null>(null);
+  // 天気変化の通知用の登録地点。地点到着検知(geoPlaces)とは別の独立した一覧
+  const weatherPlaces = useLiveQuery(() => db.weatherPlaces.orderBy("createdAt").toArray(), []);
+  const [newWeatherPlaceLabel, setNewWeatherPlaceLabel] = useState("");
+  const [newWeatherPlaceLat, setNewWeatherPlaceLat] = useState("");
+  const [newWeatherPlaceLon, setNewWeatherPlaceLon] = useState("");
+  const [weatherPlaceStatus, setWeatherPlaceStatus] = useState("");
+  const [editingWeatherPlaceId, setEditingWeatherPlaceId] = useState<string | null>(null);
   const [quickStartEnabledStr, setQuickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
   const quickStartEnabled = quickStartEnabledStr === "true";
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
@@ -235,6 +242,72 @@ export default function SettingsSection() {
   async function removeGeoPlace(id: string) {
     await db.geoPlaces.delete(id);
     if (editingPlaceId === id) resetGeoPlaceForm();
+  }
+
+  // 天気変化通知用の地点登録フォームに、今いる場所の座標を自動入力する
+  function useCurrentLocationForNewWeatherPlace() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setWeatherPlaceStatus("この端末・ブラウザは位置情報の取得に対応していません");
+      return;
+    }
+    setWeatherPlaceStatus("現在地を取得中...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setNewWeatherPlaceLat(pos.coords.latitude.toFixed(6));
+        setNewWeatherPlaceLon(pos.coords.longitude.toFixed(6));
+        setWeatherPlaceStatus("現在地を取得しました。内容を確認して登録してください。");
+      },
+      () => setWeatherPlaceStatus("現在地を取得できませんでした（権限をご確認ください）"),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  function resetWeatherPlaceForm() {
+    setNewWeatherPlaceLabel("");
+    setNewWeatherPlaceLat("");
+    setNewWeatherPlaceLon("");
+    setEditingWeatherPlaceId(null);
+  }
+
+  function startEditWeatherPlace(place: NonNullable<typeof weatherPlaces>[number]) {
+    setNewWeatherPlaceLabel(place.label);
+    setNewWeatherPlaceLat(String(place.lat));
+    setNewWeatherPlaceLon(String(place.lon));
+    setEditingWeatherPlaceId(place.id);
+    setWeatherPlaceStatus("");
+  }
+
+  async function addWeatherPlace() {
+    const lat = Number(newWeatherPlaceLat);
+    const lon = Number(newWeatherPlaceLon);
+    if (!newWeatherPlaceLabel.trim() || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      setWeatherPlaceStatus("地点名・緯度経度（現在地を登録）を入力してください。");
+      return;
+    }
+    if (editingWeatherPlaceId) {
+      await db.weatherPlaces.update(editingWeatherPlaceId, {
+        label: newWeatherPlaceLabel.trim(),
+        lat,
+        lon,
+      });
+      resetWeatherPlaceForm();
+      setWeatherPlaceStatus("地点を更新しました。");
+      return;
+    }
+    await db.weatherPlaces.add({
+      id: uid(),
+      label: newWeatherPlaceLabel.trim(),
+      lat,
+      lon,
+      createdAt: Date.now(),
+    });
+    resetWeatherPlaceForm();
+    setWeatherPlaceStatus("地点を登録しました。");
+  }
+
+  async function removeWeatherPlace(id: string) {
+    await db.weatherPlaces.delete(id);
+    if (editingWeatherPlaceId === id) resetWeatherPlaceForm();
   }
 
   async function downloadBackup() {
@@ -604,8 +677,92 @@ export default function SettingsSection() {
           </div>
         )}
         <p className="text-[10px] text-cream/40">
-          上の「位置情報による地点到着検知」に登録した地点それぞれについて、無料の気象データ(Open-Meteo)から時間ごとの降水確率を取得し、まだ閾値未満の状態から指定時間以内に閾値以上になる時刻が近づいたら通知します。アプリを開いている間に取得できた情報をもとに判定するため、アプリを閉じている/バックグラウンドの間は情報が更新されません（その時点で取得できていた予報が前提になります）。地点が1件も登録されていない場合は動作しません。
+          下に登録した地点それぞれについて、無料の気象データ(Open-Meteo)から時間ごとの降水確率を取得し、まだ閾値未満の状態から指定時間以内に閾値以上になる時刻が近づいたら通知します。アプリを開いている間に取得できた情報をもとに判定するため、アプリを閉じている/バックグラウンドの間は情報が更新されません（その時点で取得できていた予報が前提になります）。地点が1件も登録されていない場合は動作しません。
         </p>
+        {weatherNotifyEnabled && (
+          <div className="space-y-2 border-t border-cream/10 pt-3">
+            {(weatherPlaces ?? []).length > 0 && (
+              <div className="space-y-1.5">
+                {(weatherPlaces ?? []).map((p) => (
+                  <div
+                    key={p.id}
+                    className={`flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs ${
+                      editingWeatherPlaceId === p.id ? "bg-cream/10 ring-1 ring-cream/40" : "bg-ink/50"
+                    }`}
+                  >
+                    <span className="font-bold text-cream">{p.label}</span>
+                    <span className="text-cream/30">
+                      ({p.lat.toFixed(4)}, {p.lon.toFixed(4)})
+                    </span>
+                    <button
+                      className="ml-auto text-cream/40 hover:text-cream"
+                      onClick={() => startEditWeatherPlace(p)}
+                      aria-label="編集"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      className="text-cream/40 hover:text-alert"
+                      onClick={() => removeWeatherPlace(p.id)}
+                      aria-label="削除"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div
+              className={`space-y-2 rounded-lg border p-3 text-xs text-cream/70 ${
+                editingWeatherPlaceId ? "border-cream/40 bg-cream/5" : "border-cream/10"
+              }`}
+            >
+              {editingWeatherPlaceId && (
+                <p className="text-xs font-bold text-cream">✎ 地点を編集中（保存すると上の一覧に反映されます）</p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={newWeatherPlaceLabel}
+                  onChange={(e) => setNewWeatherPlaceLabel(e.target.value)}
+                  placeholder="地点名（例: 自宅）"
+                  className="w-40 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="btn-pill-outline text-xs" onClick={useCurrentLocationForNewWeatherPlace}>
+                  📍 現在地を登録
+                </button>
+                <input
+                  type="number"
+                  value={newWeatherPlaceLat}
+                  onChange={(e) => setNewWeatherPlaceLat(e.target.value)}
+                  placeholder="緯度"
+                  className="w-28 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+                <input
+                  type="number"
+                  value={newWeatherPlaceLon}
+                  onChange={(e) => setNewWeatherPlaceLon(e.target.value)}
+                  placeholder="経度"
+                  className="w-28 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                />
+                <button className="btn-pill text-xs" onClick={addWeatherPlace}>
+                  {editingWeatherPlaceId ? "地点を更新" : "地点を追加"}
+                </button>
+                {editingWeatherPlaceId && (
+                  <button className="btn-pill-outline text-xs" onClick={resetWeatherPlaceForm}>
+                    編集をキャンセル
+                  </button>
+                )}
+              </div>
+              {weatherPlaceStatus && <p className="text-[10px] text-cream/40">{weatherPlaceStatus}</p>}
+              <p className="text-[10px] text-cream/40">
+                現地で「現在地を登録」を押すと緯度経度が自動で入ります。地点情報は端末内にのみ保存されます（「地点到着検知」の登録地点とは別の一覧です）。
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="panel space-y-3 p-4">

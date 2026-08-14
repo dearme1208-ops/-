@@ -35,7 +35,17 @@ export interface GeoPlace {
   createdAt: number;
 }
 
-// 登録地点(GeoPlace)ごとに、当日分として取得済みの時間帯別降水確率予報をキャッシュする。
+// 天気変化の通知で使う、事前登録した場所。地点到着検知(GeoPlace)とは別の独立した登録で、
+// 自動開始の紐付け(業務区分/作業名/半径)を持たず、天気予報を取得するための座標のみを持つ
+export interface WeatherPlace {
+  id: string;
+  label: string; // 表示名（例: 自宅）
+  lat: number;
+  lon: number;
+  createdAt: number;
+}
+
+// 登録地点(WeatherPlace)ごとに、当日分として取得済みの時間帯別降水確率予報をキャッシュする。
 // アプリを開いている間に取得できた情報を保存しておくだけで、閉じている/バックグラウンドの間は
 // 更新されない(その時点の情報のまま)。notifiedForIsoで同じ変化を二重通知しないようにする
 export interface WeatherForecast {

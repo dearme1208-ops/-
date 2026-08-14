@@ -155,6 +155,8 @@ export default function TodaySection({
   const weatherNotifyEnabled = weatherNotifyEnabledStr === "true";
   const [weatherLeadHoursStr] = useSetting("weather.notifyLeadHours", "3");
   const [weatherThresholdStr] = useSetting("weather.precipThreshold", "50");
+  // 天気変化の通知用の登録地点。地点到着検知(geoPlaces)とは別の独立した一覧
+  const weatherPlaces = useLiveQuery(() => db.weatherPlaces.toArray(), []);
   const [weatherAlert, setWeatherAlert] = useState<WeatherAlert | null>(null);
   const [weatherCheckError, setWeatherCheckError] = useState<string | null>(null);
   const geoArrivalWatchIdRef = useRef<number | null>(null);
@@ -799,7 +801,7 @@ export default function TodaySection({
   // 閾値を超える見込みの時刻が指定時間以内に近づいていれば通知する(地点到着検知と同じく
   // ブラウザ/PWAの仕様上フォアグラウンドでのみ動作し、閉じている間は情報が更新されない)
   useEffect(() => {
-    if (!weatherNotifyEnabled || !geoPlaces || geoPlaces.length === 0) {
+    if (!weatherNotifyEnabled || !weatherPlaces || weatherPlaces.length === 0) {
       setWeatherCheckError(null);
       return;
     }
@@ -808,7 +810,7 @@ export default function TodaySection({
       const leadHours = Math.max(0.5, Number(weatherLeadHoursStr) || 3);
       const thresholdPct = Math.min(100, Math.max(0, Number(weatherThresholdStr) || 50));
       try {
-        const alerts = await refreshWeatherAndFindAlerts(geoPlaces!, {
+        const alerts = await refreshWeatherAndFindAlerts(weatherPlaces!, {
           leadHours,
           thresholdPct,
           nowMs: Date.now(),
@@ -836,7 +838,7 @@ export default function TodaySection({
       cancelled = true;
       clearInterval(id);
     };
-  }, [weatherNotifyEnabled, geoPlaces, weatherLeadHoursStr, weatherThresholdStr]);
+  }, [weatherNotifyEnabled, weatherPlaces, weatherLeadHoursStr, weatherThresholdStr]);
 
   // 移動を検知した(geoMovementTickが進んだ)ら、他に計測中/仮計測中の作業がなければ
   // 「移動」の仮計測タスクを自動的に開始する。仕組みは未計測の自動計測と同じ仮計測枠を使う
@@ -1964,13 +1966,13 @@ export default function TodaySection({
         </div>
       )}
 
-      {weatherNotifyEnabled && (geoPlaces ?? []).length > 0 && (
+      {weatherNotifyEnabled && (weatherPlaces ?? []).length > 0 && (
         <div className="panel flex flex-wrap items-center gap-x-4 gap-y-1 p-3 text-xs">
           {weatherCheckError ? (
             <span className="text-alert">🌤 {weatherCheckError}</span>
           ) : (
             <span className="text-cream/50">
-              🌤 天気変化の通知 ON（登録地点{(geoPlaces ?? []).length}件。降水確率{weatherThresholdStr}%以上が{weatherLeadHoursStr}時間以内に近づくと通知）
+              🌤 天気変化の通知 ON（登録地点{(weatherPlaces ?? []).length}件。降水確率{weatherThresholdStr}%以上が{weatherLeadHoursStr}時間以内に近づくと通知）
             </span>
           )}
         </div>

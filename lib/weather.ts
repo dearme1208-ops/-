@@ -1,5 +1,5 @@
 import { db } from "./db";
-import type { GeoPlace, WeatherForecast } from "./types";
+import type { WeatherForecast, WeatherPlace } from "./types";
 
 export interface HourlyPrecipPoint {
   atIso: string; // "YYYY-MM-DDTHH:mm" 現地時間(端末のローカル時刻と同じ前提で扱う。アプリ全体の時刻の扱いに合わせる)
@@ -66,7 +66,7 @@ export interface WeatherAlert {
 // 通知すべき変化(閾値超え)があれば返す。取得に失敗した場合は保存済みの(古い)データが
 // あればそれを使う(アプリを開いている間に取れた時点の情報、という前提のため)
 export async function refreshWeatherAndFindAlerts(
-  places: GeoPlace[],
+  places: WeatherPlace[],
   opts: { leadHours: number; thresholdPct: number; nowMs: number; todayDateStr: string }
 ): Promise<WeatherAlert[]> {
   const alerts: WeatherAlert[] = [];
