@@ -31,6 +31,35 @@ body {
   color: #e9e6bd;
 }
 
+html {
+  font-size: var(--base-font-size, 16px);
+}
+
+/* ハイコントラストモード: 淡色テキスト・薄い枠線のopacityユーティリティを
+   一括で底上げする。個々のクラス名を都度上書きするのではなく、よく使われる
+   opacity刻みをまとめて対象にすることで、コンポーネント側の変更なしに全タブへ適用する */
+html[data-high-contrast="true"] .text-cream\/30,
+html[data-high-contrast="true"] .text-cream\/40,
+html[data-high-contrast="true"] .text-cream\/50,
+html[data-high-contrast="true"] .text-cream\/60,
+html[data-high-contrast="true"] .text-cream\/70,
+html[data-high-contrast="true"] .text-cream\/80 {
+  color: rgb(var(--cream-rgb) / 0.94);
+}
+html[data-high-contrast="true"] .border-cream\/10,
+html[data-high-contrast="true"] .border-cream\/20,
+html[data-high-contrast="true"] .border-cream\/30 {
+  border-color: rgb(var(--cream-rgb) / 0.5);
+}
+html[data-high-contrast="true"] .bg-cream\/5,
+html[data-high-contrast="true"] .bg-cream\/10 {
+  background-color: rgb(var(--cream-rgb) / 0.16);
+}
+html[data-high-contrast="true"] :focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb));
+  outline-offset: 2px;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }

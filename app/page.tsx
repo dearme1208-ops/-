@@ -11,6 +11,8 @@ import { todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 import ThemeInit from "@/components/ThemeInit";
 import VisualModeInit from "@/components/VisualModeInit";
+import AccessibilityInit from "@/components/AccessibilityInit";
+import ToastHost from "@/components/ui/ToastHost";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
 import { tabLabel, useVisualMode } from "@/lib/theme";
@@ -103,6 +105,8 @@ export default function HomePage() {
     <div>
       <ThemeInit />
       <VisualModeInit />
+      <AccessibilityInit />
+      <ToastHost />
       <OrphanTaskModal />
       <TodoReminderModal
         onViewDetail={(taskId) => {

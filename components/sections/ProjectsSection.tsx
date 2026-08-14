@@ -18,6 +18,7 @@ import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import Modal from "@/components/ui/Modal";
+import { showUndoToast } from "@/lib/toast";
 
 type ViewMode = "gantt" | "calendar";
 
@@ -171,8 +172,10 @@ export default function ProjectsSection({
   }
 
   async function deleteProject(item: ProjectItem) {
-    if (!confirm(`「${item.title}」を削除しますか?`)) return;
     await db.projects.delete(item.id);
+    showUndoToast(`「${item.title}」を削除しました`, async () => {
+      await db.projects.add(item);
+    });
   }
 
   async function toggleComplete(item: ProjectItem) {

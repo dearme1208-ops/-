@@ -140,6 +140,9 @@ export default function SettingsSection() {
     "5"
   );
   const [accentRgb, setAccentRgb] = useSetting("theme.accentRgb", DEFAULT_ACCENT_RGB);
+  const [fontScale, setFontScale] = useSetting("accessibility.fontScale", "md");
+  const [highContrastStr, setHighContrastStr] = useSetting("accessibility.highContrast", "false");
+  const highContrast = highContrastStr === "true";
   const [visualMode, setVisualMode] = useSetting("theme.visualMode", "off");
   const [applyWordingStr, setApplyWordingStr] = useSetting("theme.applyWording", "true");
   const applyWording = applyWordingStr !== "false";
@@ -946,6 +949,41 @@ export default function SettingsSection() {
         </div>
         <p className="text-xs text-cream/50">
           警告・重要・強調表示に使う単色アクセントの色相を変更します（配色方針自体は単色のまま維持されます）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">文字サイズ・見やすさ</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={fontScale === "sm" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setFontScale("sm")}
+          >
+            小
+          </button>
+          <button
+            className={fontScale === "md" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setFontScale("md")}
+          >
+            標準
+          </button>
+          <button
+            className={fontScale === "lg" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setFontScale("lg")}
+          >
+            大
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={highContrast ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setHighContrastStr(highContrast ? "false" : "true")}
+          >
+            ハイコントラスト: {highContrast ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          文字サイズはアプリ全体に反映されます。ハイコントラストは、薄い文字色・枠線をより濃く表示し、フォーカス時の輪郭も強調します。
         </p>
       </div>
 

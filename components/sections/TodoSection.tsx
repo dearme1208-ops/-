@@ -35,6 +35,7 @@ import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types"
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
+import { showUndoToast } from "@/lib/toast";
 
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
@@ -404,10 +405,12 @@ export default function TodoSection({
   }
 
   async function deleteTask(task: TodoTask) {
-    if (!confirm(`「${task.title}」を削除しますか?`)) return;
-    const subIds = (subtasksByParent.get(task.id) ?? []).map((s) => s.id);
-    await db.todoTasks.bulkDelete([task.id, ...subIds]);
+    const subs = subtasksByParent.get(task.id) ?? [];
+    await db.todoTasks.bulkDelete([task.id, ...subs.map((s) => s.id)]);
     if (detailTaskId === task.id) setDetailTaskId(null);
+    showUndoToast(`「${task.title}」を削除しました`, async () => {
+      await db.todoTasks.bulkAdd([task, ...subs]);
+    });
   }
 
   // タスクをコピーして新規タスクとして追加する（よく使う内容をテンプレート的に使い回す用）。

@@ -11,6 +11,7 @@ import { downloadTextFile } from "@/lib/report";
 import { computeStaleMasterTasks } from "@/lib/staleMaster";
 import { useSetting } from "@/lib/settings";
 import type { MasterTask } from "@/lib/types";
+import { showUndoToast } from "@/lib/toast";
 
 type SortKey = "name" | "sampleCount" | "estimatedSeconds";
 
@@ -102,8 +103,10 @@ export default function MasterSection() {
   }
 
   async function deleteTask(t: MasterTask) {
-    if (!confirm(`「${t.category} / ${t.name}」をマスタから削除しますか?（過去の実績は残ります）`)) return;
     await db.masterTasks.delete(t.id);
+    showUndoToast(`「${t.category} / ${t.name}」をマスタから削除しました`, async () => {
+      await db.masterTasks.add(t);
+    });
   }
 
   async function createNew() {
