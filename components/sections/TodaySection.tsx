@@ -26,12 +26,17 @@ import { computeStreakDays } from "@/lib/streak";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
-import { CONDITION_LEVELS, dominantConditionLevel } from "@/lib/condition";
+import { CONDITION_LEVELS, dominantConditionLevel, computeProductivityByCondition } from "@/lib/condition";
 import { completeTodoTask } from "@/lib/todo";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { haversineDistanceMeters } from "@/lib/geo";
-import { refreshWeatherAndFindAlerts, type CurrentWeatherReading, type WeatherAlert } from "@/lib/weather";
+import {
+  refreshWeatherAndFindAlerts,
+  computeProductivityByWeather,
+  type CurrentWeatherReading,
+  type WeatherAlert,
+} from "@/lib/weather";
 import { fireConfetti } from "@/lib/confetti";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
@@ -1850,6 +1855,51 @@ export default function TodaySection({
   const latestConditionLevel =
     conditionLogs && conditionLogs.length > 0 ? conditionLogs[conditionLogs.length - 1].level : null;
 
+  // 条件付き見積もり警告: 現在の体調・天気から、既存の分析データ(体調別/天気別の生産性)を使い
+  // 「今日はいつもよりどのくらいかかりそうか」を一言添える(通知ではなく控えめなインライン表示)。
+  // 上のconditionLogsは本日分だけに絞られているため、履歴分析用に全期間を別途取得する
+  const allConditionLogsForEstimate = useLiveQuery(() => db.conditionLogs.toArray(), []);
+  const weatherForecastsForEstimate = useLiveQuery(() => db.weatherForecasts.toArray(), []);
+  const conditionProductivity = useMemo(
+    () =>
+      allMasterTasks && projectRecords && allConditionLogsForEstimate
+        ? computeProductivityByCondition(allConditionLogsForEstimate, projectRecords, allMasterTasks)
+        : [],
+    [allMasterTasks, projectRecords, allConditionLogsForEstimate]
+  );
+  const weatherProductivityForEstimate = useMemo(
+    () =>
+      allMasterTasks && projectRecords && weatherForecastsForEstimate
+        ? computeProductivityByWeather(weatherForecastsForEstimate, projectRecords, allMasterTasks)
+        : [],
+    [allMasterTasks, projectRecords, weatherForecastsForEstimate]
+  );
+  const estimateAdjustment = useMemo(() => {
+    const MIN_SAMPLES = 3;
+    const factors: string[] = [];
+    let totalShortfallPct = 0;
+    let count = 0;
+    if (latestConditionLevel) {
+      const row = conditionProductivity.find((r) => r.level === latestConditionLevel);
+      if (row && row.sampleCount >= MIN_SAMPLES && row.avgProductivityPct < 95) {
+        totalShortfallPct += 100 - row.avgProductivityPct;
+        count++;
+        factors.push("体調");
+      }
+    }
+    const isRainyNow = (weatherCurrent ?? []).some((c) => c.precipProbability >= 50);
+    if (isRainyNow) {
+      const row = weatherProductivityForEstimate.find((r) => r.bucket === "rain");
+      if (row && row.sampleCount >= MIN_SAMPLES && row.avgProductivityPct < 95) {
+        totalShortfallPct += 100 - row.avgProductivityPct;
+        count++;
+        factors.push("天気");
+      }
+    }
+    if (count === 0) return null;
+    return { factors, avgShortfallPct: Math.round(totalShortfallPct / count) };
+  }, [latestConditionLevel, conditionProductivity, weatherCurrent, weatherProductivityForEstimate]);
+
   return (
     <div className="space-y-4">
       {themedMode && (
@@ -2106,6 +2156,19 @@ export default function TodaySection({
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {estimateAdjustment && (
+        <div className="panel p-4">
+          <p className="text-sm text-cream/80">
+            🔍 今日は{estimateAdjustment.factors.join("・")}の影響で、いつもより
+            <span className="mx-1 font-bold text-alert">+{estimateAdjustment.avgShortfallPct}%</span>
+            ほど時間がかかる見込みです。
+          </p>
+          <p className="mt-1 text-[10px] text-cream/40">
+            過去の{estimateAdjustment.factors.join("・")}別の生産性データ(要注意リスト)から算出した目安です。
+          </p>
         </div>
       )}
 
