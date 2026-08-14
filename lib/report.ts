@@ -1,9 +1,58 @@
+import { subMonths, subWeeks } from "date-fns";
 import type { MasterTask, WorkRecord } from "./types";
 import { aggregateRecords } from "./aggregate";
 import { computeAttentionList } from "./attention";
 import { computeAfterHoursBreakdown } from "./overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "./period";
-import { formatHms } from "./time";
+import { formatHms, todayStr } from "./time";
+
+const WEEKDAY_JP_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
+
+export interface OverlayPoint {
+  key: string;
+  label: string;
+  currentSeconds: number;
+  previousSeconds: number;
+}
+
+// 今週/今月と前週/前月を、同じ日次インデックス(週なら曜日、月なら日付)で
+// 重ね合わせて比較するためのデータを作る。週報・月報の推移グラフで使う
+export function computeDailyOverlayComparison(
+  records: WorkRecord[],
+  kind: "week" | "month",
+  now: Date = new Date()
+): OverlayPoint[] {
+  const currentRange = getPeriodRange({ type: kind }, now);
+  const prevNow = kind === "week" ? subWeeks(now, 1) : subMonths(now, 1);
+  const prevRange = getPeriodRange({ type: kind }, prevNow);
+  if (!currentRange || !prevRange) return [];
+
+  function dailyTotals(range: { start: Date; end: Date }): Map<string, number> {
+    const map = new Map<string, number>();
+    for (const r of records) {
+      if (!isDateStrInRange(r.date, range)) continue;
+      map.set(r.date, (map.get(r.date) ?? 0) + r.seconds);
+    }
+    return map;
+  }
+
+  const currentTotals = dailyTotals(currentRange);
+  const prevTotals = dailyTotals(prevRange);
+  const dayCount = Math.round((currentRange.end.getTime() - currentRange.start.getTime()) / 86400000) + 1;
+
+  const points: OverlayPoint[] = [];
+  for (let i = 0; i < dayCount; i++) {
+    const curDate = new Date(currentRange.start.getTime() + i * 86400000);
+    const prevDate = new Date(prevRange.start.getTime() + i * 86400000);
+    points.push({
+      key: String(i),
+      label: kind === "week" ? WEEKDAY_JP_SHORT[curDate.getDay()] : String(curDate.getDate()),
+      currentSeconds: currentTotals.get(todayStr(curDate)) ?? 0,
+      previousSeconds: prevTotals.get(todayStr(prevDate)) ?? 0,
+    });
+  }
+  return points;
+}
 
 export function generateReportText(
   title: string,

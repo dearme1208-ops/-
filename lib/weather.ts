@@ -116,7 +116,7 @@ export interface WeatherProductivityRow {
 
 // その日に記録された天気予報キャッシュ(複数地点・複数時間帯)の降水確率を平均し、
 // その日全体のおおよその降水確率とする(地点/時間帯を問わず均等に扱う簡易な指標)
-function dailyAvgPrecipProbability(weatherForecasts: WeatherForecast[], date: string): number | null {
+export function dailyAvgPrecipProbability(weatherForecasts: WeatherForecast[], date: string): number | null {
   const points = weatherForecasts.filter((w) => w.date === date).flatMap((w) => w.hourly);
   if (points.length === 0) return null;
   return points.reduce((s, p) => s + p.precipProbability, 0) / points.length;

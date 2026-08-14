@@ -60,6 +60,39 @@ html[data-high-contrast="true"] :focus-visible {
   outline-offset: 2px;
 }
 
+/* 週報・月報の「印刷用に表示」。#report-print-area以外を隠し、演出テーマの配色を
+   無視した白背景/黒文字のシンプルな見た目で印刷する(html2canvasベースのPDF書き出しとは
+   別に、テキストとして選択可能な素の印刷結果が欲しい場合向け) */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #report-print-area,
+  #report-print-area * {
+    visibility: visible;
+  }
+  #report-print-area {
+    position: absolute;
+    inset: 0;
+    background: #fff !important;
+    color: #111 !important;
+  }
+  #report-print-area .panel {
+    background: #fff !important;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+  #report-print-area * {
+    color: #111 !important;
+    border-color: #ccc !important;
+  }
+  #report-print-area svg circle,
+  #report-print-area svg path {
+    stroke: #111 !important;
+  }
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }

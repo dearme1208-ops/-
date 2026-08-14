@@ -9,15 +9,17 @@ import { computeAttentionList, type AttentionRow } from "@/lib/attention";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { baseAccumulatedMs } from "@/lib/tasks";
-import { generateReportText, downloadTextFile } from "@/lib/report";
+import { generateReportText, downloadTextFile, computeDailyOverlayComparison } from "@/lib/report";
 import { exportElementToPdf } from "@/lib/pdfExport";
 import { recordsToIcs } from "@/lib/ics";
+import { dailyAvgPrecipProbability } from "@/lib/weather";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { useSetting } from "@/lib/settings";
 import { effectiveDueDate } from "@/lib/todo";
 import { daysBetweenDateStrs, formatHms, todayStr } from "@/lib/time";
 import type { TodoTask } from "@/lib/types";
 import RankingBarChart from "@/components/charts/RankingBarChart";
+import OverlayLineChart from "@/components/charts/OverlayLineChart";
 
 const TOP_N = 10;
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -41,6 +43,8 @@ export default function ReportSection() {
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const dailyTasks = useLiveQuery(() => db.dailyTasks.toArray(), []);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
+  const projects = useLiveQuery(() => db.projects.toArray(), []);
+  const weatherForecasts = useLiveQuery(() => db.weatherForecasts.toArray(), []);
 
   const title = kind === "week" ? "週報" : "月報";
   const periodLabel = kind === "week" ? "週" : "月";
@@ -111,6 +115,40 @@ export default function ReportSection() {
       }
     }
 
+    // この期間、最も作業時間を投じた案件(案件MVP)。案件に紐づく実績(projectId)を合計する
+    let projectMvp: { title: string; totalSeconds: number } | null = null;
+    if (projects && projects.length > 0) {
+      const byProject = new Map<string, number>();
+      for (const r of periodRecords) {
+        if (!r.projectId) continue;
+        byProject.set(r.projectId, (byProject.get(r.projectId) ?? 0) + r.seconds);
+      }
+      let topId: string | null = null;
+      let topSeconds = 0;
+      for (const [id, seconds] of byProject) {
+        if (seconds > topSeconds) {
+          topId = id;
+          topSeconds = seconds;
+        }
+      }
+      const topProject = topId ? projects.find((p) => p.id === topId) : undefined;
+      if (topProject) projectMvp = { title: topProject.title, totalSeconds: topSeconds };
+    }
+
+    // この期間中、天気変化の通知機能でキャッシュが残っている日ごとの平均降水確率
+    const dailyWeather: { date: string; avgPrecipProbability: number }[] = [];
+    if (range && weatherForecasts) {
+      const dayCount = Math.round((range.end.getTime() - range.start.getTime()) / 86400000) + 1;
+      if (dayCount > 0 && dayCount <= 31) {
+        for (let i = 0; i < dayCount; i++) {
+          const d = new Date(range.start.getTime() + i * 86400000);
+          const dateStr = todayStr(d);
+          const avg = dailyAvgPrecipProbability(weatherForecasts, dateStr);
+          if (avg !== null) dailyWeather.push({ date: dateStr, avgPrecipProbability: Math.round(avg) });
+        }
+      }
+    }
+
     return {
       rangeLabel,
       ranking,
@@ -125,9 +163,16 @@ export default function ReportSection() {
       overdueTodos,
       paceWarning,
       periodRecords,
+      projectMvp,
+      dailyWeather,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, masterTasks, dailyTasks, todoTasks, kind, afterHoursCutoff, standardDailySeconds, today]);
+  }, [records, masterTasks, dailyTasks, todoTasks, projects, weatherForecasts, kind, afterHoursCutoff, standardDailySeconds, today]);
+
+  const overlayPoints = useMemo(() => {
+    if (!records) return [];
+    return computeDailyOverlayComparison(records, kind);
+  }, [records, kind]);
 
   function download() {
     if (!records || !masterTasks) return;
@@ -170,6 +215,53 @@ export default function ReportSection() {
     }
   }
 
+  // バックエンドを介さず、演出テーマや当アプリ自体に依存しない単一の静的HTMLファイルとして
+  // 書き出す。ダウンロードしたファイルをそのまま他者にメール添付/共有すれば、
+  // ブラウザさえあればオフラインでも開いて見せられる
+  function downloadStaticHtml() {
+    if (!data) return;
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const rankingRows = data.ranking
+      .slice(0, TOP_N)
+      .map(
+        (r) =>
+          `<tr><td>${esc(r.category)}</td><td>${esc(r.name)}</td><td style="text-align:right">${formatHms(r.totalSeconds)}</td><td style="text-align:right">${r.count}件</td></tr>`
+      )
+      .join("");
+    const attentionRows = data.attention
+      .map(
+        (a) =>
+          `<li>${esc(a.category)} / ${esc(a.name)}: 想定${formatHms(a.estimatedSeconds)} → 平均${formatHms(a.avgSeconds)}（+${Math.round(a.overRatio * 100)}%）</li>`
+      )
+      .join("");
+    const html = `<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>${esc(title)} ${esc(data.rangeLabel)}</title>
+<style>
+body{font-family:-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;max-width:720px;margin:32px auto;padding:0 16px;color:#222;background:#fff;line-height:1.6}
+h1{font-size:22px;margin-bottom:4px}
+h2{font-size:15px;margin:28px 0 8px;border-bottom:2px solid #333;padding-bottom:4px}
+.meta{color:#666;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{border-bottom:1px solid #ddd;padding:6px 8px}
+.stat{display:inline-block;margin:4px 16px 4px 0}
+.stat b{font-size:18px;display:block}
+ul{padding-left:20px;font-size:13px}
+</style></head><body>
+<h1>${esc(title)}</h1>
+<p class="meta">${esc(data.rangeLabel)}　生成日時: ${esc(new Date().toLocaleString("ja-JP"))}</p>
+<h2>サマリー</h2>
+<div class="stat">合計作業時間<b>${formatHms(data.totalSeconds)}</b></div>
+<div class="stat">記録件数<b>${data.totalCount}件</b></div>
+<div class="stat">要注意項目<b>${data.attention.length}件</b></div>
+<h2>作業時間ランキング（上位${Math.min(TOP_N, data.ranking.length)}件）</h2>
+<table><tr><th>区分</th><th>作業名</th><th>合計時間</th><th>件数</th></tr>${rankingRows}</table>
+${data.attention.length > 0 ? `<h2>要注意項目</h2><ul>${attentionRows}</ul>` : ""}
+${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
+</body></html>`;
+    const label = kind === "week" ? "weekly" : "monthly";
+    downloadTextFile(`report_${label}_${todayStr()}.html`, html);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -191,6 +283,17 @@ export default function ReportSection() {
         <button className="btn-pill-outline text-sm" onClick={downloadPdf} disabled={!data || pdfExporting}>
           {pdfExporting ? "PDF作成中..." : "ダウンロード (.pdf)"}
         </button>
+        <button className="btn-pill-outline text-sm" onClick={downloadStaticHtml} disabled={!data}>
+          静的HTMLで書き出す
+        </button>
+        <button
+          className="btn-pill-outline text-sm print:hidden"
+          onClick={() => window.print()}
+          disabled={!data}
+          title="演出テーマを外したシンプルな見た目で印刷します"
+        >
+          🖨 印刷用に表示
+        </button>
         <button
           className="btn-pill-outline text-sm"
           onClick={downloadIcs}
@@ -206,7 +309,7 @@ export default function ReportSection() {
       ) : data.ranking.length === 0 ? (
         <div className="panel p-6 text-center text-sm text-cream/50">この期間の実績データはまだありません。</div>
       ) : (
-        <div ref={reportRef} className="space-y-4">
+        <div ref={reportRef} id="report-print-area" className="space-y-4">
           <div className="panel p-5">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
@@ -302,6 +405,59 @@ export default function ReportSection() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {data.projectMvp && (
+            <div className="panel flex items-center gap-3 p-4">
+              <span className="text-3xl">🏆</span>
+              <div className="min-w-0">
+                <div className="text-xs text-cream/50">今{periodLabel}の案件MVP（最も時間を投じた案件）</div>
+                <div className="truncate text-sm font-bold text-cream">{data.projectMvp.title}</div>
+                <div className="font-display text-lg font-bold tabular-nums text-cream">
+                  {formatHms(data.projectMvp.totalSeconds)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {overlayPoints.length > 0 && (
+            <div className="panel p-4">
+              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
+                📈 前{periodLabel}との重ね合わせ比較（日別）
+              </h3>
+              <OverlayLineChart
+                points={overlayPoints.map((p) => ({
+                  key: p.key,
+                  label: p.label,
+                  currentSeconds: p.currentSeconds,
+                  previousSeconds: p.previousSeconds,
+                }))}
+                formatValue={formatHms}
+                currentLabel={`今${periodLabel}`}
+                previousLabel={`前${periodLabel}`}
+              />
+            </div>
+          )}
+
+          {data.dailyWeather.length > 0 && (
+            <div className="panel p-4 print:hidden">
+              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">🌤 期間中の天気（降水確率）</h3>
+              <div className="flex flex-wrap gap-2 text-xs">
+                {data.dailyWeather.map((w) => (
+                  <span
+                    key={w.date}
+                    className={`rounded-full border px-2.5 py-1 ${
+                      w.avgPrecipProbability >= 50 ? "border-alert/40 text-alert" : "border-cream/15 text-cream/70"
+                    }`}
+                  >
+                    {w.date.slice(5)}: {w.avgPrecipProbability >= 50 ? "☔" : "☀️"} {w.avgPrecipProbability}%
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] text-cream/40">
+                天気変化の通知機能でキャッシュされた予報データが残っている日のみ表示します。
+              </p>
             </div>
           )}
 
