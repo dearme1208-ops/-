@@ -54,6 +54,14 @@ const MIN_LABEL_SPACING_PX = 50;
 
 type ViewKey = "myday" | "important" | "planned" | "overdue" | `list:${string}`;
 type DisplayMode = "list" | "gantt" | "calendar" | "kanban";
+
+interface SavedTodoView {
+  id: string;
+  name: string;
+  filterTag: string;
+  filterCategory: string;
+  filterCustomer: string;
+}
 type KanbanAxis = "tag" | "category";
 
 // スキームなしで貼られたURL（例: example.com）もリンクボタンから開けるよう補う
@@ -88,6 +96,30 @@ export default function TodoSection({
   const [filterTag, setFilterTag] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [filterCustomer, setFilterCustomer] = useState("");
+  // 対応状況・分類・客先の組み合わせに名前を付けて保存し、1タップで呼び出せるようにする
+  const [savedViewsJson, setSavedViewsJson] = useSetting("todo.savedViews", "[]");
+  const savedViews: SavedTodoView[] = useMemo(() => {
+    try {
+      const parsed = JSON.parse(savedViewsJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [savedViewsJson]);
+  function saveCurrentAsView() {
+    const name = prompt("この条件に名前を付けて保存します");
+    if (!name || !name.trim()) return;
+    const view: SavedTodoView = { id: uid(), name: name.trim(), filterTag, filterCategory, filterCustomer };
+    setSavedViewsJson(JSON.stringify([...savedViews, view]));
+  }
+  function applySavedView(view: SavedTodoView) {
+    setFilterTag(view.filterTag);
+    setFilterCategory(view.filterCategory);
+    setFilterCustomer(view.filterCustomer);
+  }
+  function deleteSavedView(id: string) {
+    setSavedViewsJson(JSON.stringify(savedViews.filter((v) => v.id !== id)));
+  }
   const [kanbanAxis, setKanbanAxis] = useState<KanbanAxis>("tag");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
@@ -734,6 +766,27 @@ export default function TodoSection({
           </button>
         )}
       </div>
+
+      {(savedViews.length > 0 || (filterTag || filterCategory || filterCustomer)) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {savedViews.length > 0 && <span className="text-xs text-cream/40">保存済みビュー:</span>}
+          {savedViews.map((v) => (
+            <div key={v.id} className="flex items-center gap-1 rounded-full border border-cream/20 py-1 pl-1 pr-2">
+              <button className="rounded-full px-2 py-0.5 text-xs text-cream hover:bg-cream/10" onClick={() => applySavedView(v)}>
+                {v.name}
+              </button>
+              <button className="text-cream/30 hover:text-alert" onClick={() => deleteSavedView(v.id)} aria-label="削除">
+                ✕
+              </button>
+            </div>
+          ))}
+          {(filterTag || filterCategory || filterCustomer) && (
+            <button className="btn-pill-outline text-xs" onClick={saveCurrentAsView}>
+              + この条件を保存
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap justify-end gap-2">
         <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
@@ -1465,11 +1518,16 @@ function TaskRow({
   const overdue = !task.completed && !!dueDate && dueDate < today;
   const dueToday = !task.completed && !!dueDate && dueDate === today;
   const doneCount = subtasks.filter((s) => s.completed).length;
+  // 期日がなく重要でもない、長期間手つかずのタスクは経過日数に応じて徐々に色褪せさせる
+  // (期日ベースの赤系警告とは重ならない範囲だけを対象にする、静かな気づきのための表現)
+  const ageDays = task.completed || dueDate || task.important ? 0 : daysBetweenDateStrs(todayStr(new Date(task.createdAt)), today);
+  const agingClass = ageDays >= 30 ? "opacity-45 grayscale" : ageDays >= 14 ? "opacity-70 grayscale-[50%]" : "";
   return (
     <div
-      className={`flex items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 ${task.completed ? "opacity-50" : ""} ${
-        overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""
-      }`}
+      title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
+      className={`flex items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 transition-[opacity,filter] ${
+        task.completed ? "opacity-50" : agingClass
+      } ${overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""}`}
     >
       <button
         onClick={onToggleComplete}
