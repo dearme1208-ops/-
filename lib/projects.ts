@@ -1,11 +1,30 @@
 import { db, uid } from "./db";
-import type { ProjectItem } from "./types";
-import type { ParsedProjectRow } from "./projectsCsv";
+import type { ProjectItem, ProjectStage } from "./types";
+import type { ParsedProjectRow, ParsedProjectStage } from "./projectsCsv";
 
 // 案件のマッチングキー。期日は先方で動くことがあるためキーに含めず、
 // 件名・詳細作業名の組み合わせで同一案件とみなす
 function matchKey(title: string, workName: string): string {
   return `${title}::${workName}`;
+}
+
+// CSVで指定された段階リストを既存の段階とタイトルでマッチングし、
+// 完了状態(completed/completedCount)は引き継ぎつつタイトル・期日・目標件数を更新する。
+// 既存に無いタイトルは新規段階として追加する。CSVの段階リストが未定義の行は
+// この関数を呼ばず、既存の段階に一切触れない
+function mergeStages(existingStages: ProjectStage[] | undefined, csvStages: ParsedProjectStage[]): ProjectStage[] {
+  const existingByTitle = new Map((existingStages ?? []).map((s) => [s.title, s]));
+  return csvStages.map((s) => {
+    const existing = existingByTitle.get(s.title);
+    return {
+      id: existing?.id ?? uid(),
+      title: s.title,
+      dueDate: s.dueDate,
+      targetCount: s.targetCount,
+      completed: existing?.completed ?? false,
+      completedCount: existing?.completedCount,
+    };
+  });
 }
 
 export async function upsertProjectsFromCsv(
@@ -47,6 +66,7 @@ export async function upsertProjectsFromCsv(
           createdAt,
           completedAt,
           fromImport: true,
+          ...(row.stages ? { stages: mergeStages(existing.stages, row.stages) } : {}),
         });
         updated++;
       } else {
@@ -59,6 +79,7 @@ export async function upsertProjectsFromCsv(
           createdAt,
           completedAt,
           fromImport: true,
+          ...(row.stages && row.stages.length > 0 ? { stages: mergeStages(undefined, row.stages) } : {}),
         };
         await db.projects.add(item);
         created++;

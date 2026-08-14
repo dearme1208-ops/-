@@ -1205,6 +1205,11 @@ function TaskBlock({
   onToggleSubtask: (sub: TodoTask) => void;
 }) {
   const today = todayStr();
+  const [showCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
+  const showCompletedSubtasks = showCompletedSubtasksStr === "true";
+  // 進捗表示(TaskRow内の「完了数/全数」)は全サブタスクを対象にする一方、
+  // ここでの一覧描画だけ設定に応じて完了済みを間引く
+  const visibleSubtasks = showCompletedSubtasks ? subtasks : subtasks.filter((s) => !s.completed);
   return (
     <div className="space-y-1">
       <TaskRow
@@ -1215,9 +1220,14 @@ function TaskBlock({
         onToggleImportant={onToggleImportant}
         onOpenDetail={onOpenDetail}
       />
-      {subtasks.length > 0 && (
+      {visibleSubtasks.length > 0 && (
         <div className="ml-7 space-y-1 border-l border-cream/10 pl-3">
-          {subtasks.map((sub) => {
+          {!showCompletedSubtasks && visibleSubtasks.length < subtasks.length && (
+            <div className="text-[10px] text-cream/30">
+              完了済み{subtasks.length - visibleSubtasks.length}件を非表示中
+            </div>
+          )}
+          {visibleSubtasks.map((sub) => {
             const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
             const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
             return (

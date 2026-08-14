@@ -74,6 +74,10 @@ export default function SettingsSection() {
   const tagPresets = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
   const [categoryPresetsJson, setCategoryPresetsJson] = useSetting("todo.categoryPresets", "[]");
   const categoryPresets = useMemo(() => parsePresetList(categoryPresetsJson), [categoryPresetsJson]);
+  const [showCompletedSubtasksStr, setShowCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
+  const showCompletedSubtasks = showCompletedSubtasksStr === "true";
+  const [showCompletedStagesStr, setShowCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
+  const showCompletedStages = showCompletedStagesStr === "true";
   const [todoReminderEnabledStr, setTodoReminderEnabledStr] = useSetting("todo.reminderEnabled", "true");
   const todoReminderEnabled = todoReminderEnabledStr === "true";
   const [todoReminderDaysBefore, setTodoReminderDaysBefore] = useSetting("todo.reminderDaysBefore", "1");
@@ -1068,6 +1072,27 @@ export default function SettingsSection() {
         <PresetListEditor presets={categoryPresets} onAdd={addCategoryPreset} onRemove={removeCategoryPreset} placeholder="分類名" />
         <p className="text-xs text-cream/50">
           分類には既定値はありません。ここで登録したものだけがドロップダウン・かんばんの列に出てきます（自由入力でタスクに設定はできますが、ここで登録するまで選択肢やかんばんの列にはなりません）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">完了済みのサブタスク・段階の表示</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={showCompletedSubtasks ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowCompletedSubtasksStr(showCompletedSubtasks ? "false" : "true")}
+          >
+            ToDoの完了済みサブタスクを表示: {showCompletedSubtasks ? "ON" : "OFF"}
+          </button>
+          <button
+            className={showCompletedStages ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowCompletedStagesStr(showCompletedStages ? "false" : "true")}
+          >
+            案件の完了済み段階を表示: {showCompletedStages ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          OFFにすると、親タスク・案件の下に並ぶ完了済みのサブタスク・段階を一覧から隠します（データ自体は消えません。進捗率・件数の集計には引き続き含まれます）。
         </p>
       </div>
 

@@ -732,6 +732,10 @@ function ProjectRow({
   themedMode?: ThemedMode | null;
 }) {
   const today = todayStr();
+  const [showCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
+  const showCompletedStages = showCompletedStagesStr === "true";
+  // 進捗率・段階数の表示は全段階を対象にする一方、ここでの一覧描画だけ設定に応じて完了済みを間引く
+  const visibleStages = showCompletedStages ? project.stages ?? [] : (project.stages ?? []).filter((s) => !isStageDone(s));
   return (
     <div
       className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""} ${
@@ -785,7 +789,12 @@ function ProjectRow({
               />
             </div>
             <div className="mt-1.5 space-y-1">
-              {project.stages.map((stage) => {
+              {!showCompletedStages && visibleStages.length < project.stages.length && (
+                <div className="text-[10px] text-cream/30">
+                  完了済み{project.stages.length - visibleStages.length}段階を非表示中
+                </div>
+              )}
+              {visibleStages.map((stage) => {
                 const seconds = stageSecondsFor(stage.id);
                 const isCountBased = stage.targetCount != null;
                 const done = isStageDone(stage);
