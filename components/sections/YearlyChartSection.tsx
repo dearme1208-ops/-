@@ -11,6 +11,7 @@ import {
   pickVolatileMonths,
 } from "@/lib/yearlyChart";
 import { formatHms } from "@/lib/time";
+import { computeBadgeProgress } from "@/lib/badges";
 import StackedComboChart, { type StackedComboPoint } from "@/components/charts/StackedComboChart";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -81,6 +82,11 @@ export default function YearlyChartSection() {
 
   const totalYearSeconds = stats.reduce((s, m) => s + m.totalSeconds, 0);
   const totalOvertimeSeconds = stats.reduce((s, m) => s + m.overtimeSeconds, 0);
+  const bestMonth = useMemo(
+    () => stats.reduce((best: (typeof stats)[number] | null, m) => (!best || m.totalSeconds > best.totalSeconds ? m : best), null),
+    [stats]
+  );
+  const badgeProgress = useMemo(() => computeBadgeProgress(records ?? []), [records]);
 
   return (
     <div className="space-y-4">
@@ -100,6 +106,38 @@ export default function YearlyChartSection() {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">📅 年間サマリー</h3>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="panel bg-ink/40 p-3">
+            <div className="text-xs text-cream/50">年度合計</div>
+            <div className="font-display text-lg font-bold tabular-nums text-cream">{formatHms(totalYearSeconds)}</div>
+          </div>
+          {bestMonth && bestMonth.totalSeconds > 0 && (
+            <div className="panel bg-ink/40 p-3">
+              <div className="text-xs text-cream/50">ベスト月</div>
+              <div className="font-display text-lg font-bold tabular-nums text-cream">{bestMonth.label}</div>
+              <div className="text-[10px] text-cream/40">{formatHms(bestMonth.totalSeconds)}</div>
+            </div>
+          )}
+          {badgeProgress.map((b) => (
+            <div key={b.category} className="panel bg-ink/40 p-3">
+              <div className="text-xs text-cream/50">
+                {b.icon} {b.label}
+              </div>
+              <div className="font-display text-lg font-bold tabular-nums text-cream">
+                {b.currentValue}
+                {b.unit}
+              </div>
+              <div className="text-[10px] text-cream/40">
+                {b.achievedThresholds.length > 0 && `達成: ${b.achievedThresholds.join("/")}${b.unit} `}
+                {b.nextThreshold !== null ? `次の目標: ${b.nextThreshold}${b.unit}` : "全マイルストーン達成"}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="panel p-4">
