@@ -83,20 +83,47 @@ function findCurrentPrecip(hourly: HourlyPrecipPoint[], nowMs: number): HourlyPr
   return current ?? sorted[0];
 }
 
+// 「今」以降(現在のバケツを含む)で、最初に降水確率が閾値以上になる時間帯を返す。
+// 通知の重複排除・leadHoursの制限は行わず、取得済みの予報全体(当日+翌日早朝まで)から探す。
+// 常時表示用(通知したかどうかに関わらず「次に閾値を超えるのはいつか」を示すため)
+export function findNextThresholdCrossing(
+  hourly: HourlyPrecipPoint[],
+  nowMs: number,
+  thresholdPct: number
+): UpcomingRainTransition | null {
+  if (hourly.length === 0) return null;
+  const sorted = [...hourly].sort((a, b) => new Date(a.atIso).getTime() - new Date(b.atIso).getTime());
+  let startIdx = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    if (new Date(sorted[i].atIso).getTime() <= nowMs) startIdx = i;
+    else break;
+  }
+  for (let i = startIdx; i < sorted.length; i++) {
+    const p = sorted[i];
+    if (p.precipProbability >= thresholdPct) {
+      const t = new Date(p.atIso).getTime();
+      return { atIso: p.atIso, hoursUntil: Math.max(0, (t - nowMs) / 3600000), precipProbability: p.precipProbability };
+    }
+  }
+  return null;
+}
+
 export interface WeatherRefreshResult {
   alerts: WeatherAlert[];
   current: CurrentWeatherReading[];
+  nextCrossings: WeatherAlert[];
 }
 
 // 登録地点ごとに、直近30分以内に取得済みでなければ天気予報を再取得してキャッシュし、
-// 通知すべき変化(閾値超え)と、変化の有無に関わらず「今の降水確率」を返す。取得に失敗した
-// 場合は保存済みの(古い)データがあればそれを使う(アプリを開いている間に取れた時点の情報、という前提のため)
+// 通知すべき変化(閾値超え)と、変化の有無に関わらず「今の降水確率」「次に閾値を超える時間帯」を返す。
+// 取得に失敗した場合は保存済みの(古い)データがあればそれを使う(アプリを開いている間に取れた時点の情報、という前提のため)
 export async function refreshWeatherAndFindAlerts(
   places: WeatherPlace[],
   opts: { leadHours: number; thresholdPct: number; nowMs: number; todayDateStr: string; force?: boolean }
 ): Promise<WeatherRefreshResult> {
   const alerts: WeatherAlert[] = [];
   const current: CurrentWeatherReading[] = [];
+  const nextCrossings: WeatherAlert[] = [];
   for (const place of places) {
     const id = `${place.id}::${opts.todayDateStr}`;
     let record = await db.weatherForecasts.get(id);
@@ -134,6 +161,10 @@ export async function refreshWeatherAndFindAlerts(
       alerts.push({ placeId: place.id, placeLabel: place.label, ...transition });
       await db.weatherForecasts.update(id, { notifiedForIso: transition.atIso });
     }
+    const crossing = findNextThresholdCrossing(record.hourly, opts.nowMs, opts.thresholdPct);
+    if (crossing) {
+      nextCrossings.push({ placeId: place.id, placeLabel: place.label, ...crossing });
+    }
   }
-  return { alerts, current };
+  return { alerts, current, nextCrossings };
 }

@@ -159,6 +159,7 @@ export default function TodaySection({
   const weatherPlaces = useLiveQuery(() => db.weatherPlaces.toArray(), []);
   const [weatherAlert, setWeatherAlert] = useState<WeatherAlert | null>(null);
   const [weatherCurrent, setWeatherCurrent] = useState<CurrentWeatherReading[]>([]);
+  const [weatherNextCrossings, setWeatherNextCrossings] = useState<WeatherAlert[]>([]);
   const [weatherCheckError, setWeatherCheckError] = useState<string | null>(null);
   const [weatherChecking, setWeatherChecking] = useState(false);
   const [weatherLastCheckedAt, setWeatherLastCheckedAt] = useState<number | null>(null);
@@ -811,7 +812,7 @@ export default function TodaySection({
       const thresholdPct = Math.min(100, Math.max(0, Number(weatherThresholdStr) || 50));
       setWeatherChecking(true);
       try {
-        const { alerts, current } = await refreshWeatherAndFindAlerts(weatherPlaces, {
+        const { alerts, current, nextCrossings } = await refreshWeatherAndFindAlerts(weatherPlaces, {
           leadHours,
           thresholdPct,
           nowMs: Date.now(),
@@ -821,6 +822,7 @@ export default function TodaySection({
         setWeatherCheckError(null);
         setWeatherLastCheckedAt(Date.now());
         setWeatherCurrent(current);
+        setWeatherNextCrossings(nextCrossings);
         for (const alert of alerts) {
           const hourLabel = formatClock(new Date(alert.atIso).getTime());
           notify(
@@ -1996,12 +1998,20 @@ export default function TodaySection({
             </button>
           </div>
           {weatherCurrent.length > 0 && (
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-cream/70">
-              {weatherCurrent.map((c) => (
-                <span key={c.placeId}>
-                  {c.placeLabel}: 降水確率{c.precipProbability}%（{formatClock(new Date(c.atIso).getTime())}時点）
-                </span>
-              ))}
+            <div className="flex flex-col gap-1 text-cream/70">
+              {weatherCurrent.map((c) => {
+                const next = weatherNextCrossings.find((n) => n.placeId === c.placeId);
+                return (
+                  <span key={c.placeId}>
+                    {c.placeLabel}: 現在 降水確率{c.precipProbability}%（{formatClock(new Date(c.atIso).getTime())}時点）
+                    {next
+                      ? next.hoursUntil <= 0.01
+                        ? `・すでに${weatherThresholdStr}%以上です`
+                        : `・次に${weatherThresholdStr}%以上: ${formatClock(new Date(next.atIso).getTime())}頃（${next.precipProbability}%）`
+                      : `・当面${weatherThresholdStr}%以上の予報なし`}
+                  </span>
+                );
+              })}
             </div>
           )}
         </div>
