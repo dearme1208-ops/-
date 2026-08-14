@@ -337,6 +337,26 @@ export default function SettingsSection() {
     setBackupStatus("バックアップをダウンロードしました。");
   }
 
+  // バックエンド・クラウド同期を持たないこのアプリで、他の自分の端末にその場でデータを
+  // 移したい場合向け。OSの共有機能(AirDrop/近くのデバイス/Bluetooth等)経由でファイルを
+  // 直接渡せるので、サーバーを介さず「今だけ・この2台だけ」で完結する
+  async function shareBackup() {
+    const data = await exportBackup();
+    const file = new File([JSON.stringify(data, null, 2)], `koutei-hyo_backup_${todayStr()}.json`, {
+      type: "application/json",
+    });
+    if (typeof navigator === "undefined" || !navigator.share || !navigator.canShare?.({ files: [file] })) {
+      setBackupStatus("この端末・ブラウザは共有機能に対応していません。「バックアップをダウンロード」をご利用ください。");
+      return;
+    }
+    try {
+      await navigator.share({ files: [file], title: "工程表バックアップ" });
+      setBackupStatus("共有しました。");
+    } catch {
+      // ユーザーがキャンセルした場合など。エラー表示は不要
+    }
+  }
+
   async function restoreBackup(file: File) {
     const text = await file.text();
     let data: BackupFile;
@@ -1468,6 +1488,13 @@ export default function SettingsSection() {
           <button className="btn-pill-outline text-sm" onClick={downloadBackup}>
             バックアップをダウンロード
           </button>
+          <button
+            className="btn-pill-outline text-sm"
+            onClick={shareBackup}
+            title="AirDrop/近くのデバイス等、OSの共有機能でそのまま他の端末に渡せます"
+          >
+            📤 他の端末に共有
+          </button>
           <button className="btn-pill-outline text-sm" onClick={() => restoreInputRef.current?.click()}>
             バックアップから復元
           </button>
@@ -1485,7 +1512,7 @@ export default function SettingsSection() {
         </div>
         {backupStatus && <p className="text-xs text-cream/70">{backupStatus}</p>}
         <p className="text-xs text-cream/50">
-          このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は現在のデータを全て上書きします。
+          このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は現在のデータを全て上書きします。「他の端末に共有」は、クラウドを経由せずOSの共有機能(AirDrop/近くのデバイス等)でその場だけ他の自分の端末にファイルを渡したい場合にお使いください。渡した端末側では「バックアップから復元」で取り込めます。
         </p>
       </div>
 
