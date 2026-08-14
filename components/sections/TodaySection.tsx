@@ -45,6 +45,7 @@ import {
 import type { DailyTask, GeoPlace, ProjectItem, TimeSegment, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import RadialTimer from "@/components/ui/RadialTimer";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
 import AddTimeDialog from "@/components/sections/AddTimeDialog";
@@ -2601,12 +2602,17 @@ export default function TodaySection({
                   )}
                 </div>
                 <div className="text-right">
-                  <div
-                    className={`font-display text-2xl font-bold tabular-nums ${
-                      overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : "text-cream"
-                    } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
-                  >
-                    {formatMsClock(elapsedMs)}
+                  <div className="flex items-center justify-end gap-2">
+                    {task.status === "running" && predictedSecondsForTask > 0 && (
+                      <RadialTimer progressPct={(elapsedMs / predMs) * 100} overEstimate={overEstimate} />
+                    )}
+                    <div
+                      className={`font-display text-2xl font-bold tabular-nums ${
+                        overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : "text-cream"
+                      } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
+                    >
+                      {formatMsClock(elapsedMs)}
+                    </div>
                   </div>
                   {predictedSecondsForTask > 0 && (task.status === "running" || task.status === "paused") && (
                     <div
