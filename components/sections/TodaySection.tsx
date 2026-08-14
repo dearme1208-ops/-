@@ -64,6 +64,8 @@ export default function TodaySection({
   onOpenProjectEdit: (projectId: string) => void;
 }) {
   const date = todayStr();
+  // 構造化されたタスクとは別の、自由記述の日次ジャーナル。日付ごとに保存する
+  const [dailyJournal, setDailyJournal] = useSetting(`journal.daily.${date}`, "");
   const [now, setNow] = useState(() => Date.now());
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -2118,6 +2120,17 @@ export default function TodaySection({
           </button>
         </div>
       )}
+
+      <div className="panel space-y-2 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">📓 今日の記録</h3>
+        <textarea
+          value={dailyJournal}
+          onChange={(e) => setDailyJournal(e.target.value)}
+          placeholder="タスクに縛られない、今日の気づき・メモを自由に書けます"
+          rows={2}
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+      </div>
 
       {favorites && favorites.length > 0 && (
         <div className="panel p-4">

@@ -60,6 +60,10 @@ export default function ReportSection() {
   }, [kind]);
   const [note, setNote] = useSetting(`report.note.${kind}.${periodKey}`, "");
   const [goalCelebratedKey, setGoalCelebratedKey] = useSetting(`report.goalCelebrated.${kind}.${periodKey}`, "");
+  // 負担にならない「1問だけ」の振り返り。自由記述の一言メモとは別に、
+  // 期間ごとに固定の1問だけ答える軽い振り返りの儀式として設ける
+  const reflectionQuestion = kind === "week" ? "今週、一番良かった判断は?" : "今月、一番の成長は?";
+  const [reflectionAnswer, setReflectionAnswer] = useSetting(`report.reflection.${kind}.${periodKey}`, "");
 
   const data = useMemo(() => {
     if (!records || !masterTasks) return null;
@@ -570,6 +574,20 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="panel space-y-2 p-4">
+            <h3 className="font-display text-sm font-bold text-cream/80">🪞 {reflectionQuestion}</h3>
+            <input
+              type="text"
+              value={reflectionAnswer}
+              onChange={(e) => setReflectionAnswer(e.target.value)}
+              placeholder="一言で構いません"
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+            <p className="text-[10px] text-cream/40">
+              負担にならないよう、この1問だけです。答えなくても構いません。
+            </p>
           </div>
 
           <div className="panel space-y-2 p-4">
