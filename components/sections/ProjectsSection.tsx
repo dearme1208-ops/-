@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { upsertProjectsFromCsv } from "@/lib/projects";
+import { upsertProjectsFromCsv, recordBelongsToProject } from "@/lib/projects";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
 import { downloadTextFile } from "@/lib/report";
@@ -100,12 +100,13 @@ export default function ProjectsSection({
     return project.hourlyRate ?? resolveCategoryRate(project.category, categoryRates, defaultHourlyRate);
   }
 
-  // 案件ごとの累計作業時間（全期間の実績を合算）
+  // 案件ごとの累計作業時間（全期間の実績を合算。主案件だけでなく兼務向けの
+  // 追加の案件タグ(secondaryProjectIds)がこの案件を含む実績も合算する）
   const projectTotalSeconds = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of records ?? []) {
-      if (!r.projectId) continue;
-      map.set(r.projectId, (map.get(r.projectId) ?? 0) + r.seconds);
+      const ids = new Set([r.projectId, ...(r.secondaryProjectIds ?? [])].filter((id): id is string => !!id));
+      for (const id of ids) map.set(id, (map.get(id) ?? 0) + r.seconds);
     }
     return map;
   }, [records]);
@@ -185,7 +186,7 @@ export default function ProjectsSection({
     await db.projects.update(item.id, { completedAt });
     if (nowCompleting) {
       fireConfetti();
-      const projectRecords = (records ?? []).filter((r) => r.projectId === item.id);
+      const projectRecords = (records ?? []).filter((r) => recordBelongsToProject(r, item.id));
       const totalSeconds = projectRecords.reduce((s, r) => s + r.seconds, 0);
       const createdStr = todayStr(new Date(item.createdAt));
       const completedStr = todayStr(new Date(completedAt!));

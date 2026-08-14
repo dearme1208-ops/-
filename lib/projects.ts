@@ -1,6 +1,12 @@
 import { db, uid } from "./db";
-import type { ProjectItem, ProjectStage } from "./types";
+import type { ProjectItem, ProjectStage, WorkRecord } from "./types";
 import type { ParsedProjectRow, ParsedProjectStage } from "./projectsCsv";
+
+// 実績がこの案件に属するか。主案件(projectId)だけでなく、兼務・並行作業向けの
+// 追加の案件タグ(secondaryProjectIds)も一致とみなす(集計・レポート用)
+export function recordBelongsToProject(record: WorkRecord, projectId: string): boolean {
+  return record.projectId === projectId || (record.secondaryProjectIds?.includes(projectId) ?? false);
+}
 
 // 案件のマッチングキー。期日は先方で動くことがあるためキーに含めず、
 // 件名・詳細作業名の組み合わせで同一案件とみなす

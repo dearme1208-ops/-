@@ -121,13 +121,14 @@ export default function ReportSection() {
       }
     }
 
-    // この期間、最も作業時間を投じた案件(案件MVP)。案件に紐づく実績(projectId)を合計する
+    // この期間、最も作業時間を投じた案件(案件MVP)。主案件(projectId)だけでなく
+    // 兼務向けの追加の案件タグ(secondaryProjectIds)がこの案件を含む実績も合算する
     let projectMvp: { title: string; totalSeconds: number } | null = null;
     if (projects && projects.length > 0) {
       const byProject = new Map<string, number>();
       for (const r of periodRecords) {
-        if (!r.projectId) continue;
-        byProject.set(r.projectId, (byProject.get(r.projectId) ?? 0) + r.seconds);
+        const ids = new Set([r.projectId, ...(r.secondaryProjectIds ?? [])].filter((id): id is string => !!id));
+        for (const id of ids) byProject.set(id, (byProject.get(id) ?? 0) + r.seconds);
       }
       let topId: string | null = null;
       let topSeconds = 0;

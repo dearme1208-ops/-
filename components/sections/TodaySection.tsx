@@ -76,6 +76,8 @@ export default function TodaySection({
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [stageConfirmTask, setStageConfirmTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
+  // 兼務・並行作業向けに、主案件(projectId)以外の追加の案件タグを付ける小さなモーダルの対象タスク
+  const [secondaryProjectsTask, setSecondaryProjectsTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
   const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
   const [conditionEditTaskId, setConditionEditTaskId] = useState<string | null>(null);
@@ -1545,6 +1547,7 @@ export default function TodaySection({
         seconds: existing.seconds + seconds,
         endedAt: nowMs,
         isTrouble: existing.isTrouble || task.isTrouble,
+        ...(task.secondaryProjectIds ? { secondaryProjectIds: task.secondaryProjectIds } : {}),
       });
     } else {
       await db.records.add({
@@ -1560,6 +1563,7 @@ export default function TodaySection({
         projectId: task.projectId,
         stageId: task.stageId,
         isTrouble: task.isTrouble,
+        secondaryProjectIds: task.secondaryProjectIds,
       });
     }
 
@@ -2427,6 +2431,14 @@ export default function TodaySection({
                     >
                       ✎
                     </button>
+                    <button
+                      onClick={() => setSecondaryProjectsTask(task)}
+                      className={(task.secondaryProjectIds?.length ?? 0) > 0 ? "text-alert" : "text-cream/40 hover:text-cream"}
+                      aria-label="追加の案件タグ"
+                      title="兼務・並行作業向けに、主案件以外の案件にも時間を按分できます"
+                    >
+                      🏷️{(task.secondaryProjectIds?.length ?? 0) > 0 ? task.secondaryProjectIds!.length : ""}
+                    </button>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-display text-base font-bold">{task.name}</span>
@@ -2784,6 +2796,45 @@ export default function TodaySection({
             <button className="text-xs text-cream/50" onClick={() => setPendingStart(null)}>
               キャンセル
             </button>
+          </div>
+        </Modal>
+      )}
+
+      {secondaryProjectsTask && (
+        <Modal title="追加の案件タグ" onClose={() => setSecondaryProjectsTask(null)}>
+          <p className="mb-3 text-xs text-cream/60">
+            兼務・並行作業などで、主案件(
+            {secondaryProjectsTask.projectId ? projectMap.get(secondaryProjectsTask.projectId)?.title ?? "未設定" : "未設定"}
+            )以外にもこの作業の時間を按分したい案件を選べます。集計・レポートの時間合算にのみ使われ、段階の進捗などには影響しません。
+          </p>
+          <div className="max-h-64 space-y-1.5 overflow-y-auto">
+            {(projects ?? [])
+              .filter((p) => p.id !== secondaryProjectsTask.projectId && !p.completedAt)
+              .map((p) => {
+                const checked = secondaryProjectsTask.secondaryProjectIds?.includes(p.id) ?? false;
+                return (
+                  <label
+                    key={p.id}
+                    className="flex items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 text-sm text-cream/80"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={async (e) => {
+                        const current = secondaryProjectsTask.secondaryProjectIds ?? [];
+                        const next = e.target.checked ? [...current, p.id] : current.filter((id) => id !== p.id);
+                        await db.dailyTasks.update(secondaryProjectsTask.id, { secondaryProjectIds: next });
+                        setSecondaryProjectsTask({ ...secondaryProjectsTask, secondaryProjectIds: next });
+                      }}
+                      className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+                    />
+                    {p.title}
+                  </label>
+                );
+              })}
+            {(projects ?? []).filter((p) => p.id !== secondaryProjectsTask.projectId && !p.completedAt).length === 0 && (
+              <p className="text-sm text-cream/50">選択できる他の案件がありません。</p>
+            )}
           </div>
         </Modal>
       )}

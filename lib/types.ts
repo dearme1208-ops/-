@@ -107,6 +107,8 @@ export interface DailyTask {
   autoStartDisabled?: boolean; // true の場合、scheduledTimeになっても自動開始せず時刻の目安表示のみにする
   hasPlan?: boolean; // false の場合、この作業インスタンスには「予定」を設定しない（目安のestimatedSecondsは0扱い）。
   // 未設定/trueは従来通り予定ありとして扱う（テンプレート・予定インポート・クイックスタート等は常に予定あり）
+  secondaryProjectIds?: string[]; // 兼務・並行作業などで、主案件(projectId)以外にも時間を按分したい場合の
+  // 追加の案件タグ。段階完了フロー等には影響せず、集計・レポートでの時間合算にのみ使う
 }
 
 export interface WorkRecord {
@@ -126,6 +128,7 @@ export interface WorkRecord {
   isTrouble?: boolean; // トラブル対応の実績かどうか。詳細作業名が実績ごとに異なるため、
   // ランキング等の集計では詳細作業名を無視し、大項目でひとつにまとめて集計する
   note?: string; // 作業完了時の一言メモ（複数の実績が合算された場合は最後に編集したメモで上書きされる）
+  secondaryProjectIds?: string[]; // 主案件(projectId)以外にも時間を按分したい場合の追加の案件タグ
 }
 
 export interface AppSetting {
