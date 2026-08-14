@@ -72,6 +72,11 @@ export default function SettingsSection() {
   const showAutoAllocate = showAutoAllocateStr === "true";
   const [showSuggestedTaskStr, setShowSuggestedTaskStr] = useSetting("today.showSuggestedTask", "true");
   const showSuggestedTask = showSuggestedTaskStr === "true";
+  const [patternSuggestNotifyEnabledStr, setPatternSuggestNotifyEnabledStr] = useSetting(
+    "notify.patternSuggestEnabled",
+    "false"
+  );
+  const patternSuggestNotifyEnabled = patternSuggestNotifyEnabledStr === "true";
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
   const [standardWorkStart, setStandardWorkStart] = useSetting("today.standardWorkStart", "08:00");
   const [standardWorkEnd, setStandardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
@@ -905,6 +910,17 @@ export default function SettingsSection() {
         <p className="text-xs text-cream/50">
           OFFにしたパネルは本日タブに表示されなくなります（記録や設定自体は消えません。自動配分はモード自体を「オフ」にしても止められますが、ここでOFFにするとパネルごと非表示にできます）。
         </p>
+        <div className="border-t border-cream/10 pt-3">
+          <button
+            className={patternSuggestNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setPatternSuggestNotifyEnabledStr(patternSuggestNotifyEnabled ? "false" : "true")}
+          >
+            パターン学習型の声かけ通知: {patternSuggestNotifyEnabled ? "ON" : "OFF"}
+          </button>
+          <p className="mt-2 text-xs text-cream/50">
+            「そろそろこの作業では?」の提案が出た最初のタイミングで、パネル表示に加えて通知も送ります（同じ提案は1日1回まで）。
+          </p>
+        </div>
       </div>
 
       <div className="panel space-y-3 p-4">

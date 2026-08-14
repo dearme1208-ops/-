@@ -264,6 +264,27 @@ export default function TodaySection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectRecords, nowMinuteBucket, tasks]);
 
+  // パターン学習型の声かけ通知。「そろそろこの作業では?」の提案が出た最初のタイミングで、
+  // パネル表示に加えて通知も送る(同じ提案は1日1回まで、設定書き込みの非同期反映による
+  // 二重通知を防ぐため同期的なrefで先にラッチする)
+  const [patternSuggestNotifyEnabledStr] = useSetting("notify.patternSuggestEnabled", "false");
+  const patternSuggestNotifyEnabled = patternSuggestNotifyEnabledStr === "true";
+  const [patternSuggestNotifiedKey, setPatternSuggestNotifiedKey] = useSetting("notify.patternSuggestNotifiedKey", "");
+  const patternSuggestFiredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!patternSuggestNotifyEnabled || !suggestedTask) return;
+    const key = `${date}::${suggestedTask.category}::${suggestedTask.name}`;
+    if (patternSuggestNotifiedKey === key) return;
+    if (patternSuggestFiredRef.current === key) return;
+    patternSuggestFiredRef.current = key;
+    notify(
+      "💡 そろそろこの作業では?",
+      `${suggestedTask.category} / ${suggestedTask.name}（同じ曜日のこの時間帯によく行っています）`,
+      `pattern-suggest-${key}`
+    );
+    setPatternSuggestNotifiedKey(key);
+  }, [patternSuggestNotifyEnabled, suggestedTask, date, patternSuggestNotifiedKey, setPatternSuggestNotifiedKey]);
+
   useEffect(() => {
     setNotifPermission(getNotificationPermission());
   }, []);
