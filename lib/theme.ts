@@ -17,6 +17,25 @@ export const ACCENT_PRESETS: AccentPreset[] = [
 
 export const DEFAULT_ACCENT_RGB = ACCENT_PRESETS[0].rgb;
 
+// カスタムテーマ("off"の基調色をそのまま初期値にする)。ink=背景、cream=文字、panel=パネル背景
+export const DEFAULT_CUSTOM_INK_RGB = "11 11 12";
+export const DEFAULT_CUSTOM_CREAM_RGB = "233 230 189";
+export const DEFAULT_CUSTOM_PANEL_RGB = "21 21 23";
+
+// 設定保存用の"r g b"形式(Tailwindのrgb(var(--x-rgb) / <alpha-value>)用)と、
+// <input type="color">用の"#rrggbb"形式を相互変換する
+export function rgbSpaceToHex(rgb: string): string {
+  const parts = rgb.trim().split(/\s+/).map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return "#000000";
+  return `#${parts.map((n) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function hexToRgbSpace(hex: string): string {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  if (!m) return "0 0 0";
+  return [m[1], m[2], m[3]].map((h) => parseInt(h, 16)).join(" ");
+}
+
 // ===== 演出テーマ(オフ / ロボトミーコーポレーション風 / VA-11 HALL-A風 / ペルソナ5風 /
 //       ぼくのなつやすみ風 / パワプロ風) =====
 // 各タブから同じ判定・階級ロジックを使い回すための共通定義。

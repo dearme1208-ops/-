@@ -10,7 +10,15 @@ import { exportBackup, importBackup, type BackupFile } from "@/lib/backup";
 import { buildArchive, deleteArchivedRange } from "@/lib/archive";
 import { downloadTextFile } from "@/lib/report";
 import { todayStr } from "@/lib/time";
-import { ACCENT_PRESETS, DEFAULT_ACCENT_RGB } from "@/lib/theme";
+import {
+  ACCENT_PRESETS,
+  DEFAULT_ACCENT_RGB,
+  DEFAULT_CUSTOM_CREAM_RGB,
+  DEFAULT_CUSTOM_INK_RGB,
+  DEFAULT_CUSTOM_PANEL_RGB,
+  hexToRgbSpace,
+  rgbSpaceToHex,
+} from "@/lib/theme";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { parseCategoryRates, serializeCategoryRates } from "@/lib/cost";
@@ -149,6 +157,9 @@ export default function SettingsSection() {
   const [highContrastStr, setHighContrastStr] = useSetting("accessibility.highContrast", "false");
   const highContrast = highContrastStr === "true";
   const [visualMode, setVisualMode] = useSetting("theme.visualMode", "off");
+  const [customInkRgb, setCustomInkRgb] = useSetting("theme.custom.inkRgb", DEFAULT_CUSTOM_INK_RGB);
+  const [customCreamRgb, setCustomCreamRgb] = useSetting("theme.custom.creamRgb", DEFAULT_CUSTOM_CREAM_RGB);
+  const [customPanelRgb, setCustomPanelRgb] = useSetting("theme.custom.panelRgb", DEFAULT_CUSTOM_PANEL_RGB);
   const [applyWordingStr, setApplyWordingStr] = useSetting("theme.applyWording", "true");
   const applyWording = applyWordingStr !== "false";
   const [dailySummaryEnabledStr, setDailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
@@ -1044,11 +1055,17 @@ export default function SettingsSection() {
           >
             ⚾ パワプロ風
           </button>
+          <button
+            className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("custom")}
+          >
+            🎨 カスタム
+          </button>
         </div>
         <p className="text-xs text-cream/50">
-          演出テーマを選ぶと、色や装飾だけでなくアプリ名・タブの呼び名までテーマの世界観のものに総入れ替えされます（例: ぼくのなつやすみ風では「ToDo」が「しゅくだい」に、アプリ名も「なつやすみの しゅくだい」になります）。
+          演出テーマを選ぶと、色や装飾だけでなくアプリ名・タブの呼び名までテーマの世界観のものに総入れ替えされます（例: ぼくのなつやすみ風では「ToDo」が「しゅくだい」に、アプリ名も「なつやすみの しゅくだい」になります）。カスタムは背景・文字・パネルの色だけを自由に選べるモードです（形・アニメーション・文言は変わりません）。
         </p>
-        {visualMode !== "off" && (
+        {visualMode !== "off" && visualMode !== "custom" && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/40 px-3 py-2">
             <div>
               <p className="text-xs font-bold text-cream/80">テーマに合わせた文言を使う</p>
@@ -1093,6 +1110,52 @@ export default function SettingsSection() {
           <p className="text-xs text-cream/50">
             通常表示です。計測中・予測超過の強調表示自体は演出テーマに関わらず常に有効です。
           </p>
+        )}
+        {visualMode === "custom" && (
+          <div className="space-y-3 border-t border-cream/10 pt-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-xs text-cream/70">
+                背景
+                <input
+                  type="color"
+                  value={rgbSpaceToHex(customInkRgb)}
+                  onChange={(e) => setCustomInkRgb(hexToRgbSpace(e.target.value))}
+                  className="h-8 w-12 cursor-pointer rounded border border-cream/20 bg-ink"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs text-cream/70">
+                文字
+                <input
+                  type="color"
+                  value={rgbSpaceToHex(customCreamRgb)}
+                  onChange={(e) => setCustomCreamRgb(hexToRgbSpace(e.target.value))}
+                  className="h-8 w-12 cursor-pointer rounded border border-cream/20 bg-ink"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs text-cream/70">
+                パネル
+                <input
+                  type="color"
+                  value={rgbSpaceToHex(customPanelRgb)}
+                  onChange={(e) => setCustomPanelRgb(hexToRgbSpace(e.target.value))}
+                  className="h-8 w-12 cursor-pointer rounded border border-cream/20 bg-ink"
+                />
+              </label>
+              <button
+                className="btn-pill-outline text-xs"
+                onClick={() => {
+                  setCustomInkRgb(DEFAULT_CUSTOM_INK_RGB);
+                  setCustomCreamRgb(DEFAULT_CUSTOM_CREAM_RGB);
+                  setCustomPanelRgb(DEFAULT_CUSTOM_PANEL_RGB);
+                }}
+              >
+                初期値に戻す
+              </button>
+            </div>
+            <p className="text-xs text-cream/50">
+              背景・文字・パネルの色を自由に選べます。アクセントカラーは上の「アクセントカラー」設定と共通です。
+            </p>
+          </div>
         )}
       </div>
 
