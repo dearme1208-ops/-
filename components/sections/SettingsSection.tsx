@@ -49,6 +49,8 @@ export default function SettingsSection() {
   const [newPlaceLat, setNewPlaceLat] = useState("");
   const [newPlaceLon, setNewPlaceLon] = useState("");
   const [geoPlaceStatus, setGeoPlaceStatus] = useState("");
+  // nullなら新規登録、idが入っていればその地点を編集中（フォームを共用し、保存時の挙動だけ分ける）
+  const [editingPlaceId, setEditingPlaceId] = useState<string | null>(null);
   const [quickStartEnabledStr, setQuickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
   const quickStartEnabled = quickStartEnabledStr === "true";
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
@@ -165,12 +167,47 @@ export default function SettingsSection() {
     );
   }
 
+  function resetGeoPlaceForm() {
+    setNewPlaceLabel("");
+    setNewPlaceCategory("");
+    setNewPlaceName("");
+    setNewPlaceRadius("150");
+    setNewPlaceLat("");
+    setNewPlaceLon("");
+    setEditingPlaceId(null);
+  }
+
+  // 既存地点の「編集」を押した際、フォームにその地点の内容を読み込む（保存はaddGeoPlaceが分岐して行う）
+  function startEditGeoPlace(place: NonNullable<typeof geoPlaces>[number]) {
+    setNewPlaceLabel(place.label);
+    setNewPlaceCategory(place.category);
+    setNewPlaceName(place.name);
+    setNewPlaceRadius(String(place.radiusMeters));
+    setNewPlaceLat(String(place.lat));
+    setNewPlaceLon(String(place.lon));
+    setEditingPlaceId(place.id);
+    setGeoPlaceStatus("");
+  }
+
   async function addGeoPlace() {
     const lat = Number(newPlaceLat);
     const lon = Number(newPlaceLon);
     const radius = Math.max(10, Number(newPlaceRadius) || 150);
     if (!newPlaceLabel.trim() || !newPlaceCategory.trim() || !newPlaceName.trim() || !Number.isFinite(lat) || !Number.isFinite(lon)) {
       setGeoPlaceStatus("地点名・業務区分・作業名・緯度経度（現在地を登録）を入力してください。");
+      return;
+    }
+    if (editingPlaceId) {
+      await db.geoPlaces.update(editingPlaceId, {
+        label: newPlaceLabel.trim(),
+        lat,
+        lon,
+        radiusMeters: radius,
+        category: newPlaceCategory.trim(),
+        name: newPlaceName.trim(),
+      });
+      resetGeoPlaceForm();
+      setGeoPlaceStatus("地点を更新しました。");
       return;
     }
     await db.geoPlaces.add({
@@ -183,17 +220,13 @@ export default function SettingsSection() {
       name: newPlaceName.trim(),
       createdAt: Date.now(),
     });
-    setNewPlaceLabel("");
-    setNewPlaceCategory("");
-    setNewPlaceName("");
-    setNewPlaceRadius("150");
-    setNewPlaceLat("");
-    setNewPlaceLon("");
+    resetGeoPlaceForm();
     setGeoPlaceStatus("地点を登録しました。");
   }
 
   async function removeGeoPlace(id: string) {
     await db.geoPlaces.delete(id);
+    if (editingPlaceId === id) resetGeoPlaceForm();
   }
 
   async function downloadBackup() {
@@ -422,7 +455,12 @@ export default function SettingsSection() {
             {(geoPlaces ?? []).length > 0 && (
               <div className="space-y-1.5">
                 {(geoPlaces ?? []).map((p) => (
-                  <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 text-xs">
+                  <div
+                    key={p.id}
+                    className={`flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs ${
+                      editingPlaceId === p.id ? "bg-cream/10 ring-1 ring-cream/40" : "bg-ink/50"
+                    }`}
+                  >
                     <span className="font-bold text-cream">{p.label}</span>
                     <span className="text-cream/60">
                       {p.category} / {p.name}
@@ -431,14 +469,28 @@ export default function SettingsSection() {
                     <span className="text-cream/30">
                       ({p.lat.toFixed(4)}, {p.lon.toFixed(4)})
                     </span>
-                    <button className="ml-auto text-cream/40 hover:text-alert" onClick={() => removeGeoPlace(p.id)} aria-label="削除">
+                    <button
+                      className="ml-auto text-cream/40 hover:text-cream"
+                      onClick={() => startEditGeoPlace(p)}
+                      aria-label="編集"
+                    >
+                      ✎
+                    </button>
+                    <button className="text-cream/40 hover:text-alert" onClick={() => removeGeoPlace(p.id)} aria-label="削除">
                       ✕
                     </button>
                   </div>
                 ))}
               </div>
             )}
-            <div className="space-y-2 rounded-lg border border-cream/10 p-3 text-xs text-cream/70">
+            <div
+              className={`space-y-2 rounded-lg border p-3 text-xs text-cream/70 ${
+                editingPlaceId ? "border-cream/40 bg-cream/5" : "border-cream/10"
+              }`}
+            >
+              {editingPlaceId && (
+                <p className="text-xs font-bold text-cream">✎ 地点を編集中（保存すると上の一覧に反映されます）</p>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="text"
@@ -494,8 +546,13 @@ export default function SettingsSection() {
                   className="w-28 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
                 />
                 <button className="btn-pill text-xs" onClick={addGeoPlace}>
-                  地点を追加
+                  {editingPlaceId ? "地点を更新" : "地点を追加"}
                 </button>
+                {editingPlaceId && (
+                  <button className="btn-pill-outline text-xs" onClick={resetGeoPlaceForm}>
+                    編集をキャンセル
+                  </button>
+                )}
               </div>
               {geoPlaceStatus && <p className="text-[10px] text-cream/40">{geoPlaceStatus}</p>}
               <p className="text-[10px] text-cream/40">
