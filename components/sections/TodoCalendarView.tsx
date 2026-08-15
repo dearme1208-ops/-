@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { todayStr } from "@/lib/time";
+import { DOW_LABELS, buildMonthGrid, buildWeekGrid } from "@/lib/calendarGrid";
 import type { TodoTask } from "@/lib/types";
 
 export interface SubtaskForCalendar {
@@ -13,18 +14,7 @@ type CalendarEntry =
   | { kind: "task"; task: TodoTask; isStart: boolean; isEnd: boolean }
   | { kind: "subtask"; subtask: TodoTask; parentTitle: string };
 
-const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
-
-function buildMonthGrid(year: number, month: number): Date[] {
-  const firstOfMonth = new Date(year, month, 1);
-  const startOffset = firstOfMonth.getDay();
-  const gridStart = new Date(year, month, 1 - startOffset);
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(gridStart);
-    d.setDate(gridStart.getDate() + i);
-    return d;
-  });
-}
+type Granularity = "month" | "week";
 
 export default function TodoCalendarView({
   tasks,
@@ -36,8 +26,8 @@ export default function TodoCalendarView({
   today: string;
 }) {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const [granularity, setGranularity] = useState<Granularity>("month");
+  const [anchor, setAnchor] = useState(now);
 
   // 開始日(なければ期日)〜期日の各日に、その日がバーの先頭/末尾かどうかとともに登録する。
   // サブタスクは開始日の概念を持たないため、期日1日だけの単発エントリとして登録する
@@ -63,37 +53,63 @@ export default function TodoCalendarView({
     return map;
   }, [tasks, subtasks]);
 
-  const grid = useMemo(() => buildMonthGrid(year, month), [year, month]);
+  const grid = useMemo(
+    () => (granularity === "month" ? buildMonthGrid(anchor.getFullYear(), anchor.getMonth()) : buildWeekGrid(anchor)),
+    [granularity, anchor]
+  );
 
-  function prevMonth() {
-    const d = new Date(year, month - 1, 1);
-    setYear(d.getFullYear());
-    setMonth(d.getMonth());
+  function prev() {
+    if (granularity === "month") {
+      setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1));
+    } else {
+      setAnchor(new Date(anchor.getTime() - 7 * 86400000));
+    }
   }
-  function nextMonth() {
-    const d = new Date(year, month + 1, 1);
-    setYear(d.getFullYear());
-    setMonth(d.getMonth());
+  function next() {
+    if (granularity === "month") {
+      setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1));
+    } else {
+      setAnchor(new Date(anchor.getTime() + 7 * 86400000));
+    }
   }
   function goToday() {
-    setYear(now.getFullYear());
-    setMonth(now.getMonth());
+    setAnchor(now);
   }
+
+  const weekGrid = granularity === "week" ? grid : null;
+  const headerLabel =
+    granularity === "month"
+      ? `${anchor.getFullYear()}年${anchor.getMonth() + 1}月`
+      : weekGrid
+        ? weekGrid[0].getFullYear() === weekGrid[6].getFullYear() && weekGrid[0].getMonth() === weekGrid[6].getMonth()
+          ? `${weekGrid[0].getFullYear()}年${weekGrid[0].getMonth() + 1}月${weekGrid[0].getDate()}日 〜 ${weekGrid[6].getDate()}日`
+          : `${weekGrid[0].getMonth() + 1}月${weekGrid[0].getDate()}日 〜 ${weekGrid[6].getMonth() + 1}月${weekGrid[6].getDate()}日`
+        : "";
 
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="font-display text-base font-bold">
-          {year}年{month + 1}月
-        </h3>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-display text-base font-bold">{headerLabel}</h3>
         <div className="flex items-center gap-1">
-          <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={prevMonth} aria-label="前月">
+          <button
+            className={granularity === "month" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setGranularity("month")}
+          >
+            月
+          </button>
+          <button
+            className={granularity === "week" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setGranularity("week")}
+          >
+            週
+          </button>
+          <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={prev} aria-label={granularity === "month" ? "前月" : "前週"}>
             ‹
           </button>
           <button className="btn-pill-outline text-xs" onClick={goToday}>
-            今月
+            {granularity === "month" ? "今月" : "今週"}
           </button>
-          <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={nextMonth} aria-label="翌月">
+          <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={next} aria-label={granularity === "month" ? "翌月" : "翌週"}>
             ›
           </button>
         </div>
@@ -107,13 +123,13 @@ export default function TodoCalendarView({
           ))}
           {grid.map((date) => {
             const dateStr = todayStr(date);
-            const inMonth = date.getMonth() === month;
+            const inMonth = granularity === "month" ? date.getMonth() === anchor.getMonth() : true;
             const isToday = dateStr === today;
             const items = byDate.get(dateStr) ?? [];
             return (
               <div
                 key={dateStr}
-                className={`min-h-[76px] rounded-lg border p-1 ${
+                className={`${granularity === "month" ? "min-h-[76px]" : "min-h-[160px]"} rounded-lg border p-1 ${
                   isToday ? "border-cream/60 bg-cream/5" : "border-cream/10"
                 } ${inMonth ? "" : "opacity-30"}`}
               >
