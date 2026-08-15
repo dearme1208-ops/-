@@ -306,13 +306,24 @@ html[data-high-contrast="true"] :focus-visible {
     --panel-rgb: 255 255 255;
   }
   /* Claudeモード: 他の演出テーマとは対照的に、走査線・ネオン・パロディ色調を一切使わず、
-     Claude自身の製品デザインを思わせる温かい紙のようなライトテーマ+テラコッタのアクセントにする */
+     Claude自身の製品デザインを思わせる温かい紙のようなライトテーマ+テラコッタのアクセントにする。
+     他のテーマは固定の1パレットだが、Claudeモードだけは本家同様にシステムのライト/ダーク設定
+     (prefers-color-scheme)に自動追従する。トグルは持たせず、OS側の設定にそのまま委ねる */
   html[data-visual-mode="claude"] {
     color-scheme: light;
     --accent-rgb: 217 119 87;
     --ink-rgb: 250 248 240;
     --cream-rgb: 38 34 28;
     --panel-rgb: 255 253 247;
+  }
+  @media (prefers-color-scheme: dark) {
+    html[data-visual-mode="claude"] {
+      color-scheme: dark;
+      --accent-rgb: 224 140 102;
+      --ink-rgb: 38 38 36;
+      --cream-rgb: 236 232 224;
+      --panel-rgb: 48 47 44;
+    }
   }
 
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
@@ -727,7 +738,8 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="claude"] .panel {
     border: 1px solid rgb(var(--cream-rgb) / 0.06);
     border-radius: 1.5rem;
-    box-shadow: 0 1px 2px rgb(38 34 28 / 0.04), 0 10px 24px -12px rgb(38 34 28 / 0.18);
+    /* 純黒の影にしておくことで、ライト/ダーク両方のパレットで違和感なく沈む */
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 10px 24px -12px rgb(0 0 0 / 0.22);
   }
   html[data-visual-mode="lobotomy"] h2.font-display,
   html[data-visual-mode="lobotomy"] h3.font-display,
