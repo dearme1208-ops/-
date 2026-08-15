@@ -47,12 +47,20 @@ function DefaultArt() {
   );
 }
 
-// ぼくのなつやすみ風: 入道雲の湧く夏空・太陽・緑の丘に、遠くの鳥居と風鈴を足して
-// 田舎の夏休みらしい懐かしさをもう一段強める。他テーマのダークな夜景とは正反対の、
-// 明るく懐かしい昼下がりの田舎の情景に描き替える
+// ぼくのなつやすみ風: 入道雲の湧く夏空・太陽・緑の丘に、遠くの鳥居と風鈴、そして
+// 手前にひまわり畑を足して田舎の夏休みらしい懐かしさをもう一段強める(1970年代の
+// 農村を舞台にした本家シリーズの原風景で最も象徴的なモチーフがひまわりのため)。
+// 他テーマのダークな夜景とは正反対の、明るく懐かしい昼下がりの田舎の情景に描き替える
 function NatsuyasumiArt() {
+  const sunflowerPetals = Array.from({ length: 8 }, (_, i) => i * 45);
+  const sunflowers = [
+    { x: 60, y: 208, r: 15 },
+    { x: 100, y: 214, r: 11 },
+    { x: 1150, y: 210, r: 14 },
+    { x: 1110, y: 216, r: 10 },
+  ];
   return (
-    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="夏空と緑の丘、鳥居と風鈴のイラスト">
+    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="夏空と緑の丘、鳥居と風鈴、ひまわり畑のイラスト">
       <defs>
         <linearGradient id="natSky" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="rgb(var(--nat-sea-rgb))" stopOpacity="0.55" />
@@ -84,6 +92,18 @@ function NatsuyasumiArt() {
         d="M0,220 L0,190 Q200,150 420,185 T840,180 T1200,175 L1200,220 Z"
         fill="rgb(var(--nat-leaf-rgb))"
       />
+      {/* 手前のひまわり畑(茎+花びら)。シリーズ原風景を象徴するモチーフ */}
+      {sunflowers.map((f, i) => (
+        <g key={i} transform={`translate(${f.x} ${f.y})`}>
+          <line x1="0" y1="0" x2="0" y2={220 - f.y} stroke="rgb(var(--nat-leaf-rgb))" strokeWidth="3" />
+          <g>
+            {sunflowerPetals.map((deg) => (
+              <ellipse key={deg} cx="0" cy={-f.r} rx={f.r * 0.32} ry={f.r * 0.62} fill="rgb(var(--nat-sun-rgb))" transform={`rotate(${deg})`} />
+            ))}
+          </g>
+          <circle r={f.r * 0.42} fill="rgb(var(--nat-leaf-rgb))" opacity="0.9" />
+        </g>
+      ))}
       <text x="0" y="110" fontSize="26" className="nat-butterfly">
         🦋
       </text>
@@ -130,6 +150,15 @@ function PowerproArt() {
           />
         ))}
       </g>
+      {/* 査定ランクバッジ(装飾。シリーズを象徴する能力の格付け表示を模したもの。
+          実際の評価データとは連動しない) */}
+      <g transform="translate(1140 44)">
+        <circle r="20" fill="rgb(var(--ink-rgb))" stroke="rgb(var(--pp-gold-rgb))" strokeWidth="3" />
+        <circle r="14" fill="none" stroke="rgb(var(--pp-gold-rgb))" strokeOpacity="0.5" strokeWidth="1" />
+        <text x="0" y="7" fontSize="18" fontWeight="900" textAnchor="middle" fill="rgb(var(--pp-gold-rgb))">
+          A
+        </text>
+      </g>
       {/* 観客席のシルエット */}
       <g fill="rgb(var(--cream-rgb))" opacity="0.14">
         {crowd.map((i) => (
@@ -158,7 +187,9 @@ function Va11Art() {
     { x: 918, y: 70 }, { x: 940, y: 100 }, { x: 918, y: 130 }, { x: 944, y: 160 },
     { x: 1020, y: 46 }, { x: 1034, y: 80 }, { x: 1020, y: 120 }, { x: 1040, y: 160 },
   ];
-  const rain = Array.from({ length: 18 }, (_, i) => 40 + i * 66);
+  // 本家はDOS時代のドット絵を思わせるブロック単位の見た目のため、雨脚も滑らかな線ではなく
+  // 短い矩形を斜めに並べたピクセル状のしずくにする
+  const rainDrops = Array.from({ length: 40 }, (_, i) => ({ x: (i * 53) % 1220, y: (i * 37) % 220 }));
   return (
     <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="雨に濡れるネオン街とカクテルグラスのイラスト">
       <defs>
@@ -180,10 +211,10 @@ function Va11Art() {
       {windows.map((w, i) => (
         <rect key={i} x={w.x} y={w.y} width="7" height="7" fill={i % 2 === 0 ? "rgb(var(--v11-pink-rgb))" : "rgb(var(--v11-cyan-rgb))"} opacity="0.75" />
       ))}
-      {/* 雨脚 */}
-      <g stroke="rgb(var(--v11-cyan-rgb))" strokeOpacity="0.2" strokeWidth="1.5">
-        {rain.map((x, i) => (
-          <line key={i} x1={x} y1={-10} x2={x - 22} y2={220} />
+      {/* ピクセル状の雨脚(ドット絵時代のDOSゲームらしいブロック単位の見た目) */}
+      <g fill="rgb(var(--v11-cyan-rgb))" opacity="0.22">
+        {rainDrops.map((d, i) => (
+          <rect key={i} x={d.x} y={d.y} width="2" height="10" transform={`rotate(18 ${d.x} ${d.y})`} />
         ))}
       </g>
       {/* カウンターに置かれたカクテルグラス */}
@@ -192,6 +223,12 @@ function Va11Art() {
         <path d="M -22,-48 L 22,-48 L 3,10 L -3,10 Z" fill="rgb(var(--v11-pink-rgb))" opacity="0.4" />
         <line x1="0" y1="18" x2="0" y2="40" stroke="rgb(var(--v11-cyan-rgb))" strokeWidth="2" opacity="0.75" />
         <line x1="-16" y1="40" x2="16" y2="40" stroke="rgb(var(--v11-cyan-rgb))" strokeWidth="2" opacity="0.75" />
+      </g>
+      {/* 8bit風のブロック段差を持つバーの看板シルエット(本家のドット絵ウィンドウ枠を意識) */}
+      <g transform="translate(60 26)">
+        <rect x="0" y="0" width="70" height="24" fill="none" stroke="rgb(var(--v11-pink-rgb))" strokeOpacity="0.7" strokeWidth="3" />
+        <rect x="-4" y="4" width="4" height="16" fill="rgb(var(--v11-pink-rgb))" opacity="0.7" />
+        <rect x="70" y="4" width="4" height="16" fill="rgb(var(--v11-pink-rgb))" opacity="0.7" />
       </g>
     </svg>
   );
