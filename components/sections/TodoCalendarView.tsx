@@ -4,6 +4,15 @@ import { useMemo, useState } from "react";
 import { todayStr } from "@/lib/time";
 import type { TodoTask } from "@/lib/types";
 
+export interface SubtaskForCalendar {
+  subtask: TodoTask;
+  parentTitle: string;
+}
+
+type CalendarEntry =
+  | { kind: "task"; task: TodoTask; isStart: boolean; isEnd: boolean }
+  | { kind: "subtask"; subtask: TodoTask; parentTitle: string };
+
 const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
 function buildMonthGrid(year: number, month: number): Date[] {
@@ -17,14 +26,23 @@ function buildMonthGrid(year: number, month: number): Date[] {
   });
 }
 
-export default function TodoCalendarView({ tasks, today }: { tasks: TodoTask[]; today: string }) {
+export default function TodoCalendarView({
+  tasks,
+  subtasks,
+  today,
+}: {
+  tasks: TodoTask[];
+  subtasks?: SubtaskForCalendar[];
+  today: string;
+}) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
 
-  // 開始日(なければ期日)〜期日の各日に、その日がバーの先頭/末尾かどうかとともに登録する
+  // 開始日(なければ期日)〜期日の各日に、その日がバーの先頭/末尾かどうかとともに登録する。
+  // サブタスクは開始日の概念を持たないため、期日1日だけの単発エントリとして登録する
   const byDate = useMemo(() => {
-    const map = new Map<string, { task: TodoTask; isStart: boolean; isEnd: boolean }[]>();
+    const map = new Map<string, CalendarEntry[]>();
     for (const t of tasks) {
       if (!t.dueDate) continue;
       const startStr = t.startDate && t.startDate <= t.dueDate ? t.startDate : t.dueDate;
@@ -33,12 +51,17 @@ export default function TodoCalendarView({ tasks, today }: { tasks: TodoTask[]; 
       while (cursor.getTime() <= endDate.getTime()) {
         const key = todayStr(cursor);
         if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push({ task: t, isStart: key === startStr, isEnd: key === t.dueDate });
+        map.get(key)!.push({ kind: "task", task: t, isStart: key === startStr, isEnd: key === t.dueDate });
         cursor = new Date(cursor.getTime() + 86400000);
       }
     }
+    for (const { subtask, parentTitle } of subtasks ?? []) {
+      if (!subtask.dueDate) continue;
+      if (!map.has(subtask.dueDate)) map.set(subtask.dueDate, []);
+      map.get(subtask.dueDate)!.push({ kind: "subtask", subtask, parentTitle });
+    }
     return map;
-  }, [tasks]);
+  }, [tasks, subtasks]);
 
   const grid = useMemo(() => buildMonthGrid(year, month), [year, month]);
 
@@ -98,24 +121,44 @@ export default function TodoCalendarView({ tasks, today }: { tasks: TodoTask[]; 
                   {date.getDate()}
                 </div>
                 <div className="mt-1 space-y-1">
-                  {items.map(({ task: t, isStart, isEnd }) => {
-                    const overdue = !t.completed && t.dueDate! < today;
-                    const rangeLabel = t.startDate ? `${t.title}（${t.startDate} 〜 ${t.dueDate}）` : t.title;
+                  {items.map((entry) => {
+                    if (entry.kind === "task") {
+                      const { task: t, isStart, isEnd } = entry;
+                      const overdue = !t.completed && t.dueDate! < today;
+                      const rangeLabel = t.startDate ? `${t.title}（${t.startDate} 〜 ${t.dueDate}）` : t.title;
+                      return (
+                        <div
+                          key={t.id}
+                          title={rangeLabel}
+                          className={`truncate rounded px-1 py-0.5 text-[10px] ${
+                            t.completed
+                              ? "bg-cream/10 text-cream/40 line-through"
+                              : overdue
+                                ? "bg-alert/80 text-cream"
+                                : "bg-cream/80 text-ink"
+                          }`}
+                        >
+                          {!isStart && "…"}
+                          {t.title}
+                          {!isEnd && "…"}
+                        </div>
+                      );
+                    }
+                    const { subtask: s, parentTitle } = entry;
+                    const overdue = !s.completed && s.dueDate! < today;
                     return (
                       <div
-                        key={t.id}
-                        title={rangeLabel}
-                        className={`truncate rounded px-1 py-0.5 text-[10px] ${
-                          t.completed
-                            ? "bg-cream/10 text-cream/40 line-through"
+                        key={s.id}
+                        title={`${parentTitle} / ${s.title}`}
+                        className={`truncate rounded border px-1 py-0.5 text-[10px] ${
+                          s.completed
+                            ? "border-cream/10 text-cream/40 line-through"
                             : overdue
-                              ? "bg-alert/80 text-cream"
-                              : "bg-cream/80 text-ink"
+                              ? "border-alert/60 text-alert"
+                              : "border-cream/30 text-cream/70"
                         }`}
                       >
-                        {!isStart && "…"}
-                        {t.title}
-                        {!isEnd && "…"}
+                        └ {s.title}
                       </div>
                     );
                   })}

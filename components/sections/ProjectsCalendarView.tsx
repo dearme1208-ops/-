@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { todayStr } from "@/lib/time";
-import type { ProjectItem } from "@/lib/types";
+import { isStageDone } from "@/lib/projectStage";
+import type { ProjectItem, ProjectStage } from "@/lib/types";
+
+type CalendarEntry = { kind: "project"; project: ProjectItem } | { kind: "stage"; project: ProjectItem; stage: ProjectStage };
 
 const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -23,10 +26,15 @@ export default function ProjectsCalendarView({ projects, today }: { projects: Pr
   const [month, setMonth] = useState(now.getMonth()); // 0-11
 
   const byDate = useMemo(() => {
-    const map = new Map<string, ProjectItem[]>();
+    const map = new Map<string, CalendarEntry[]>();
     for (const p of projects) {
       if (!map.has(p.dueDate)) map.set(p.dueDate, []);
-      map.get(p.dueDate)!.push(p);
+      map.get(p.dueDate)!.push({ kind: "project", project: p });
+      for (const stage of p.stages ?? []) {
+        if (!stage.dueDate) continue;
+        if (!map.has(stage.dueDate)) map.set(stage.dueDate, []);
+        map.get(stage.dueDate)!.push({ kind: "stage", project: p, stage });
+      }
     }
     return map;
   }, [projects]);
@@ -90,21 +98,42 @@ export default function ProjectsCalendarView({ projects, today }: { projects: Pr
                   {date.getDate()}
                 </div>
                 <div className="mt-1 space-y-1">
-                  {items.map((p) => {
-                    const overdue = !p.completedAt && p.dueDate < today;
+                  {items.map((entry) => {
+                    if (entry.kind === "project") {
+                      const p = entry.project;
+                      const overdue = !p.completedAt && p.dueDate < today;
+                      return (
+                        <div
+                          key={p.id}
+                          title={`${p.title} / ${p.workName}`}
+                          className={`truncate rounded px-1 py-0.5 text-[10px] ${
+                            p.completedAt
+                              ? "bg-cream/10 text-cream/40 line-through"
+                              : overdue
+                                ? "bg-alert/80 text-cream"
+                                : "bg-cream/80 text-ink"
+                          }`}
+                        >
+                          {p.title}
+                        </div>
+                      );
+                    }
+                    const { project: p, stage } = entry;
+                    const done = isStageDone(stage);
+                    const overdue = !done && !!stage.dueDate && stage.dueDate < today;
                     return (
                       <div
-                        key={p.id}
-                        title={`${p.title} / ${p.workName}`}
-                        className={`truncate rounded px-1 py-0.5 text-[10px] ${
-                          p.completedAt
-                            ? "bg-cream/10 text-cream/40 line-through"
+                        key={`${p.id}::${stage.id}`}
+                        title={`${p.title} / ${stage.title}`}
+                        className={`truncate rounded border px-1 py-0.5 text-[10px] ${
+                          done
+                            ? "border-cream/10 text-cream/40 line-through"
                             : overdue
-                              ? "bg-alert/80 text-cream"
-                              : "bg-cream/80 text-ink"
+                              ? "border-alert/60 text-alert"
+                              : "border-cream/30 text-cream/70"
                         }`}
                       >
-                        {p.title}
+                        └ {stage.title}
                       </div>
                     );
                   })}

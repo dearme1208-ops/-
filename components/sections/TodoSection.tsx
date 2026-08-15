@@ -337,6 +337,17 @@ export default function TodoSection({
     () => visibleTasks.filter((t) => !!t.dueDate && (showCompletedInTimeline || !t.completed)),
     [visibleTasks, showCompletedInTimeline]
   );
+  // カレンダー表示では、案件の段階と同様にサブタスクも自身の期日でその日に表示したい。
+  // ガント側の表示対象(親)に含まれるタスクのサブタスクだけを対象にする
+  const subtasksForTimeline = useMemo(
+    () =>
+      visibleTasks.flatMap((t) =>
+        (subtasksByParent.get(t.id) ?? [])
+          .filter((s) => !!s.dueDate && (showCompletedInTimeline || !s.completed))
+          .map((s) => ({ subtask: s, parentTitle: t.title }))
+      ),
+    [visibleTasks, subtasksByParent, showCompletedInTimeline]
+  );
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
 
@@ -947,7 +958,7 @@ export default function TodoSection({
         </div>
 
         {displayMode === "calendar" ? (
-          <TodoCalendarView tasks={tasksForTimeline} today={today} />
+          <TodoCalendarView tasks={tasksForTimeline} subtasks={subtasksForTimeline} today={today} />
         ) : displayMode === "kanban" ? (
           <KanbanBoard
             tasks={visibleTasks}
