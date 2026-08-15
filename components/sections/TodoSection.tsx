@@ -1523,50 +1523,54 @@ function SubtaskRow({
   const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
   return (
     <div
-      className={`flex items-center gap-2 rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
+      className={`rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
         subDueToday ? "ring-1 ring-alert/40" : ""
       }`}
     >
-      {dragHandleProps && (
+      <div className="flex items-center gap-2">
+        {dragHandleProps && (
+          <button
+            {...dragHandleProps.attributes}
+            {...dragHandleProps.listeners}
+            className="shrink-0 cursor-grab px-0.5 text-cream/30 active:cursor-grabbing"
+            aria-label="サブタスクを並び替え"
+          >
+            ⠿
+          </button>
+        )}
         <button
-          {...dragHandleProps.attributes}
-          {...dragHandleProps.listeners}
-          className="shrink-0 cursor-grab px-0.5 text-cream/30 active:cursor-grabbing"
-          aria-label="サブタスクを並び替え"
+          onClick={() => onToggleSubtask(sub)}
+          aria-label="完了"
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+            sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+          }`}
         >
-          ⠿
+          {sub.completed ? "✓" : ""}
         </button>
-      )}
-      <button
-        onClick={() => onToggleSubtask(sub)}
-        aria-label="完了"
-        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-          sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-        }`}
-      >
-        {sub.completed ? "✓" : ""}
-      </button>
-      <input
-        key={sub.id + sub.title}
-        defaultValue={sub.title}
-        onBlur={(e) => onUpdateSubtaskTitle(sub, e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-        className={`min-w-0 flex-1 bg-transparent text-xs text-cream focus:outline-none focus:ring-1 focus:ring-cream/30 ${
-          sub.completed ? "text-cream/40 line-through" : ""
-        }`}
-      />
-      {subDueToday && (
-        <span className="shrink-0 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
-      )}
-      <input
-        key={sub.id + (sub.dueDate ?? "")}
-        type="date"
-        defaultValue={sub.dueDate ?? ""}
-        onChange={(e) => onUpdateSubtaskDueDate(sub, e.target.value)}
-        className={`w-[8.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[10px] focus:border-cream/20 focus:outline-none ${
-          subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
-        }`}
-      />
+        <input
+          key={sub.id + sub.title}
+          defaultValue={sub.title}
+          onBlur={(e) => onUpdateSubtaskTitle(sub, e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          className={`min-w-0 flex-1 bg-transparent text-xs text-cream focus:outline-none focus:ring-1 focus:ring-cream/30 ${
+            sub.completed ? "text-cream/40 line-through" : ""
+          }`}
+        />
+      </div>
+      <div className="mt-1 flex items-center justify-end gap-2">
+        {subDueToday && (
+          <span className="shrink-0 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
+        )}
+        <input
+          key={sub.id + (sub.dueDate ?? "")}
+          type="date"
+          defaultValue={sub.dueDate ?? ""}
+          onChange={(e) => onUpdateSubtaskDueDate(sub, e.target.value)}
+          className={`w-[8.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[10px] focus:border-cream/20 focus:outline-none ${
+            subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
+          }`}
+        />
+      </div>
     </div>
   );
 }
