@@ -636,6 +636,25 @@ export default function TodoSection({
     await db.todoTasks.update(sub.id, { completed: !sub.completed, completedAt: !sub.completed ? Date.now() : undefined });
   }
 
+  async function updateSubtaskTitleInline(sub: TodoTask, title: string) {
+    const trimmed = title.trim();
+    if (!trimmed || trimmed === sub.title) return;
+    await db.todoTasks.update(sub.id, { title: trimmed });
+  }
+
+  async function updateSubtaskDueDateInline(sub: TodoTask, dueDate: string) {
+    await db.todoTasks.update(sub.id, { dueDate: dueDate || undefined });
+  }
+
+  async function reorderSubtasks(subtasks: TodoTask[], oldIndex: number, newIndex: number) {
+    const reordered = arrayMove(subtasks, oldIndex, newIndex);
+    await db.transaction("rw", db.todoTasks, async () => {
+      for (let i = 0; i < reordered.length; i++) {
+        await db.todoTasks.update(reordered[i].id, { order: i });
+      }
+    });
+  }
+
   // タスクの内容を案件タブに反映する（1度反映すると同じタスクからは再反映しない）
   async function reflectToProject(task: TodoTask, category: string, workName: string) {
     if (task.projectId) return;
@@ -1259,6 +1278,9 @@ export default function TodoSection({
                         onToggleImportant={() => toggleImportant(task)}
                         onOpenDetail={() => setDetailTaskId(task.id)}
                         onToggleSubtask={toggleSubtaskComplete}
+                        onUpdateSubtaskTitle={updateSubtaskTitleInline}
+                        onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                        onReorderSubtasks={reorderSubtasks}
                       />
                     ))}
                   </SortableContext>
@@ -1274,6 +1296,9 @@ export default function TodoSection({
                     onToggleImportant={() => toggleImportant(task)}
                     onOpenDetail={() => setDetailTaskId(task.id)}
                     onToggleSubtask={toggleSubtaskComplete}
+                    onUpdateSubtaskTitle={updateSubtaskTitleInline}
+                    onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                    onReorderSubtasks={reorderSubtasks}
                     selectionMode={bulkSelectionMode}
                     selected={selectedTaskIds.has(task.id)}
                     onToggleSelect={() => toggleTaskSelect(task.id)}
@@ -1305,6 +1330,8 @@ export default function TodoSection({
                         onToggleImportant={() => toggleImportant(task)}
                         onOpenDetail={() => setDetailTaskId(task.id)}
                         onToggleSubtask={toggleSubtaskComplete}
+                        onUpdateSubtaskTitle={updateSubtaskTitleInline}
+                        onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
                       />
                     ))}
                   </div>
@@ -1476,6 +1503,90 @@ function OverdueBulkList({
   );
 }
 
+// サブタスク1行分。名前・期日をその場で編集できる入力欄を持つ
+function SubtaskRow({
+  sub,
+  today,
+  onToggleSubtask,
+  onUpdateSubtaskTitle,
+  onUpdateSubtaskDueDate,
+  dragHandleProps,
+}: {
+  sub: TodoTask;
+  today: string;
+  onToggleSubtask: (sub: TodoTask) => void;
+  onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
+  onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
+}) {
+  const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
+  const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
+        subDueToday ? "ring-1 ring-alert/40" : ""
+      }`}
+    >
+      {dragHandleProps && (
+        <button
+          {...dragHandleProps.attributes}
+          {...dragHandleProps.listeners}
+          className="shrink-0 cursor-grab px-0.5 text-cream/30 active:cursor-grabbing"
+          aria-label="サブタスクを並び替え"
+        >
+          ⠿
+        </button>
+      )}
+      <button
+        onClick={() => onToggleSubtask(sub)}
+        aria-label="完了"
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+          sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+        }`}
+      >
+        {sub.completed ? "✓" : ""}
+      </button>
+      <input
+        key={sub.id + sub.title}
+        defaultValue={sub.title}
+        onBlur={(e) => onUpdateSubtaskTitle(sub, e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        className={`min-w-0 flex-1 bg-transparent text-xs text-cream focus:outline-none focus:ring-1 focus:ring-cream/30 ${
+          sub.completed ? "text-cream/40 line-through" : ""
+        }`}
+      />
+      {subDueToday && (
+        <span className="shrink-0 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
+      )}
+      <input
+        key={sub.id + (sub.dueDate ?? "")}
+        type="date"
+        defaultValue={sub.dueDate ?? ""}
+        onChange={(e) => onUpdateSubtaskDueDate(sub, e.target.value)}
+        className={`w-[8.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[10px] focus:border-cream/20 focus:outline-none ${
+          subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
+        }`}
+      />
+    </div>
+  );
+}
+
+function SortableSubtaskRow(props: {
+  sub: TodoTask;
+  today: string;
+  onToggleSubtask: (sub: TodoTask) => void;
+  onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
+  onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.sub.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <SubtaskRow {...props} dragHandleProps={{ attributes, listeners }} />
+    </div>
+  );
+}
+
 // メインタスクの下にサブタスクを一段ずらして表示する（Todoist風）
 function TaskBlock({
   task,
@@ -1485,6 +1596,9 @@ function TaskBlock({
   onToggleImportant,
   onOpenDetail,
   onToggleSubtask,
+  onUpdateSubtaskTitle,
+  onUpdateSubtaskDueDate,
+  onReorderSubtasks,
   selectionMode,
   selected,
   onToggleSelect,
@@ -1496,6 +1610,9 @@ function TaskBlock({
   onToggleImportant: () => void;
   onOpenDetail: () => void;
   onToggleSubtask: (sub: TodoTask) => void;
+  onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
+  onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
@@ -1504,10 +1621,21 @@ function TaskBlock({
   const [showCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
   const showCompletedSubtasks = showCompletedSubtasksStr === "true";
   const [subtasksCollapsed, setSubtasksCollapsed] = useState(false);
+  const subtaskSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   // 進捗表示(TaskRow内の「完了数/全数」)は全サブタスクを対象にする一方、
   // ここでの一覧描画だけ設定に応じて完了済みを間引く
   const visibleSubtasks = showCompletedSubtasks ? subtasks : subtasks.filter((s) => !s.completed);
   const doneSubtaskCount = subtasks.filter((s) => s.completed).length;
+
+  function handleSubtaskDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !onReorderSubtasks) return;
+    const oldIndex = visibleSubtasks.findIndex((s) => s.id === active.id);
+    const newIndex = visibleSubtasks.findIndex((s) => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    onReorderSubtasks(visibleSubtasks, oldIndex, newIndex);
+  }
+
   return (
     <div className="space-y-1">
       <div className="flex items-start gap-2">
@@ -1552,43 +1680,33 @@ function TaskBlock({
                   完了済み{subtasks.length - visibleSubtasks.length}件を非表示中
                 </div>
               )}
-              {visibleSubtasks.map((sub) => {
-                const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
-                const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
-                return (
-                  <div
+              {onReorderSubtasks ? (
+                <DndContext sensors={subtaskSensors} collisionDetection={closestCenter} onDragEnd={handleSubtaskDragEnd}>
+                  <SortableContext items={visibleSubtasks.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                    {visibleSubtasks.map((sub) => (
+                      <SortableSubtaskRow
+                        key={sub.id}
+                        sub={sub}
+                        today={today}
+                        onToggleSubtask={onToggleSubtask}
+                        onUpdateSubtaskTitle={onUpdateSubtaskTitle}
+                        onUpdateSubtaskDueDate={onUpdateSubtaskDueDate}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                visibleSubtasks.map((sub) => (
+                  <SubtaskRow
                     key={sub.id}
-                    className={`flex items-center gap-2 rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
-                      subDueToday ? "ring-1 ring-alert/40" : ""
-                    }`}
-                  >
-                    <button
-                      onClick={() => onToggleSubtask(sub)}
-                      aria-label="完了"
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-                        sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-                      }`}
-                    >
-                      {sub.completed ? "✓" : ""}
-                    </button>
-                    <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
-                      {sub.title}
-                    </span>
-                    {sub.dueDate && (
-                      <span
-                        className={`shrink-0 text-[10px] ${
-                          subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
-                        }`}
-                      >
-                        {formatDateJp(sub.dueDate)}
-                        {subDueToday && (
-                          <span className="ml-1 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+                    sub={sub}
+                    today={today}
+                    onToggleSubtask={onToggleSubtask}
+                    onUpdateSubtaskTitle={onUpdateSubtaskTitle}
+                    onUpdateSubtaskDueDate={onUpdateSubtaskDueDate}
+                  />
+                ))
+              )}
             </>
           )}
         </div>
@@ -1605,6 +1723,9 @@ function SortableTaskBlock(props: {
   onToggleImportant: () => void;
   onOpenDetail: () => void;
   onToggleSubtask: (sub: TodoTask) => void;
+  onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
+  onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.task.id,

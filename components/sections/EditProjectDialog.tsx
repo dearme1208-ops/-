@@ -1,10 +1,139 @@
 "use client";
 
 import { useState } from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
 import type { ProjectItem, ProjectStage } from "@/lib/types";
 import { computeProjectProgress } from "@/lib/projectStage";
 import Modal from "@/components/ui/Modal";
+
+// 段階1行分。件名・期日をその場で編集できる入力欄を持つ
+function StageRow({
+  stage,
+  onToggle,
+  onSetTitle,
+  onSetDueDate,
+  onSetCompletedCount,
+  onSetTargetCount,
+  onRemove,
+  dragHandleProps,
+}: {
+  stage: ProjectStage;
+  onToggle: (id: string) => void;
+  onSetTitle: (id: string, value: string) => void;
+  onSetDueDate: (id: string, value: string) => void;
+  onSetCompletedCount: (id: string, value: string) => void;
+  onSetTargetCount: (id: string, value: string) => void;
+  onRemove: (id: string) => void;
+  dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
+}) {
+  const isCountBased = stage.targetCount != null;
+  const isDone = isCountBased ? (stage.completedCount ?? 0) >= (stage.targetCount ?? 0) : stage.completed;
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
+      {dragHandleProps && (
+        <button
+          {...dragHandleProps.attributes}
+          {...dragHandleProps.listeners}
+          className="shrink-0 cursor-grab px-0.5 text-cream/30 active:cursor-grabbing"
+          aria-label="段階を並び替え"
+        >
+          ⠿
+        </button>
+      )}
+      {!isCountBased && (
+        <button
+          onClick={() => onToggle(stage.id)}
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+            stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+          }`}
+        >
+          {stage.completed ? "✓" : ""}
+        </button>
+      )}
+      {isCountBased && (
+        <span
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+            isDone ? "border-cream bg-cream text-ink" : "border-cream/40"
+          }`}
+        >
+          {isDone ? "✓" : ""}
+        </span>
+      )}
+      <input
+        value={stage.title}
+        onChange={(e) => onSetTitle(stage.id, e.target.value)}
+        className={`min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-1 text-xs text-cream focus:border-cream/20 focus:outline-none ${
+          isDone ? "text-cream/40 line-through" : ""
+        }`}
+      />
+      {isCountBased ? (
+        <div className="flex shrink-0 items-center gap-1 text-[11px] text-cream/70">
+          <input
+            type="number"
+            min={0}
+            value={stage.completedCount ?? 0}
+            onChange={(e) => onSetCompletedCount(stage.id, e.target.value)}
+            className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
+          />
+          <span>/</span>
+          <input
+            type="number"
+            min={1}
+            value={stage.targetCount ?? ""}
+            onChange={(e) => onSetTargetCount(stage.id, e.target.value)}
+            className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
+          />
+          <span>件</span>
+        </div>
+      ) : (
+        <button
+          onClick={() => onSetTargetCount(stage.id, "1")}
+          className="shrink-0 text-[10px] text-cream/40 hover:text-cream"
+          title="この段階を件数（見積り件数など）で進捗管理する"
+        >
+          件数管理にする
+        </button>
+      )}
+      <input
+        type="date"
+        value={stage.dueDate ?? ""}
+        onChange={(e) => onSetDueDate(stage.id, e.target.value)}
+        className="w-32 shrink-0 rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
+      />
+      <button className="text-cream/40 hover:text-alert" onClick={() => onRemove(stage.id)} aria-label="削除">
+        ✕
+      </button>
+    </div>
+  );
+}
+
+function SortableStageRow(props: {
+  stage: ProjectStage;
+  onToggle: (id: string) => void;
+  onSetTitle: (id: string, value: string) => void;
+  onSetDueDate: (id: string, value: string) => void;
+  onSetCompletedCount: (id: string, value: string) => void;
+  onSetTargetCount: (id: string, value: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.stage.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <StageRow {...props} dragHandleProps={{ attributes, listeners }} />
+    </div>
+  );
+}
 
 export default function EditProjectDialog({ project, onClose }: { project: ProjectItem; onClose: () => void }) {
   const [title, setTitle] = useState(project.title);
@@ -38,8 +167,20 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   function removeStage(id: string) {
     setStages((prev) => prev.filter((s) => s.id !== id));
   }
+  function setStageTitle(id: string, value: string) {
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, title: value } : s)));
+  }
   function setStageDueDate(id: string, value: string) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, dueDate: value || undefined } : s)));
+  }
+  const stageSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  function handleStageDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = stages.findIndex((s) => s.id === active.id);
+    const newIndex = stages.findIndex((s) => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    setStages((prev) => arrayMove(prev, oldIndex, newIndex));
   }
   function setStageCompletedCount(id: string, value: string) {
     const n = Math.max(0, Math.round(Number(value)));
@@ -128,75 +269,22 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
             )}
           </h4>
           <div className="space-y-1.5">
-            {stages.map((stage) => {
-              const isCountBased = stage.targetCount != null;
-              const isDone = isCountBased
-                ? (stage.completedCount ?? 0) >= (stage.targetCount ?? 0)
-                : stage.completed;
-              return (
-                <div key={stage.id} className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
-                  {!isCountBased && (
-                    <button
-                      onClick={() => toggleStage(stage.id)}
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-                        stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-                      }`}
-                    >
-                      {stage.completed ? "✓" : ""}
-                    </button>
-                  )}
-                  {isCountBased && (
-                    <span
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-                        isDone ? "border-cream bg-cream text-ink" : "border-cream/40"
-                      }`}
-                    >
-                      {isDone ? "✓" : ""}
-                    </span>
-                  )}
-                  <span className={`flex-1 text-xs text-cream ${isDone ? "text-cream/40 line-through" : ""}`}>
-                    {stage.title}
-                  </span>
-                  {isCountBased ? (
-                    <div className="flex shrink-0 items-center gap-1 text-[11px] text-cream/70">
-                      <input
-                        type="number"
-                        min={0}
-                        value={stage.completedCount ?? 0}
-                        onChange={(e) => setStageCompletedCount(stage.id, e.target.value)}
-                        className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
-                      />
-                      <span>/</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={stage.targetCount ?? ""}
-                        onChange={(e) => setStageTargetCount(stage.id, e.target.value)}
-                        className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
-                      />
-                      <span>件</span>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setStageTargetCount(stage.id, "1")}
-                      className="shrink-0 text-[10px] text-cream/40 hover:text-cream"
-                      title="この段階を件数（見積り件数など）で進捗管理する"
-                    >
-                      件数管理にする
-                    </button>
-                  )}
-                  <input
-                    type="date"
-                    value={stage.dueDate ?? ""}
-                    onChange={(e) => setStageDueDate(stage.id, e.target.value)}
-                    className="w-32 shrink-0 rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
+            <DndContext sensors={stageSensors} collisionDetection={closestCenter} onDragEnd={handleStageDragEnd}>
+              <SortableContext items={stages.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                {stages.map((stage) => (
+                  <SortableStageRow
+                    key={stage.id}
+                    stage={stage}
+                    onToggle={toggleStage}
+                    onSetTitle={setStageTitle}
+                    onSetDueDate={setStageDueDate}
+                    onSetCompletedCount={setStageCompletedCount}
+                    onSetTargetCount={setStageTargetCount}
+                    onRemove={removeStage}
                   />
-                  <button className="text-cream/40 hover:text-alert" onClick={() => removeStage(stage.id)} aria-label="削除">
-                    ✕
-                  </button>
-                </div>
-              );
-            })}
+                ))}
+              </SortableContext>
+            </DndContext>
             <div className="flex items-center gap-2">
               <input
                 value={newStageTitle}
