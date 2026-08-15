@@ -326,6 +326,26 @@ html[data-high-contrast="true"] :focus-visible {
     }
   }
 
+  /* 禅モード: 他の演出テーマとは逆方向の「引き算」。彩度を落とした和紙のようなライトテーマに、
+     ごく静かな朱色(墨で捺す印判を思わせる、彩度を大きく落とした朱)だけを一点添える。
+     Claudeモード同様、固定パレットではなくシステムのライト/ダーク設定に自動追従する */
+  html[data-visual-mode="zen"] {
+    color-scheme: light;
+    --accent-rgb: 150 92 66;
+    --ink-rgb: 246 243 237;
+    --cream-rgb: 48 44 40;
+    --panel-rgb: 250 248 244;
+  }
+  @media (prefers-color-scheme: dark) {
+    html[data-visual-mode="zen"] {
+      color-scheme: dark;
+      --accent-rgb: 190 140 110;
+      --ink-rgb: 20 20 22;
+      --cream-rgb: 222 219 212;
+      --panel-rgb: 28 28 30;
+    }
+  }
+
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
      vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
      日本語には効かず数字・記号にしか効かない。そこで時刻・パーセンテージ等の
@@ -367,6 +387,16 @@ html[data-high-contrast="true"] :focus-visible {
     font-family: var(--font-noto-serif-jp), var(--font-noto-sans-jp), serif;
     font-weight: 600;
     letter-spacing: 0.01em;
+  }
+  /* 禅モード: Claudeモードと同じセリフ体を使うが、太くせず素の細さのまま流し、
+     筆で書いたような静けさを保つ */
+  html[data-visual-mode="zen"] .app-title,
+  html[data-visual-mode="zen"] h2.font-display,
+  html[data-visual-mode="zen"] h3.font-display,
+  html[data-visual-mode="zen"] .tabular-nums {
+    font-family: var(--font-noto-serif-jp), var(--font-noto-sans-jp), serif;
+    font-weight: 400;
+    letter-spacing: 0.04em;
   }
   /* VA-11 HALL-A風・ロボトミー風の危険階級バッジ名は英字なので、そちらにも書体を効かせる */
   html[data-visual-mode="va11halla"] .risk-badge {
@@ -1028,6 +1058,14 @@ html[data-high-contrast="true"] :focus-visible {
     /* 純黒の影にしておくことで、ライト/ダーク両方のパレットで違和感なく沈む */
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 10px 24px -12px rgb(0 0 0 / 0.22);
   }
+  /* 禅モード: 影も枠線もほぼ無くし、紙の上に文字が置かれているだけのような佇まいにする。
+     禅モードでは「本日の作業」タブ自体を専用画面に総入れ替えするため、.panelが実際に
+     出てくるのは主に設定タブだが、そこでも装飾は最小限に留める */
+  html[data-visual-mode="zen"] .panel {
+    border: 1px solid rgb(var(--cream-rgb) / 0.08);
+    border-radius: 0.75rem;
+    box-shadow: none;
+  }
   html[data-visual-mode="lobotomy"] h2.font-display,
   html[data-visual-mode="lobotomy"] h3.font-display,
   html[data-visual-mode="va11halla"] h2.font-display,
@@ -1039,7 +1077,9 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="powerpro"] h2.font-display,
   html[data-visual-mode="powerpro"] h3.font-display,
   html[data-visual-mode="claude"] h2.font-display,
-  html[data-visual-mode="claude"] h3.font-display {
+  html[data-visual-mode="claude"] h3.font-display,
+  html[data-visual-mode="zen"] h2.font-display,
+  html[data-visual-mode="zen"] h3.font-display {
     letter-spacing: 0.03em;
   }
   html[data-visual-mode="claude"] h2.font-display::before,
@@ -1047,6 +1087,8 @@ html[data-high-contrast="true"] :focus-visible {
     content: "✳ ";
     color: rgb(var(--accent-rgb) / 0.8);
   }
+  /* 禅モード: 他テーマのような装飾プレフィックス(★・▓・//等)を見出しに一切付けない。
+     飾りが無いこと自体が、このモードの「引き算」を体現している */
   html[data-visual-mode="lobotomy"] h2.font-display::before,
   html[data-visual-mode="lobotomy"] h3.font-display::before {
     content: "▓ ";
@@ -1217,6 +1259,21 @@ html[data-high-contrast="true"] :focus-visible {
     box-shadow: 0 2px 0 0 rgb(var(--nat-leaf-rgb) / 0.6);
     transform: translateY(-1px);
   }
+  /* 禅モード: 塗り・影を無くし、細い輪郭線だけの静かなボタンにする */
+  html[data-visual-mode="zen"] .btn-pill {
+    border-width: 1px;
+    background-color: transparent;
+    color: rgb(var(--accent-rgb));
+    box-shadow: none;
+  }
+  html[data-visual-mode="zen"] .btn-pill-outline {
+    border-width: 1px;
+    border-color: rgb(var(--cream-rgb) / 0.18);
+    box-shadow: none;
+  }
+  html[data-visual-mode="zen"] .btn-pill-outline:hover {
+    border-color: rgb(var(--accent-rgb) / 0.5);
+  }
   html[data-visual-mode="powerpro"] .btn-pill,
   html[data-visual-mode="powerpro"] .btn-pill-outline {
     border-width: 2px;
@@ -1280,6 +1337,11 @@ html[data-high-contrast="true"] :focus-visible {
   }
   /* Claudeモード: 他テーマのHUD風の四隅飾りは世界観に合わないため非表示にする */
   html[data-visual-mode="claude"] .frame-corners {
+    display: none;
+  }
+  /* 禅モード: HUD風の四隅飾りはもちろん、画面全体の走査線・グリッチ・グリッド類も
+     すべて非表示のまま(他テーマのようなオーバーレイを一切追加しない)にする */
+  html[data-visual-mode="zen"] .frame-corners {
     display: none;
   }
   @keyframes corner-sway {
@@ -1603,6 +1665,29 @@ html[data-high-contrast="true"] :focus-visible {
     animation: hazard-bar-v11-scroll 3s linear infinite;
   }
 
+  /* --- 禅モード: 他テーマの点滅・警戒色を一切使わず、実行中/超過中とも同じ極めて緩やかな
+     呼吸だけで伝える(超過してもテンポは変えない。急かさない) --- */
+  .card-running-zen {
+    animation: card-running-zen-glow 5s ease-in-out infinite;
+  }
+  @keyframes card-running-zen-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.12);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.28);
+    }
+  }
+  .card-overrun-zen {
+    animation: card-running-zen-glow 5s ease-in-out infinite;
+  }
+  .hazard-bar-zen {
+    height: 2px;
+    border-radius: 999px;
+    background-color: rgb(var(--accent-rgb) / 0.35);
+  }
+
   /* --- Ganttチャートで想定を超過した実績バー。警戒度をバー自体の見た目で示す --- */
   .gantt-bar-overrun {
     background-image: repeating-linear-gradient(
@@ -1684,6 +1769,10 @@ html[data-high-contrast="true"] :focus-visible {
     );
     background-size: 200% 100%;
     animation: hazard-bar-v11-scroll 3s linear infinite;
+  }
+  .gantt-bar-overrun-zen {
+    border-radius: 999px;
+    background-color: rgb(var(--accent-rgb) / 0.5);
   }
 
   /* 予測超過中のタイマー数字を、より強く色収差させて明滅させる(通常のoverrun-flickerより過激) */
@@ -1994,6 +2083,131 @@ html[data-high-contrast="true"] :focus-visible {
       transform: translateX(-100%);
     }
   }
+
+  /* --- 禅モード専用画面(ZenSection)。「今」タブがこの画面に総入れ替えされる。
+     .panelのような箱を使わず、円相(禅画で悟りや静けさを表す、書き切らない
+     一筆書きの円)と文字だけを画面中央に置く。円相はゆっくり呼吸するように
+     拡大縮小と不透明度が揺れる --- */
+  .zen-stage {
+    position: relative;
+    display: flex;
+    min-height: min(70vh, 640px);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    text-align: center;
+  }
+  .zen-enso {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(78vw, 340px);
+    height: min(78vw, 340px);
+    transform: translate(-50%, -50%);
+    color: rgb(var(--accent-rgb) / 0.35);
+    pointer-events: none;
+    animation: zen-enso-breathe 6s ease-in-out infinite;
+  }
+  @keyframes zen-enso-breathe {
+    0%,
+    100% {
+      opacity: 0.55;
+      transform: translate(-50%, -50%) scale(0.99);
+    }
+    50% {
+      opacity: 0.9;
+      transform: translate(-50%, -50%) scale(1.02);
+    }
+  }
+  .zen-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    max-width: 28rem;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .zen-category {
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    color: rgb(var(--cream-rgb) / 0.4);
+  }
+  .zen-title {
+    margin: 0.5rem 0;
+    font-family: var(--font-noto-serif-jp), var(--font-noto-sans-jp), serif;
+    font-size: clamp(1.75rem, 6vw, 2.75rem);
+    font-weight: 400;
+    line-height: 1.3;
+    color: rgb(var(--cream-rgb));
+  }
+  .zen-title-empty {
+    font-size: clamp(1.25rem, 4vw, 1.75rem);
+    color: rgb(var(--cream-rgb) / 0.5);
+  }
+  .zen-meta {
+    font-size: 0.8rem;
+    color: rgb(var(--cream-rgb) / 0.45);
+  }
+  .zen-clock {
+    margin-top: 0.25rem;
+    font-size: 1rem;
+    color: rgb(var(--accent-rgb));
+  }
+  .zen-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+  .zen-btn {
+    cursor: pointer;
+    border: 1px solid rgb(var(--cream-rgb) / 0.2);
+    border-radius: 999px;
+    background: transparent;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.85rem;
+    color: rgb(var(--cream-rgb) / 0.7);
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .zen-btn:hover {
+    border-color: rgb(var(--accent-rgb) / 0.6);
+    color: rgb(var(--cream-rgb));
+  }
+  .zen-btn-primary {
+    border-color: rgb(var(--accent-rgb) / 0.5);
+    color: rgb(var(--accent-rgb));
+  }
+  .zen-footer {
+    display: flex;
+    justify-content: center;
+    padding: 1rem 0 2rem;
+  }
+  .zen-link {
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-size: 0.75rem;
+    color: rgb(var(--cream-rgb) / 0.3);
+  }
+  .zen-link:hover {
+    color: rgb(var(--cream-rgb) / 0.55);
+  }
+  .zen-input {
+    width: 14rem;
+    max-width: 80vw;
+    border: none;
+    border-bottom: 1px solid rgb(var(--cream-rgb) / 0.25);
+    background: transparent;
+    padding: 0.25rem 0.5rem;
+    text-align: center;
+    font-size: 0.85rem;
+    color: rgb(var(--cream-rgb));
+  }
+  .zen-input:focus {
+    border-color: rgb(var(--accent-rgb) / 0.6);
+    outline: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2009,6 +2223,8 @@ html[data-high-contrast="true"] :focus-visible {
   .card-overrun-pp,
   .card-running-claude,
   .card-overrun-claude,
+  .card-running-zen,
+  .card-overrun-zen,
   .hazard-bar,
   .hazard-bar-v11,
   .hazard-bar-p5,
@@ -2021,6 +2237,7 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-nat,
   .gantt-bar-overrun-pp,
   .gantt-bar-overrun-claude,
+  .zen-enso,
   .overrun-flicker,
   .overrun-flicker-intense,
   .overrun-badge,

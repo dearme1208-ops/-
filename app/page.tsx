@@ -23,6 +23,7 @@ import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/them
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
 const ClaudeWorkspaceSection = dynamic(() => import("@/components/sections/ClaudeWorkspaceSection"), { ssr: false });
+const ZenSection = dynamic(() => import("@/components/sections/ZenSection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
 const ClaudeReportSection = dynamic(() => import("@/components/sections/ClaudeReportSection"), { ssr: false });
@@ -147,7 +148,8 @@ export default function HomePage() {
       />
       <TabNav tabs={tabs} active={active} onChange={setActive} />
       {active === "today" && mode === "claude" && <ClaudeWorkspaceSection />}
-      {active === "today" && mode !== "claude" && (
+      {active === "today" && mode === "zen" && <ZenSection />}
+      {active === "today" && mode !== "claude" && mode !== "zen" && (
         <TodaySection
           onOpenTodoDetail={(taskId) => {
             setPendingTodoDetailId(taskId);

@@ -71,6 +71,16 @@ const CLAUDE_STAGES: GrowthStage[] = [
   { icon: "✨", label: "まとまった成果" },
 ];
 
+// 禅モード: 落ち着きが少しずつ深まっていく過程になぞらえた段階
+const ZEN_STAGES: GrowthStage[] = [
+  { icon: "🕯️", label: "灯火" },
+  { icon: "🌫️", label: "静まる" },
+  { icon: "🍃", label: "凪" },
+  { icon: "💧", label: "澄む" },
+  { icon: "🌙", label: "静寂" },
+  { icon: "☯️", label: "無心" },
+];
+
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
   powerpro: POWERPRO_STAGES,
@@ -78,6 +88,7 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   va11halla: VA11HALLA_STAGES,
   persona5: PERSONA5_STAGES,
   claude: CLAUDE_STAGES,
+  zen: ZEN_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り

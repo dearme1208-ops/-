@@ -1125,6 +1125,12 @@ export default function SettingsSection() {
             ✳ Claudeモード
           </button>
           <button
+            className={visualMode === "zen" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("zen")}
+          >
+            ☯ 禅モード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1178,6 +1184,11 @@ export default function SettingsSection() {
         {visualMode === "claude" && (
           <p className="text-xs text-cream/50">
             他の演出テーマとは違い、見た目も機能もClaudeが考えて作った特別なモードです。画面全体が温かみのある紙のようなライトテーマに変わり、装飾は控えめに、代わりに「本日の作業」タブが会話のログのような専用画面に総入れ替えされます（入力欄に今やることを書くだけで作業が始まり、進行状況もClaudeの応答のような言い回しで表示されます）。タブも「今日の集中・タスク・プロジェクト・レポート・設定」の5つだけに絞り込まれます。
+          </p>
+        )}
+        {visualMode === "zen" && (
+          <p className="text-xs text-cream/50">
+            見た目も機能も他のモードとは逆方向に振り切った、引き算のモードです。「本日の作業」タブは、Claudeが選んだ(あるいは既に進行中の)ただ1件だけを円相(禅画で描かれる、書き切らない一筆書きの円)とともに全画面で見せる専用画面に総入れ替えされます。タブも「今・設定」の2つだけに絞り込まれ、ToDo一覧・案件一覧・レポート等は意図的に見せません。新しいことを加えたい時だけ、画面下の小さな「+」から一言だけ書き足せます。
           </p>
         )}
         {visualMode === "off" && (

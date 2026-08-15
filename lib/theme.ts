@@ -44,10 +44,10 @@ export function hexToRgbSpace(hex: string): string {
 // 既存の text-alert / bg-alert / border-alert / text-cream 等のクラスはコンポーネント側の変更なしに
 // 自動でテーマ色になる。個別のアニメーション・文言・タブ名/アプリ名だけをこのファイルのヘルパーで出し分ける
 
-export type VisualMode = "off" | "lobotomy" | "va11halla" | "persona5" | "natsuyasumi" | "powerpro" | "claude";
-export type ThemedMode = "lobotomy" | "va11halla" | "persona5" | "natsuyasumi" | "powerpro" | "claude";
+export type VisualMode = "off" | "lobotomy" | "va11halla" | "persona5" | "natsuyasumi" | "powerpro" | "claude" | "zen";
+export type ThemedMode = "lobotomy" | "va11halla" | "persona5" | "natsuyasumi" | "powerpro" | "claude" | "zen";
 
-const THEMED_MODES: ThemedMode[] = ["lobotomy", "va11halla", "persona5", "natsuyasumi", "powerpro", "claude"];
+const THEMED_MODES: ThemedMode[] = ["lobotomy", "va11halla", "persona5", "natsuyasumi", "powerpro", "claude", "zen"];
 
 export function useVisualMode(): {
   mode: VisualMode;
@@ -57,6 +57,7 @@ export function useVisualMode(): {
   natsuyasumiMode: boolean;
   powerproMode: boolean;
   claudeMode: boolean;
+  zenMode: boolean;
   themedMode: ThemedMode | null;
   // 色・形・アニメーションは常にthemedMode通りに適用される一方、
   // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
@@ -78,6 +79,7 @@ export function useVisualMode(): {
     natsuyasumiMode: mode === "natsuyasumi",
     powerproMode: mode === "powerpro",
     claudeMode: mode === "claude",
+    zenMode: mode === "zen",
     themedMode,
     wordingEnabled,
     wordingMode: wordingEnabled ? mode : "off",
@@ -89,8 +91,12 @@ export function useVisualMode(): {
 // ToDoと案件を別のタブに分ける理由が薄いと判断し、「ワークスペース」1つに統合した。
 // どちらも「いつかやること、任意でサブステップと期日を持つ」という同じ概念であり、
 // タブを跨がずその場で計測を開始できる方がClaudeらしいという結論に至ったため
+// 禅モードはさらに踏み込み、「今やるべき1件だけを見せる。他は見せない」という
+// 引き算の思想そのものをタブ構成に反映する。ToDo・案件の一覧やレポート等は
+// 意図的に隠す(データの追加・編集は他モードに切り替えて行う前提)
 export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
   claude: ["today", "report", "settings"],
+  zen: ["today", "settings"],
 };
 
 export function visibleTabKeys(mode: VisualMode, allKeys: TabKey[]): TabKey[] {
@@ -149,6 +155,15 @@ export const RISK_TIERS_CLAUDE = [
   { threshold: 1.3, name: "やや長考", level: 1 },
   { threshold: 1, name: "順調", level: 0 },
 ] as const;
+// 禅モード: 超過そのものを「危険」ではなく「まだそこに在る」という静かな事実として
+// 言い換える。危機感を煽る言葉を一切使わない、最も穏やかな階級
+export const RISK_TIERS_ZEN = [
+  { threshold: 4, name: "まだそこに在る", level: 4 },
+  { threshold: 2.5, name: "長く在る", level: 3 },
+  { threshold: 1.8, name: "少し長い", level: 2 },
+  { threshold: 1.3, name: "続いている", level: 1 },
+  { threshold: 1, name: "凪", level: 0 },
+] as const;
 
 export type RiskTier =
   | (typeof RISK_TIERS_LOBOTOMY)[number]
@@ -156,7 +171,8 @@ export type RiskTier =
   | (typeof RISK_TIERS_PERSONA5)[number]
   | (typeof RISK_TIERS_NATSUYASUMI)[number]
   | (typeof RISK_TIERS_POWERPRO)[number]
-  | (typeof RISK_TIERS_CLAUDE)[number];
+  | (typeof RISK_TIERS_CLAUDE)[number]
+  | (typeof RISK_TIERS_ZEN)[number];
 
 const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name: string; level: number }[]> = {
   lobotomy: RISK_TIERS_LOBOTOMY,
@@ -165,6 +181,7 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   natsuyasumi: RISK_TIERS_NATSUYASUMI,
   powerpro: RISK_TIERS_POWERPRO,
   claude: RISK_TIERS_CLAUDE,
+  zen: RISK_TIERS_ZEN,
 };
 
 export function getRiskTier(ratio: number, mode: ThemedMode): RiskTier {
@@ -187,8 +204,10 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
             ? "risk-badge-pp-medal border-2 border-pp-gold bg-pp-gold/15 text-pp-gold font-black"
             : mode === "claude"
               ? "border-alert/40 bg-alert/10 text-alert font-bold"
-              : "border-alert/70 bg-alert/20 text-alert";
-  const roundness = mode === "powerpro" ? "px-2.5" : mode === "claude" ? "rounded-full px-2.5" : "rounded px-1.5";
+              : mode === "zen"
+                ? "border-transparent bg-transparent text-cream/50 font-normal"
+                : "border-alert/70 bg-alert/20 text-alert";
+  const roundness = mode === "powerpro" ? "px-2.5" : mode === "claude" || mode === "zen" ? "rounded-full px-2.5" : "rounded px-1.5";
   return `risk-badge risk-badge-${level} border ${roundness} py-0.5 text-[10px] font-bold ${shape}`;
 }
 
@@ -202,6 +221,7 @@ export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode | null): string 
   if (mode === "natsuyasumi") return tier.name;
   if (mode === "powerpro") return `査定 ${tier.name}`;
   if (mode === "claude") return tier.name;
+  if (mode === "zen") return tier.name;
   return `危険度 ${tier.name}`;
 }
 
@@ -214,6 +234,7 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   natsuyasumi: "card-running-nat",
   powerpro: "card-running-pp",
   claude: "card-running-claude",
+  zen: "card-running-zen",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -226,6 +247,7 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   natsuyasumi: "card-overrun-nat",
   powerpro: "card-overrun-pp",
   claude: "card-overrun-claude",
+  zen: "card-overrun-zen",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -238,6 +260,7 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   natsuyasumi: "hazard-bar-nat",
   powerpro: "hazard-bar-pp",
   claude: "hazard-bar-claude",
+  zen: "hazard-bar-zen",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -250,6 +273,7 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   natsuyasumi: "gantt-bar-overrun-nat",
   powerpro: "gantt-bar-overrun-pp",
   claude: "gantt-bar-overrun-claude",
+  zen: "gantt-bar-overrun-zen",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
@@ -270,6 +294,7 @@ export function runningLabel(mode: ThemedMode | null): string {
   if (mode === "powerpro") return "出場中";
   if (mode === "lobotomy") return "計測中";
   if (mode === "claude") return "実行中";
+  if (mode === "zen") return "今、ここ";
   return "計測中";
 }
 
@@ -280,6 +305,7 @@ export function overrunLabel(mode: ThemedMode | null): string {
   if (mode === "natsuyasumi") return "🌻 予定より長引き中";
   if (mode === "powerpro") return "⚾ 延長戦・大幅超過";
   if (mode === "claude") return "🧠 拡張思考中・想定超過";
+  if (mode === "zen") return "まだ、そこに在ります";
   return "⚠ 計測中・予測超過";
 }
 
@@ -295,6 +321,7 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   natsuyasumi: "なつやすみの しゅくだい",
   powerpro: "球団ノート",
   claude: "Claude",
+  zen: "今",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -419,6 +446,25 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "年間ふりかえり",
     report: "レポート",
     records: "ログ編集",
+    settings: "設定",
+  },
+  // 禅モードは「今」タブと「設定」タブしか表示しないため、他のラベルは
+  // 実質使われないが、Record<TabKey, string>を満たすため静かな言い回しで埋めておく
+  zen: {
+    today: "今",
+    todo: "こと",
+    projects: "つづくこと",
+    master: "積み重ね",
+    template: "週の型",
+    gantt: "歩み",
+    aggregation: "積算",
+    charts: "流れ",
+    heatmap: "濃淡",
+    attention: "気にかかること",
+    overtime: "根を詰めた日",
+    yearlyChart: "一年",
+    report: "ふりかえり",
+    records: "記録",
     settings: "設定",
   },
 };

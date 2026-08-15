@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useSetting } from "@/lib/settings";
 
-const THEMED_MODES = ["lobotomy", "va11halla", "persona5", "natsuyasumi", "powerpro", "claude"];
+const THEMED_MODES = ["lobotomy", "va11halla", "persona5", "natsuyasumi", "powerpro", "claude", "zen"];
 
 // 演出テーマ(オフ / ロボトミーコーポレーション風 / VA-11 HALL-A風 / ペルソナ5風 / ぼくのなつやすみ風 / パワプロ風 / Claudeモード)を
 // <html>のdata属性に反映する。globals.cssのhtml[data-visual-mode="..."]

@@ -388,9 +388,27 @@ function ClaudeArt() {
   );
 }
 
+// 禅モード: 他テーマのような情景も、Claudeモードの放射スパークのような装飾も一切描かない。
+// ごくわずかに濃淡のあるだけの余白そのものを見せる、最も「引き算」された構図。
+// 高さも他テーマのh-24/h-28より低くし、ヘッダーの存在感自体を薄くする
+function ZenArt() {
+  return (
+    <svg viewBox="0 0 1200 80" preserveAspectRatio="none" className="h-10 w-full sm:h-12" role="img" aria-label="静かな余白のイラスト">
+      <defs>
+        <linearGradient id="zenWash" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="rgb(var(--panel-rgb))" />
+          <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="1200" height="80" fill="url(#zenWash)" />
+    </svg>
+  );
+}
+
 export default function HeaderArt() {
-  const { natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode } = useVisualMode();
+  const { natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode } = useVisualMode();
   if (claudeMode) return <ClaudeArt />;
+  if (zenMode) return <ZenArt />;
   if (persona5Mode) return <Persona5Art />;
   if (lobotomyMode) return <LobotomyArt />;
   if (va11hallaMode) return <Va11Art />;
