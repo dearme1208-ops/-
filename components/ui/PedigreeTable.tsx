@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import type { TreeNode, TreeNodeBadge } from "@/components/ui/TreeView";
 
-// 縦書きの列見出し用スタイル(グループ/タスク/サブタスクの各名称セルに適用)
-const VERTICAL_STYLE = { writingMode: "vertical-rl" as const, textOrientation: "mixed" as const };
+// 縦書きの列見出し用スタイル(グループ/タスクの各名称セルに適用)。
+// text-orientation: mixed だと半角の数字・英字だけ90度横倒しになり読みにくいため、
+// upright にして全ての文字を(数字・英字も含めて)正立させたまま縦に並べる
+const VERTICAL_STYLE = { writingMode: "vertical-rl" as const, textOrientation: "upright" as const };
 // グループ列(大項目〜対応状況)は深さに応じて濃淡だけ変える。新しい色相は増やさない
 const GROUP_BG = ["bg-ink/40", "bg-ink/28", "bg-ink/16"];
 
@@ -249,7 +251,7 @@ export default function PedigreeTable({ nodes, groupLabels }: { nodes: TreeNode[
                       row.subtaskEmphasis ? "ring-1 ring-inset ring-alert/40" : ""
                     }`}
                   >
-                    <span className="inline-block text-xs text-cream" style={VERTICAL_STYLE}>
+                    <span className="block max-w-[10rem] truncate text-xs text-cream" title={row.subtaskLabel}>
                       {row.subtaskLabel}
                     </span>
                   </td>
