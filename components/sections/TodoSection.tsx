@@ -1024,7 +1024,7 @@ export default function TodoSection({
         {displayMode === "calendar" ? (
           <TodoCalendarView tasks={tasksForTimeline} subtasks={subtasksForTimeline} today={today} />
         ) : displayMode === "tree" ? (
-          <TreeView nodes={todoTree} />
+          <TreeView nodes={todoTree} verticalLabels />
         ) : displayMode === "kanban" ? (
           <KanbanBoard
             tasks={visibleTasks}
