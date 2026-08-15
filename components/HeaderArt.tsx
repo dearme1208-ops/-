@@ -152,6 +152,50 @@ function Persona5Art() {
   );
 }
 
+// ロボトミーコーポレーション風: 中央に据えた収容ユニットの隔壁扉(同心円+スポーク+
+// 明滅する警告灯)と、下端に走るハザードストライプ(黒×アクセント色の斜めテープ)。
+// 他テーマは共通のDefaultArt(岩肌と高層ビル)をそのまま使っているが、ロボトミー風だけは
+// 既存の情景を流用せず丸ごと描き替える(UIデザインの縛りを破ってほしいという要望に対応)。
+// 配色は基調色をそのまま使い(ペルソナ5風のように固定パレットへは差し替えない)、
+// 素っ気ない管理局施設らしい抑制の効いた見た目を保つ
+function LobotomyArt() {
+  const spokes = Array.from({ length: 8 }, (_, i) => i * 45);
+  return (
+    <svg
+      viewBox="0 0 1200 220"
+      preserveAspectRatio="none"
+      className="h-24 w-full sm:h-28"
+      role="img"
+      aria-label="収容ユニットの隔壁扉とハザードストライプのイラスト"
+    >
+      <defs>
+        <linearGradient id="loboSky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgb(var(--ink-rgb))" />
+          <stop offset="100%" stopColor="rgb(var(--panel-rgb))" />
+        </linearGradient>
+        <pattern id="loboHazard" width="26" height="26" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="13" height="26" fill="rgb(var(--accent-rgb))" />
+          <rect x="13" width="13" height="26" fill="rgb(var(--ink-rgb))" />
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="1200" height="220" fill="url(#loboSky)" />
+      {/* 隔壁扉: 同心円+放射スポーク */}
+      <g transform="translate(600 106)" fill="none" stroke="rgb(var(--cream-rgb))">
+        <circle r="94" strokeOpacity="0.14" strokeWidth="10" />
+        <circle r="68" strokeOpacity="0.22" strokeWidth="2.5" />
+        <circle r="46" strokeOpacity="0.28" strokeWidth="2" />
+        {spokes.map((deg) => (
+          <line key={deg} x1="0" y1="0" x2="94" y2="0" strokeOpacity="0.13" strokeWidth="2" transform={`rotate(${deg})`} />
+        ))}
+      </g>
+      {/* 明滅する警告灯 */}
+      <circle cx="600" cy="106" r="7" fill="rgb(var(--accent-rgb))" className="lobo-warning-light" />
+      {/* 下端のハザードストライプ */}
+      <rect x="0" y="194" width="1200" height="26" fill="url(#loboHazard)" opacity="0.6" />
+    </svg>
+  );
+}
+
 // Claudeモード: 他テーマのような具体的な情景(街・空・球場)を描かず、Claude自身のロゴを
 // 思わせる放射状のスパークだけを中央に置いた、抽象的で余白の多い構図にする
 function ClaudeArt() {
@@ -192,9 +236,10 @@ function ClaudeArt() {
 }
 
 export default function HeaderArt() {
-  const { natsuyasumiMode, powerproMode, claudeMode, persona5Mode } = useVisualMode();
+  const { natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode } = useVisualMode();
   if (claudeMode) return <ClaudeArt />;
   if (persona5Mode) return <Persona5Art />;
+  if (lobotomyMode) return <LobotomyArt />;
   if (natsuyasumiMode) return <NatsuyasumiArt />;
   if (powerproMode) return <PowerproArt />;
   return <DefaultArt />;

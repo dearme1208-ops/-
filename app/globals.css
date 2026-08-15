@@ -695,6 +695,84 @@ html[data-high-contrast="true"] :focus-visible {
       clip-path: inset(0 0 0 0);
     }
   }
+  /* ロボトミーコーポレーション風: パネル右下に「機密」のゴム印めいたスタンプを重ね、
+     収容記録の書類めいた雰囲気を足す。左上は既存の角の丸ピン(rivet)のため空けておく */
+  html[data-visual-mode="lobotomy"] .panel::after {
+    content: "機密";
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    padding: 1px 7px;
+    font-family: var(--font-special-elite), var(--font-noto-sans-jp), monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: rgb(var(--accent-rgb) / 0.5);
+    border: 1.5px solid rgb(var(--accent-rgb) / 0.35);
+    transform: rotate(-6deg);
+    pointer-events: none;
+  }
+  /* ヘッダーの隔壁扉に添えた警告灯が、明滅を繰り返す */
+  .lobo-warning-light {
+    opacity: 0;
+  }
+  html[data-visual-mode="lobotomy"] .lobo-warning-light {
+    animation: lobo-warning-blink 2.6s ease-in-out infinite;
+  }
+  @keyframes lobo-warning-blink {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  /* ロボトミーコーポレーション風: 画面全体の背景に「機密」の巨大な透かし文字を斜めに置く。
+     ペルソナ5風の透かし(右下・赤)とは逆の左上に置き、混同しないようにする */
+  .lobo-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    overflow: hidden;
+  }
+  html[data-visual-mode="lobotomy"] .lobo-watermark {
+    opacity: 1;
+  }
+  html[data-visual-mode="lobotomy"] .lobo-watermark::before {
+    content: "機密";
+    position: absolute;
+    left: -6vw;
+    top: -14vh;
+    font-family: var(--font-special-elite), var(--font-noto-sans-jp), monospace;
+    font-size: 34vw;
+    line-height: 0.8;
+    font-weight: 700;
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgb(var(--accent-rgb) / 0.1);
+    transform: rotate(8deg);
+    white-space: nowrap;
+  }
+  /* ロボトミーコーポレーション風: スクロールバー・テキスト選択もアクセント色×黒に統一する */
+  html[data-visual-mode="lobotomy"] ::selection {
+    background: rgb(var(--accent-rgb) / 0.55);
+    color: rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="lobotomy"] {
+    scrollbar-color: rgb(var(--accent-rgb)) rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="lobotomy"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  html[data-visual-mode="lobotomy"] ::-webkit-scrollbar-track {
+    background: rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="lobotomy"] ::-webkit-scrollbar-thumb {
+    background: rgb(var(--accent-rgb) / 0.7);
+    border: 2px solid rgb(var(--ink-rgb));
+  }
   /* VA-11 HALL-A風: ドット感のある多重ステップ枠で、ピクセルアートのウィンドウ風に寄せる */
   html[data-visual-mode="va11halla"] .panel {
     position: relative;
@@ -1820,7 +1898,8 @@ html[data-high-contrast="true"] :focus-visible {
   h3.font-display,
   .nat-butterfly,
   .claude-spark,
-  .claude-pulse-dot {
+  .claude-pulse-dot,
+  .lobo-warning-light {
     animation: none !important;
   }
   .crt-scanlines,

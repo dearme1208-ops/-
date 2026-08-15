@@ -100,6 +100,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="crt-noise" aria-hidden="true" />
         <div className="synthwave-grid" aria-hidden="true" />
         <div className="p5-watermark" aria-hidden="true" />
+        <div className="lobo-watermark" aria-hidden="true" />
         <div className="frame-corners">
           <span className="corner-tr" />
           <span className="corner-br" />
