@@ -111,6 +111,47 @@ function PowerproArt() {
   );
 }
 
+// ペルソナ5風: 対角線に切り裂かれた赤黒のスプリット背景に、ギザギザの黒いスカイライン
+// シルエットと白い三日月、ハーフトーンドットを重ねた「予告状」めいた構図にする。
+// 他テーマは共通のDefaultArt(岩肌と高層ビル)をそのまま使っているが、ペルソナ5風だけは
+// 既存の情景を流用せず丸ごと描き替える(UIデザインの縛りを破ってほしいという要望に対応)
+function Persona5Art() {
+  return (
+    <svg
+      viewBox="0 0 1200 220"
+      preserveAspectRatio="none"
+      className="h-24 w-full sm:h-28"
+      role="img"
+      aria-label="赤と黒に切り裂かれた夜景と白い三日月のイラスト"
+    >
+      <defs>
+        <linearGradient id="p5SplitRed" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="rgb(var(--p5-red-rgb))" stopOpacity="0.7" />
+          <stop offset="100%" stopColor="rgb(var(--p5-red-rgb))" stopOpacity="0.25" />
+        </linearGradient>
+        <pattern id="p5HeaderDots" width="9" height="9" patternUnits="userSpaceOnUse">
+          <circle cx="1.4" cy="1.4" r="1.4" fill="rgb(var(--p5-white-rgb))" />
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="1200" height="220" fill="#050506" />
+      <polygon points="0,0 780,0 340,220 0,220" fill="url(#p5SplitRed)" />
+      <polygon points="0,0 780,0 340,220 0,220" fill="url(#p5HeaderDots)" opacity="0.18" />
+      <polygon points="780,0 1200,0 1200,220 340,220" fill="none" stroke="rgb(var(--p5-red-rgb))" strokeOpacity="0.5" strokeWidth="3" />
+      {/* ギザギザの黒いスカイラインシルエット(赤帯・黒帯の両方にかぶせて切り絵風に) */}
+      <g fill="#050506">
+        <polygon points="0,220 0,128 34,150 62,96 96,142 130,78 168,146 200,112 236,150 236,220" />
+        <polygon points="560,220 560,150 606,178 642,116 686,168 724,104 760,158 796,132 830,164 830,220" />
+        <polygon points="960,220 960,142 998,168 1030,110 1070,158 1108,100 1146,150 1180,124 1200,140 1200,220" />
+      </g>
+      {/* 白い三日月(黒い欠け円を少しずらして重ねる) */}
+      <g transform="translate(1040,58)">
+        <circle r="32" fill="rgb(var(--p5-white-rgb))" opacity="0.95" />
+        <circle cx="15" cy="-9" r="29" fill="#050506" />
+      </g>
+    </svg>
+  );
+}
+
 // Claudeモード: 他テーマのような具体的な情景(街・空・球場)を描かず、Claude自身のロゴを
 // 思わせる放射状のスパークだけを中央に置いた、抽象的で余白の多い構図にする
 function ClaudeArt() {
@@ -151,8 +192,9 @@ function ClaudeArt() {
 }
 
 export default function HeaderArt() {
-  const { natsuyasumiMode, powerproMode, claudeMode } = useVisualMode();
+  const { natsuyasumiMode, powerproMode, claudeMode, persona5Mode } = useVisualMode();
   if (claudeMode) return <ClaudeArt />;
+  if (persona5Mode) return <Persona5Art />;
   if (natsuyasumiMode) return <NatsuyasumiArt />;
   if (powerproMode) return <PowerproArt />;
   return <DefaultArt />;

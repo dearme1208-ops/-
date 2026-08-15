@@ -485,6 +485,71 @@ html[data-high-contrast="true"] :focus-visible {
     -webkit-mask-image: linear-gradient(to top, black, transparent 22%);
     mask-image: linear-gradient(to top, black, transparent 22%);
   }
+
+  /* ペルソナ5風: 画面全体の背景に「覚醒」の巨大な透かし文字を斜めに置く。
+     パネルが画面幅いっぱいに並ぶスマホ幅ではほとんど隠れてしまうが、余白の広い
+     画面幅では効いてくるボーナス演出として、他テーマには無い専用の固定レイヤーを新設した */
+  .p5-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    overflow: hidden;
+  }
+  html[data-visual-mode="persona5"] .p5-watermark {
+    opacity: 1;
+  }
+  html[data-visual-mode="persona5"] .p5-watermark::before {
+    content: "覚醒";
+    position: absolute;
+    right: -8vw;
+    bottom: -12vh;
+    font-family: var(--font-anton), var(--font-noto-sans-jp), sans-serif;
+    font-size: 38vw;
+    line-height: 0.8;
+    font-weight: 900;
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgb(var(--p5-red-rgb) / 0.14);
+    transform: rotate(-9deg);
+    white-space: nowrap;
+  }
+
+  /* ペルソナ5風: スクロールバーとテキスト選択も赤黒の切り絵配色にする(細部まで統一) */
+  html[data-visual-mode="persona5"] ::selection {
+    background: rgb(var(--p5-red-rgb) / 0.65);
+    color: rgb(var(--p5-white-rgb));
+  }
+  html[data-visual-mode="persona5"] {
+    scrollbar-color: rgb(var(--p5-red-rgb)) #050506;
+  }
+  html[data-visual-mode="persona5"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  html[data-visual-mode="persona5"] ::-webkit-scrollbar-track {
+    background: #050506;
+  }
+  html[data-visual-mode="persona5"] ::-webkit-scrollbar-thumb {
+    background: rgb(var(--p5-red-rgb));
+    border: 2px solid #050506;
+  }
+
+  /* ペルソナ5風: 入力欄も角丸をやめ、パネルや見出しバナーと同じ「鋭くカットされた紙片」の
+     シルエットに揃える。フォーカス時は赤い縁取りで「選択中」を強調する */
+  html[data-visual-mode="persona5"] input,
+  html[data-visual-mode="persona5"] textarea,
+  html[data-visual-mode="persona5"] select {
+    border-radius: 0;
+    clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px);
+  }
+  html[data-visual-mode="persona5"] input:focus,
+  html[data-visual-mode="persona5"] textarea:focus,
+  html[data-visual-mode="persona5"] select:focus {
+    outline: none;
+    box-shadow: 0 0 0 1.5px rgb(var(--p5-red-rgb));
+  }
+
   /* ぼくのなつやすみ風: 同じ器を流用し、画面下からやわらかく差し込む陽射しのグラデーションに差し替える */
   html[data-visual-mode="natsuyasumi"] .synthwave-grid {
     opacity: 0.6;
