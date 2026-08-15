@@ -203,16 +203,21 @@ export default function TodoSection({
 
   const topLevelTasks = useMemo(() => (allTasks ?? []).filter((t) => !t.parentTaskId), [allTasks]);
 
-  // 期限切れ: 未完了かつ期日（サブタスクの期日を含む）が本日より前のタスク
-  const overdueTasks = useMemo(
-    () =>
-      topLevelTasks.filter((t) => {
-        if (t.completed) return false;
-        const due = effectiveDueDate(t, subtasksByParent.get(t.id) ?? []);
-        return !!due && due < today;
-      }),
-    [topLevelTasks, subtasksByParent, today]
-  );
+  // 期限切れ: 未完了かつ自分自身の期日が本日より前のタスク・サブタスク。
+  // 親タスク本体の期日だけでなく、サブタスク自身の期日が過ぎている場合はサブタスクを
+  // そのまま個別の項目として含める（親だけをリスケジュールしてもサブタスク自身の期日は
+  // 変わらず期限切れが解消されないため、サブタスクを直接選んでリスケジュールできるようにする）
+  const overdueTasks = useMemo(() => {
+    const items: TodoTask[] = [];
+    for (const t of topLevelTasks) {
+      if (!t.completed && !!t.dueDate && t.dueDate < today) items.push(t);
+      for (const s of subtasksByParent.get(t.id) ?? []) {
+        if (!s.completed && !!s.dueDate && s.dueDate < today) items.push(s);
+      }
+    }
+    return items;
+  }, [topLevelTasks, subtasksByParent, today]);
+  const parentTitleById = useMemo(() => new Map(topLevelTasks.map((t) => [t.id, t.title])), [topLevelTasks]);
   // 一覧表示(通常view)でのタスク複数選択+一括操作。期限超過ビューの一括操作とは別の独立した仕組み
   const [bulkSelectionMode, setBulkSelectionMode] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
@@ -1079,6 +1084,7 @@ export default function TodoSection({
           <OverdueBulkList
             tasks={incompleteTasks}
             today={today}
+            parentTitleById={parentTitleById}
             selectedIds={selectedOverdueIds}
             onToggleSelect={toggleOverdueSelect}
             onSelectAll={selectAllOverdue}
@@ -1240,6 +1246,7 @@ export default function TodoSection({
 function OverdueBulkList({
   tasks,
   today,
+  parentTitleById,
   selectedIds,
   onToggleSelect,
   onSelectAll,
@@ -1252,6 +1259,7 @@ function OverdueBulkList({
 }: {
   tasks: TodoTask[];
   today: string;
+  parentTitleById: Map<string, string>;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onSelectAll: () => void;
@@ -1335,6 +1343,11 @@ function OverdueBulkList({
                 {selectedIds.has(task.id) ? "✓" : ""}
               </button>
               <button className="min-w-0 flex-1 text-left" onClick={() => onOpenDetail(task.id)}>
+                {task.parentTaskId && (
+                  <div className="truncate text-[10px] text-cream/40">
+                    └ {parentTitleById.get(task.parentTaskId) ?? "親タスク"}のサブタスク
+                  </div>
+                )}
                 <div className="truncate text-sm text-cream">{task.title}</div>
                 <div className="flex flex-wrap items-center gap-2 text-[10px] text-cream/50">
                   {task.tag && <span>{task.tag}</span>}
