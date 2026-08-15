@@ -13,8 +13,12 @@ interface CompletionEntry {
   label: string;
   completedAt: number;
   kind: "project" | "stage";
-  auto?: boolean; // インポート元で行が見当たらなくなったことによる自動完了(実際に終わったとは限らない)
+  suppressed?: boolean; // 「完了」として讃える対象から外すべき理由がある(自動完了 or 同一タイトル大量記録)
 }
+
+// 同じタイトルの案件がこの件数以上存在する場合、それは1つの案件ではなく詳細作業名(workName)
+// 単位で日々の作業を記録しているだけの可能性が高いとみなし、完了を「讃える」対象から外す
+const DUPLICATE_TITLE_THRESHOLD = 3;
 
 // Claudeモード専用の「レポート」体験。既存のReportSection(統計タイル・重ね合わせ
 // グラフ・印刷レイアウト・PDF/HTML/ics書き出し等)は踏襲せず、Claudeが今週/今月を
@@ -59,6 +63,14 @@ export default function ClaudeReportSection() {
 
     const troubleCount = periodRecords.filter((r) => r.isTrouble).length;
 
+    // 同じタイトルの案件が大量に存在する場合、案件というより詳細作業名(workName)単位で
+    // 日々の作業を記録しているだけの可能性が高い(CSVインポート元で「完了」列が立って
+    // いても、それは「本日の作業に落とし込んだ分」が終わっただけで、案件そのものの
+    // 完了ではないことが多い)。タイトルの出現回数を先に数えておき、閾値以上なら
+    // その案件の完了は「讃える」対象から外す
+    const titleCounts = new Map<string, number>();
+    for (const p of projects ?? []) titleCounts.set(p.title, (titleCounts.get(p.title) ?? 0) + 1);
+
     // プロジェクト全体の完了と、その中の個々の段階の完了は別の出来事として扱う。
     // 段階は完了しても案件全体はまだ、ということも多いため、両方を別集計にして
     // 詳細も一覧で見えるようにする(段階にはcompletedAtが無かったため以前は区別できなかった)
@@ -66,7 +78,8 @@ export default function ClaudeReportSection() {
     for (const p of projects ?? []) {
       if (p.completedAt && isDateStrInRange(new Date(p.completedAt).toISOString().slice(0, 10), range)) {
         const label = p.workName && p.workName !== p.title ? `${p.title}（${p.workName}）` : p.title;
-        completions.push({ key: `project-${p.id}`, label, completedAt: p.completedAt, kind: "project", auto: p.autoCompletedByImport });
+        const suppressed = !!p.autoCompletedByImport || (titleCounts.get(p.title) ?? 0) >= DUPLICATE_TITLE_THRESHOLD;
+        completions.push({ key: `project-${p.id}`, label, completedAt: p.completedAt, kind: "project", suppressed });
       }
       for (const s of p.stages ?? []) {
         if (s.completedAt && isDateStrInRange(new Date(s.completedAt).toISOString().slice(0, 10), range)) {
@@ -75,11 +88,9 @@ export default function ClaudeReportSection() {
       }
     }
     completions.sort((a, b) => b.completedAt - a.completedAt);
-    // インポート元で行が見当たらなくなったための自動完了は、実際に案件が終わったとは
-    // 限らない(詳細作業名が変わって別行扱いになっただけのことが多い)ため、
-    // 「完了しました」と讃える対象からは外し、件数だけ別枠で控えめに触れる
-    const projectCompletions = completions.filter((c) => c.kind === "project" && !c.auto);
-    const autoCompletions = completions.filter((c) => c.kind === "project" && c.auto);
+    // 讃える対象から外した完了は、件数だけ控えめに触れる(理由は自動完了・同名多発のいずれか)
+    const projectCompletions = completions.filter((c) => c.kind === "project" && !c.suppressed);
+    const autoCompletions = completions.filter((c) => c.kind === "project" && c.suppressed);
     const stageCompletions = completions.filter((c) => c.kind === "stage");
 
     const sentences: string[] = [];
@@ -109,7 +120,7 @@ export default function ClaudeReportSection() {
       }
       if (autoCompletions.length > 0) {
         sentences.push(
-          `なお、インポート元で行が見当たらなくなったために自動的に完了扱いとなった案件が${autoCompletions.length}件あります。実際に作業が終わったとは限らないため、上記のカウントには含めていません。`
+          `なお、同じタイトルで詳細作業名(workName)違いの案件が多数記録されているものなど、実際に案件そのものが終わったとは断定できない完了が${autoCompletions.length}件あります。上記のカウントには含めていません。`
         );
       }
     }
@@ -171,8 +182,10 @@ export default function ClaudeReportSection() {
           )}
           {summary.autoCompletions.length > 0 && (
             <p className="border-t border-cream/10 pt-2 text-[11px] leading-relaxed text-cream/35">
-              ほか、インポート元で行が見当たらなくなったために自動的に完了扱いとなった案件が{summary.autoCompletions.length}
-              件あります（詳細作業名が変わって別行扱いになっただけの可能性が高く、実際に終わったとは限らないためここには含めていません）。
+              ほか、自動的に完了扱いとなったものや、同じタイトルの案件が詳細作業名(workName)違いで
+              大量に記録されているものなど、実際に案件そのものが終わったとは断定できない完了が
+              {summary.autoCompletions.length}件あります(詳細作業名ごとに日々の作業を記録しているだけの
+              可能性が高く、ここには含めていません)。
             </p>
           )}
         </div>
