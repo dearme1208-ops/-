@@ -727,6 +727,13 @@ html[data-high-contrast="true"] :focus-visible {
       opacity: 1;
     }
   }
+  /* ヘッダーの監視ステータスランプも、警告灯と同じ明滅を時間差で使う */
+  .lobo-status-light {
+    opacity: 0.2;
+  }
+  html[data-visual-mode="lobotomy"] .lobo-status-light {
+    animation: lobo-warning-blink 2s ease-in-out infinite;
+  }
   /* ロボトミーコーポレーション風: 画面全体の背景に「機密」の巨大な透かし文字を斜めに置く。
      ペルソナ5風の透かし(右下・赤)とは逆の左上に置き、混同しないようにする */
   .lobo-watermark {
@@ -772,6 +779,143 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="lobotomy"] ::-webkit-scrollbar-thumb {
     background: rgb(var(--accent-rgb) / 0.7);
     border: 2px solid rgb(var(--ink-rgb));
+  }
+
+  /* VA-11 HALL-A風: 画面全体の背景にバーテンダーの決め台詞「CLOSING TIME」を
+     ネオン管フォントの巨大な透かし文字で置く。広い画面幅で効くボーナス演出 */
+  .v11-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    overflow: hidden;
+  }
+  html[data-visual-mode="va11halla"] .v11-watermark {
+    opacity: 1;
+  }
+  html[data-visual-mode="va11halla"] .v11-watermark::before {
+    content: "CLOSING TIME";
+    position: absolute;
+    right: -4vw;
+    bottom: -8vh;
+    font-family: var(--font-vt323), monospace;
+    font-size: 15vw;
+    font-weight: 400;
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgb(var(--v11-cyan-rgb) / 0.14);
+    transform: rotate(-4deg);
+    white-space: nowrap;
+  }
+  html[data-visual-mode="va11halla"] ::selection {
+    background: rgb(var(--v11-pink-rgb) / 0.5);
+    color: #fff;
+  }
+  html[data-visual-mode="va11halla"] {
+    scrollbar-color: rgb(var(--v11-cyan-rgb)) rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="va11halla"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  html[data-visual-mode="va11halla"] ::-webkit-scrollbar-track {
+    background: rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="va11halla"] ::-webkit-scrollbar-thumb {
+    background: rgb(var(--v11-cyan-rgb) / 0.7);
+    border: 2px solid rgb(var(--ink-rgb));
+  }
+
+  /* ぼくのなつやすみ風: 画面全体の背景に「夏休み」の巨大な透かし文字を、手書き風フォントで
+     ゆるく重ねる。他テーマの透かし(赤・アクセント色の輪郭のみ)とは違い、こちらは
+     ぬくもりのある陽射し色でうっすら塗って、絵日記の表紙めいた質感にする */
+  .nat-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    overflow: hidden;
+  }
+  html[data-visual-mode="natsuyasumi"] .nat-watermark {
+    opacity: 1;
+  }
+  html[data-visual-mode="natsuyasumi"] .nat-watermark::before {
+    content: "夏休み";
+    position: absolute;
+    left: -6vw;
+    bottom: -14vh;
+    font-family: var(--font-yomogi), var(--font-noto-sans-jp), sans-serif;
+    font-size: 30vw;
+    line-height: 0.8;
+    color: rgb(var(--nat-sun-rgb) / 0.09);
+    transform: rotate(-6deg);
+    white-space: nowrap;
+  }
+  html[data-visual-mode="natsuyasumi"] ::selection {
+    background: rgb(var(--nat-sun-rgb) / 0.5);
+    color: rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="natsuyasumi"] {
+    scrollbar-color: rgb(var(--nat-leaf-rgb)) rgb(var(--nat-sun-rgb) / 0.15);
+  }
+  html[data-visual-mode="natsuyasumi"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  html[data-visual-mode="natsuyasumi"] ::-webkit-scrollbar-track {
+    background: rgb(var(--nat-sun-rgb) / 0.12);
+  }
+  html[data-visual-mode="natsuyasumi"] ::-webkit-scrollbar-thumb {
+    background: rgb(var(--nat-leaf-rgb) / 0.7);
+    border: 2px solid rgb(var(--nat-sun-rgb) / 0.12);
+    border-radius: 999px;
+  }
+
+  /* パワプロ風: 画面全体の背景に「全力」の巨大な透かし文字を置く。試合の熱気を感じさせる
+     太字の輪郭で、他テーマの透かしと同じ「広い画面幅で効くボーナス演出」の位置づけ */
+  .pp-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    overflow: hidden;
+  }
+  html[data-visual-mode="powerpro"] .pp-watermark {
+    opacity: 1;
+  }
+  html[data-visual-mode="powerpro"] .pp-watermark::before {
+    content: "全力";
+    position: absolute;
+    right: -6vw;
+    top: -14vh;
+    font-family: var(--font-noto-sans-jp), sans-serif;
+    font-size: 30vw;
+    line-height: 0.8;
+    font-weight: 900;
+    color: transparent;
+    -webkit-text-stroke: 1.5px rgb(var(--pp-green-rgb) / 0.12);
+    transform: rotate(5deg);
+    white-space: nowrap;
+  }
+  html[data-visual-mode="powerpro"] ::selection {
+    background: rgb(var(--pp-green-rgb) / 0.4);
+    color: #fff;
+  }
+  html[data-visual-mode="powerpro"] {
+    scrollbar-color: rgb(var(--pp-green-rgb)) #fff;
+  }
+  html[data-visual-mode="powerpro"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  html[data-visual-mode="powerpro"] ::-webkit-scrollbar-track {
+    background: #fff;
+  }
+  html[data-visual-mode="powerpro"] ::-webkit-scrollbar-thumb {
+    background: rgb(var(--pp-green-rgb) / 0.75);
+    border: 2px solid #fff;
   }
   /* VA-11 HALL-A風: ドット感のある多重ステップ枠で、ピクセルアートのウィンドウ風に寄せる */
   html[data-visual-mode="va11halla"] .panel {
@@ -1899,7 +2043,8 @@ html[data-high-contrast="true"] :focus-visible {
   .nat-butterfly,
   .claude-spark,
   .claude-pulse-dot,
-  .lobo-warning-light {
+  .lobo-warning-light,
+  .lobo-status-light {
     animation: none !important;
   }
   .crt-scanlines,

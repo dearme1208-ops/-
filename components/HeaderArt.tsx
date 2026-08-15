@@ -47,11 +47,12 @@ function DefaultArt() {
   );
 }
 
-// ぼくのなつやすみ風: 入道雲の湧く夏空・太陽・緑の丘。他テーマのダークな夜景とは正反対の、
+// ぼくのなつやすみ風: 入道雲の湧く夏空・太陽・緑の丘に、遠くの鳥居と風鈴を足して
+// 田舎の夏休みらしい懐かしさをもう一段強める。他テーマのダークな夜景とは正反対の、
 // 明るく懐かしい昼下がりの田舎の情景に描き替える
 function NatsuyasumiArt() {
   return (
-    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="夏空と緑の丘のイラスト">
+    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="夏空と緑の丘、鳥居と風鈴のイラスト">
       <defs>
         <linearGradient id="natSky" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="rgb(var(--nat-sea-rgb))" stopOpacity="0.55" />
@@ -72,6 +73,13 @@ function NatsuyasumiArt() {
         fill="rgb(var(--nat-leaf-rgb))"
         opacity="0.55"
       />
+      {/* 遠くの鳥居(小さな神社への参道を思わせる) */}
+      <g stroke="rgb(var(--nat-sun-rgb))" strokeOpacity="0.45" strokeWidth="4" fill="none">
+        <line x1="470" y1="128" x2="470" y2="164" />
+        <line x1="530" y1="128" x2="530" y2="164" />
+        <line x1="460" y1="128" x2="540" y2="128" />
+        <line x1="454" y1="118" x2="546" y2="118" />
+      </g>
       <path
         d="M0,220 L0,190 Q200,150 420,185 T840,180 T1200,175 L1200,220 Z"
         fill="rgb(var(--nat-leaf-rgb))"
@@ -79,14 +87,21 @@ function NatsuyasumiArt() {
       <text x="0" y="110" fontSize="26" className="nat-butterfly">
         🦋
       </text>
+      {/* 軒先の風鈴 */}
+      <text x="1110" y="60" fontSize="24" opacity="0.7">
+        🎐
+      </text>
     </svg>
   );
 }
 
-// パワプロ風: ナイター照明に照らされた球場のダイヤモンド・外野フェンス・照明塔のシルエット
+// パワプロ風: ナイター照明に照らされた球場のダイヤモンド・外野フェンス・照明塔のシルエットに、
+// 観客席のシルエットとスコアボードの電光、弧を描いて飛ぶ打球を足して球場の熱気を強める
 function PowerproArt() {
+  const crowd = Array.from({ length: 24 }, (_, i) => i);
+  const scoreLamps = Array.from({ length: 6 }, (_, i) => i);
   return (
-    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="野球場のイラスト">
+    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="ナイター球場と観客席、飛球のイラスト">
       <defs>
         <linearGradient id="ppSky" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="rgb(var(--pp-green-rgb))" stopOpacity="0.18" />
@@ -101,12 +116,83 @@ function PowerproArt() {
         <rect x="1080" y="30" width="8" height="150" />
         <rect x="1050" y="20" width="76" height="16" />
       </g>
+      {/* スコアボードの電光(装飾。実際の数値とは連動しない) */}
+      <g transform="translate(150 24)">
+        {scoreLamps.map((i) => (
+          <rect
+            key={i}
+            x={i * 14}
+            y="0"
+            width="9"
+            height="9"
+            fill={i % 2 === 0 ? "rgb(var(--pp-gold-rgb))" : "rgb(var(--pp-green-rgb))"}
+            opacity="0.6"
+          />
+        ))}
+      </g>
+      {/* 観客席のシルエット */}
+      <g fill="rgb(var(--cream-rgb))" opacity="0.14">
+        {crowd.map((i) => (
+          <circle key={i} cx={860 + (i % 12) * 24} cy={38 + Math.floor(i / 12) * 16} r="6" />
+        ))}
+      </g>
       {/* 外野フェンス */}
       <path d="M0,220 L0,175 Q600,140 1200,175 L1200,220 Z" fill="rgb(var(--pp-green-rgb))" opacity="0.7" />
       {/* 内野(ダイヤモンド)の一部 */}
       <polygon points="600,220 500,150 600,90 700,150" fill="rgb(var(--panel-rgb))" opacity="0.9" />
       <polygon points="600,220 500,150 600,90 700,150" fill="none" stroke="rgb(var(--pp-green-rgb))" strokeWidth="3" />
       <circle cx="600" cy="150" r="10" fill="rgb(var(--pp-green-rgb))" />
+      {/* 弧を描いて飛ぶ打球 */}
+      <path d="M 630,140 Q 760,40 920,70" fill="none" stroke="rgb(var(--pp-gold-rgb))" strokeOpacity="0.5" strokeWidth="2" strokeDasharray="4 6" />
+      <circle cx="920" cy="70" r="6" fill="rgb(var(--pp-gold-rgb))" opacity="0.85" />
+    </svg>
+  );
+}
+
+// VA-11 HALL-A風: 雨に濡れたネオン街のビル群と、カウンターに置かれたカクテルグラスのシルエット。
+// 他テーマ共通のDefaultArt(岩肌と高層ビル)をそのまま使っていたが、ここも専用の情景に描き替える
+function Va11Art() {
+  const windows = [
+    { x: 74, y: 78 }, { x: 96, y: 100 }, { x: 74, y: 130 }, { x: 100, y: 150 },
+    { x: 156, y: 60 }, { x: 168, y: 100 }, { x: 156, y: 140 }, { x: 172, y: 170 },
+    { x: 918, y: 70 }, { x: 940, y: 100 }, { x: 918, y: 130 }, { x: 944, y: 160 },
+    { x: 1020, y: 46 }, { x: 1034, y: 80 }, { x: 1020, y: 120 }, { x: 1040, y: 160 },
+  ];
+  const rain = Array.from({ length: 18 }, (_, i) => 40 + i * 66);
+  return (
+    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="雨に濡れるネオン街とカクテルグラスのイラスト">
+      <defs>
+        <linearGradient id="v11Sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgb(var(--ink-rgb))" />
+          <stop offset="100%" stopColor="rgb(var(--panel-rgb))" />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="1200" height="220" fill="url(#v11Sky)" />
+      {/* 高層ビルのシルエット */}
+      <g fill="rgb(var(--ink-rgb))" stroke="rgb(var(--v11-cyan-rgb))" strokeOpacity="0.35" strokeWidth="1.5">
+        <rect x="60" y="56" width="60" height="164" />
+        <rect x="142" y="26" width="50" height="194" />
+        <rect x="900" y="46" width="70" height="174" />
+        <rect x="1000" y="16" width="55" height="204" />
+        <rect x="1080" y="66" width="60" height="154" />
+      </g>
+      {/* 窓明かり(ピンク/シアンのネオン) */}
+      {windows.map((w, i) => (
+        <rect key={i} x={w.x} y={w.y} width="7" height="7" fill={i % 2 === 0 ? "rgb(var(--v11-pink-rgb))" : "rgb(var(--v11-cyan-rgb))"} opacity="0.75" />
+      ))}
+      {/* 雨脚 */}
+      <g stroke="rgb(var(--v11-cyan-rgb))" strokeOpacity="0.2" strokeWidth="1.5">
+        {rain.map((x, i) => (
+          <line key={i} x1={x} y1={-10} x2={x - 22} y2={220} />
+        ))}
+      </g>
+      {/* カウンターに置かれたカクテルグラス */}
+      <g transform="translate(600 108)">
+        <path d="M -30,-56 L 30,-56 L 6,18 L -6,18 Z" fill="none" stroke="rgb(var(--v11-cyan-rgb))" strokeWidth="2" opacity="0.75" />
+        <path d="M -22,-48 L 22,-48 L 3,10 L -3,10 Z" fill="rgb(var(--v11-pink-rgb))" opacity="0.4" />
+        <line x1="0" y1="18" x2="0" y2="40" stroke="rgb(var(--v11-cyan-rgb))" strokeWidth="2" opacity="0.75" />
+        <line x1="-16" y1="40" x2="16" y2="40" stroke="rgb(var(--v11-cyan-rgb))" strokeWidth="2" opacity="0.75" />
+      </g>
     </svg>
   );
 }
@@ -160,13 +246,22 @@ function Persona5Art() {
 // 素っ気ない管理局施設らしい抑制の効いた見た目を保つ
 function LobotomyArt() {
   const spokes = Array.from({ length: 8 }, (_, i) => i * 45);
+  const redactions = [
+    { x: 44, y: 40, w: 150 },
+    { x: 44, y: 60, w: 108 },
+    { x: 44, y: 80, w: 172 },
+    { x: 44, y: 100, w: 90 },
+    { x: 44, y: 120, w: 140 },
+    { x: 44, y: 140, w: 118 },
+  ];
+  const lights = Array.from({ length: 5 }, (_, i) => i);
   return (
     <svg
       viewBox="0 0 1200 220"
       preserveAspectRatio="none"
       className="h-24 w-full sm:h-28"
       role="img"
-      aria-label="収容ユニットの隔壁扉とハザードストライプのイラスト"
+      aria-label="黒塗りにされた記録と収容ユニットの隔壁扉、監視ランプのイラスト"
     >
       <defs>
         <linearGradient id="loboSky" x1="0" y1="0" x2="0" y2="1">
@@ -179,6 +274,12 @@ function LobotomyArt() {
         </pattern>
       </defs>
       <rect x="0" y="0" width="1200" height="220" fill="url(#loboSky)" />
+      {/* 検閲された記録の黒塗り(左側)。機密文書らしさを足す */}
+      <g fill="rgb(var(--cream-rgb))" opacity="0.5">
+        {redactions.map((r, i) => (
+          <rect key={i} x={r.x} y={r.y} width={r.w} height="8" />
+        ))}
+      </g>
       {/* 隔壁扉: 同心円+放射スポーク */}
       <g transform="translate(600 106)" fill="none" stroke="rgb(var(--cream-rgb))">
         <circle r="94" strokeOpacity="0.14" strokeWidth="10" />
@@ -190,6 +291,21 @@ function LobotomyArt() {
       </g>
       {/* 明滅する警告灯 */}
       <circle cx="600" cy="106" r="7" fill="rgb(var(--accent-rgb))" className="lobo-warning-light" />
+      {/* 監視ステータスランプ(右上)。時間差で明滅し、管制卓らしさを足す */}
+      <g transform="translate(1000 32)">
+        {lights.map((i) => (
+          <rect
+            key={i}
+            x={i * 16}
+            y="0"
+            width="9"
+            height="9"
+            fill="rgb(var(--accent-rgb))"
+            className="lobo-status-light"
+            style={{ animationDelay: `${i * 0.35}s` }}
+          />
+        ))}
+      </g>
       {/* 下端のハザードストライプ */}
       <rect x="0" y="194" width="1200" height="26" fill="url(#loboHazard)" opacity="0.6" />
     </svg>
@@ -236,10 +352,11 @@ function ClaudeArt() {
 }
 
 export default function HeaderArt() {
-  const { natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode } = useVisualMode();
+  const { natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode } = useVisualMode();
   if (claudeMode) return <ClaudeArt />;
   if (persona5Mode) return <Persona5Art />;
   if (lobotomyMode) return <LobotomyArt />;
+  if (va11hallaMode) return <Va11Art />;
   if (natsuyasumiMode) return <NatsuyasumiArt />;
   if (powerproMode) return <PowerproArt />;
   return <DefaultArt />;
