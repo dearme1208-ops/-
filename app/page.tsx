@@ -24,7 +24,10 @@ import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/them
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
 const ClaudeTodaySection = dynamic(() => import("@/components/sections/ClaudeTodaySection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
+const ClaudeTodoSection = dynamic(() => import("@/components/sections/ClaudeTodoSection"), { ssr: false });
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
+const ClaudeProjectsSection = dynamic(() => import("@/components/sections/ClaudeProjectsSection"), { ssr: false });
+const ClaudeReportSection = dynamic(() => import("@/components/sections/ClaudeReportSection"), { ssr: false });
 const MasterSection = dynamic(() => import("@/components/sections/MasterSection"), { ssr: false });
 const TemplateSection = dynamic(() => import("@/components/sections/TemplateSection"), { ssr: false });
 const GanttSection = dynamic(() => import("@/components/sections/GanttSection"), { ssr: false });
@@ -158,13 +161,17 @@ export default function HomePage() {
           }}
         />
       )}
-      {active === "todo" && (
+      {active === "todo" && mode === "claude" && <ClaudeTodoSection />}
+      {active === "todo" && mode !== "claude" && (
         <TodoSection
           initialDetailTaskId={pendingTodoDetailId}
           onInitialDetailConsumed={() => setPendingTodoDetailId(null)}
         />
       )}
-      {active === "projects" && (
+      {active === "projects" && mode === "claude" && (
+        <ClaudeProjectsSection onAddedToToday={() => setActive("today")} />
+      )}
+      {active === "projects" && mode !== "claude" && (
         <ProjectsSection
           onAddedToToday={() => setActive("today")}
           initialEditProjectId={pendingProjectEditId}
@@ -180,7 +187,8 @@ export default function HomePage() {
       {active === "attention" && <AttentionSection />}
       {active === "overtime" && <OvertimeSection />}
       {active === "yearlyChart" && <YearlyChartSection />}
-      {active === "report" && <ReportSection />}
+      {active === "report" && mode === "claude" && <ClaudeReportSection />}
+      {active === "report" && mode !== "claude" && <ReportSection />}
       {active === "records" && <RecordsSection />}
       {active === "settings" && <SettingsSection />}
 
