@@ -18,10 +18,12 @@ import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import Modal from "@/components/ui/Modal";
+import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
 import { showUndoToast } from "@/lib/toast";
 import { fireConfetti } from "@/lib/confetti";
 
-type ViewMode = "gantt" | "calendar";
+type ViewMode = "gantt" | "calendar" | "tree";
+const TREE_LEAF_LIMIT = 15;
 
 const DEFAULT_PX_PER_DAY = 28;
 const MIN_PX_PER_DAY = 0.3;
@@ -287,6 +289,76 @@ export default function ProjectsSection({
     [rows, activeRows, showCompletedInTimeline]
   );
 
+  // 系統図ツリー表示: 案件(大)→段階(中)→その段階に紐づく実績(小)のカスケード表示。
+  // 段階が無い案件は、案件に直接紐づく実績を子として並べる
+  const projectTree = useMemo<TreeNode[]>(() => {
+    return timelineSourceRows.map(({ project, overdue, dueToday }) => {
+      const stages = project.stages ?? [];
+      const projectBadges: TreeNodeBadge[] = [
+        { text: formatDateJp(project.dueDate), tone: overdue || dueToday ? "alert" : "muted" },
+      ];
+      if (project.completedAt) projectBadges.push({ text: "完了", tone: "muted" });
+
+      let children: TreeNode[];
+      if (stages.length > 0) {
+        children = stages.map((stage) => {
+          const stageRecords = (records ?? [])
+            .filter((r) => r.projectId === project.id && r.stageId === stage.id)
+            .sort((a, b) => b.date.localeCompare(a.date));
+          const done = isStageDone(stage);
+          const stageOverdue = !done && !!stage.dueDate && stage.dueDate < today;
+          const stageBadges: TreeNodeBadge[] = [];
+          if (stage.dueDate) stageBadges.push({ text: formatDateJp(stage.dueDate), tone: stageOverdue ? "alert" : "muted" });
+          stageBadges.push({ text: done ? "完了" : "未完了", tone: done ? "muted" : "default" });
+
+          const leaves: TreeNode[] = stageRecords.slice(0, TREE_LEAF_LIMIT).map((r) => ({
+            id: r.id,
+            label: r.name,
+            badges: [
+              { text: formatDateJp(r.date), tone: "muted" },
+              { text: formatHms(r.seconds) },
+            ],
+          }));
+          if (stageRecords.length > TREE_LEAF_LIMIT) {
+            leaves.push({ id: `${stage.id}-more`, label: `他${stageRecords.length - TREE_LEAF_LIMIT}件`, badges: [] });
+          }
+
+          return {
+            id: stage.id,
+            label: stage.title,
+            emphasis: stageOverdue,
+            badges: stageBadges,
+            children: leaves,
+          };
+        });
+      } else {
+        const directRecords = (records ?? [])
+          .filter((r) => r.projectId === project.id && !r.stageId)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        children = directRecords.slice(0, TREE_LEAF_LIMIT).map((r) => ({
+          id: r.id,
+          label: r.name,
+          badges: [
+            { text: formatDateJp(r.date), tone: "muted" },
+            { text: formatHms(r.seconds) },
+          ],
+        }));
+        if (directRecords.length > TREE_LEAF_LIMIT) {
+          children.push({ id: `${project.id}-more`, label: `他${directRecords.length - TREE_LEAF_LIMIT}件`, badges: [] });
+        }
+      }
+
+      return {
+        id: project.id,
+        label: project.title,
+        sublabel: project.workName,
+        emphasis: overdue,
+        badges: projectBadges,
+        children,
+      };
+    });
+  }, [timelineSourceRows, records, today]);
+
   // 「今日」を初期位置にする場合、今日より前の実データ(登録日・期日)が少ないと
   // 中央付近までスクロールできず、常に左端(今日を基準にしなかった場合と同じ位置)に
   // 張り付いてしまう。今日の左側に十分な余白日数を確保しておくためのバッファ。
@@ -514,6 +586,12 @@ export default function ProjectsSection({
             >
               カレンダー
             </button>
+            <button
+              className={viewMode === "tree" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setViewMode("tree")}
+            >
+              系統図
+            </button>
             <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
               <input
                 type="checkbox"
@@ -531,6 +609,8 @@ export default function ProjectsSection({
             </p>
           ) : viewMode === "calendar" ? (
             <ProjectsCalendarView projects={timelineRows.map((r) => r.project)} today={today} />
+          ) : viewMode === "tree" ? (
+            <TreeView nodes={projectTree} />
           ) : (
             <>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

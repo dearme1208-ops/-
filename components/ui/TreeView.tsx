@@ -1,0 +1,104 @@
+"use client";
+
+import { useState } from "react";
+
+export interface TreeNodeBadge {
+  text: string;
+  tone?: "default" | "alert" | "muted";
+}
+
+export interface TreeNode {
+  id: string;
+  label: string;
+  sublabel?: string;
+  badges?: TreeNodeBadge[];
+  emphasis?: boolean;
+  children?: TreeNode[];
+  onClick?: () => void;
+}
+
+// 大/中/小の階層を、深さに応じた単色アクセントの濃淡(不透明度)だけで塗り分ける。
+// 新しい色相は増やさず、既存のcream/alertトークンの濃淡のみで系統を表現する
+const DEPTH_STYLES = [
+  { border: "border-cream/50", bg: "bg-ink/40", text: "text-sm font-bold" },
+  { border: "border-cream/30", bg: "bg-ink/25", text: "text-sm" },
+  { border: "border-cream/15", bg: "bg-ink/10", text: "text-xs" },
+];
+
+function badgeClass(tone: TreeNodeBadge["tone"]): string {
+  if (tone === "alert") return "bg-alert/20 text-alert font-bold";
+  if (tone === "muted") return "text-cream/30";
+  return "bg-cream/10 text-cream/70";
+}
+
+function TreeRow({ node, depth }: { node: TreeNode; depth: number }) {
+  const hasChildren = !!node.children && node.children.length > 0;
+  // 「小」にあたる深い階層(実績・サブタスク等)は件数が多くなりがちなので既定で折りたたむ。
+  // ここで判定するのは「自分の子」の深さなので、子が小階層(depth+1>=2)になる depth>=1 のノードを畳む
+  const [collapsed, setCollapsed] = useState(depth >= 1);
+  const style = DEPTH_STYLES[Math.min(depth, DEPTH_STYLES.length - 1)];
+
+  return (
+    <div className={depth > 0 ? "mt-1 ml-4" : "mt-2"}>
+      <div
+        className={`flex items-center gap-2 rounded-lg border-l-4 px-2.5 py-1.5 ${style.border} ${style.bg} ${
+          node.emphasis ? "ring-1 ring-alert/40" : ""
+        }`}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            className="shrink-0 text-cream/50 hover:text-cream"
+            aria-label={collapsed ? "展開" : "折りたたむ"}
+            aria-expanded={!collapsed}
+          >
+            <span className={`inline-block transition-transform ${collapsed ? "-rotate-90" : ""}`}>▾</span>
+          </button>
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        {node.onClick ? (
+          <button type="button" className="min-w-0 flex-1 text-left" onClick={node.onClick}>
+            <span className={`truncate text-cream ${style.text}`}>{node.label}</span>
+            {node.sublabel && <span className="ml-1.5 truncate text-cream/40">{node.sublabel}</span>}
+          </button>
+        ) : (
+          <div className="min-w-0 flex-1">
+            <span className={`truncate text-cream ${style.text}`}>{node.label}</span>
+            {node.sublabel && <span className="ml-1.5 truncate text-cream/40">{node.sublabel}</span>}
+          </div>
+        )}
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          {(node.badges ?? []).map((b, i) => (
+            <span key={i} className={`rounded-full px-1.5 py-0.5 text-[10px] ${badgeClass(b.tone)}`}>
+              {b.text}
+            </span>
+          ))}
+        </div>
+      </div>
+      {hasChildren && !collapsed && (
+        <div>
+          {node.children!.map((child) => (
+            <TreeRow key={child.id} node={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 血統表(競走馬の父方/母方の系統図)の見た目にヒントを得た、大中小の階層を
+// カスケード表示するツリー。二分木ではなく任意の子要素数のツリーに一般化してある
+export default function TreeView({ nodes }: { nodes: TreeNode[] }) {
+  if (nodes.length === 0) {
+    return <p className="px-1 py-4 text-sm text-cream/50">表示する項目がありません。</p>;
+  }
+  return (
+    <div>
+      {nodes.map((node) => (
+        <TreeRow key={node.id} node={node} depth={0} />
+      ))}
+    </div>
+  );
+}

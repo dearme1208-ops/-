@@ -35,6 +35,7 @@ import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types"
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
+import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
 import { showUndoToast } from "@/lib/toast";
 
 const DEFAULT_LIST_TITLE = "タスク";
@@ -53,7 +54,7 @@ const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
 type ViewKey = "myday" | "important" | "planned" | "overdue" | `list:${string}`;
-type DisplayMode = "list" | "gantt" | "calendar" | "kanban";
+type DisplayMode = "list" | "gantt" | "calendar" | "kanban" | "tree";
 
 interface SavedTodoView {
   id: string;
@@ -353,6 +354,49 @@ export default function TodoSection({
       ),
     [visibleTasks, subtasksByParent, showCompletedInTimeline]
   );
+
+  // 系統図ツリー表示: リスト(大)→タスク(中)→サブタスク(小)のカスケード表示。
+  // 現在のview(マイデイ/重要/期限日/期限切れ/特定リスト)で絞り込んだ結果を、リストごとにまとめ直す
+  const todoTree = useMemo<TreeNode[]>(() => {
+    const tasksToShow = visibleTasks.filter((t) => showCompletedInTimeline || !t.completed);
+    const byList = new Map<string, TodoTask[]>();
+    for (const t of tasksToShow) {
+      if (!byList.has(t.listId)) byList.set(t.listId, []);
+      byList.get(t.listId)!.push(t);
+    }
+    return (lists ?? [])
+      .filter((l) => (byList.get(l.id) ?? []).length > 0)
+      .map((list) => {
+        const listTasks = byList.get(list.id) ?? [];
+        return {
+          id: list.id,
+          label: list.title,
+          badges: [{ text: `${listTasks.length}件`, tone: "muted" }],
+          children: listTasks.map((t) => {
+            const overdue = !t.completed && !!t.dueDate && t.dueDate < today;
+            const taskBadges: TreeNodeBadge[] = [];
+            if (t.dueDate) taskBadges.push({ text: formatDateJp(t.dueDate), tone: overdue ? "alert" : "muted" });
+            if (t.important) taskBadges.push({ text: "重要" });
+            if (t.completed) taskBadges.push({ text: "完了", tone: "muted" });
+
+            const subs = (subtasksByParent.get(t.id) ?? []).filter((s) => showCompletedInTimeline || !s.completed);
+            return {
+              id: t.id,
+              label: t.title,
+              emphasis: overdue,
+              badges: taskBadges,
+              children: subs.map((s) => {
+                const subOverdue = !s.completed && !!s.dueDate && s.dueDate < today;
+                const subBadges: TreeNodeBadge[] = [];
+                if (s.dueDate) subBadges.push({ text: formatDateJp(s.dueDate), tone: subOverdue ? "alert" : "muted" });
+                if (s.completed) subBadges.push({ text: "完了", tone: "muted" });
+                return { id: s.id, label: s.title, emphasis: subOverdue, badges: subBadges };
+              }),
+            };
+          }),
+        };
+      });
+  }, [visibleTasks, showCompletedInTimeline, lists, subtasksByParent, today]);
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
 
@@ -840,16 +884,24 @@ export default function TodoSection({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-bold">{panelTitle}</h2>
           <div className="flex flex-wrap items-center gap-2">
-            {(["list", "kanban", "gantt", "calendar"] as DisplayMode[]).map((m) => (
+            {(["list", "kanban", "gantt", "calendar", "tree"] as DisplayMode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => setDisplayMode(m)}
                 className={displayMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
               >
-                {m === "list" ? "リスト" : m === "kanban" ? "かんばん" : m === "gantt" ? "ガント" : "カレンダー"}
+                {m === "list"
+                  ? "リスト"
+                  : m === "kanban"
+                    ? "かんばん"
+                    : m === "gantt"
+                      ? "ガント"
+                      : m === "calendar"
+                        ? "カレンダー"
+                        : "系統図"}
               </button>
             ))}
-            {(displayMode === "gantt" || displayMode === "calendar") && (
+            {(displayMode === "gantt" || displayMode === "calendar" || displayMode === "tree") && (
               <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
                 <input
                   type="checkbox"
@@ -964,6 +1016,8 @@ export default function TodoSection({
 
         {displayMode === "calendar" ? (
           <TodoCalendarView tasks={tasksForTimeline} subtasks={subtasksForTimeline} today={today} />
+        ) : displayMode === "tree" ? (
+          <TreeView nodes={todoTree} />
         ) : displayMode === "kanban" ? (
           <KanbanBoard
             tasks={visibleTasks}
