@@ -356,7 +356,10 @@ export default function TodoSection({
     [visibleTasks, subtasksByParent, showCompletedInTimeline]
   );
 
-  // 系統図ツリー表示: リスト(大)→タスク(中)→サブタスク(小)のカスケード表示。
+  // 系統図テーブルのグループ列(左から順に結合表示する階層)
+  const todoTreeGroupLabels = ["リスト", "分類", "対応状況"];
+
+  // 系統図テーブル表示: リスト(大)→分類→対応状況→タスク→サブタスクのカスケード表示。
   // 現在のview(マイデイ/重要/期限日/期限切れ/特定リスト)で絞り込んだ結果を、リストごとにまとめ直す
   const todoTree = useMemo<TreeNode[]>(() => {
     const tasksToShow = visibleTasks.filter((t) => showCompletedInTimeline || !t.completed);
@@ -365,43 +368,73 @@ export default function TodoSection({
       if (!byList.has(t.listId)) byList.set(t.listId, []);
       byList.get(t.listId)!.push(t);
     }
+
+    // 分類・対応状況ごとにタスクをグルーピングし、未設定は「未分類」「未設定」にまとめる
+    const groupByField = (tasks: TodoTask[], field: "category" | "tag", fallback: string): Map<string, TodoTask[]> => {
+      const map = new Map<string, TodoTask[]>();
+      for (const t of tasks) {
+        const key = (t[field] ?? "").trim() || fallback;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(t);
+      }
+      return map;
+    };
+
+    const buildTaskNode = (t: TodoTask): TreeNode => {
+      const overdue = !t.completed && !!t.dueDate && t.dueDate < today;
+      // タスク行は「タスク名」列+「アクション」列の表形式にする
+      const taskBadges: TreeNodeBadge[] = [];
+      if (t.important) taskBadges.push({ text: "重要" });
+      if (t.completed) taskBadges.push({ text: "完了", tone: "muted" });
+
+      const subs = (subtasksByParent.get(t.id) ?? []).filter((s) => showCompletedInTimeline || !s.completed);
+      return {
+        id: t.id,
+        label: t.title,
+        emphasis: overdue,
+        valueLabel: t.action ?? "",
+        badges: taskBadges,
+        children: subs.map((s) => {
+          // サブタスク行は「サブタスク名」列+「期日」列の表形式にする
+          const subOverdue = !s.completed && !!s.dueDate && s.dueDate < today;
+          const subBadges: TreeNodeBadge[] = [];
+          if (s.completed) subBadges.push({ text: "完了", tone: "muted" });
+          return {
+            id: s.id,
+            label: s.title,
+            emphasis: subOverdue,
+            valueLabel: s.dueDate ? formatDateJp(s.dueDate) : "",
+            badges: subBadges,
+          };
+        }),
+      };
+    };
+
     return (lists ?? [])
       .filter((l) => (byList.get(l.id) ?? []).length > 0)
       .map((list) => {
         const listTasks = byList.get(list.id) ?? [];
+        const byCategory = groupByField(listTasks, "category", "未分類");
+        const categoryNodes: TreeNode[] = Array.from(byCategory.entries()).map(([categoryLabel, categoryTasks]) => {
+          const byTag = groupByField(categoryTasks, "tag", "未設定");
+          const tagNodes: TreeNode[] = Array.from(byTag.entries()).map(([tagLabel, tagTasks]) => ({
+            id: `${list.id}::${categoryLabel}::${tagLabel}`,
+            label: tagLabel,
+            badges: [{ text: `${tagTasks.length}件`, tone: "muted" }],
+            children: tagTasks.map(buildTaskNode),
+          }));
+          return {
+            id: `${list.id}::${categoryLabel}`,
+            label: categoryLabel,
+            badges: [{ text: `${categoryTasks.length}件`, tone: "muted" }],
+            children: tagNodes,
+          };
+        });
         return {
           id: list.id,
           label: list.title,
           badges: [{ text: `${listTasks.length}件`, tone: "muted" }],
-          children: listTasks.map((t) => {
-            const overdue = !t.completed && !!t.dueDate && t.dueDate < today;
-            // タスク行は「タスク名」列+「アクション」列の表形式にする
-            const taskBadges: TreeNodeBadge[] = [];
-            if (t.important) taskBadges.push({ text: "重要" });
-            if (t.completed) taskBadges.push({ text: "完了", tone: "muted" });
-
-            const subs = (subtasksByParent.get(t.id) ?? []).filter((s) => showCompletedInTimeline || !s.completed);
-            return {
-              id: t.id,
-              label: t.title,
-              emphasis: overdue,
-              valueLabel: t.action ?? "",
-              badges: taskBadges,
-              children: subs.map((s) => {
-                // サブタスク行は「サブタスク名」列+「期日」列の表形式にする
-                const subOverdue = !s.completed && !!s.dueDate && s.dueDate < today;
-                const subBadges: TreeNodeBadge[] = [];
-                if (s.completed) subBadges.push({ text: "完了", tone: "muted" });
-                return {
-                  id: s.id,
-                  label: s.title,
-                  emphasis: subOverdue,
-                  valueLabel: s.dueDate ? formatDateJp(s.dueDate) : "",
-                  badges: subBadges,
-                };
-              }),
-            };
-          }),
+          children: categoryNodes,
         };
       });
   }, [visibleTasks, showCompletedInTimeline, lists, subtasksByParent, today]);
@@ -1025,7 +1058,7 @@ export default function TodoSection({
         {displayMode === "calendar" ? (
           <TodoCalendarView tasks={tasksForTimeline} subtasks={subtasksForTimeline} today={today} />
         ) : displayMode === "tree" ? (
-          <PedigreeTable nodes={todoTree} />
+          <PedigreeTable nodes={todoTree} groupLabels={todoTreeGroupLabels} />
         ) : displayMode === "kanban" ? (
           <KanbanBoard
             tasks={visibleTasks}
