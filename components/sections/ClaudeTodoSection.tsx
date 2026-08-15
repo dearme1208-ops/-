@@ -174,32 +174,36 @@ export default function ClaudeTodoSection() {
                 const overdue = !!task.dueDate && task.dueDate < today;
                 const subCount = subtaskCountByParent.get(task.id) ?? 0;
                 return (
-                  <div key={task.id} className="flex items-center gap-2 rounded-lg bg-ink/40 px-3 py-2">
-                    <button
-                      onClick={() => toggleComplete(task)}
-                      aria-label="完了"
-                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-cream/40"
-                    />
-                    <input
-                      key={task.id + task.title}
-                      defaultValue={task.title}
-                      onBlur={(e) => updateTitle(task, e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                      className="min-w-0 flex-1 bg-transparent text-sm text-cream focus:outline-none focus:ring-1 focus:ring-cream/30"
-                    />
-                    {subCount > 0 && <span className="shrink-0 text-[10px] text-cream/30">{subCount}件のサブタスク</span>}
-                    <input
-                      key={task.id + (task.dueDate ?? "")}
-                      type="date"
-                      defaultValue={task.dueDate ?? ""}
-                      onChange={(e) => updateDueDate(task, e.target.value)}
-                      className={`w-[8.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[11px] focus:border-cream/20 focus:outline-none ${
-                        overdue ? "font-bold text-alert" : "text-cream/40"
-                      }`}
-                    />
-                    <button className="shrink-0 text-xs text-cream/30 hover:text-alert" onClick={() => deleteTask(task)}>
-                      ✕
-                    </button>
+                  <div key={task.id} className="rounded-lg bg-ink/40 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleComplete(task)}
+                        aria-label="完了"
+                        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-cream/40"
+                      />
+                      <input
+                        key={task.id + task.title}
+                        defaultValue={task.title}
+                        onBlur={(e) => updateTitle(task, e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                        className="min-w-0 flex-1 bg-transparent text-sm text-cream focus:outline-none focus:ring-1 focus:ring-cream/30"
+                      />
+                      <button className="shrink-0 text-xs text-cream/30 hover:text-alert" onClick={() => deleteTask(task)}>
+                        ✕
+                      </button>
+                    </div>
+                    <div className="mt-1 flex items-center justify-end gap-2 pl-6">
+                      {subCount > 0 && <span className="shrink-0 text-[10px] text-cream/30">{subCount}件のサブタスク</span>}
+                      <input
+                        key={task.id + (task.dueDate ?? "")}
+                        type="date"
+                        defaultValue={task.dueDate ?? ""}
+                        onChange={(e) => updateDueDate(task, e.target.value)}
+                        className={`w-[8.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[11px] focus:border-cream/20 focus:outline-none ${
+                          overdue ? "font-bold text-alert" : "text-cream/40"
+                        }`}
+                      />
+                    </div>
                   </div>
                 );
               })}
