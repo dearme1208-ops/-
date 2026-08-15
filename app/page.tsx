@@ -22,11 +22,9 @@ import OnboardingGuide from "@/components/OnboardingGuide";
 import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
-const ClaudeTodaySection = dynamic(() => import("@/components/sections/ClaudeTodaySection"), { ssr: false });
+const ClaudeWorkspaceSection = dynamic(() => import("@/components/sections/ClaudeWorkspaceSection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
-const ClaudeTodoSection = dynamic(() => import("@/components/sections/ClaudeTodoSection"), { ssr: false });
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
-const ClaudeProjectsSection = dynamic(() => import("@/components/sections/ClaudeProjectsSection"), { ssr: false });
 const ClaudeReportSection = dynamic(() => import("@/components/sections/ClaudeReportSection"), { ssr: false });
 const MasterSection = dynamic(() => import("@/components/sections/MasterSection"), { ssr: false });
 const TemplateSection = dynamic(() => import("@/components/sections/TemplateSection"), { ssr: false });
@@ -148,7 +146,7 @@ export default function HomePage() {
         }}
       />
       <TabNav tabs={tabs} active={active} onChange={setActive} />
-      {active === "today" && mode === "claude" && <ClaudeTodaySection />}
+      {active === "today" && mode === "claude" && <ClaudeWorkspaceSection />}
       {active === "today" && mode !== "claude" && (
         <TodaySection
           onOpenTodoDetail={(taskId) => {
@@ -161,17 +159,13 @@ export default function HomePage() {
           }}
         />
       )}
-      {active === "todo" && mode === "claude" && <ClaudeTodoSection />}
-      {active === "todo" && mode !== "claude" && (
+      {active === "todo" && (
         <TodoSection
           initialDetailTaskId={pendingTodoDetailId}
           onInitialDetailConsumed={() => setPendingTodoDetailId(null)}
         />
       )}
-      {active === "projects" && mode === "claude" && (
-        <ClaudeProjectsSection onAddedToToday={() => setActive("today")} />
-      )}
-      {active === "projects" && mode !== "claude" && (
+      {active === "projects" && (
         <ProjectsSection
           onAddedToToday={() => setActive("today")}
           initialEditProjectId={pendingProjectEditId}

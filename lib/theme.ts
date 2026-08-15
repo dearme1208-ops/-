@@ -86,10 +86,11 @@ export function useVisualMode(): {
 }
 
 // Claudeモードだけは色・文言に加えてタブ構成自体を絞り込む(他モードは全タブ表示のまま)。
-// 「今日の集中」「タスク」「プロジェクト」「レポート」「設定」の5つだけに絞り、
-// Claudeが今の作業に集中できるよう考えた最小構成、という体でタブを間引く
+// ToDoと案件を別のタブに分ける理由が薄いと判断し、「ワークスペース」1つに統合した。
+// どちらも「いつかやること、任意でサブステップと期日を持つ」という同じ概念であり、
+// タブを跨がずその場で計測を開始できる方がClaudeらしいという結論に至ったため
 export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
-  claude: ["today", "todo", "projects", "report", "settings"],
+  claude: ["today", "report", "settings"],
 };
 
 export function visibleTabKeys(mode: VisualMode, allKeys: TabKey[]): TabKey[] {
@@ -404,7 +405,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     settings: "球団運営設定",
   },
   claude: {
-    today: "今日の集中",
+    today: "ワークスペース",
     todo: "タスク",
     projects: "プロジェクト",
     master: "スキル",
