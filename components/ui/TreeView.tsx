@@ -12,6 +12,9 @@ export interface TreeNode {
   label: string;
   sublabel?: string;
   badges?: TreeNodeBadge[];
+  // 表形式で揃えたい主要な値(例: タスク行のアクション、サブタスク行の期日)。
+  // 設定した行だけ固定幅の右寄せ列として表示され、同じ階層内で縦に列が揃って見える
+  valueLabel?: string;
   emphasis?: boolean;
   children?: TreeNode[];
   onClick?: () => void;
@@ -68,6 +71,11 @@ function TreeRow({ node, depth }: { node: TreeNode; depth: number }) {
             <span className={`truncate text-cream ${style.text}`}>{node.label}</span>
             {node.sublabel && <span className="ml-1.5 truncate text-cream/40">{node.sublabel}</span>}
           </div>
+        )}
+        {node.valueLabel !== undefined && (
+          <span className="w-28 shrink-0 truncate text-right text-xs text-cream/60" title={node.valueLabel || undefined}>
+            {node.valueLabel || "—"}
+          </span>
         )}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           {(node.badges ?? []).map((b, i) => (

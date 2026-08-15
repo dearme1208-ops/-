@@ -374,8 +374,8 @@ export default function TodoSection({
           badges: [{ text: `${listTasks.length}件`, tone: "muted" }],
           children: listTasks.map((t) => {
             const overdue = !t.completed && !!t.dueDate && t.dueDate < today;
+            // タスク行は「タスク名」列+「アクション」列の表形式にする
             const taskBadges: TreeNodeBadge[] = [];
-            if (t.dueDate) taskBadges.push({ text: formatDateJp(t.dueDate), tone: overdue ? "alert" : "muted" });
             if (t.important) taskBadges.push({ text: "重要" });
             if (t.completed) taskBadges.push({ text: "完了", tone: "muted" });
 
@@ -384,13 +384,20 @@ export default function TodoSection({
               id: t.id,
               label: t.title,
               emphasis: overdue,
+              valueLabel: t.action ?? "",
               badges: taskBadges,
               children: subs.map((s) => {
+                // サブタスク行は「サブタスク名」列+「期日」列の表形式にする
                 const subOverdue = !s.completed && !!s.dueDate && s.dueDate < today;
                 const subBadges: TreeNodeBadge[] = [];
-                if (s.dueDate) subBadges.push({ text: formatDateJp(s.dueDate), tone: subOverdue ? "alert" : "muted" });
                 if (s.completed) subBadges.push({ text: "完了", tone: "muted" });
-                return { id: s.id, label: s.title, emphasis: subOverdue, badges: subBadges };
+                return {
+                  id: s.id,
+                  label: s.title,
+                  emphasis: subOverdue,
+                  valueLabel: s.dueDate ? formatDateJp(s.dueDate) : "",
+                  badges: subBadges,
+                };
               }),
             };
           }),
