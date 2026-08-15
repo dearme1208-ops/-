@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { todayStr } from "@/lib/time";
-import { DOW_LABELS, buildMonthGrid, buildWeekGrid } from "@/lib/calendarGrid";
+import { DOW_LABELS, buildMonthGrid, buildWeekGrid, type WeekViewMode } from "@/lib/calendarGrid";
+import { useSetting } from "@/lib/settings";
 import type { TodoTask } from "@/lib/types";
 
 export interface SubtaskForCalendar {
@@ -28,6 +29,9 @@ export default function TodoCalendarView({
   const now = new Date();
   const [granularity, setGranularity] = useState<Granularity>("month");
   const [anchor, setAnchor] = useState(now);
+  const [weekViewMode] = useSetting("calendar.weekViewMode", "fixedStart");
+  const [weekStartDayStr] = useSetting("calendar.weekStartDay", "0");
+  const weekStartDay = Number(weekStartDayStr);
 
   // 開始日(なければ期日)〜期日の各日に、その日がバーの先頭/末尾かどうかとともに登録する。
   // サブタスクは開始日の概念を持たないため、期日1日だけの単発エントリとして登録する
@@ -54,8 +58,11 @@ export default function TodoCalendarView({
   }, [tasks, subtasks]);
 
   const grid = useMemo(
-    () => (granularity === "month" ? buildMonthGrid(anchor.getFullYear(), anchor.getMonth()) : buildWeekGrid(anchor)),
-    [granularity, anchor]
+    () =>
+      granularity === "month"
+        ? buildMonthGrid(anchor.getFullYear(), anchor.getMonth())
+        : buildWeekGrid(anchor, weekViewMode as WeekViewMode, weekStartDay),
+    [granularity, anchor, weekViewMode, weekStartDay]
   );
 
   function prev() {

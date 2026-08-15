@@ -23,6 +23,7 @@ import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { parseCategoryRates, serializeCategoryRates } from "@/lib/cost";
 import type { BreakRange } from "@/lib/types";
+import { WEEKDAY_JP } from "@/lib/types";
 
 export default function SettingsSection() {
   const [backupStatus, setBackupStatus] = useState("");
@@ -156,6 +157,8 @@ export default function SettingsSection() {
   const [fontScale, setFontScale] = useSetting("accessibility.fontScale", "md");
   const [highContrastStr, setHighContrastStr] = useSetting("accessibility.highContrast", "false");
   const highContrast = highContrastStr === "true";
+  const [weekViewMode, setWeekViewMode] = useSetting("calendar.weekViewMode", "fixedStart");
+  const [weekStartDayStr, setWeekStartDayStr] = useSetting("calendar.weekStartDay", "0");
   const [visualMode, setVisualMode] = useSetting("theme.visualMode", "off");
   const [customInkRgb, setCustomInkRgb] = useSetting("theme.custom.inkRgb", DEFAULT_CUSTOM_INK_RGB);
   const [customCreamRgb, setCustomCreamRgb] = useSetting("theme.custom.creamRgb", DEFAULT_CUSTOM_CREAM_RGB);
@@ -1033,6 +1036,46 @@ export default function SettingsSection() {
         </div>
         <p className="text-xs text-cream/50">
           文字サイズはアプリ全体に反映されます。ハイコントラストは、薄い文字色・枠線をより濃く表示し、フォーカス時の輪郭も強調します。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">📆 カレンダーの週表示</h3>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            className={weekViewMode === "fixedStart" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setWeekViewMode("fixedStart")}
+          >
+            指定した曜日から1週間
+          </button>
+          <button
+            className={weekViewMode === "centered" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setWeekViewMode("centered")}
+          >
+            今日を中心に前後3日
+          </button>
+          <button
+            className={weekViewMode === "todayForward" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setWeekViewMode("todayForward")}
+          >
+            今日から1週間先まで
+          </button>
+        </div>
+        {weekViewMode === "fixedStart" && (
+          <div className="flex flex-wrap items-center gap-1.5 text-sm">
+            {WEEKDAY_JP.map((label, i) => (
+              <button
+                key={label}
+                className={weekStartDayStr === String(i) ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setWeekStartDayStr(String(i))}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-cream/50">
+          案件・ToDoタブのカレンダー表示を「週」に切り替えた際に、1週間として表示する範囲を選べます。
         </p>
       </div>
 
