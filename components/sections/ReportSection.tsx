@@ -15,7 +15,7 @@ import { recordsToIcs } from "@/lib/ics";
 import { dailyAvgPrecipProbability } from "@/lib/weather";
 import { fireConfetti } from "@/lib/confetti";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
-import { useSetting } from "@/lib/settings";
+import { useDraftSetting, useSetting } from "@/lib/settings";
 import { effectiveDueDate } from "@/lib/todo";
 import { daysBetweenDateStrs, formatHms, todayStr } from "@/lib/time";
 import type { TodoTask } from "@/lib/types";
@@ -58,12 +58,12 @@ export default function ReportSection() {
     if (!range) return "all";
     return kind === "week" ? range.start.toISOString().slice(0, 10) : range.start.toISOString().slice(0, 7);
   }, [kind]);
-  const [note, setNote] = useSetting(`report.note.${kind}.${periodKey}`, "");
+  const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, "");
   const [goalCelebratedKey, setGoalCelebratedKey] = useSetting(`report.goalCelebrated.${kind}.${periodKey}`, "");
   // 負担にならない「1問だけ」の振り返り。自由記述の一言メモとは別に、
   // 期間ごとに固定の1問だけ答える軽い振り返りの儀式として設ける
   const reflectionQuestion = kind === "week" ? "今週、一番良かった判断は?" : "今月、一番の成長は?";
-  const [reflectionAnswer, setReflectionAnswer] = useSetting(`report.reflection.${kind}.${periodKey}`, "");
+  const [reflectionAnswer, setReflectionAnswer] = useDraftSetting(`report.reflection.${kind}.${periodKey}`, "");
 
   const data = useMemo(() => {
     if (!records || !masterTasks) return null;

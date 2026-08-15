@@ -6,7 +6,7 @@ import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
 import { adjustStopTimeForBreaks, computeEffectiveElapsedMs, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
-import { useSetting } from "@/lib/settings";
+import { useDraftSetting, useSetting } from "@/lib/settings";
 import {
   cardOverrunClass,
   cardRunningClass,
@@ -79,7 +79,7 @@ export default function TodaySection({
 }) {
   const date = todayStr();
   // 構造化されたタスクとは別の、自由記述の日次ジャーナル。日付ごとに保存する
-  const [dailyJournal, setDailyJournal] = useSetting(`journal.daily.${date}`, "");
+  const [dailyJournal, setDailyJournal] = useDraftSetting(`journal.daily.${date}`, "");
   const [now, setNow] = useState(() => Date.now());
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
   const [showAddDialog, setShowAddDialog] = useState(false);
