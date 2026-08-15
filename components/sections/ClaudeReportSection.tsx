@@ -20,6 +20,15 @@ interface CompletionEntry {
 // 単位で日々の作業を記録しているだけの可能性が高いとみなし、完了を「讃える」対象から外す
 const DUPLICATE_TITLE_THRESHOLD = 3;
 
+// 文章のたびに違う言い回しを選ぶための簡易ハッシュ。同じseed(期間+文の種類)なら
+// 再レンダーしても同じ選択になるので、数値だけ変わって言い回しはチラつかない。
+// 期間や文の種類が変わればseedも変わるため、レポート全体が毎回同じ定型文には見えなくなる
+function pickVariant<T>(options: readonly T[], seed: string): T {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return options[hash % options.length];
+}
+
 // Claudeモード専用の「レポート」体験。既存のReportSection(統計タイル・重ね合わせ
 // グラフ・印刷レイアウト・PDF/HTML/ics書き出し等)は踏襲せず、Claudeが今週/今月を
 // 振り返って語りかけるような、短い文章によるまとめに絞った。「1問だけの
@@ -95,28 +104,94 @@ export default function ClaudeReportSection() {
 
     const sentences: string[] = [];
     if (periodRecords.length === 0) {
-      sentences.push(`${periodLabel}はまだ記録がありません。`);
+      sentences.push(
+        pickVariant(
+          [`${periodLabel}はまだ記録がありません。`, `${periodLabel}はまだ記録がないようです。`, `${periodLabel}はここまで記録がありません。`],
+          `${periodKey}-empty`
+        )
+      );
     } else {
-      sentences.push(`${periodLabel}の合計作業時間は ${formatHms(totalSeconds)} でした。`);
+      sentences.push(
+        pickVariant(
+          [
+            `${periodLabel}の合計作業時間は ${formatHms(totalSeconds)} でした。`,
+            `${periodLabel}は合計で ${formatHms(totalSeconds)} を記録しています。`,
+            `記録を見ると、${periodLabel}は ${formatHms(totalSeconds)} 取り組んでいますね。`,
+          ],
+          `${periodKey}-total`
+        )
+      );
       if (categoryRanking.length > 0) {
-        sentences.push(`最も時間を使ったのは「${categoryRanking[0][0]}」で、${formatHms(categoryRanking[0][1])}です。`);
+        const [cat, sec] = categoryRanking[0];
+        sentences.push(
+          pickVariant(
+            [
+              `最も時間を使ったのは「${cat}」で、${formatHms(sec)}です。`,
+              `いちばん多くの時間が「${cat}」に使われています(${formatHms(sec)})。`,
+              `「${cat}」に最も比重が置かれた${periodLabel}でした(${formatHms(sec)})。`,
+            ],
+            `${periodKey}-top`
+          )
+        );
       }
       if (prevTotalSeconds > 0) {
-        if (delta > 0) sentences.push(`${prevLabel}より約 ${formatHms(Math.abs(delta))} 多く作業しています。`);
-        else if (delta < 0) sentences.push(`${prevLabel}より約 ${formatHms(Math.abs(delta))} 少なく作業しています。`);
-        else sentences.push(`${prevLabel}とほぼ同じペースでした。`);
+        const diff = formatHms(Math.abs(delta));
+        if (delta > 0) {
+          sentences.push(
+            pickVariant(
+              [
+                `${prevLabel}より約 ${diff} 多く作業しています。`,
+                `${prevLabel}と比べて、約 ${diff} 増えました。`,
+                `ペースが上がっていて、${prevLabel}より約 ${diff} 多いです。`,
+              ],
+              `${periodKey}-delta`
+            )
+          );
+        } else if (delta < 0) {
+          sentences.push(
+            pickVariant(
+              [
+                `${prevLabel}より約 ${diff} 少なく作業しています。`,
+                `${prevLabel}と比べると、約 ${diff} 減っています。`,
+                `少しペースが落ち着いていて、${prevLabel}より約 ${diff} 少ないです。`,
+              ],
+              `${periodKey}-delta`
+            )
+          );
+        } else {
+          sentences.push(
+            pickVariant([`${prevLabel}とほぼ同じペースでした。`, `${prevLabel}と変わらないペースを保っています。`], `${periodKey}-delta`)
+          );
+        }
       }
-      if (troubleCount > 0) sentences.push(`トラブル対応が ${troubleCount} 件ありました。`);
+      if (troubleCount > 0) {
+        sentences.push(
+          pickVariant(
+            [`トラブル対応が ${troubleCount} 件ありました。`, `トラブル対応も ${troubleCount} 件こなしています。`],
+            `${periodKey}-trouble`
+          )
+        );
+      }
       if (projectCompletions.length > 0) {
         // 同名プロジェクトが繰り返し完了している場合に文章が延々と続くのを防ぐため、
         // タイトルの重複を除いた上で先頭3件までに切り詰める
         const uniqueTitles = [...new Set(projectCompletions.map((c) => c.label))];
         const shown = uniqueTitles.slice(0, 3).join("」「");
         const suffix = uniqueTitles.length > 3 ? `など${projectCompletions.length}件` : "";
-        sentences.push(`プロジェクト「${shown}」${suffix}が完了しました。`);
+        sentences.push(
+          pickVariant(
+            [`プロジェクト「${shown}」${suffix}が完了しました。`, `「${shown}」${suffix}を完了させています。`],
+            `${periodKey}-project`
+          )
+        );
       }
       if (stageCompletions.length > 0) {
-        sentences.push(`段階は${stageCompletions.length}件完了しました(詳細は下記)。`);
+        sentences.push(
+          pickVariant(
+            [`段階は${stageCompletions.length}件完了しました(詳細は下記)。`, `細かい段階も${stageCompletions.length}件進んでいます(詳細は下記)。`],
+            `${periodKey}-stage`
+          )
+        );
       }
       if (autoCompletions.length > 0) {
         sentences.push(

@@ -79,6 +79,22 @@ export default function ClaudeWorkspaceSection() {
     [activeProjects, today]
   );
 
+  // 過去に使った@タグをよく使う順に並べる。タグは自己申告の自由入力なので、
+  // 毎回書式を思い出して打ち直すよりも、クリックで挿入できた方が発見しやすい
+  const recentTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of todos) {
+      const c = (t.category ?? "").trim();
+      if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c]) => c);
+  }, [todos]);
+
+  function insertTag(tag: string) {
+    const withoutTag = captureText.replace(/\s*@\S+\s*$/, "").trimEnd();
+    setCaptureText(withoutTag ? `${withoutTag} @${tag}` : `@${tag}`);
+  }
+
   // カテゴリ(@タグ)ごとに軽くまとめる。未分類は最後のグループにまとめる
   const todoGroups = useMemo(() => {
     const byCategory = new Map<string, TodoTask[]>();
@@ -362,6 +378,21 @@ export default function ClaudeWorkspaceSection() {
           </button>
           できます。
         </p>
+        {recentTags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-cream/30">よく使うタグ:</span>
+            {recentTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => insertTag(tag)}
+                className="rounded-full border border-cream/15 px-2 py-0.5 text-[11px] text-cream/60 hover:border-accent/50 hover:text-cream"
+              >
+                @{tag}
+              </button>
+            ))}
+          </div>
+        )}
         {showProjectForm && (
           <div className="flex flex-col gap-2 border-t border-cream/10 pt-2 sm:flex-row">
             <input
