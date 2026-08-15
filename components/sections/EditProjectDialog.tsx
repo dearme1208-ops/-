@@ -162,7 +162,9 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
     setNewStageTargetCount("");
   }
   function toggleStage(id: string) {
-    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, completed: !s.completed } : s)));
+    setStages((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, completed: !s.completed, completedAt: !s.completed ? Date.now() : undefined } : s))
+    );
   }
   function removeStage(id: string) {
     setStages((prev) => prev.filter((s) => s.id !== id));

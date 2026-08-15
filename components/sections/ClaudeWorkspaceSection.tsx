@@ -274,7 +274,9 @@ export default function ClaudeWorkspaceSection() {
   }
 
   async function toggleStage(p: ProjectItem, stage: ProjectStage) {
-    const stages = (p.stages ?? []).map((s) => (s.id === stage.id ? { ...s, completed: !s.completed } : s));
+    const stages = (p.stages ?? []).map((s) =>
+      s.id === stage.id ? { ...s, completed: !s.completed, completedAt: !s.completed ? Date.now() : undefined } : s
+    );
     await db.projects.update(p.id, { stages });
   }
 

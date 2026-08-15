@@ -5,8 +5,15 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
-import { formatHms } from "@/lib/time";
+import { formatHms, formatDateJp } from "@/lib/time";
 import { useDraftSetting } from "@/lib/settings";
+
+interface CompletionEntry {
+  key: string;
+  label: string;
+  completedAt: number;
+  kind: "project" | "stage";
+}
 
 // Claudeモード専用の「レポート」体験。既存のReportSection(統計タイル・重ね合わせ
 // グラフ・印刷レイアウト・PDF/HTML/ics書き出し等)は踏襲せず、Claudeが今週/今月を
@@ -50,9 +57,24 @@ export default function ClaudeReportSection() {
     const delta = totalSeconds - prevTotalSeconds;
 
     const troubleCount = periodRecords.filter((r) => r.isTrouble).length;
-    const completedProjects = (projects ?? []).filter(
-      (p) => p.completedAt && isDateStrInRange(new Date(p.completedAt).toISOString().slice(0, 10), range)
-    );
+
+    // プロジェクト全体の完了と、その中の個々の段階の完了は別の出来事として扱う。
+    // 段階は完了しても案件全体はまだ、ということも多いため、両方を別集計にして
+    // 詳細も一覧で見えるようにする(段階にはcompletedAtが無かったため以前は区別できなかった)
+    const completions: CompletionEntry[] = [];
+    for (const p of projects ?? []) {
+      if (p.completedAt && isDateStrInRange(new Date(p.completedAt).toISOString().slice(0, 10), range)) {
+        completions.push({ key: `project-${p.id}`, label: p.title, completedAt: p.completedAt, kind: "project" });
+      }
+      for (const s of p.stages ?? []) {
+        if (s.completedAt && isDateStrInRange(new Date(s.completedAt).toISOString().slice(0, 10), range)) {
+          completions.push({ key: `stage-${s.id}`, label: `${p.title} - ${s.title}`, completedAt: s.completedAt, kind: "stage" });
+        }
+      }
+    }
+    completions.sort((a, b) => b.completedAt - a.completedAt);
+    const projectCompletions = completions.filter((c) => c.kind === "project");
+    const stageCompletions = completions.filter((c) => c.kind === "stage");
 
     const sentences: string[] = [];
     if (periodRecords.length === 0) {
@@ -68,17 +90,20 @@ export default function ClaudeReportSection() {
         else sentences.push(`${prevLabel}とほぼ同じペースでした。`);
       }
       if (troubleCount > 0) sentences.push(`トラブル対応が ${troubleCount} 件ありました。`);
-      if (completedProjects.length > 0) {
+      if (projectCompletions.length > 0) {
         // 同名プロジェクトが繰り返し完了している場合に文章が延々と続くのを防ぐため、
         // タイトルの重複を除いた上で先頭3件までに切り詰める
-        const uniqueTitles = [...new Set(completedProjects.map((p) => p.title))];
+        const uniqueTitles = [...new Set(projectCompletions.map((c) => c.label))];
         const shown = uniqueTitles.slice(0, 3).join("」「");
-        const suffix = uniqueTitles.length > 3 ? `など${completedProjects.length}件` : "";
-        sentences.push(`「${shown}」${suffix}が完了しました。`);
+        const suffix = uniqueTitles.length > 3 ? `など${projectCompletions.length}件` : "";
+        sentences.push(`プロジェクト「${shown}」${suffix}が完了しました。`);
+      }
+      if (stageCompletions.length > 0) {
+        sentences.push(`段階は${stageCompletions.length}件完了しました(詳細は下記)。`);
       }
     }
 
-    return { totalSeconds, categoryRanking, sentences };
+    return { totalSeconds, categoryRanking, sentences, completions };
   }, [records, projects, kind, filter, periodLabel, prevLabel]);
 
   return (
@@ -104,6 +129,32 @@ export default function ClaudeReportSection() {
           </div>
         )}
       </div>
+
+      {summary && summary.completions.length > 0 && (
+        <div className="panel space-y-2 p-4">
+          <h3 className="font-display text-sm font-bold text-cream/70">完了した内容</h3>
+          <div className="space-y-1">
+            {summary.completions.slice(0, 8).map((c) => (
+              <div key={c.key} className="flex items-center justify-between gap-2 text-xs">
+                <span className="min-w-0 truncate text-cream/80">
+                  <span
+                    className={`mr-1.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      c.kind === "project" ? "bg-alert/15 text-alert" : "bg-cream/10 text-cream/50"
+                    }`}
+                  >
+                    {c.kind === "project" ? "プロジェクト" : "段階"}
+                  </span>
+                  {c.label}
+                </span>
+                <span className="shrink-0 text-cream/40">{formatDateJp(new Date(c.completedAt).toISOString().slice(0, 10))}</span>
+              </div>
+            ))}
+            {summary.completions.length > 8 && (
+              <p className="text-[11px] text-cream/40">ほか{summary.completions.length - 8}件</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {summary && summary.categoryRanking.length > 0 && (
         <div className="panel space-y-2 p-4">

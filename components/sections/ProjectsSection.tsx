@@ -246,7 +246,9 @@ export default function ProjectsSection({
           : "";
       if (!confirm(`「${stage.title}」を完了にしますか?${warning}`)) return;
     }
-    const stages = allStages.map((s) => (s.id === stageId ? { ...s, completed: !s.completed } : s));
+    const stages = allStages.map((s) =>
+      s.id === stageId ? { ...s, completed: !s.completed, completedAt: !s.completed ? Date.now() : undefined } : s
+    );
     await db.projects.update(project.id, { stages });
   }
 
