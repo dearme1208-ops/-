@@ -98,7 +98,7 @@ export async function upsertProjectsFromCsv(
     const importOriginOpen = await db.projects.filter((p) => !!p.fromImport && !p.completedAt).toArray();
     for (const p of importOriginOpen) {
       if (!touchedKeys.has(matchKey(p.title, p.workName))) {
-        await db.projects.update(p.id, { completedAt: now });
+        await db.projects.update(p.id, { completedAt: now, autoCompletedByImport: true });
         autoCompleted++;
       }
     }

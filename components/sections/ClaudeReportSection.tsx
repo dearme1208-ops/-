@@ -13,6 +13,7 @@ interface CompletionEntry {
   label: string;
   completedAt: number;
   kind: "project" | "stage";
+  auto?: boolean; // インポート元で行が見当たらなくなったことによる自動完了(実際に終わったとは限らない)
 }
 
 // Claudeモード専用の「レポート」体験。既存のReportSection(統計タイル・重ね合わせ
@@ -64,7 +65,8 @@ export default function ClaudeReportSection() {
     const completions: CompletionEntry[] = [];
     for (const p of projects ?? []) {
       if (p.completedAt && isDateStrInRange(new Date(p.completedAt).toISOString().slice(0, 10), range)) {
-        completions.push({ key: `project-${p.id}`, label: p.title, completedAt: p.completedAt, kind: "project" });
+        const label = p.workName && p.workName !== p.title ? `${p.title}（${p.workName}）` : p.title;
+        completions.push({ key: `project-${p.id}`, label, completedAt: p.completedAt, kind: "project", auto: p.autoCompletedByImport });
       }
       for (const s of p.stages ?? []) {
         if (s.completedAt && isDateStrInRange(new Date(s.completedAt).toISOString().slice(0, 10), range)) {
@@ -73,7 +75,11 @@ export default function ClaudeReportSection() {
       }
     }
     completions.sort((a, b) => b.completedAt - a.completedAt);
-    const projectCompletions = completions.filter((c) => c.kind === "project");
+    // インポート元で行が見当たらなくなったための自動完了は、実際に案件が終わったとは
+    // 限らない(詳細作業名が変わって別行扱いになっただけのことが多い)ため、
+    // 「完了しました」と讃える対象からは外し、件数だけ別枠で控えめに触れる
+    const projectCompletions = completions.filter((c) => c.kind === "project" && !c.auto);
+    const autoCompletions = completions.filter((c) => c.kind === "project" && c.auto);
     const stageCompletions = completions.filter((c) => c.kind === "stage");
 
     const sentences: string[] = [];
@@ -101,9 +107,15 @@ export default function ClaudeReportSection() {
       if (stageCompletions.length > 0) {
         sentences.push(`段階は${stageCompletions.length}件完了しました(詳細は下記)。`);
       }
+      if (autoCompletions.length > 0) {
+        sentences.push(
+          `なお、インポート元で行が見当たらなくなったために自動的に完了扱いとなった案件が${autoCompletions.length}件あります。実際に作業が終わったとは限らないため、上記のカウントには含めていません。`
+        );
+      }
     }
 
-    return { totalSeconds, categoryRanking, sentences, completions };
+    const displayCompletions = [...projectCompletions, ...stageCompletions].sort((a, b) => b.completedAt - a.completedAt);
+    return { totalSeconds, categoryRanking, sentences, completions: displayCompletions, autoCompletions };
   }, [records, projects, kind, filter, periodLabel, prevLabel]);
 
   return (
@@ -130,29 +142,39 @@ export default function ClaudeReportSection() {
         )}
       </div>
 
-      {summary && summary.completions.length > 0 && (
+      {summary && (summary.completions.length > 0 || summary.autoCompletions.length > 0) && (
         <div className="panel space-y-2 p-4">
           <h3 className="font-display text-sm font-bold text-cream/70">完了した内容</h3>
-          <div className="space-y-1">
-            {summary.completions.slice(0, 8).map((c) => (
-              <div key={c.key} className="flex items-center justify-between gap-2 text-xs">
-                <span className="min-w-0 truncate text-cream/80">
-                  <span
-                    className={`mr-1.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                      c.kind === "project" ? "bg-alert/15 text-alert" : "bg-cream/10 text-cream/50"
-                    }`}
-                  >
-                    {c.kind === "project" ? "プロジェクト" : "段階"}
+          {summary.completions.length > 0 ? (
+            <div className="space-y-1">
+              {summary.completions.slice(0, 8).map((c) => (
+                <div key={c.key} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="min-w-0 truncate text-cream/80">
+                    <span
+                      className={`mr-1.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                        c.kind === "project" ? "bg-alert/15 text-alert" : "bg-cream/10 text-cream/50"
+                      }`}
+                    >
+                      {c.kind === "project" ? "プロジェクト" : "段階"}
+                    </span>
+                    {c.label}
                   </span>
-                  {c.label}
-                </span>
-                <span className="shrink-0 text-cream/40">{formatDateJp(new Date(c.completedAt).toISOString().slice(0, 10))}</span>
-              </div>
-            ))}
-            {summary.completions.length > 8 && (
-              <p className="text-[11px] text-cream/40">ほか{summary.completions.length - 8}件</p>
-            )}
-          </div>
+                  <span className="shrink-0 text-cream/40">{formatDateJp(new Date(c.completedAt).toISOString().slice(0, 10))}</span>
+                </div>
+              ))}
+              {summary.completions.length > 8 && (
+                <p className="text-[11px] text-cream/40">ほか{summary.completions.length - 8}件</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-cream/40">自分で完了にした案件・段階はまだありません。</p>
+          )}
+          {summary.autoCompletions.length > 0 && (
+            <p className="border-t border-cream/10 pt-2 text-[11px] leading-relaxed text-cream/35">
+              ほか、インポート元で行が見当たらなくなったために自動的に完了扱いとなった案件が{summary.autoCompletions.length}
+              件あります（詳細作業名が変わって別行扱いになっただけの可能性が高く、実際に終わったとは限らないためここには含めていません）。
+            </p>
+          )}
         </div>
       )}
 

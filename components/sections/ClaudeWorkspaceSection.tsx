@@ -245,7 +245,7 @@ export default function ClaudeWorkspaceSection() {
   }
 
   async function toggleProjectComplete(p: ProjectItem) {
-    await db.projects.update(p.id, { completedAt: p.completedAt ? undefined : Date.now() });
+    await db.projects.update(p.id, { completedAt: p.completedAt ? undefined : Date.now(), autoCompletedByImport: false });
   }
 
   async function updateTodoTitle(t: TodoTask, title: string) {

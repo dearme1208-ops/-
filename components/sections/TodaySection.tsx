@@ -1459,7 +1459,7 @@ export default function TodaySection({
   async function toggleLinkedProjectComplete(project: ProjectItem) {
     if (!project.completedAt && !confirm(`案件「${project.title}」を完了にしますか?`)) return;
     const nowCompleting = !project.completedAt;
-    await db.projects.update(project.id, { completedAt: nowCompleting ? Date.now() : undefined });
+    await db.projects.update(project.id, { completedAt: nowCompleting ? Date.now() : undefined, autoCompletedByImport: false });
     if (nowCompleting) fireConfetti();
   }
 
@@ -3091,9 +3091,10 @@ export default function TodaySection({
                       if (s.id !== stage.id) return s;
                       if (isCountBased) {
                         const next = Math.min(s.targetCount ?? 0, (s.completedCount ?? 0) + 1);
-                        return { ...s, completedCount: next };
+                        const justReachedTarget = next >= (s.targetCount ?? 0) && (s.completedCount ?? 0) < (s.targetCount ?? 0);
+                        return { ...s, completedCount: next, completedAt: justReachedTarget ? Date.now() : s.completedAt };
                       }
-                      return { ...s, completed: true };
+                      return { ...s, completed: true, completedAt: Date.now() };
                     });
                     await db.projects.update(project.id, { stages });
                     setStageConfirmTask(null);

@@ -185,7 +185,7 @@ export default function ProjectsSection({
   async function toggleComplete(item: ProjectItem) {
     const nowCompleting = !item.completedAt;
     const completedAt = nowCompleting ? Date.now() : undefined;
-    await db.projects.update(item.id, { completedAt });
+    await db.projects.update(item.id, { completedAt, autoCompletedByImport: false });
     if (nowCompleting) {
       fireConfetti();
       const projectRecords = (records ?? []).filter((r) => recordBelongsToProject(r, item.id));
