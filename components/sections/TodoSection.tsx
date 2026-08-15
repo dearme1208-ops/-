@@ -35,7 +35,8 @@ import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types"
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
-import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
+import type { TreeNode, TreeNodeBadge } from "@/components/ui/TreeView";
+import PedigreeTable from "@/components/ui/PedigreeTable";
 import { showUndoToast } from "@/lib/toast";
 
 const DEFAULT_LIST_TITLE = "タスク";
@@ -1024,7 +1025,7 @@ export default function TodoSection({
         {displayMode === "calendar" ? (
           <TodoCalendarView tasks={tasksForTimeline} subtasks={subtasksForTimeline} today={today} />
         ) : displayMode === "tree" ? (
-          <TreeView nodes={todoTree} verticalLabels />
+          <PedigreeTable nodes={todoTree} />
         ) : displayMode === "kanban" ? (
           <KanbanBoard
             tasks={visibleTasks}
