@@ -69,7 +69,12 @@ export default function ClaudeReportSection() {
       }
       if (troubleCount > 0) sentences.push(`トラブル対応が ${troubleCount} 件ありました。`);
       if (completedProjects.length > 0) {
-        sentences.push(`「${completedProjects.map((p) => p.title).join("」「")}」が完了しました。`);
+        // 同名プロジェクトが繰り返し完了している場合に文章が延々と続くのを防ぐため、
+        // タイトルの重複を除いた上で先頭3件までに切り詰める
+        const uniqueTitles = [...new Set(completedProjects.map((p) => p.title))];
+        const shown = uniqueTitles.slice(0, 3).join("」「");
+        const suffix = uniqueTitles.length > 3 ? `など${completedProjects.length}件` : "";
+        sentences.push(`「${shown}」${suffix}が完了しました。`);
       }
     }
 
