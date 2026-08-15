@@ -1,7 +1,7 @@
 import { db, uid } from "./db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
 import { diffHmToSeconds } from "./time";
-import type { DailyTask } from "./types";
+import type { DailyTask, MasterTask } from "./types";
 import type { ScheduleRow } from "./scheduleCsv";
 
 // 一時停止中/完了時点で確定している合計時間（「時間を加算」による手動加算分を含む。
@@ -16,6 +16,51 @@ export function segmentsAccumulatedMs(task: DailyTask, now: number): number {
   const running = task.segments.find((s) => s.end === undefined);
   if (running) total += now - running.start;
   return total;
+}
+
+// マスタの想定時間から、その日の各作業インスタンスの「残り想定時間」を求める。
+// TodaySection内の予測ロジックと同じ考え方を、演出テーマの警告演出など
+// TodaySectionの外からも使えるよう純粋関数として切り出したもの
+export function computePredictedSecondsByTaskId(
+  tasks: DailyTask[],
+  masterTasks: MasterTask[],
+  now: number
+): Map<string, number> {
+  const map = new Map<string, number>();
+  const groups = new Map<string, DailyTask[]>();
+  for (const t of tasks) {
+    const key = `${t.category}::${t.name}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(t);
+  }
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((a, b) => a.order - b.order);
+    const master = sorted[0]?.masterTaskId ? masterTasks.find((m) => m.id === sorted[0].masterTaskId) : undefined;
+    const rawPredicted = master?.estimatedSeconds ?? sorted[0]?.estimatedSeconds ?? 0;
+    let cumulative = 0;
+    for (const t of sorted) {
+      const remaining = rawPredicted - cumulative;
+      map.set(t.id, remaining > 0 ? remaining : rawPredicted);
+      cumulative += segmentsAccumulatedMs(t, now) / 1000;
+    }
+  }
+  return map;
+}
+
+// 現在計測中、かつ想定時間を超過している作業のIDを返す
+export function computeRunningOverrunTaskIds(
+  tasks: DailyTask[],
+  predictedSecondsByTaskId: Map<string, number>,
+  now: number
+): string[] {
+  return tasks
+    .filter((t) => {
+      if (t.status !== "running") return false;
+      const predSec = predictedSecondsByTaskId.get(t.id) ?? 0;
+      if (predSec <= 0) return false;
+      return segmentsAccumulatedMs(t, now) / 1000 > predSec;
+    })
+    .map((t) => t.id);
 }
 
 // 同日中に同じ大項目・詳細作業名の作業が既に登録されていた場合、直近のインスタンス

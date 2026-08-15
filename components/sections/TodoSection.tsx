@@ -1384,9 +1384,11 @@ function TaskBlock({
   const today = todayStr();
   const [showCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
   const showCompletedSubtasks = showCompletedSubtasksStr === "true";
+  const [subtasksCollapsed, setSubtasksCollapsed] = useState(false);
   // 進捗表示(TaskRow内の「完了数/全数」)は全サブタスクを対象にする一方、
   // ここでの一覧描画だけ設定に応じて完了済みを間引く
   const visibleSubtasks = showCompletedSubtasks ? subtasks : subtasks.filter((s) => !s.completed);
+  const doneSubtaskCount = subtasks.filter((s) => s.completed).length;
   return (
     <div className="space-y-1">
       <div className="flex items-start gap-2">
@@ -1414,48 +1416,62 @@ function TaskBlock({
       </div>
       {visibleSubtasks.length > 0 && (
         <div className="ml-7 space-y-1 border-l border-cream/10 pl-3">
-          {!showCompletedSubtasks && visibleSubtasks.length < subtasks.length && (
-            <div className="text-[10px] text-cream/30">
-              完了済み{subtasks.length - visibleSubtasks.length}件を非表示中
-            </div>
-          )}
-          {visibleSubtasks.map((sub) => {
-            const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
-            const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
-            return (
-              <div
-                key={sub.id}
-                className={`flex items-center gap-2 rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
-                  subDueToday ? "ring-1 ring-alert/40" : ""
-                }`}
-              >
-                <button
-                  onClick={() => onToggleSubtask(sub)}
-                  aria-label="完了"
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-                    sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-                  }`}
-                >
-                  {sub.completed ? "✓" : ""}
-                </button>
-                <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
-                  {sub.title}
-                </span>
-                {sub.dueDate && (
-                  <span
-                    className={`shrink-0 text-[10px] ${
-                      subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
+          <button
+            type="button"
+            onClick={() => setSubtasksCollapsed((c) => !c)}
+            className="flex items-center gap-1 text-[10px] text-cream/40"
+            aria-expanded={!subtasksCollapsed}
+            aria-label={subtasksCollapsed ? "サブタスクを展開" : "サブタスクを折りたたむ"}
+          >
+            <span className={`inline-block transition-transform ${subtasksCollapsed ? "-rotate-90" : ""}`}>▾</span>
+            サブタスク {doneSubtaskCount}/{subtasks.length}
+          </button>
+          {!subtasksCollapsed && (
+            <>
+              {!showCompletedSubtasks && visibleSubtasks.length < subtasks.length && (
+                <div className="text-[10px] text-cream/30">
+                  完了済み{subtasks.length - visibleSubtasks.length}件を非表示中
+                </div>
+              )}
+              {visibleSubtasks.map((sub) => {
+                const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
+                const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
+                return (
+                  <div
+                    key={sub.id}
+                    className={`flex items-center gap-2 rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
+                      subDueToday ? "ring-1 ring-alert/40" : ""
                     }`}
                   >
-                    {formatDateJp(sub.dueDate)}
-                    {subDueToday && (
-                      <span className="ml-1 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
+                    <button
+                      onClick={() => onToggleSubtask(sub)}
+                      aria-label="完了"
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+                        sub.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+                      }`}
+                    >
+                      {sub.completed ? "✓" : ""}
+                    </button>
+                    <span className={`flex-1 text-xs text-cream ${sub.completed ? "text-cream/40 line-through" : ""}`}>
+                      {sub.title}
+                    </span>
+                    {sub.dueDate && (
+                      <span
+                        className={`shrink-0 text-[10px] ${
+                          subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
+                        }`}
+                      >
+                        {formatDateJp(sub.dueDate)}
+                        {subDueToday && (
+                          <span className="ml-1 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
+                        )}
+                      </span>
                     )}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
     </div>

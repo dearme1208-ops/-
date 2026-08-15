@@ -361,7 +361,9 @@ html[data-high-contrast="true"] :focus-visible {
     mix-blend-mode: multiply;
     transition: opacity 0.5s ease;
   }
-  html[data-visual-mode="lobotomy"] .crt-scanlines {
+  /* 常時ではなく、予測時間を超過して計測中の作業がある間だけ点灯させる
+     (data-lobotomy-warningはLobotomyOverrunWatcherがタブに関わらず<html>に立てる) */
+  html[data-visual-mode="lobotomy"][data-lobotomy-warning="true"] .crt-scanlines {
     opacity: 0.55;
   }
   html[data-visual-mode="va11halla"] .crt-scanlines {

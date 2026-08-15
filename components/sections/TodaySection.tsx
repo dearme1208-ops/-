@@ -19,7 +19,14 @@ import {
   runningLabel,
   useVisualMode,
 } from "@/lib/theme";
-import { baseAccumulatedMs, computeRemainingEstimatedSeconds, importScheduleRows, segmentsAccumulatedMs } from "@/lib/tasks";
+import {
+  baseAccumulatedMs,
+  computePredictedSecondsByTaskId,
+  computeRemainingEstimatedSeconds,
+  computeRunningOverrunTaskIds,
+  importScheduleRows,
+  segmentsAccumulatedMs,
+} from "@/lib/tasks";
 import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
 import { downloadTextFile } from "@/lib/report";
 import { computeStreakDays } from "@/lib/streak";
@@ -454,39 +461,15 @@ export default function TodaySection({
   // 工程・改善の判断は実績ベースの予測を軸にする方針のため、個人が設定した「予定」の
   // 有無に関わらず、常にこちらを主役の目安として使う
   const predictedSecondsByTaskId = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!tasks) return map;
-    const groups = new Map<string, DailyTask[]>();
-    for (const t of tasks) {
-      const key = `${t.category}::${t.name}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(t);
-    }
-    for (const group of groups.values()) {
-      const sorted = [...group].sort((a, b) => a.order - b.order);
-      const master = sorted[0]?.masterTaskId ? (allMasterTasks ?? []).find((m) => m.id === sorted[0].masterTaskId) : undefined;
-      const rawPredicted = master?.estimatedSeconds ?? sorted[0]?.estimatedSeconds ?? 0;
-      let cumulative = 0;
-      for (const t of sorted) {
-        // 前のインスタンスまでの実績がすでに想定時間を使い切っている場合、残りを0にすると
-        // 「データ不足」に見えてしまうため、新しい試行として改めて生の平均値を予測とする
-        const remaining = rawPredicted - cumulative;
-        map.set(t.id, remaining > 0 ? remaining : rawPredicted);
-        cumulative += segmentsAccumulatedMs(t, now) / 1000;
-      }
-    }
-    return map;
+    if (!tasks) return new Map<string, number>();
+    return computePredictedSecondsByTaskId(tasks, allMasterTasks ?? [], now);
   }, [tasks, allMasterTasks, now]);
 
-  // 演出テーマの警告表示(ティッカー・ビネット)用に、現在計測中かつ予測を
+  // 演出テーマの警告表示(ティッカー・ビネット・走査線)用に、現在計測中かつ予測を
   // 超過している作業と、その中で最も危険度の高い階級をまとめておく
   const runningOverrunTasks = useMemo(() => {
-    return (tasks ?? []).filter((t) => {
-      if (t.status !== "running") return false;
-      const predSec = predictedSecondsByTaskId.get(t.id) ?? 0;
-      if (predSec <= 0) return false;
-      return segmentsAccumulatedMs(t, now) / 1000 > predSec;
-    });
+    const overrunIds = new Set(computeRunningOverrunTaskIds(tasks ?? [], predictedSecondsByTaskId, now));
+    return (tasks ?? []).filter((t) => overrunIds.has(t.id));
   }, [tasks, predictedSecondsByTaskId, now]);
   const worstRiskTier = useMemo(() => {
     if (!themedMode) return null;

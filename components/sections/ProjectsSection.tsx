@@ -754,6 +754,7 @@ function ProjectRow({
   const today = todayStr();
   const [showCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
   const showCompletedStages = showCompletedStagesStr === "true";
+  const [stagesCollapsed, setStagesCollapsed] = useState(false);
   // 進捗率・段階数の表示は全段階を対象にする一方、ここでの一覧描画だけ設定に応じて完了済みを間引く
   const visibleStages = showCompletedStages ? project.stages ?? [] : (project.stages ?? []).filter((s) => !isStageDone(s));
   return (
@@ -794,12 +795,21 @@ function ProjectRow({
         )}
         {project.stages && project.stages.length > 0 && (
           <div className="mt-1 max-w-[220px]">
-            <div className="mb-0.5 flex items-center justify-between text-[10px] text-cream/50">
-              <span>進捗 {project.stages.length}段階</span>
+            <button
+              type="button"
+              onClick={() => setStagesCollapsed((c) => !c)}
+              className="mb-0.5 flex w-full items-center justify-between text-[10px] text-cream/50"
+              aria-expanded={!stagesCollapsed}
+              aria-label={stagesCollapsed ? "段階リストを展開" : "段階リストを折りたたむ"}
+            >
+              <span className="flex items-center gap-1">
+                <span className={`inline-block transition-transform ${stagesCollapsed ? "-rotate-90" : ""}`}>▾</span>
+                進捗 {project.stages.length}段階
+              </span>
               <span className="font-bold tabular-nums text-cream/70">
                 {Math.round((computeProjectProgress(project.stages) ?? 0) * 100)}%
               </span>
-            </div>
+            </button>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-cream/5">
               <div
                 className="h-1.5 rounded-full bg-cream"
@@ -808,13 +818,14 @@ function ProjectRow({
                 }}
               />
             </div>
-            <div className="mt-1.5 space-y-1">
-              {!showCompletedStages && visibleStages.length < project.stages.length && (
-                <div className="text-[10px] text-cream/30">
-                  完了済み{project.stages.length - visibleStages.length}段階を非表示中
-                </div>
-              )}
-              {visibleStages.map((stage) => {
+            {!stagesCollapsed && (
+              <div className="mt-1.5 space-y-1">
+                {!showCompletedStages && visibleStages.length < project.stages.length && (
+                  <div className="text-[10px] text-cream/30">
+                    完了済み{project.stages.length - visibleStages.length}段階を非表示中
+                  </div>
+                )}
+                {visibleStages.map((stage) => {
                 const seconds = stageSecondsFor(stage.id);
                 const isCountBased = stage.targetCount != null;
                 const done = isStageDone(stage);
@@ -893,7 +904,8 @@ function ProjectRow({
                   </div>
                 );
               })}
-            </div>
+              </div>
+            )}
           </div>
         )}
         {totalSeconds > 0 && (
