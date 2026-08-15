@@ -25,7 +25,8 @@ export default function ProvisionalTaskCard({
     category: string,
     name: string,
     estimatedSeconds: number,
-    masterTaskId: string | undefined
+    masterTaskId: string | undefined,
+    hasPlan: boolean
   ) => void | Promise<void>;
   onFinishAsIs: () => void | Promise<void>;
 }) {
@@ -34,19 +35,27 @@ export default function ProvisionalTaskCard({
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
   const [estimate, setEstimate] = useState("00:10:00");
+  // 突発作業の追加と同様、既定では「予定」を設定しない。チェックした場合のみ設定する
+  const [setPlan, setSetPlan] = useState(false);
 
   const elapsedMs = segmentsAccumulatedMs(task, now);
 
   async function confirmMaster() {
     if (!selectedMaster) return;
-    await onAssignNew(selectedMaster.category, selectedMaster.name, selectedMaster.estimatedSeconds, selectedMaster.id);
+    await onAssignNew(
+      selectedMaster.category,
+      selectedMaster.name,
+      selectedMaster.estimatedSeconds,
+      selectedMaster.id,
+      setPlan
+    );
   }
 
   async function confirmFree() {
     if (!category.trim() || !name.trim()) return;
     const estimatedSeconds = parseHmsToSeconds(estimate);
     const master = await findOrCreateMasterTask(category.trim(), name.trim(), estimatedSeconds);
-    await onAssignNew(category.trim(), name.trim(), estimatedSeconds, master.id);
+    await onAssignNew(category.trim(), name.trim(), estimatedSeconds, master.id, setPlan);
   }
 
   return (
@@ -108,6 +117,19 @@ export default function ProvisionalTaskCard({
           </div>
         )}
 
+        {(mode === "master" || mode === "free") && (
+          <label className="mb-2 flex items-center gap-1.5 text-xs text-cream/60">
+            <input
+              type="checkbox"
+              checked={setPlan}
+              onChange={(e) => setSetPlan(e.target.checked)}
+              className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+            />
+            この作業の「予定」を設定する
+            <span className="text-cream/40">（未計測分の割り当てのためオフが既定です）</span>
+          </label>
+        )}
+
         {mode === "master" && (
           <div className="space-y-2">
             <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
@@ -133,12 +155,14 @@ export default function ProvisionalTaskCard({
               onChange={(e) => setName(e.target.value)}
               className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
             />
-            <input
-              placeholder="想定時間 hh:mm:ss"
-              value={estimate}
-              onChange={(e) => setEstimate(e.target.value)}
-              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-            />
+            {setPlan && (
+              <input
+                placeholder="想定時間 hh:mm:ss"
+                value={estimate}
+                onChange={(e) => setEstimate(e.target.value)}
+                className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+            )}
             <div className="flex justify-end">
               <button className="btn-pill text-sm" onClick={confirmFree} disabled={!category.trim() || !name.trim()}>
                 この作業に割り当てる

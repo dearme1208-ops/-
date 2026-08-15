@@ -1615,13 +1615,15 @@ export default function TodaySection({
     category: string,
     name: string,
     estimatedSeconds: number,
-    masterTaskId: string | undefined
+    masterTaskId: string | undefined,
+    hasPlan: boolean
   ) {
     if (!provisionalTask) return;
     await db.dailyTasks.update(provisionalTask.id, {
       category,
       name,
-      estimatedSeconds,
+      estimatedSeconds: hasPlan ? estimatedSeconds : 0,
+      hasPlan,
       masterTaskId,
       isProvisional: false,
     });
