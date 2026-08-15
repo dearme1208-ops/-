@@ -72,17 +72,18 @@ function TreeRow({ node, depth }: { node: TreeNode; depth: number }) {
             {node.sublabel && <span className="ml-1.5 truncate text-cream/40">{node.sublabel}</span>}
           </div>
         )}
-        {node.valueLabel !== undefined && (
-          <span className="w-28 shrink-0 truncate text-right text-xs text-cream/60" title={node.valueLabel || undefined}>
-            {node.valueLabel || "—"}
-          </span>
-        )}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           {(node.badges ?? []).map((b, i) => (
             <span key={i} className={`rounded-full px-1.5 py-0.5 text-[10px] ${badgeClass(b.tone)}`}>
               {b.text}
             </span>
           ))}
+          {/* バッジの有無に関わらず値列が常に行の右端に揃うよう、バッジの後ろ(最後尾)に置く */}
+          {node.valueLabel !== undefined && (
+            <span className="w-24 shrink-0 truncate text-right text-xs text-cream/60" title={node.valueLabel || undefined}>
+              {node.valueLabel || "—"}
+            </span>
+          )}
         </div>
       </div>
       {hasChildren && !collapsed && (
