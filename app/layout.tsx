@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Oswald, Noto_Sans_JP, Yomogi, VT323, Anton, Special_Elite } from "next/font/google";
+import { Oswald, Noto_Sans_JP, Yomogi, VT323, Anton, Special_Elite, Noto_Serif_JP } from "next/font/google";
 import "./globals.css";
 import HeaderArt from "@/components/HeaderArt";
 import BadgeUpdater from "@/components/BadgeUpdater";
@@ -51,6 +51,15 @@ const specialElite = Special_Elite({
   display: "swap",
 });
 
+// Claudeモード用。見出し・アプリ名に、Claude自身の製品デザインを思わせる
+// 温かみのあるセリフ体を使う(日本語グリフを持つため見出しの日本語にも直接効く)
+const notoSerifJp = Noto_Serif_JP({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-noto-serif-jp",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "工程表",
   description: "作業時間記録・集計アプリ",
@@ -81,7 +90,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="ja"
-      className={`${oswald.variable} ${notoSansJp.variable} ${yomogi.variable} ${vt323.variable} ${anton.variable} ${specialElite.variable}`}
+      className={`${oswald.variable} ${notoSansJp.variable} ${yomogi.variable} ${vt323.variable} ${anton.variable} ${specialElite.variable} ${notoSerifJp.variable}`}
     >
       <body className="min-h-screen bg-ink font-sans text-cream antialiased">
         <BadgeUpdater />

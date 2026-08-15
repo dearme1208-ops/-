@@ -44,10 +44,10 @@ export function hexToRgbSpace(hex: string): string {
 // 既存の text-alert / bg-alert / border-alert / text-cream 等のクラスはコンポーネント側の変更なしに
 // 自動でテーマ色になる。個別のアニメーション・文言・タブ名/アプリ名だけをこのファイルのヘルパーで出し分ける
 
-export type VisualMode = "off" | "lobotomy" | "va11halla" | "persona5" | "natsuyasumi" | "powerpro";
-export type ThemedMode = "lobotomy" | "va11halla" | "persona5" | "natsuyasumi" | "powerpro";
+export type VisualMode = "off" | "lobotomy" | "va11halla" | "persona5" | "natsuyasumi" | "powerpro" | "claude";
+export type ThemedMode = "lobotomy" | "va11halla" | "persona5" | "natsuyasumi" | "powerpro" | "claude";
 
-const THEMED_MODES: ThemedMode[] = ["lobotomy", "va11halla", "persona5", "natsuyasumi", "powerpro"];
+const THEMED_MODES: ThemedMode[] = ["lobotomy", "va11halla", "persona5", "natsuyasumi", "powerpro", "claude"];
 
 export function useVisualMode(): {
   mode: VisualMode;
@@ -56,6 +56,7 @@ export function useVisualMode(): {
   persona5Mode: boolean;
   natsuyasumiMode: boolean;
   powerproMode: boolean;
+  claudeMode: boolean;
   themedMode: ThemedMode | null;
   // 色・形・アニメーションは常にthemedMode通りに適用される一方、
   // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
@@ -76,11 +77,25 @@ export function useVisualMode(): {
     persona5Mode: mode === "persona5",
     natsuyasumiMode: mode === "natsuyasumi",
     powerproMode: mode === "powerpro",
+    claudeMode: mode === "claude",
     themedMode,
     wordingEnabled,
     wordingMode: wordingEnabled ? mode : "off",
     wordingThemedMode: wordingEnabled ? themedMode : null,
   };
+}
+
+// Claudeモードだけは色・文言に加えてタブ構成自体を絞り込む(他モードは全タブ表示のまま)。
+// 「今日の集中」「タスク」「プロジェクト」「レポート」「設定」の5つだけに絞り、
+// Claudeが今の作業に集中できるよう考えた最小構成、という体でタブを間引く
+export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
+  claude: ["today", "todo", "projects", "report", "settings"],
+};
+
+export function visibleTabKeys(mode: VisualMode, allKeys: TabKey[]): TabKey[] {
+  if (mode === "off") return allKeys;
+  const allowed = VISIBLE_TABS_BY_MODE[mode as ThemedMode];
+  return allowed ?? allKeys;
 }
 
 // 想定/予測に対する超過の度合い(実績が想定の何倍か)に応じて表示する階級バッジ。
@@ -124,13 +139,23 @@ export const RISK_TIERS_POWERPRO = [
   { threshold: 1.3, name: "D", level: 1 },
   { threshold: 1, name: "G", level: 0 },
 ] as const;
+// Claudeモード: Claude自身の思考プロセスになぞらえた階級。予測を超えるほど
+// 「考える時間」が伸びていく、というポジティブな言い回しにしている(危機感を煽らない)
+export const RISK_TIERS_CLAUDE = [
+  { threshold: 4, name: "要相談", level: 4 },
+  { threshold: 2.5, name: "拡張思考中", level: 3 },
+  { threshold: 1.8, name: "深く思考中", level: 2 },
+  { threshold: 1.3, name: "やや長考", level: 1 },
+  { threshold: 1, name: "順調", level: 0 },
+] as const;
 
 export type RiskTier =
   | (typeof RISK_TIERS_LOBOTOMY)[number]
   | (typeof RISK_TIERS_VA11HALLA)[number]
   | (typeof RISK_TIERS_PERSONA5)[number]
   | (typeof RISK_TIERS_NATSUYASUMI)[number]
-  | (typeof RISK_TIERS_POWERPRO)[number];
+  | (typeof RISK_TIERS_POWERPRO)[number]
+  | (typeof RISK_TIERS_CLAUDE)[number];
 
 const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name: string; level: number }[]> = {
   lobotomy: RISK_TIERS_LOBOTOMY,
@@ -138,6 +163,7 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   persona5: RISK_TIERS_PERSONA5,
   natsuyasumi: RISK_TIERS_NATSUYASUMI,
   powerpro: RISK_TIERS_POWERPRO,
+  claude: RISK_TIERS_CLAUDE,
 };
 
 export function getRiskTier(ratio: number, mode: ThemedMode): RiskTier {
@@ -158,8 +184,10 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
           ? "border-2 border-dashed border-alert/70 bg-alert/10 text-alert"
           : mode === "powerpro"
             ? "risk-badge-pp-medal border-2 border-pp-gold bg-pp-gold/15 text-pp-gold font-black"
-            : "border-alert/70 bg-alert/20 text-alert";
-  const roundness = mode === "powerpro" ? "px-2.5" : "rounded px-1.5";
+            : mode === "claude"
+              ? "border-alert/40 bg-alert/10 text-alert font-bold"
+              : "border-alert/70 bg-alert/20 text-alert";
+  const roundness = mode === "powerpro" ? "px-2.5" : mode === "claude" ? "rounded-full px-2.5" : "rounded px-1.5";
   return `risk-badge risk-badge-${level} border ${roundness} py-0.5 text-[10px] font-bold ${shape}`;
 }
 
@@ -172,6 +200,7 @@ export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode | null): string 
   if (mode === "persona5") return tier.name;
   if (mode === "natsuyasumi") return tier.name;
   if (mode === "powerpro") return `査定 ${tier.name}`;
+  if (mode === "claude") return tier.name;
   return `危険度 ${tier.name}`;
 }
 
@@ -183,6 +212,7 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   persona5: "card-running-p5",
   natsuyasumi: "card-running-nat",
   powerpro: "card-running-pp",
+  claude: "card-running-claude",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -194,6 +224,7 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   persona5: "card-overrun-p5",
   natsuyasumi: "card-overrun-nat",
   powerpro: "card-overrun-pp",
+  claude: "card-overrun-claude",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -205,6 +236,7 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   persona5: "hazard-bar-p5",
   natsuyasumi: "hazard-bar-nat",
   powerpro: "hazard-bar-pp",
+  claude: "hazard-bar-claude",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -216,12 +248,13 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   persona5: "gantt-bar-overrun-p5",
   natsuyasumi: "gantt-bar-overrun-nat",
   powerpro: "gantt-bar-overrun-pp",
+  claude: "gantt-bar-overrun-claude",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
 }
 
-// va11hallaだけ固定のネオン色(v11-pink)を使う一方、他の4テーマは--accent-rgbが
+// va11hallaだけ固定のネオン色(v11-pink)を使う一方、他の5テーマは--accent-rgbが
 // テーマごとに差し替わっているtext-alertでそのまま正しい色になる、という非対称性を
 // 吸収するための強調テキスト色ヘルパー
 export function emphasisTextClass(mode: ThemedMode): string {
@@ -235,6 +268,7 @@ export function runningLabel(mode: ThemedMode | null): string {
   if (mode === "natsuyasumi") return "観察中";
   if (mode === "powerpro") return "出場中";
   if (mode === "lobotomy") return "計測中";
+  if (mode === "claude") return "実行中";
   return "計測中";
 }
 
@@ -244,6 +278,7 @@ export function overrunLabel(mode: ThemedMode | null): string {
   if (mode === "persona5") return "🔴 潜入時間・超過警告";
   if (mode === "natsuyasumi") return "🌻 予定より長引き中";
   if (mode === "powerpro") return "⚾ 延長戦・大幅超過";
+  if (mode === "claude") return "🧠 拡張思考中・想定超過";
   return "⚠ 計測中・予測超過";
 }
 
@@ -258,6 +293,7 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   persona5: "予告状ノート",
   natsuyasumi: "なつやすみの しゅくだい",
   powerpro: "球団ノート",
+  claude: "Claude",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -366,6 +402,23 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     report: "週間・月間MVP",
     records: "スコアブック修正",
     settings: "球団運営設定",
+  },
+  claude: {
+    today: "今日の集中",
+    todo: "タスク",
+    projects: "プロジェクト",
+    master: "スキル",
+    template: "ルーティン",
+    gantt: "タイムライン",
+    aggregation: "インサイト",
+    charts: "アナリティクス",
+    heatmap: "集中度マップ",
+    attention: "要フォロー",
+    overtime: "負荷チェック",
+    yearlyChart: "年間ふりかえり",
+    report: "レポート",
+    records: "ログ編集",
+    settings: "設定",
   },
 };
 

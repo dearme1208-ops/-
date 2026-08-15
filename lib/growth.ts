@@ -61,12 +61,23 @@ const PERSONA5_STAGES: GrowthStage[] = [
   { icon: "👑", label: "完全犯罪" },
 ];
 
+// Claudeモード: 考えごとが少しずつまとまり、形になっていく過程になぞらえた段階
+const CLAUDE_STAGES: GrowthStage[] = [
+  { icon: "💭", label: "着想" },
+  { icon: "✳️", label: "思考中" },
+  { icon: "🧩", label: "整理中" },
+  { icon: "🧠", label: "深く思考中" },
+  { icon: "💡", label: "閃き" },
+  { icon: "✨", label: "まとまった成果" },
+];
+
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
   powerpro: POWERPRO_STAGES,
   lobotomy: LOBOTOMY_STAGES,
   va11halla: VA11HALLA_STAGES,
   persona5: PERSONA5_STAGES,
+  claude: CLAUDE_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り

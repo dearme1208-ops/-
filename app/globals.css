@@ -23,6 +23,8 @@
   /* パワプロ風演出テーマ専用の球場グリーン・査定ランクゴールド(固定色) */
   --pp-green-rgb: 34 140 74;
   --pp-gold-rgb: 224 168 38;
+  /* Claudeモード専用の、ヘッダーの光彩に使う淡いエンバー色(固定色) */
+  --claude-glow-rgb: 232 168 130;
 }
 
 html,
@@ -303,6 +305,15 @@ html[data-high-contrast="true"] :focus-visible {
     --cream-rgb: 22 38 58;
     --panel-rgb: 255 255 255;
   }
+  /* Claudeモード: 他の演出テーマとは対照的に、走査線・ネオン・パロディ色調を一切使わず、
+     Claude自身の製品デザインを思わせる温かい紙のようなライトテーマ+テラコッタのアクセントにする */
+  html[data-visual-mode="claude"] {
+    color-scheme: light;
+    --accent-rgb: 217 119 87;
+    --ink-rgb: 250 248 240;
+    --cream-rgb: 38 34 28;
+    --panel-rgb: 255 253 247;
+  }
 
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
      vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
@@ -333,6 +344,18 @@ html[data-high-contrast="true"] :focus-visible {
   }
   html[data-visual-mode="lobotomy"] .tabular-nums {
     font-family: var(--font-special-elite), var(--font-noto-sans-jp), monospace;
+  }
+  /* Claudeモード: Claude自身の製品デザインを思わせる温かいセリフ体を見出し・アプリ名・
+     ボタン・数字に使う。日本語グリフを持つ書体なので日本語の見出しにも直接効く */
+  html[data-visual-mode="claude"] .app-title,
+  html[data-visual-mode="claude"] h2.font-display,
+  html[data-visual-mode="claude"] h3.font-display,
+  html[data-visual-mode="claude"] .btn-pill,
+  html[data-visual-mode="claude"] .btn-pill-outline,
+  html[data-visual-mode="claude"] .tabular-nums {
+    font-family: var(--font-noto-serif-jp), var(--font-noto-sans-jp), serif;
+    font-weight: 600;
+    letter-spacing: 0.01em;
   }
   /* VA-11 HALL-A風・ロボトミー風の危険階級バッジ名は英字なので、そちらにも書体を効かせる */
   html[data-visual-mode="va11halla"] .risk-badge {
@@ -487,6 +510,41 @@ html[data-high-contrast="true"] :focus-visible {
       transform: translate(1260px, 0) rotate(0deg);
     }
   }
+  /* Claudeモード専用の「今日の集中」画面で、実行中インジケーターとして使う脈動ドット */
+  .claude-pulse-dot {
+    animation: claude-pulse-dot-beat 1.4s ease-in-out infinite;
+  }
+  @keyframes claude-pulse-dot-beat {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.4;
+      transform: scale(0.7);
+    }
+  }
+  /* Claudeモードのヘッダーの放射スパークが、ゆっくり呼吸しながら回る */
+  .claude-spark {
+    opacity: 0;
+    transform-origin: center;
+  }
+  html[data-visual-mode="claude"] .claude-spark {
+    opacity: 1;
+    animation: claude-spark-breathe 4.5s ease-in-out infinite;
+  }
+  @keyframes claude-spark-breathe {
+    0%,
+    100% {
+      transform: rotate(0deg) scale(0.92);
+      opacity: 0.75;
+    }
+    50% {
+      transform: rotate(20deg) scale(1.05);
+      opacity: 1;
+    }
+  }
   /* パワプロ風: 同じ器を流用し、球場の芝刈り模様(斜めストライプ)を画面下に敷く */
   html[data-visual-mode="powerpro"] .synthwave-grid {
     opacity: 0.5;
@@ -499,6 +557,26 @@ html[data-high-contrast="true"] :focus-visible {
     );
     -webkit-mask-image: linear-gradient(to top, black, transparent 45%);
     mask-image: linear-gradient(to top, black, transparent 45%);
+  }
+  /* Claudeモード: 同じ器を流用し、他テーマのグリッド/ストライプの代わりに、
+     Claudeが考え込んでいるかのような、ゆっくり呼吸する柔らかい光暈に差し替える */
+  html[data-visual-mode="claude"] .synthwave-grid {
+    opacity: 0.3;
+    background-image: radial-gradient(ellipse 70% 55% at 50% 105%, rgb(var(--claude-glow-rgb) / 0.6), transparent 70%);
+    background-size: auto;
+    background-repeat: no-repeat;
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: claude-thinking-breathe 4.5s ease-in-out infinite;
+  }
+  @keyframes claude-thinking-breathe {
+    0%,
+    100% {
+      opacity: 0.2;
+    }
+    50% {
+      opacity: 0.42;
+    }
   }
 
   /* --- パネル・見出しの装飾強化 --- */
@@ -644,6 +722,13 @@ html[data-high-contrast="true"] :focus-visible {
     font-size: 14px;
     line-height: 1;
   }
+  /* Claudeモード: 他テーマの装飾(質感・アイコン・太枠)を一切足さず、枠線をほぼ消して
+     柔らかい影だけで浮かせる、最も削ぎ落としたシンプルな紙のカードにする */
+  html[data-visual-mode="claude"] .panel {
+    border: 1px solid rgb(var(--cream-rgb) / 0.06);
+    border-radius: 1.5rem;
+    box-shadow: 0 1px 2px rgb(38 34 28 / 0.04), 0 10px 24px -12px rgb(38 34 28 / 0.18);
+  }
   html[data-visual-mode="lobotomy"] h2.font-display,
   html[data-visual-mode="lobotomy"] h3.font-display,
   html[data-visual-mode="va11halla"] h2.font-display,
@@ -653,8 +738,15 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="natsuyasumi"] h2.font-display,
   html[data-visual-mode="natsuyasumi"] h3.font-display,
   html[data-visual-mode="powerpro"] h2.font-display,
-  html[data-visual-mode="powerpro"] h3.font-display {
+  html[data-visual-mode="powerpro"] h3.font-display,
+  html[data-visual-mode="claude"] h2.font-display,
+  html[data-visual-mode="claude"] h3.font-display {
     letter-spacing: 0.03em;
+  }
+  html[data-visual-mode="claude"] h2.font-display::before,
+  html[data-visual-mode="claude"] h3.font-display::before {
+    content: "✳ ";
+    color: rgb(var(--accent-rgb) / 0.8);
   }
   html[data-visual-mode="lobotomy"] h2.font-display::before,
   html[data-visual-mode="lobotomy"] h3.font-display::before {
@@ -886,6 +978,10 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="powerpro"] .frame-corners .corner-br {
     border-color: rgb(var(--pp-green-rgb) / 0.7);
     border-width: 3px;
+  }
+  /* Claudeモード: 他テーマのHUD風の四隅飾りは世界観に合わないため非表示にする */
+  html[data-visual-mode="claude"] .frame-corners {
+    display: none;
   }
   @keyframes corner-sway {
     0%,
@@ -1169,6 +1265,45 @@ html[data-high-contrast="true"] :focus-visible {
     animation: hazard-bar-scroll 1.2s linear infinite;
   }
 
+  /* --- Claudeモード: 他テーマの点滅・ブザー・警戒色とは対照的に、実行中は柔らかく
+     呼吸するような光暈、想定超過はそれよりやや強く・速く脈動する光暈で伝える --- */
+  .card-running-claude {
+    animation: card-running-claude-glow 3s ease-in-out infinite;
+  }
+  @keyframes card-running-claude-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.18), 0 0 0 0 rgb(var(--accent-rgb) / 0);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.35), 0 0 18px 2px rgb(var(--accent-rgb) / 0.18);
+    }
+  }
+  .card-overrun-claude {
+    animation: card-overrun-claude-glow 1.5s ease-in-out infinite;
+  }
+  @keyframes card-overrun-claude-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.4), 0 0 14px 2px rgb(var(--accent-rgb) / 0.22);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.75), 0 0 26px 6px rgb(var(--accent-rgb) / 0.4);
+    }
+  }
+  .hazard-bar-claude {
+    height: 4px;
+    border-radius: 999px;
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--claude-glow-rgb)) 0%,
+      rgb(var(--accent-rgb)) 50%,
+      rgb(var(--claude-glow-rgb)) 100%
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-v11-scroll 3s linear infinite;
+  }
+
   /* --- Ganttチャートで想定を超過した実績バー。警戒度をバー自体の見た目で示す --- */
   .gantt-bar-overrun {
     background-image: repeating-linear-gradient(
@@ -1240,6 +1375,17 @@ html[data-high-contrast="true"] :focus-visible {
     background-size: 200% 100%;
     animation: hazard-bar-scroll 1s linear infinite;
   }
+  .gantt-bar-overrun-claude {
+    border-radius: 999px;
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--claude-glow-rgb)) 0%,
+      rgb(var(--accent-rgb)) 50%,
+      rgb(var(--claude-glow-rgb)) 100%
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-v11-scroll 3s linear infinite;
+  }
 
   /* 予測超過中のタイマー数字を、より強く色収差させて明滅させる(通常のoverrun-flickerより過激) */
   .overrun-flicker-intense {
@@ -1262,6 +1408,18 @@ html[data-high-contrast="true"] :focus-visible {
   }
   html[data-visual-mode="powerpro"] .overrun-flicker-intense {
     animation: overrun-buzzer-pp 0.6s steps(2, end) infinite;
+  }
+  html[data-visual-mode="claude"] .overrun-flicker-intense {
+    animation: overrun-shimmer-claude 2.2s ease-in-out infinite;
+  }
+  @keyframes overrun-shimmer-claude {
+    0%,
+    100% {
+      text-shadow: 0 0 0 transparent;
+    }
+    50% {
+      text-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.5);
+    }
   }
   @keyframes overrun-buzzer-pp {
     0%,
@@ -1550,16 +1708,20 @@ html[data-high-contrast="true"] :focus-visible {
   .card-overrun-nat,
   .card-running-pp,
   .card-overrun-pp,
+  .card-running-claude,
+  .card-overrun-claude,
   .hazard-bar,
   .hazard-bar-v11,
   .hazard-bar-p5,
   .hazard-bar-nat,
   .hazard-bar-pp,
+  .hazard-bar-claude,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,
   .gantt-bar-overrun-nat,
   .gantt-bar-overrun-pp,
+  .gantt-bar-overrun-claude,
   .overrun-flicker,
   .overrun-flicker-intense,
   .overrun-badge,
@@ -1579,7 +1741,9 @@ html[data-high-contrast="true"] :focus-visible {
   .panel:hover,
   h2.font-display,
   h3.font-display,
-  .nat-butterfly {
+  .nat-butterfly,
+  .claude-spark,
+  .claude-pulse-dot {
     animation: none !important;
   }
   .crt-scanlines,

@@ -19,9 +19,10 @@ import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
 import OnboardingGuide from "@/components/OnboardingGuide";
-import { tabLabel, useVisualMode } from "@/lib/theme";
+import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
+const ClaudeTodaySection = dynamic(() => import("@/components/sections/ClaudeTodaySection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
 const MasterSection = dynamic(() => import("@/components/sections/MasterSection"), { ssr: false });
@@ -64,11 +65,21 @@ export default function HomePage() {
   // 本日タブに表示された案件バッジの「編集」から、案件タブへ切り替えつつ該当案件の
   // 編集ダイアログを開いた状態にするための橋渡し。上と同じ仕組み
   const [pendingProjectEditId, setPendingProjectEditId] = useState<string | null>(null);
-  const { wordingMode } = useVisualMode();
-  const tabs = useMemo(
-    () => TABS.map((t) => ({ key: t.key, label: tabLabel(t.key, wordingMode, t.label) })),
-    [wordingMode]
-  );
+  const { mode, wordingMode } = useVisualMode();
+  const tabs = useMemo(() => {
+    const allKeys = TABS.map((t) => t.key as TabKey);
+    const visibleKeys = new Set(visibleTabKeys(mode, allKeys));
+    return TABS.filter((t) => visibleKeys.has(t.key as TabKey)).map((t) => ({
+      key: t.key,
+      label: tabLabel(t.key, wordingMode, t.label),
+    }));
+  }, [mode, wordingMode]);
+
+  // Claudeモードのようにタブ構成を絞るモードへ切り替えた際、今開いているタブが
+  // 非表示になっていたら「本日の作業」タブへ戻す(存在しないタブが開いたままにならないように)
+  useEffect(() => {
+    if (!tabs.some((t) => t.key === active)) setActive("today");
+  }, [tabs, active]);
 
   const date = todayStr();
   const todayTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
@@ -134,7 +145,8 @@ export default function HomePage() {
         }}
       />
       <TabNav tabs={tabs} active={active} onChange={setActive} />
-      {active === "today" && (
+      {active === "today" && mode === "claude" && <ClaudeTodaySection />}
+      {active === "today" && mode !== "claude" && (
         <TodaySection
           onOpenTodoDetail={(taskId) => {
             setPendingTodoDetailId(taskId);

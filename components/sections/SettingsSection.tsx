@@ -1119,6 +1119,12 @@ export default function SettingsSection() {
             ⚾ パワプロ風
           </button>
           <button
+            className={visualMode === "claude" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("claude")}
+          >
+            ✳ Claudeモード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1167,6 +1173,11 @@ export default function SettingsSection() {
         {visualMode === "powerpro" && (
           <p className="text-xs text-cream/50">
             画面全体が白地に緑・紺・金を効かせたスコアボード風ライトテーマに丸ごと反転します。パネルには球場グリーンの太枠、査定ランクのようなメダル型バッジ（G〜S）、球場の芝目模様が入ります。アプリ名は「球団ノート」、ToDoは「伝令メモ」、ガントチャートは「スタメン表」など、タブの呼び名も野球用語に総入れ替えされます。
+          </p>
+        )}
+        {visualMode === "claude" && (
+          <p className="text-xs text-cream/50">
+            他の演出テーマとは違い、見た目も機能もClaudeが考えて作った特別なモードです。画面全体が温かみのある紙のようなライトテーマに変わり、装飾は控えめに、代わりに「本日の作業」タブが会話のログのような専用画面に総入れ替えされます（入力欄に今やることを書くだけで作業が始まり、進行状況もClaudeの応答のような言い回しで表示されます）。タブも「今日の集中・タスク・プロジェクト・レポート・設定」の5つだけに絞り込まれます。
           </p>
         )}
         {visualMode === "off" && (

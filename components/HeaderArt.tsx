@@ -111,8 +111,48 @@ function PowerproArt() {
   );
 }
 
+// Claudeモード: 他テーマのような具体的な情景(街・空・球場)を描かず、Claude自身のロゴを
+// 思わせる放射状のスパークだけを中央に置いた、抽象的で余白の多い構図にする
+function ClaudeArt() {
+  const rays = Array.from({ length: 8 }, (_, i) => i * 45);
+  return (
+    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="放射状のスパークのイラスト">
+      <defs>
+        <linearGradient id="claudeSky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgb(var(--panel-rgb))" />
+          <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
+        </linearGradient>
+        <radialGradient id="claudeGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="rgb(var(--claude-glow-rgb))" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="rgb(var(--claude-glow-rgb))" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect x="0" y="0" width="1200" height="220" fill="url(#claudeSky)" />
+      <circle cx="150" cy="110" r="120" fill="url(#claudeGlow)" />
+      <g className="claude-spark" transform="translate(150 110)">
+        {rays.map((deg) => (
+          <rect
+            key={deg}
+            x={-2.5}
+            y={deg % 90 === 0 ? -58 : -34}
+            width="5"
+            height={deg % 90 === 0 ? 58 : 34}
+            rx="2.5"
+            fill="rgb(var(--accent-rgb))"
+            transform={`rotate(${deg})`}
+          />
+        ))}
+      </g>
+      <text x="230" y="122" fontSize="15" letterSpacing="0.08em" fill="rgb(var(--cream-rgb) / 0.35)">
+        今、この作業に集中しています
+      </text>
+    </svg>
+  );
+}
+
 export default function HeaderArt() {
-  const { natsuyasumiMode, powerproMode } = useVisualMode();
+  const { natsuyasumiMode, powerproMode, claudeMode } = useVisualMode();
+  if (claudeMode) return <ClaudeArt />;
   if (natsuyasumiMode) return <NatsuyasumiArt />;
   if (powerproMode) return <PowerproArt />;
   return <DefaultArt />;
