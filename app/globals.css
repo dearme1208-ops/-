@@ -32,6 +32,10 @@
   --lobo-yellow-rgb: 238 240 151;
   /* ビルの窓格子に使う、ペールイエローを沈めた深いオリーブ(固定色) */
   --lobo-yellow-dark-rgb: 140 142 88;
+  /* ターミナルモード専用。証券端末風の値上がり/値下がり色と、シアンの補助色(固定色) */
+  --term-up-rgb: 47 227 130;
+  --term-down-rgb: 255 77 90;
+  --term-cyan-rgb: 64 220 255;
 }
 
 html,
@@ -353,6 +357,17 @@ html[data-high-contrast="true"] :focus-visible {
     }
   }
 
+  /* ターミナルモード: Claude/禅の「引き算」とは正反対の「足し算」。マルチモニターの
+     トレーディングルームを思わせる、黒地に燐光グリーンを基調としたダーク固定パレットに
+     丸ごと差し替える。アクセントはアンバー(警戒色は既存のalertがそのまま効く) */
+  html[data-visual-mode="terminal"] {
+    color-scheme: dark;
+    --accent-rgb: 255 176 0;
+    --ink-rgb: 4 7 5;
+    --cream-rgb: 120 255 170;
+    --panel-rgb: 8 14 10;
+  }
+
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
      vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
      日本語には効かず数字・記号にしか効かない。そこで時刻・パーセンテージ等の
@@ -414,6 +429,19 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="lobotomy"] .risk-badge {
     font-family: var(--font-special-elite), monospace;
   }
+  /* ターミナルモードだけは他テーマと違い、数字だけでなく画面全体をモノスペース書体にする。
+     マルチモニター端末らしい「隅々まで揃った桁」の見た目が狙いなので、tabular-numsに
+     絞らずbody全体に効かせる */
+  html[data-visual-mode="terminal"] body {
+    font-family: var(--font-ibm-plex-mono), var(--font-noto-sans-jp), monospace;
+  }
+  html[data-visual-mode="terminal"] .app-title,
+  html[data-visual-mode="terminal"] h2.font-display,
+  html[data-visual-mode="terminal"] h3.font-display {
+    font-family: var(--font-ibm-plex-mono), var(--font-noto-sans-jp), monospace;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
 
   /* --- 画面全体のオーバーレイ(走査線・ノイズ・グリッド)。共通の器を5テーマで使い回す --- */
   .crt-scanlines {
@@ -454,6 +482,19 @@ html[data-high-contrast="true"] :focus-visible {
     background-image: radial-gradient(rgb(var(--p5-red-rgb) / 0.9) 1px, transparent 1px);
     background-size: 5px 5px;
     mix-blend-mode: multiply;
+  }
+  /* ターミナルモード: 他テーマと違い「超過時だけ」ではなく常時ごく薄く点灯させ、
+     業務用モニターのフォスファーグリーンの走査線を演出する */
+  html[data-visual-mode="terminal"] .crt-scanlines {
+    opacity: 0.22;
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgb(var(--term-up-rgb) / 0.08) 0px,
+      rgb(var(--term-up-rgb) / 0.08) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    mix-blend-mode: screen;
   }
 
   .crt-noise {
@@ -522,6 +563,18 @@ html[data-high-contrast="true"] :focus-visible {
     -webkit-mask-image: linear-gradient(to top, black, transparent 22%);
     mask-image: linear-gradient(to top, black, transparent 22%);
   }
+  /* ターミナルモード: 同じ器を、画面いっぱいに広がる細かい管制室グリッド線として使う。
+     VA-11 HALL-A風とは違い下端で消さず、画面全域に均等に薄く敷く */
+  html[data-visual-mode="terminal"] .synthwave-grid {
+    opacity: 0.16;
+    background-image:
+      linear-gradient(rgb(var(--term-up-rgb) / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--term-up-rgb) / 0.5) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-position: center;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
 
   /* ペルソナ5風: 画面全体の背景に「覚醒」の巨大な透かし文字を斜めに置く。
      パネルが画面幅いっぱいに並ぶスマホ幅ではほとんど隠れてしまうが、余白の広い
@@ -570,6 +623,32 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="persona5"] ::-webkit-scrollbar-thumb {
     background: rgb(var(--p5-red-rgb));
     border: 2px solid #050506;
+  }
+
+  /* ターミナルモード: スクロールバー・テキスト選択も燐光グリーン/アンバーの端末配色に揃える */
+  html[data-visual-mode="terminal"] ::selection {
+    background: rgb(var(--accent-rgb) / 0.55);
+    color: rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="terminal"] {
+    scrollbar-color: rgb(var(--term-up-rgb)) rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="terminal"] ::-webkit-scrollbar-thumb {
+    background: rgb(var(--term-up-rgb) / 0.7);
+  }
+  html[data-visual-mode="terminal"] ::-webkit-scrollbar-track {
+    background: rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="terminal"] input,
+  html[data-visual-mode="terminal"] textarea,
+  html[data-visual-mode="terminal"] select {
+    border-radius: 2px;
+  }
+  html[data-visual-mode="terminal"] input:focus,
+  html[data-visual-mode="terminal"] textarea:focus,
+  html[data-visual-mode="terminal"] select:focus {
+    outline: 1px solid rgb(var(--term-up-rgb));
+    outline-offset: 1px;
   }
 
   /* ペルソナ5風: 入力欄も角丸をやめ、パネルや見出しバナーと同じ「鋭くカットされた紙片」の
@@ -1695,6 +1774,43 @@ html[data-high-contrast="true"] :focus-visible {
     background-color: rgb(var(--accent-rgb) / 0.35);
   }
 
+  /* --- ターミナルモード: 他テーマの「柔らかい光暈」とは逆に、CRTのステータスランプの
+     ようなハードな点灯/消灯(steps)で伝える。実行中は緑のLIVEランプ、超過は
+     アンバーの警告灯が高速点滅する --- */
+  .card-running-terminal {
+    animation: card-running-terminal-blink 1.4s steps(1, end) infinite;
+  }
+  @keyframes card-running-terminal-blink {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--term-up-rgb) / 0.9), 0 0 10px 1px rgb(var(--term-up-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--term-up-rgb) / 0.35);
+    }
+  }
+  .card-overrun-terminal {
+    animation: card-overrun-terminal-blink 0.5s steps(1, end) infinite;
+  }
+  @keyframes card-overrun-terminal-blink {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb)), 0 0 14px 2px rgb(var(--accent-rgb) / 0.7);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.3);
+    }
+  }
+  .hazard-bar-terminal {
+    height: 4px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb)) 0 6px,
+      rgba(0, 0, 0, 0.9) 6px 12px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 0.6s steps(6, end) infinite;
+  }
   /* --- Ganttチャートで想定を超過した実績バー。警戒度をバー自体の見た目で示す --- */
   .gantt-bar-overrun {
     background-image: repeating-linear-gradient(
@@ -1780,6 +1896,26 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-zen {
     border-radius: 999px;
     background-color: rgb(var(--accent-rgb) / 0.5);
+  }
+  .gantt-bar-overrun-terminal {
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb)) 0 6px,
+      rgba(0, 0, 0, 0.9) 6px 12px
+    );
+    background-size: 200% 100%;
+    animation:
+      hazard-bar-scroll 0.6s steps(6, end) infinite,
+      gantt-bar-overrun-terminal-glow 0.5s steps(1, end) infinite;
+  }
+  @keyframes gantt-bar-overrun-terminal-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb));
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.25);
+    }
   }
   /* ガントチャート週表示の超過ブロック用。上のgantt-bar-overrun-*は1日表示の横長バー向けに
      背景そのものを走査線グラデーションへ差し替える演出だが、週表示の狭いブロックでは
@@ -1996,6 +2132,49 @@ html[data-high-contrast="true"] :focus-visible {
     }
     100% {
       background-position: -50% 0;
+    }
+  }
+  /* ターミナルモード: 他テーマの柔らかい点滅とは逆に、CRTのステータスランプそのものの
+     ハードな点灯/消灯(steps)にする。階級が上がるほど点滅を速くするのは共通の器のまま */
+  html[data-visual-mode="terminal"] .risk-badge {
+    animation: risk-badge-terminal-blink 1s steps(1, end) infinite;
+    font-family: var(--font-ibm-plex-mono), monospace;
+  }
+  html[data-visual-mode="terminal"] .risk-badge-2 {
+    animation-duration: 0.7s;
+  }
+  html[data-visual-mode="terminal"] .risk-badge-3 {
+    animation-duration: 0.45s;
+  }
+  html[data-visual-mode="terminal"] .risk-badge-4 {
+    animation-duration: 0.25s;
+  }
+  @keyframes risk-badge-terminal-blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+  /* ターミナルモード専用の汎用点滅カーソル。ヘッダーの"SYSTEM ONLINE_"や
+     ダッシュボードの各所で、端末のテキストカーソルらしい硬い点滅に使う */
+  .term-blink {
+    animation: risk-badge-terminal-blink 1s steps(1, end) infinite;
+  }
+  /* ダッシュボード下部の完了タスクのティッカーテープ。右から左へ等速で流れ続ける */
+  .term-ticker-track {
+    display: inline-flex;
+    white-space: nowrap;
+    animation: term-ticker-scroll 22s linear infinite;
+  }
+  @keyframes term-ticker-scroll {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
     }
   }
 
@@ -2249,18 +2428,22 @@ html[data-high-contrast="true"] :focus-visible {
   .card-overrun-claude,
   .card-running-zen,
   .card-overrun-zen,
+  .card-running-terminal,
+  .card-overrun-terminal,
   .hazard-bar,
   .hazard-bar-v11,
   .hazard-bar-p5,
   .hazard-bar-nat,
   .hazard-bar-pp,
   .hazard-bar-claude,
+  .hazard-bar-terminal,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,
   .gantt-bar-overrun-nat,
   .gantt-bar-overrun-pp,
   .gantt-bar-overrun-claude,
+  .gantt-bar-overrun-terminal,
   .zen-enso,
   .overrun-flicker,
   .overrun-flicker-intense,
@@ -2285,7 +2468,9 @@ html[data-high-contrast="true"] :focus-visible {
   .nat-firefly,
   .claude-spark,
   .claude-pulse-dot,
-  .week-block-overrun-glow {
+  .week-block-overrun-glow,
+  .term-blink,
+  .term-ticker-track {
     animation: none !important;
   }
   .crt-scanlines,

@@ -1133,6 +1133,12 @@ export default function SettingsSection() {
             ☯ 禅モード
           </button>
           <button
+            className={visualMode === "terminal" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("terminal")}
+          >
+            📟 ターミナルモード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1208,6 +1214,11 @@ export default function SettingsSection() {
         {visualMode === "zen" && (
           <p className="text-xs text-cream/50">
             見た目も機能も他のモードとは逆方向に振り切った、引き算のモードです。「本日の作業」タブは、Claudeが選んだ(あるいは既に進行中の)ただ1件だけを円相(禅画で描かれる、書き切らない一筆書きの円)とともに全画面で見せる専用画面に総入れ替えされます。タブも「今・設定」の2つだけに絞り込まれ、ToDo一覧・案件一覧・レポート等は意図的に見せません。新しいことを加えたい時だけ、画面下の小さな「+」から一言だけ書き足せます。
+          </p>
+        )}
+        {visualMode === "terminal" && (
+          <p className="text-xs text-cream/50">
+            Claudeモード・禅モードとは正反対の「足し算」のモードです。画面全体が黒地に燐光グリーンとアンバーを効かせたモノスペース端末風に変わり、「本日の作業」タブはマルチモニターのトレーディングフロアを思わせる情報密度の高い管制室ダッシュボードに総入れ替えされます(現在時刻・システム負荷・育成ステージ・継続日数・カテゴリ別内訳・時間帯アクティビティ・クイックスタート・完了タスクのティッカーテープを1画面に集約)。タブは削らず全て表示したまま、中身だけを情報過多にするのがこのモードの狙いです。
           </p>
         )}
         {visualMode === "off" && (

@@ -643,8 +643,69 @@ function ZenArt() {
   );
 }
 
+// ターミナルモード: Claude/禅の静けさとは正反対に、マルチモニターのトレーディングフロアを
+// 思わせる小型モニターの並びを描く。各パネルの中身は疑似乱数(Math.random)ではなく
+// sin波の位相違いによる決定的な値で生成し、サーバー/クライアントのハイドレーション不一致を避ける
+function termSparkPoints(seed: number, w: number, h: number, n: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = (w / (n - 1)) * i;
+    const y = h / 2 + Math.sin(i * 0.9 + seed) * (h * 0.28) + Math.sin(i * 2.3 + seed * 1.7) * (h * 0.14);
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  return pts.join(" ");
+}
+const TERMINAL_PANEL_COLORS = [
+  "rgb(var(--term-up-rgb))",
+  "rgb(var(--accent-rgb))",
+  "rgb(var(--term-cyan-rgb))",
+  "rgb(var(--term-up-rgb))",
+  "rgb(var(--term-down-rgb))",
+  "rgb(var(--term-cyan-rgb))",
+];
+function TerminalArt() {
+  const cols = 6;
+  const panelW = 1200 / cols;
+  return (
+    <svg
+      viewBox="0 0 1200 220"
+      preserveAspectRatio="none"
+      className="h-24 w-full sm:h-28"
+      role="img"
+      aria-label="マルチモニターのトレーディングフロア風イラスト"
+    >
+      <rect x="0" y="0" width="1200" height="220" fill="rgb(var(--ink-rgb))" />
+      {Array.from({ length: cols }, (_, i) => {
+        const x0 = i * panelW;
+        const color = TERMINAL_PANEL_COLORS[i % TERMINAL_PANEL_COLORS.length];
+        const up = i % 3 !== 1;
+        return (
+          <g key={i} transform={`translate(${x0 + 6} 18)`}>
+            <rect x="0" y="0" width={panelW - 12} height="150" fill="rgb(var(--panel-rgb))" stroke={color} strokeOpacity="0.5" strokeWidth="1.5" />
+            <polyline
+              points={termSparkPoints(i * 1.31 + 1, panelW - 24, 110, 14)}
+              transform="translate(6 18)"
+              fill="none"
+              stroke={color}
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <text x={8} y={142} fontSize="11" letterSpacing="0.06em" fill={color} fillOpacity="0.85">
+              {up ? "▲" : "▼"} CH-{String(i + 1).padStart(2, "0")}
+            </text>
+          </g>
+        );
+      })}
+      <text x="16" y="200" fontSize="14" letterSpacing="0.08em" fill="rgb(var(--term-up-rgb))">
+        SYSTEM ONLINE<tspan className="term-blink">_</tspan>
+      </text>
+    </svg>
+  );
+}
+
 export default function HeaderArt() {
-  const { mode, natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode } = useVisualMode();
+  const { mode, natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode, terminalMode } = useVisualMode();
   // ロボトミー/VA-11 HALL-A/ペルソナ5/ぼくのなつやすみ/パワプロの5テーマは、設定画面から
   // 自分の画像にヘッダーを差し替えられる。未設定(空文字)なら従来どおりテーマ専用の
   // イラストを描画する(=「オリジナル」)。Claude/禅/オフには画像差し替えの仕組みは無い
@@ -665,6 +726,7 @@ export default function HeaderArt() {
   }
   if (claudeMode) return <ClaudeArt />;
   if (zenMode) return <ZenArt />;
+  if (terminalMode) return <TerminalArt />;
   if (persona5Mode) return <Persona5Art />;
   if (lobotomyMode) return <LobotomyArt />;
   if (va11hallaMode) return <Va11Art />;
