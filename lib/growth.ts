@@ -81,6 +81,16 @@ const ZEN_STAGES: GrowthStage[] = [
   { icon: "☯️", label: "無心" },
 ];
 
+// ターミナルモード: 回線がつながり、負荷が上がっていく管制室のステータス表示になぞらえた段階
+const TERMINAL_STAGES: GrowthStage[] = [
+  { icon: "🔴", label: "OFFLINE" },
+  { icon: "🟡", label: "STANDBY" },
+  { icon: "🟢", label: "LIVE" },
+  { icon: "📡", label: "STREAMING" },
+  { icon: "⚡", label: "PEAK LOAD" },
+  { icon: "🚀", label: "MAX THROUGHPUT" },
+];
+
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
   powerpro: POWERPRO_STAGES,
@@ -89,6 +99,7 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   persona5: PERSONA5_STAGES,
   claude: CLAUDE_STAGES,
   zen: ZEN_STAGES,
+  terminal: TERMINAL_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り
