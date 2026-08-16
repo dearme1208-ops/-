@@ -159,6 +159,29 @@ export function computeProductivityByWeather(
     }));
 }
 
+export type WeatherCategory = "clear" | "cloudy" | "rain" | "thunderstorm" | "snow";
+
+// Open-Meteo(APIキー不要・無料)の「現在の天気」(WMO weather code)を取得する。
+// 降水確率(hourly)とは別に、なつやすみモードのヘッダー背景の空模様切り替えに使う
+export async function fetchCurrentWeatherCode(lat: number, lon: number): Promise<{ weathercode: number; isDay: boolean }> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`天気の取得に失敗しました (${res.status})`);
+  const data = await res.json();
+  const cw = data?.current_weather;
+  return { weathercode: Number(cw?.weathercode ?? 0), isDay: cw?.is_day !== 0 };
+}
+
+// WMO weather code を、背景イラストで描き分ける大まかな天気カテゴリへ丸める
+export function weatherCodeToCategory(code: number): WeatherCategory {
+  if (code === 0) return "clear";
+  if (code === 1 || code === 2 || code === 3 || code === 45 || code === 48) return "cloudy";
+  if (code === 71 || code === 73 || code === 75 || code === 77 || code === 85 || code === 86) return "snow";
+  if (code === 95 || code === 96 || code === 99) return "thunderstorm";
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "rain";
+  return "clear";
+}
+
 export interface WeatherRefreshResult {
   alerts: WeatherAlert[];
   current: CurrentWeatherReading[];

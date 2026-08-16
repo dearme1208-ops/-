@@ -1,7 +1,70 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useVisualMode } from "@/lib/theme";
 import { useSetting } from "@/lib/settings";
+import { db } from "@/lib/db";
+import { fetchCurrentWeatherCode, weatherCodeToCategory, type WeatherCategory } from "@/lib/weather";
+
+const NATSUYASUMI_WEATHER_REFRESH_MS = 30 * 60000;
+// 位置情報が使えない場合のフォールバック地点(東京駅)
+const NATSUYASUMI_FALLBACK_LOCATION = { lat: 35.6812, lon: 139.7671 };
+
+// なつやすみモードのヘッダー背景の空模様を、実際の天気に連動させる。
+// 位置は「天気変化通知」に登録済みの地点があればそれを優先し(権限確認不要)、
+// 無ければ端末の位置情報(未許可・失敗時は東京)を使う。約30分ごとに再取得し、
+// 取得できるまで/失敗時は既定の"clear"(晴れ)のまま据え置く
+function useNatsuyasumiWeather(active: boolean): WeatherCategory {
+  const [syncEnabledStr] = useSetting("theme.natsuyasumiWeatherSync", "true");
+  const syncEnabled = syncEnabledStr === "true";
+  const weatherPlaces = useLiveQuery(() => db.weatherPlaces.toArray(), []);
+  const [category, setCategory] = useState<WeatherCategory>("clear");
+
+  useEffect(() => {
+    if (!active || !syncEnabled) return;
+    let cancelled = false;
+
+    async function resolveLocation(): Promise<{ lat: number; lon: number }> {
+      if (weatherPlaces && weatherPlaces.length > 0) {
+        return { lat: weatherPlaces[0].lat, lon: weatherPlaces[0].lon };
+      }
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              timeout: 8000,
+              maximumAge: NATSUYASUMI_WEATHER_REFRESH_MS,
+            })
+          );
+          return { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        } catch {
+          // 権限拒否・タイムアウト時はフォールバック地点を使う
+        }
+      }
+      return NATSUYASUMI_FALLBACK_LOCATION;
+    }
+
+    async function refresh() {
+      try {
+        const { lat, lon } = await resolveLocation();
+        const { weathercode } = await fetchCurrentWeatherCode(lat, lon);
+        if (!cancelled) setCategory(weatherCodeToCategory(weathercode));
+      } catch {
+        // 取得失敗時は直前のカテゴリのまま据え置く
+      }
+    }
+
+    refresh();
+    const timer = setInterval(refresh, NATSUYASUMI_WEATHER_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [active, syncEnabled, weatherPlaces]);
+
+  return active && syncEnabled ? category : "clear";
+}
 
 function DefaultArt() {
   return (
@@ -52,7 +115,15 @@ function DefaultArt() {
 // 手前にひまわり畑を足して田舎の夏休みらしい懐かしさをもう一段強める(1970年代の
 // 農村を舞台にした本家シリーズの原風景で最も象徴的なモチーフがひまわりのため)。
 // 他テーマのダークな夜景とは正反対の、明るく懐かしい昼下がりの田舎の情景に描き替える
-function NatsuyasumiArt() {
+const NATSUYASUMI_WEATHER_LABEL: Record<WeatherCategory, string> = {
+  clear: "夏空と緑の丘、鳥居と風鈴、ひまわり畑のイラスト",
+  cloudy: "くもり空と緑の丘、鳥居と風鈴、ひまわり畑のイラスト",
+  rain: "夕立の降る緑の丘、鳥居と風鈴、ひまわり畑のイラスト",
+  thunderstorm: "雷雨の緑の丘、鳥居と風鈴、ひまわり畑のイラスト",
+  snow: "雪の降る緑の丘、鳥居と風鈴、ひまわり畑のイラスト",
+};
+
+function NatsuyasumiArt({ weather = "clear" }: { weather?: WeatherCategory }) {
   const sunflowerPetals = Array.from({ length: 8 }, (_, i) => i * 45);
   const sunflowers = [
     { x: 60, y: 208, r: 15 },
@@ -60,22 +131,71 @@ function NatsuyasumiArt() {
     { x: 1150, y: 210, r: 14 },
     { x: 1110, y: 216, r: 10 },
   ];
+  // 雨/雷雨/雪の日はひまわりを心持ち沈ませ、蝶は隠れて羽ばたかない
+  const isWet = weather === "rain" || weather === "thunderstorm";
+  const isDim = isWet || weather === "snow";
+  // 晴れ以外は入道雲を1段厚くして空を覆う
+  const extraClouds = weather !== "clear";
+  const showSun = weather === "clear" || weather === "cloudy";
+  const showButterfly = weather === "clear";
+  // 斜めの雨脚(決定的な配列。VA-11のドット状とは違い、柔らかい線で夕立らしさを出す)
+  const rainLines = Array.from({ length: weather === "thunderstorm" ? 34 : 22 }, (_, i) => ({
+    x: (i * 53) % 1200,
+    y: 8 + ((i * 29) % 150),
+  }));
+  // 静止した雪の粒(決定的な配列)
+  const snowDots = Array.from({ length: 26 }, (_, i) => ({
+    x: (i * 47) % 1200,
+    y: 6 + ((i * 23) % 160),
+    r: 1.5 + (i % 3),
+  }));
   return (
-    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="夏空と緑の丘、鳥居と風鈴、ひまわり畑のイラスト">
+    <svg
+      viewBox="0 0 1200 220"
+      preserveAspectRatio="none"
+      className="h-24 w-full sm:h-28"
+      role="img"
+      aria-label={NATSUYASUMI_WEATHER_LABEL[weather]}
+    >
       <defs>
         <linearGradient id="natSky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgb(var(--nat-sea-rgb))" stopOpacity="0.55" />
-          <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
+          {weather === "cloudy" ? (
+            <>
+              <stop offset="0%" stopColor="rgb(var(--panel-rgb))" stopOpacity="0.8" />
+              <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
+            </>
+          ) : weather === "snow" ? (
+            <>
+              <stop offset="0%" stopColor="rgb(var(--nat-sea-rgb))" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
+            </>
+          ) : (
+            <>
+              <stop offset="0%" stopColor="rgb(var(--nat-sea-rgb))" stopOpacity={isWet ? "0.28" : "0.55"} />
+              <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
+            </>
+          )}
         </linearGradient>
       </defs>
       <rect x="0" y="0" width="1200" height="220" fill="url(#natSky)" />
-      <circle cx="1040" cy="55" r="34" fill="rgb(var(--nat-sun-rgb))" opacity="0.9" />
-      <g fill="rgb(var(--panel-rgb))" opacity="0.85">
+      {isWet && <rect x="0" y="0" width="1200" height="220" fill="rgb(var(--ink-rgb))" opacity="0.3" />}
+      {showSun && <circle cx="1040" cy="55" r="34" fill="rgb(var(--nat-sun-rgb))" opacity={weather === "clear" ? "0.9" : "0.35"} />}
+      {weather === "thunderstorm" && (
+        <polygon points="1000,8 984,58 1006,58 984,102 1036,46 1012,46 1030,8" fill="rgb(var(--nat-sun-rgb))" opacity="0.9" />
+      )}
+      <g fill={isWet ? "rgb(var(--nat-sea-rgb))" : "rgb(var(--panel-rgb))"} opacity={isWet ? 0.55 : extraClouds ? 0.9 : 0.85}>
         <ellipse cx="180" cy="60" rx="46" ry="20" />
         <ellipse cx="220" cy="50" rx="34" ry="16" />
         <ellipse cx="140" cy="52" rx="30" ry="14" />
         <ellipse cx="620" cy="42" rx="50" ry="22" />
         <ellipse cx="670" cy="34" rx="32" ry="15" />
+        {extraClouds && (
+          <>
+            <ellipse cx="980" cy="50" rx="60" ry="24" />
+            <ellipse cx="1040" cy="38" rx="40" ry="18" />
+            <ellipse cx="360" cy="36" rx="46" ry="20" />
+          </>
+        )}
       </g>
       <path
         d="M0,220 L0,160 Q150,110 300,150 T600,140 T900,160 T1200,140 L1200,220 Z"
@@ -93,9 +213,16 @@ function NatsuyasumiArt() {
         d="M0,220 L0,190 Q200,150 420,185 T840,180 T1200,175 L1200,220 Z"
         fill="rgb(var(--nat-leaf-rgb))"
       />
+      {isWet && (
+        <g stroke="rgb(var(--nat-sea-rgb))" strokeOpacity={weather === "thunderstorm" ? 0.55 : 0.42} strokeWidth="2" strokeLinecap="round">
+          {rainLines.map((d, i) => (
+            <line key={i} x1={d.x} y1={d.y} x2={d.x - 10} y2={d.y + 22} />
+          ))}
+        </g>
+      )}
       {/* 手前のひまわり畑(茎+花びら)。シリーズ原風景を象徴するモチーフ */}
       {sunflowers.map((f, i) => (
-        <g key={i} transform={`translate(${f.x} ${f.y})`}>
+        <g key={i} transform={`translate(${f.x} ${f.y})`} opacity={isDim ? 0.75 : 1}>
           <line x1="0" y1="0" x2="0" y2={220 - f.y} stroke="rgb(var(--nat-leaf-rgb))" strokeWidth="3" />
           <g>
             {sunflowerPetals.map((deg) => (
@@ -105,13 +232,22 @@ function NatsuyasumiArt() {
           <circle r={f.r * 0.42} fill="rgb(var(--nat-leaf-rgb))" opacity="0.9" />
         </g>
       ))}
-      <text x="0" y="110" fontSize="26" className="nat-butterfly">
-        🦋
-      </text>
+      {showButterfly && (
+        <text x="0" y="110" fontSize="26" className="nat-butterfly">
+          🦋
+        </text>
+      )}
       {/* 軒先の風鈴 */}
       <text x="1110" y="60" fontSize="24" opacity="0.7">
         🎐
       </text>
+      {weather === "snow" && (
+        <g fill="rgb(var(--cream-rgb))" opacity="0.75">
+          {snowDots.map((d, i) => (
+            <circle key={i} cx={d.x} cy={d.y} r={d.r} />
+          ))}
+        </g>
+      )}
     </svg>
   );
 }
@@ -447,6 +583,7 @@ export default function HeaderArt() {
   const customizable = persona5Mode || lobotomyMode || va11hallaMode || natsuyasumiMode || powerproMode;
   const [customImage] = useSetting(`theme.headerImage.${mode}`, "");
   const [customPosition] = useSetting(`theme.headerImagePosition.${mode}`, "50% 50%");
+  const natsuyasumiWeather = useNatsuyasumiWeather(natsuyasumiMode && !(customizable && customImage));
   if (customizable && customImage) {
     return (
       <img
@@ -462,7 +599,7 @@ export default function HeaderArt() {
   if (persona5Mode) return <Persona5Art />;
   if (lobotomyMode) return <LobotomyArt />;
   if (va11hallaMode) return <Va11Art />;
-  if (natsuyasumiMode) return <NatsuyasumiArt />;
+  if (natsuyasumiMode) return <NatsuyasumiArt weather={natsuyasumiWeather} />;
   if (powerproMode) return <PowerproArt />;
   return <DefaultArt />;
 }

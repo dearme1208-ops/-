@@ -1188,6 +1188,7 @@ export default function SettingsSection() {
               画面全体が暖色の紙焼き写真風ライトテーマに丸ごと反転し、他の演出テーマとは対照的な見た目になります。パネルは角丸の写真カード風、警告は夏の天気（そよ風〜夕立警報）になぞらえたのんびりした表示に変わります。アプリ名は「なつやすみの しゅくだい」、ToDoは「しゅくだい」、ガントチャートは「生活記録表」など、タブの呼び名も総入れ替えされます。
             </p>
             <HeaderImageSetting mode="natsuyasumi" themeLabel="ぼくのなつやすみ風" />
+            <NatsuyasumiWeatherSetting />
           </>
         )}
         {visualMode === "powerpro" && (
@@ -1824,6 +1825,26 @@ function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: st
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function NatsuyasumiWeatherSetting() {
+  const [image] = useSetting("theme.headerImage.natsuyasumi", "");
+  const [syncStr, setSyncStr] = useSetting("theme.natsuyasumiWeatherSync", "true");
+  const sync = syncStr === "true";
+  return (
+    <div className="space-y-2 rounded-lg bg-ink/40 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold text-cream/80">ヘッダーの空模様を実際の天気に連動</p>
+        <button className={sync ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={() => setSyncStr(sync ? "false" : "true")}>
+          天気連動: {sync ? "ON" : "OFF"}
+        </button>
+      </div>
+      <p className="text-[11px] text-cream/50">
+        ONにすると、ヘッダーの空模様（晴れ・くもり・夕立・雷雨・雪）が実際の天気に合わせて変わります。位置は「天気変化の通知」に登録済みの地点があればそれを優先し、無ければ端末の位置情報（未許可・失敗時は東京）を使い、約30分ごとに再取得します。
+        {image && " 現在はオリジナルの代わりに自分の画像を使用中のため、この設定は反映されません。"}
+      </p>
     </div>
   );
 }
