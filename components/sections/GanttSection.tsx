@@ -10,6 +10,7 @@ import type { DailyTask } from "@/lib/types";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { ganttOverrunClass, useVisualMode } from "@/lib/theme";
+import GanttWeekView from "./GanttWeekView";
 
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 0.05;
@@ -98,6 +99,10 @@ export default function GanttSection() {
   const [stackBarsStr, setStackBarsStr] = useSetting("gantt.stackBars", "false");
   const [compactViewStr, setCompactViewStr] = useSetting("gantt.compactView", "false");
   const [groupModeStr, setGroupModeStr] = useSetting("gantt.groupMode", "detail");
+  // 従来の1日横スクロール表示に加え、Googleカレンダーの週表示のように
+  // 曜日を列・時刻を縦軸にして実績・カレンダー予定を見渡せる表示に切り替えられる
+  const [viewModeStr, setViewModeStr] = useSetting("gantt.viewMode", "day");
+  const viewMode: "day" | "week" = viewModeStr === "week" ? "week" : "day";
   const scrollRef = useRef<HTMLDivElement>(null);
   const { themedMode } = useVisualMode();
 
@@ -481,19 +486,36 @@ export default function GanttSection() {
           onChange={(e) => setDate(e.target.value)}
           className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
-        <div className="ml-auto flex items-center gap-1">
-          <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
-            －
+        <div className="flex items-center gap-1">
+          <button
+            className={viewMode === "day" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setViewModeStr("day")}
+          >
+            1日表示
           </button>
-          <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomIn} aria-label="拡大">
-            ＋
-          </button>
-          <button className="btn-pill-outline text-xs" onClick={fitToView}>
-            全体表示
+          <button
+            className={viewMode === "week" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setViewModeStr("week")}
+          >
+            週表示（カレンダー風）
           </button>
         </div>
+        {viewMode === "day" && (
+          <div className="ml-auto flex items-center gap-1">
+            <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
+              －
+            </button>
+            <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomIn} aria-label="拡大">
+              ＋
+            </button>
+            <button className="btn-pill-outline text-xs" onClick={fitToView}>
+              全体表示
+            </button>
+          </div>
+        )}
       </div>
 
+      {viewMode === "day" && (
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">初期表示位置</label>
@@ -570,7 +592,20 @@ export default function GanttSection() {
           予定・実績を1本ずつの行で表示
         </label>
       </div>
+      )}
 
+      {viewMode === "week" && (
+        <GanttWeekView
+          anchorDate={date}
+          onSelectDate={(ds) => {
+            setDate(ds);
+            setViewModeStr("day");
+          }}
+        />
+      )}
+
+      {viewMode === "day" && (
+      <>
       <div className="panel flex p-4">
         {/* 固定ラベル列: 横スクロールしても常に見える */}
         <div className="w-32 shrink-0 pr-2 sm:w-44">
@@ -910,6 +945,8 @@ export default function GanttSection() {
 
       {(!tasks || tasks.length === 0) && (
         <p className="text-sm text-cream/50">この日の作業リストがありません。</p>
+      )}
+      </>
       )}
     </div>
   );
