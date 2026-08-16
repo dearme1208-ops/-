@@ -11,6 +11,7 @@ import {
 } from "@/lib/master";
 import { setManualOverride, clearManualOverride } from "@/lib/outliers";
 import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
+import { JOURNAL_KEY_PREFIX, journalEntriesFromSettings, journalEntriesToCsv } from "@/lib/journal";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
 import { formatClock, formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
@@ -36,6 +37,31 @@ export default function RecordsSection() {
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
 
   const records = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
+
+  // 「今日の記録」(本日タブの自由記述欄)を日付ごとに見返せる履歴パネル。
+  // デフォルトは折りたたみ(件数が増えると場所を取るため)、開閉状態は設定に永続化する
+  const allSettings = useLiveQuery(() => db.settings.toArray(), []);
+  const journalEntries = useMemo(() => journalEntriesFromSettings(allSettings ?? []), [allSettings]);
+  const [journalSearch, setJournalSearch] = useState("");
+  const [journalCollapsedStr, setJournalCollapsedStr] = useSetting("records.journalCollapsed", "true");
+  const journalCollapsed = journalCollapsedStr === "true";
+  const filteredJournal = useMemo(() => {
+    if (!journalSearch.trim()) return journalEntries;
+    return journalEntries.filter((e) => e.date.includes(journalSearch) || e.text.includes(journalSearch));
+  }, [journalEntries, journalSearch]);
+
+  async function updateJournalText(date: string, text: string) {
+    const key = `${JOURNAL_KEY_PREFIX}${date}`;
+    if (text.trim() === "") {
+      await db.settings.delete(key);
+    } else {
+      await db.settings.put({ key, value: text });
+    }
+  }
+
+  function exportJournalCsv() {
+    downloadTextFile(`journal_${todayStr()}.csv`, journalEntriesToCsv(journalEntries));
+  }
 
   const filtered = useMemo(() => {
     if (!records) return [];
@@ -199,6 +225,60 @@ export default function RecordsSection() {
           {importErrors.map((e, i) => (
             <div key={i}>{e}</div>
           ))}
+        </div>
+      )}
+
+      {journalEntries.length > 0 && (
+        <div className="panel p-4">
+          <button
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setJournalCollapsedStr(journalCollapsed ? "false" : "true")}
+          >
+            <h3 className="font-display text-sm font-bold text-cream/80">
+              📓 記録の履歴（本日タブの「今日の記録」）
+              {journalCollapsed && <span className="ml-1 font-normal text-cream/40">（{journalEntries.length}件）</span>}
+            </h3>
+            <span className="text-xs text-cream/40">{journalCollapsed ? "▶" : "▼"}</span>
+          </button>
+          {!journalCollapsed && (
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  placeholder="日付・内容で検索"
+                  value={journalSearch}
+                  onChange={(e) => setJournalSearch(e.target.value)}
+                  className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+                <button className="btn-pill-outline text-xs" onClick={exportJournalCsv}>
+                  記録CSVエクスポート
+                </button>
+              </div>
+              <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
+                {filteredJournal.map((e) => (
+                  <div key={e.date} className="space-y-1 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-cream/60 tabular-nums">{e.date}</span>
+                      <button
+                        className="text-xs text-alert"
+                        aria-label={`${e.date}の記録を削除`}
+                        onClick={() => confirm(`${e.date}の記録を削除しますか?`) && updateJournalText(e.date, "")}
+                      >
+                        削除
+                      </button>
+                    </div>
+                    <textarea
+                      key={`journal-${e.date}`}
+                      defaultValue={e.text}
+                      rows={2}
+                      onBlur={(ev) => updateJournalText(e.date, ev.target.value)}
+                      className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                    />
+                  </div>
+                ))}
+                {filteredJournal.length === 0 && <p className="px-3 py-4 text-sm text-cream/50">該当する記録がありません。</p>}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

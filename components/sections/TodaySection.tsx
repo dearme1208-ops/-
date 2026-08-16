@@ -2186,6 +2186,7 @@ export default function TodaySection({
           rows={2}
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
+        <p className="text-[11px] text-cream/40">過去の記録は「実績編集」タブの「記録の履歴」から見返せます。</p>
       </div>
 
       {favorites && favorites.length > 0 && (
