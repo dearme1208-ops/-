@@ -25,12 +25,15 @@ interface WeekBlock {
   ongoing: boolean;
   overPlan: boolean;
   kind: "actual" | "scheduled";
+  detail: string; // 作業名・区分・時刻をまとめた説明文(タップ時の詳細パネル、PCでのホバー時ツールチップ両方に使う)
 }
 
 // 縦の時間軸上に置くブロック。左右いっぱいに広がる(横幅は列=曜日の幅に合わせる)ため、
 // GanttSection.tsxのHoverBar(左右とも数値pxで指定する横長バー向け)とは別に用意する。
-// スマホでは列の幅が狭く作業名が省略され読み切れないため、タップでその日の1日表示
-// (省略されない詳細な一覧)へ切り替えられるようにする
+// スマホでは列の幅が狭く作業名が省略され読み切れないことがあるため、タップで詳細パネルを
+// 開けるようにする(1日表示への切り替えは日付見出しのタップに任せ、ブロックのタップでは
+// 画面遷移しない。タップ即座に1日表示へ切り替わると、週全体を見比べたい操作の途中で
+// 意図せず画面が変わってしまうため)
 function WeekBlockBar({
   top,
   height,
@@ -38,7 +41,7 @@ function WeekBlockBar({
   textClassName,
   tooltip,
   label,
-  onSelect,
+  onTap,
 }: {
   top: number;
   height: number;
@@ -46,15 +49,15 @@ function WeekBlockBar({
   textClassName: string;
   tooltip: string;
   label: string;
-  onSelect: () => void;
+  onTap: () => void;
 }) {
   // ブロックの高さに余裕がある時は、1行で省略せずに折り返して表示する
-  // (短いブロックは従来通り1行+省略記号のまま。タップすれば1日表示で全文も見られる)
+  // (短いブロックは従来通り1行+省略記号のまま。タップすれば詳細パネルで全文も見られる)
   const canWrap = height >= 30;
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={onTap}
       className="group absolute inset-x-0.5 appearance-none border-0 bg-transparent p-0 text-left"
       style={{ top, height }}
     >
@@ -111,6 +114,10 @@ export default function GanttWeekView({
   const [weekStartDayStr] = useSetting("calendar.weekStartDay", "0");
   const weekStartDay = Number(weekStartDayStr);
   const gridRef = useRef<HTMLDivElement>(null);
+  // ブロックをタップした時に、画面を切り替えずその場で詳細(作業名・区分・時刻)を見せるためのパネル。
+  // 週全体を見比べている途中でタップのたびに1日表示へ飛んでしまうと不便なため、
+  // 明示的に「この日を1日表示で見る」ボタンを押した時だけ画面を切り替える
+  const [selected, setSelected] = useState<{ ds: string; block: WeekBlock } | null>(null);
 
   // タッチパネルの2本指ピンチで時間軸の縦の詰まり具合(hourPx)を拡大縮小する
   usePinchZoom(gridRef, (factor) => {
@@ -126,6 +133,11 @@ export default function GanttWeekView({
     const id = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(id);
   }, []);
+
+  // 週を移動したら、古い週の詳細パネルが残らないよう閉じる
+  useEffect(() => {
+    setSelected(null);
+  }, [anchorDate]);
 
   const weekDays = useMemo(() => {
     const anchor = new Date(anchorDate + "T00:00:00");
@@ -168,6 +180,9 @@ export default function GanttWeekView({
           task.estimatedSeconds > 0 &&
           (task.status === "done" || task.status === "paused") &&
           (seg.end - seg.start) / 1000 > task.estimatedSeconds;
+        const detail = `${seg.name}（実績）\n${seg.category}\n${formatClock(seg.start)} 〜 ${
+          seg.ongoing ? "計測中" : formatClock(seg.end)
+        }`;
         return {
           key: `actual-${ds}-${i}`,
           taskName: seg.name,
@@ -177,6 +192,7 @@ export default function GanttWeekView({
           ongoing: seg.ongoing,
           overPlan,
           kind: "actual",
+          detail,
         };
       });
       for (const t of tasks) {
@@ -184,6 +200,10 @@ export default function GanttWeekView({
         const [hh, mm] = t.scheduledTime.split(":").map(Number);
         const startHour = hh + mm / 60;
         const durHour = Math.max(t.estimatedSeconds / 3600, 1 / 60);
+        const startMs = dayBase + startHour * 3600000;
+        const detail = `${t.name}（カレンダー予定）\n${t.category}\n${formatClock(startMs)} 〜 見込み ${formatHms(
+          Math.max(durHour * 3600, 0)
+        )}`;
         blocks.push({
           key: `sched-${t.id}`,
           taskName: t.name,
@@ -193,6 +213,7 @@ export default function GanttWeekView({
           ongoing: false,
           overPlan: false,
           kind: "scheduled",
+          detail,
         });
       }
       map.set(ds, blocks);
@@ -299,15 +320,6 @@ export default function GanttWeekView({
               {(blocksByDate.get(ds) ?? []).map((b) => {
                 const top = Math.max(0, (b.startHour - startHour) * hourPx);
                 const height = Math.max((b.endHour - b.startHour) * hourPx, MIN_BLOCK_PX);
-                const dayBase = new Date(ds + "T00:00:00").getTime();
-                const tooltip =
-                  b.kind === "scheduled"
-                    ? `${b.taskName}（カレンダー予定）\n${b.category}\n${formatClock(
-                        dayBase + b.startHour * 3600000
-                      )} 〜 見込み ${formatHms(Math.max((b.endHour - b.startHour) * 3600, 0))}`
-                    : `${b.taskName}（実績）\n${b.category}\n${formatClock(dayBase + b.startHour * 3600000)} 〜 ${
-                        b.ongoing ? "計測中" : formatClock(dayBase + b.endHour * 3600000)
-                      }`;
                 // bg-creamは明るい背景色のため、通常の実績ブロックだけラベルを暗い文字色にする
                 // (超過=bg-alert・カレンダー予定=bg-ink/60はどちらも暗い背景なのでcreamの明るい文字のまま)。
                 // 超過の背景は常に単色のbg-alertにする(GanttSectionのganttOverrunClassは1日表示の
@@ -322,14 +334,14 @@ export default function GanttWeekView({
                     top={top}
                     height={height}
                     label={b.taskName}
-                    tooltip={tooltip}
+                    tooltip={b.detail}
                     textClassName={isLightBackground ? "text-ink/90" : "text-cream/90"}
                     className={
                       b.kind === "scheduled"
                         ? "rounded border-2 border-cream/70 bg-ink/60"
                         : `rounded ${b.overPlan ? "bg-alert week-block-overrun-glow" : "bg-cream"} opacity-90`
                     }
-                    onSelect={() => onSelectDate(ds)}
+                    onTap={() => setSelected({ ds, block: b })}
                   />
                 );
               })}
@@ -337,6 +349,30 @@ export default function GanttWeekView({
           ))}
         </div>
       </div>
+
+      {selected && (
+        <div className="mt-3 rounded-lg border border-cream/20 bg-ink p-3">
+          <div className="flex items-start justify-between gap-3">
+            <p className="min-w-0 whitespace-pre-line break-words text-sm text-cream">{selected.block.detail}</p>
+            <button
+              className="shrink-0 text-lg leading-none text-cream/50 hover:text-cream"
+              onClick={() => setSelected(null)}
+              aria-label="詳細を閉じる"
+            >
+              ×
+            </button>
+          </div>
+          <button
+            className="btn-pill-outline mt-3 text-xs"
+            onClick={() => {
+              onSelectDate(selected.ds);
+              setSelected(null);
+            }}
+          >
+            {selected.ds} を1日表示で見る
+          </button>
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-cream/60">
         <span className="flex items-center gap-1">
@@ -349,7 +385,7 @@ export default function GanttWeekView({
           <span className="inline-block h-3 w-3 rounded border-2 border-cream/70 bg-ink/60" /> カレンダー予定（実時刻）
         </span>
         <span className="text-cream/40">
-          日付・ブロックをタップすると1日表示に切り替わります／2本指ピンチで拡大縮小、左右スワイプで前後の週へ移動できます
+          日付見出しをタップすると1日表示に切り替わります／ブロックをタップすると詳細を表示します／2本指ピンチで拡大縮小、左右スワイプで前後の週へ移動できます
         </span>
       </div>
     </div>
