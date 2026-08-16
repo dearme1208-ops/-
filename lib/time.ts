@@ -60,6 +60,13 @@ export function daysBetweenDateStrs(fromStr: string, toStr: string): number {
   return Math.round((to.getTime() - from.getTime()) / 86400000);
 }
 
+// "YYYY-MM-DD"にdeltaDays日を加減した日付文字列を返す(前日/翌日ボタン・週送りなどに使う)
+export function shiftDateStr(dateStr: string, deltaDays: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + deltaDays);
+  return todayStr(d);
+}
+
 export function formatDateJp(dateStr: string): string {
   const [, m, d] = dateStr.split("-");
   return `${Number(m)}/${Number(d)}`;

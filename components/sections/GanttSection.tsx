@@ -5,11 +5,12 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
-import { formatClock, formatHms, todayStr } from "@/lib/time";
+import { formatClock, formatHms, shiftDateStr, todayStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { ganttOverrunClass, useVisualMode } from "@/lib/theme";
+import { usePinchZoom, useSwipeNavigate } from "@/lib/gestures";
 import GanttWeekView from "./GanttWeekView";
 
 const DEFAULT_PX_PER_MIN = 6;
@@ -463,6 +464,18 @@ export default function GanttSection() {
     setPxPerMin(Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +fit.toFixed(3))));
   }
 
+  // タッチパネルの2本指ピンチで、従来の＋/－ボタンと同じpxPerMinを拡大縮小する
+  usePinchZoom(scrollRef, (factor) => {
+    setPxPerMin((v) => Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +(v * factor).toFixed(3))));
+  });
+  // 1本指の横スワイプで前日・翌日へ移動する。ズームして時間軸を左右にパンしている
+  // 途中の操作と区別するため、スクロールが端まで到達している時だけ発火する
+  useSwipeNavigate(scrollRef, {
+    onSwipeLeft: () => setDate((d) => shiftDateStr(d, 1)),
+    onSwipeRight: () => setDate((d) => shiftDateStr(d, -1)),
+    edgeAware: true,
+  });
+
   // 「現在時刻」を初期位置にする設定の場合、日付・拡大縮小を変えるたびに
   // 現在時刻の位置が見える所までスクロールする(「設定時刻」の場合は既定の左端=0のままにする)
   useEffect(() => {
@@ -480,12 +493,28 @@ export default function GanttSection() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm text-cream/70">日付</label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
+        <div className="flex items-center gap-1">
+          <button
+            className="btn-pill-outline px-2 py-1.5 text-sm"
+            onClick={() => setDate((d) => shiftDateStr(d, viewMode === "week" ? -7 : -1))}
+            aria-label={viewMode === "week" ? "前の週" : "前の日"}
+          >
+            ◀
+          </button>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+          <button
+            className="btn-pill-outline px-2 py-1.5 text-sm"
+            onClick={() => setDate((d) => shiftDateStr(d, viewMode === "week" ? 7 : 1))}
+            aria-label={viewMode === "week" ? "次の週" : "次の日"}
+          >
+            ▶
+          </button>
+        </div>
         <div className="flex items-center gap-1">
           <button
             className={viewMode === "day" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -601,6 +630,7 @@ export default function GanttSection() {
             setDate(ds);
             setViewModeStr("day");
           }}
+          onShiftWeek={(delta) => setDate((d) => shiftDateStr(d, delta))}
         />
       )}
 

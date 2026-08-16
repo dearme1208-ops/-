@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
@@ -8,8 +8,11 @@ import { DOW_LABELS, buildWeekGrid, type WeekViewMode } from "@/lib/calendarGrid
 import { formatClock, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
 import { ganttOverrunClass, useVisualMode } from "@/lib/theme";
+import { usePinchZoom, useSwipeNavigate } from "@/lib/gestures";
 
-const HOUR_PX = 44;
+const DEFAULT_HOUR_PX = 44;
+const MIN_HOUR_PX = 18;
+const MAX_HOUR_PX = 140;
 const DEFAULT_START_HOUR = 6;
 const DEFAULT_END_HOUR = 22;
 const MIN_BLOCK_PX = 13;
@@ -79,15 +82,29 @@ function mergeAdjacentSegments(
 export default function GanttWeekView({
   anchorDate,
   onSelectDate,
+  onShiftWeek,
 }: {
   anchorDate: string;
   onSelectDate: (date: string) => void;
+  onShiftWeek: (deltaDays: number) => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
+  const [hourPx, setHourPx] = useState(DEFAULT_HOUR_PX);
   const [weekViewMode] = useSetting("calendar.weekViewMode", "fixedStart");
   const [weekStartDayStr] = useSetting("calendar.weekStartDay", "0");
   const weekStartDay = Number(weekStartDayStr);
   const { themedMode } = useVisualMode();
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // タッチパネルの2本指ピンチで時間軸の縦の詰まり具合(hourPx)を拡大縮小する
+  usePinchZoom(gridRef, (factor) => {
+    setHourPx((v) => Math.min(MAX_HOUR_PX, Math.max(MIN_HOUR_PX, Math.round(v * factor))));
+  });
+  // 1本指の横スワイプで前の週・次の週へ移動する(このグリッドは横スクロールしないため常に発火する)
+  useSwipeNavigate(gridRef, {
+    onSwipeLeft: () => onShiftWeek(7),
+    onSwipeRight: () => onShiftWeek(-7),
+  });
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -197,12 +214,28 @@ export default function GanttWeekView({
   }, [blocksByDate, weekDateStrs, todayDateStr, now]);
 
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i);
-  const totalHeight = (endHour - startHour) * HOUR_PX;
+  const totalHeight = (endHour - startHour) * hourPx;
   const nowHourToday = (now - new Date(todayDateStr + "T00:00:00").getTime()) / 3600000;
   const showNowLine = weekDateStrs.includes(todayDateStr) && nowHourToday >= startHour && nowHourToday <= endHour;
 
   return (
     <div className="panel p-4">
+      <div className="mb-2 flex items-center justify-end gap-1">
+        <button
+          className="btn-pill-outline px-3 py-1 text-sm"
+          onClick={() => setHourPx((v) => Math.max(MIN_HOUR_PX, Math.round(v / 1.3)))}
+          aria-label="縮小"
+        >
+          －
+        </button>
+        <button
+          className="btn-pill-outline px-3 py-1 text-sm"
+          onClick={() => setHourPx((v) => Math.min(MAX_HOUR_PX, Math.round(v * 1.3)))}
+          aria-label="拡大"
+        >
+          ＋
+        </button>
+      </div>
       <div className="flex">
         <div className="w-12 shrink-0 sm:w-14" />
         <div className="flex flex-1">
@@ -225,10 +258,10 @@ export default function GanttWeekView({
         </div>
       </div>
 
-      <div className="mt-2 flex max-h-[560px] overflow-y-auto border-t border-cream/10 pt-2">
+      <div ref={gridRef} className="mt-2 flex max-h-[560px] overflow-y-auto border-t border-cream/10 pt-2">
         <div className="w-12 shrink-0 sm:w-14">
           {hours.map((h) => (
-            <div key={h} className="relative text-right text-[10px] text-cream/40" style={{ height: HOUR_PX }}>
+            <div key={h} className="relative text-right text-[10px] text-cream/40" style={{ height: hourPx }}>
               <span className="absolute -top-2 right-1">{String(h).padStart(2, "0")}:00</span>
             </div>
           ))}
@@ -236,10 +269,10 @@ export default function GanttWeekView({
         <div className="relative flex flex-1" style={{ height: totalHeight }}>
           <div className="pointer-events-none absolute inset-0">
             {hours.map((h, i) => (
-              <div key={h} className="absolute left-0 right-0 border-t border-cream/[0.06]" style={{ top: i * HOUR_PX }} />
+              <div key={h} className="absolute left-0 right-0 border-t border-cream/[0.06]" style={{ top: i * hourPx }} />
             ))}
             {showNowLine && (
-              <div className="absolute left-0 right-0 z-10 flex items-center" style={{ top: (nowHourToday - startHour) * HOUR_PX }}>
+              <div className="absolute left-0 right-0 z-10 flex items-center" style={{ top: (nowHourToday - startHour) * hourPx }}>
                 <div className="h-2 w-2 shrink-0 rounded-full bg-alert" />
                 <div className="h-px flex-1 bg-alert/70" />
               </div>
@@ -248,8 +281,8 @@ export default function GanttWeekView({
           {weekDateStrs.map((ds, i) => (
             <div key={ds} className={`relative flex-1 ${i > 0 ? "border-l border-cream/[0.06]" : ""}`}>
               {(blocksByDate.get(ds) ?? []).map((b) => {
-                const top = Math.max(0, (b.startHour - startHour) * HOUR_PX);
-                const height = Math.max((b.endHour - b.startHour) * HOUR_PX, MIN_BLOCK_PX);
+                const top = Math.max(0, (b.startHour - startHour) * hourPx);
+                const height = Math.max((b.endHour - b.startHour) * hourPx, MIN_BLOCK_PX);
                 const dayBase = new Date(ds + "T00:00:00").getTime();
                 const tooltip =
                   b.kind === "scheduled"
@@ -293,7 +326,9 @@ export default function GanttWeekView({
         <span className="flex items-center gap-1">
           <span className="inline-block h-3 w-3 rounded border-2 border-cream/70 bg-ink/60" /> カレンダー予定（実時刻）
         </span>
-        <span className="text-cream/40">日付・ブロックをタップすると1日表示に切り替わります</span>
+        <span className="text-cream/40">
+          日付・ブロックをタップすると1日表示に切り替わります／2本指ピンチで拡大縮小、左右スワイプで前後の週へ移動できます
+        </span>
       </div>
     </div>
   );
