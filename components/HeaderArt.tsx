@@ -275,14 +275,10 @@ function Persona5Art() {
   );
 }
 
-// ロボトミーコーポレーション風: タイトル画面の背景グラフィック(文字・ロゴを除く)を
-// ユーザー指定の仕様に基づいて再現する。16:9(1920x1080)で設計し、コンテナも
-// aspect-videoにして非uniformなストレッチによる歪みを避ける。
-// 構成: (1)左下から中央へ伸びる淡い黄色の帯(上辺は鋭い直線、下は末広がり)、
-// (2)中央から右上へ稲妻/根のように鋭角に枝分かれする亀裂、
-// (3)右上の円弧状の地平線に沿って立ち並ぶ摩天楼シルエット(黄色の背景+黒い建物)、
-// (4)右上端の細いリング状の円弧アイコン。フラットな単色塗りのみで、
-// グラデーションや光彩などの装飾は加えない
+// ロボトミーコーポレーション風: タイトル画面の背景モチーフ(左下〜中央の淡い黄色の帯、
+// 中央〜右上へ稲妻/根のように枝分かれする亀裂、右上の地平線に沿った摩天楼シルエット)を、
+// 他テーマと同じ短冊型のヘッダー比率(viewBox 1200x220、h-24/h-28)の中に自然に収まる
+// よう構図を調整して再現する。フラットな単色塗りのみで、グラデーションや光彩は加えない
 function LobotomyArt() {
   // 中心線の点列を、法線方向へ幅(w)ぶん左右にオフセットして
   // 先細りするリボン状の多角形(稲妻/根のような亀裂)を作る
@@ -304,33 +300,36 @@ function LobotomyArt() {
     return [...left, ...right.reverse()].join(" ");
   }
 
-  // (2) 中央から右上へ向かう主要な亀裂と、そこから分岐する2本の根
+  // 中央から右上へ向かう主要な亀裂と、そこから分岐する2本の根
   const mainCrack = ribbon([
-    { x: 660, y: 420, w: 50 },
-    { x: 760, y: 380, w: 34 },
-    { x: 820, y: 436, w: 20 },
-    { x: 940, y: 300, w: 26 },
-    { x: 1010, y: 346, w: 16 },
-    { x: 1140, y: 222, w: 22 },
-    { x: 1220, y: 266, w: 14 },
-    { x: 1360, y: 170, w: 20 },
-    { x: 1480, y: 140, w: 34 },
+    { x: 230, y: 55, w: 20 },
+    { x: 285, y: 38, w: 13 },
+    { x: 315, y: 62, w: 8 },
+    { x: 375, y: 28, w: 11 },
+    { x: 405, y: 42, w: 6 },
+    { x: 465, y: 18, w: 9 },
+    { x: 505, y: 30, w: 5 },
+    { x: 565, y: 12, w: 8 },
+    { x: 620, y: 24, w: 5 },
+    { x: 680, y: 8, w: 9 },
+    { x: 740, y: 20, w: 5 },
+    { x: 800, y: 30, w: 16 },
   ]);
   const branchA = ribbon([
-    { x: 940, y: 300, w: 15 },
-    { x: 995, y: 190, w: 8 },
-    { x: 1035, y: 100, w: 2 },
+    { x: 375, y: 28, w: 8 },
+    { x: 398, y: 10, w: 3 },
+    { x: 416, y: 2, w: 1 },
   ]);
   const branchB = ribbon([
-    { x: 1140, y: 222, w: 13 },
-    { x: 1230, y: 130, w: 6 },
-    { x: 1280, y: 50, w: 2 },
+    { x: 505, y: 30, w: 6 },
+    { x: 542, y: 8, w: 3 },
+    { x: 564, y: 1, w: 1 },
   ]);
 
-  // (3) 右上の湾曲した地平線(2次ベジェ)に沿って建ち並ぶビル群
-  const arcP0 = { x: 1480, y: 140 };
-  const arcC = { x: 1750, y: 520 };
-  const arcP1 = { x: 1920, y: 420 };
+  // 右上の湾曲した地平線(2次ベジェ)に沿って建ち並ぶビル群
+  const arcP0 = { x: 800, y: 30 };
+  const arcC = { x: 980, y: 150 };
+  const arcP1 = { x: 1200, y: 110 };
   function pointOnArc(t: number) {
     const mt = 1 - t;
     return {
@@ -338,62 +337,47 @@ function LobotomyArt() {
       y: mt * mt * arcP0.y + 2 * mt * t * arcC.y + t * t * arcP1.y,
     };
   }
-  const buildingCount = 20;
+  const buildingCount = 16;
   const buildings = Array.from({ length: buildingCount }, (_, i) => {
-    const t = 0.06 + (i / (buildingCount - 1)) * 0.88;
+    const t = 0.06 + (i / (buildingCount - 1)) * 0.9;
     const base = pointOnArc(t);
-    const h = 55 + ((i * 41) % 150);
-    const w = 20 + ((i * 17) % 24);
+    const h = 14 + ((i * 13) % 40);
+    const w = 8 + ((i * 7) % 12);
     return { x: base.x, y: base.y, h, w, antenna: i % 4 === 0 };
   });
 
   return (
     <svg
-      viewBox="0 0 1920 1080"
-      preserveAspectRatio="xMidYMin slice"
-      className="aspect-video max-h-[380px] w-full"
+      viewBox="0 0 1200 220"
+      preserveAspectRatio="none"
+      className="h-24 w-full sm:h-28"
       role="img"
-      aria-label="左下から伸びる淡い黄色の帯、右上へ枝分かれする亀裂、円弧状の摩天楼シルエットのイラスト"
+      aria-label="左下から伸びる淡い黄色の帯、右上へ枝分かれする亀裂、地平線に沿った摩天楼シルエットのイラスト"
     >
       {/* 背景(漆黒) */}
-      <rect x="0" y="0" width="1920" height="1080" fill="#0a0a0a" />
-      {/* (1) 左下〜中央の光の帯: 上辺は鋭い直線境界、下は末広がり */}
-      <polygon points="0,1080 0,600 660,420 900,1080" fill="rgb(var(--lobo-yellow-rgb))" />
-      {/* (2) 中央〜右上の分岐(稲妻/根のような鋭角の亀裂) */}
+      <rect x="0" y="0" width="1200" height="220" fill="#0a0a0a" />
+      {/* 左下〜中央の光の帯: 上辺は鋭い直線境界、下は末広がり */}
+      <polygon points="0,220 0,120 230,55 320,220" fill="rgb(var(--lobo-yellow-rgb))" />
+      {/* 中央〜右上の分岐(稲妻/根のような鋭角の亀裂) */}
       <polygon points={mainCrack} fill="rgb(var(--lobo-yellow-rgb))" />
       <polygon points={branchA} fill="rgb(var(--lobo-yellow-rgb))" />
       <polygon points={branchB} fill="rgb(var(--lobo-yellow-rgb))" />
-      {/* (3) 右上の淡い黄色の地平線ポケット+摩天楼シルエット */}
-      <path d="M1480,140 Q1750,520 1920,420 L1920,0 Z" fill="rgb(var(--lobo-yellow-rgb))" />
+      {/* 右上の淡い黄色の地平線ポケット+摩天楼シルエット */}
+      <path d="M800,30 Q980,150 1200,110 L1200,0 Z" fill="rgb(var(--lobo-yellow-rgb))" />
       <g fill="#0a0a0a">
         {buildings.map((b, i) => (
           <g key={i}>
             <rect x={b.x - b.w / 2} y={b.y - b.h} width={b.w} height={b.h} />
-            {b.antenna && <line x1={b.x} y1={b.y - b.h} x2={b.x} y2={b.y - b.h - 26} stroke="#0a0a0a" strokeWidth="2" />}
+            {b.antenna && <line x1={b.x} y1={b.y - b.h} x2={b.x} y2={b.y - b.h - 10} stroke="#0a0a0a" strokeWidth="1.5" />}
           </g>
         ))}
       </g>
       {/* ビルの窓格子(細い縦線) */}
-      <g stroke="rgb(var(--lobo-yellow-dark-rgb))" strokeWidth="1.5" opacity="0.8">
-        {buildings.map((b, i) =>
-          Array.from({ length: Math.max(1, Math.floor(b.w / 10)) }, (_, j) => {
-            const lx = b.x - b.w / 2 + 6 + j * 10;
-            return <line key={`${i}-${j}`} x1={lx} y1={b.y - b.h + 6} x2={lx} y2={b.y - 6} />;
-          })
-        )}
+      <g stroke="rgb(var(--lobo-yellow-dark-rgb))" strokeWidth="1" opacity="0.8">
+        {buildings.map((b, i) => (
+          <line key={i} x1={b.x} y1={b.y - b.h + 3} x2={b.x} y2={b.y - 3} />
+        ))}
       </g>
-      {/* (4) 右上端の細いリング状の円弧アイコン */}
-      <circle
-        cx="1840"
-        cy="70"
-        r="34"
-        fill="none"
-        stroke="#0a0a0a"
-        strokeWidth="5"
-        strokeLinecap="round"
-        strokeDasharray="180 40"
-        strokeDashoffset="-20"
-      />
     </svg>
   );
 }
