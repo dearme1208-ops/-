@@ -2305,7 +2305,16 @@ export default function TodaySection({
               </button>
             </>
           )}
-          {voiceEnabled && !voiceUnsupported && (
+          {voiceEnabled && !voiceUnsupported && (simpleButtons ? (
+            <button
+              className={voiceListening ? "btn-pill-danger px-3 py-2 text-base" : "btn-pill-outline px-3 py-2 text-base"}
+              onClick={voiceListening ? stopVoiceListening : startVoiceListening}
+              title={voiceListening ? "聞き取り中..." : "音声で操作(「〇〇を開始」「終了」のように話しかけて操作できます)"}
+              aria-label={voiceListening ? "聞き取り中" : "音声で操作"}
+            >
+              🎤
+            </button>
+          ) : (
             <button
               className={voiceListening ? "btn-pill-danger text-sm" : "btn-pill-outline text-sm"}
               onClick={voiceListening ? stopVoiceListening : startVoiceListening}
@@ -2313,7 +2322,7 @@ export default function TodaySection({
             >
               {voiceListening ? "🎤 聞き取り中..." : "🎤 音声で操作"}
             </button>
-          )}
+          ))}
           <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
             予定CSVテンプレート
           </button>
