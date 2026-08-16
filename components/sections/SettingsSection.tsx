@@ -1157,29 +1157,44 @@ export default function SettingsSection() {
           </div>
         )}
         {visualMode === "lobotomy" && (
-          <p className="text-xs text-cream/50">
-            画面全体にCRT風の走査線・ノイズ、アプリタイトルの色収差グリッチ、パネル四隅のリベット、見出しの走査ブロック装飾が有効になります。予測を大幅に超過した作業には「収容の不安定化」警戒表示（画面端のビネット・横スクロールする警告ティッカー・危険階級バッジ ZAYIN〜ALEPH）が出ます。
-          </p>
+          <>
+            <p className="text-xs text-cream/50">
+              画面全体にCRT風の走査線・ノイズ、アプリタイトルの色収差グリッチ、パネル四隅のリベット、見出しの走査ブロック装飾が有効になります。予測を大幅に超過した作業には「収容の不安定化」警戒表示（画面端のビネット・横スクロールする警告ティッカー・危険階級バッジ ZAYIN〜ALEPH）が出ます。
+            </p>
+            <HeaderImageSetting mode="lobotomy" themeLabel="ロボトミーコーポレーション風" />
+          </>
         )}
         {visualMode === "va11halla" && (
-          <p className="text-xs text-cream/50">
-            画面全体にネオンのシンセウェイブグリッド・VHS風走査線、パネル枠のネオングロー、アプリタイトルのネオン色収差が有効になります。予測を大幅に超過した作業には「システムオーバーロード」警戒表示（ネオンビネット・横スクロールする警告ティッカー・注文階級バッジ REGULAR〜BAD TOUCH）が出ます。
-          </p>
+          <>
+            <p className="text-xs text-cream/50">
+              画面全体にネオンのシンセウェイブグリッド・VHS風走査線、パネル枠のネオングロー、アプリタイトルのネオン色収差が有効になります。予測を大幅に超過した作業には「システムオーバーロード」警戒表示（ネオンビネット・横スクロールする警告ティッカー・注文階級バッジ REGULAR〜BAD TOUCH）が出ます。
+            </p>
+            <HeaderImageSetting mode="va11halla" themeLabel="VA-11 HALL-A風" />
+          </>
         )}
         {visualMode === "persona5" && (
-          <p className="text-xs text-cream/50">
-            画面全体が黒地に赤・白を基調にした切り絵風の配色に丸ごと変わり、パネル左上の斜め切り取りリボン・見出しの斜体強調・角を落とした鋭いボタンが有効になります。予測を大幅に超過した作業には「予告状」警戒表示（高速ストロボのビネット・横スクロールする警告ティッカー・階級バッジ 順調〜予告状）が出ます。
-          </p>
+          <>
+            <p className="text-xs text-cream/50">
+              画面全体が黒地に赤・白を基調にした切り絵風の配色に丸ごと変わり、パネル左上の斜め切り取りリボン・見出しの斜体強調・角を落とした鋭いボタンが有効になります。予測を大幅に超過した作業には「予告状」警戒表示（高速ストロボのビネット・横スクロールする警告ティッカー・階級バッジ 順調〜予告状）が出ます。
+            </p>
+            <HeaderImageSetting mode="persona5" themeLabel="ペルソナ5風" />
+          </>
         )}
         {visualMode === "natsuyasumi" && (
-          <p className="text-xs text-cream/50">
-            画面全体が暖色の紙焼き写真風ライトテーマに丸ごと反転し、他の演出テーマとは対照的な見た目になります。パネルは角丸の写真カード風、警告は夏の天気（そよ風〜夕立警報）になぞらえたのんびりした表示に変わります。アプリ名は「なつやすみの しゅくだい」、ToDoは「しゅくだい」、ガントチャートは「生活記録表」など、タブの呼び名も総入れ替えされます。
-          </p>
+          <>
+            <p className="text-xs text-cream/50">
+              画面全体が暖色の紙焼き写真風ライトテーマに丸ごと反転し、他の演出テーマとは対照的な見た目になります。パネルは角丸の写真カード風、警告は夏の天気（そよ風〜夕立警報）になぞらえたのんびりした表示に変わります。アプリ名は「なつやすみの しゅくだい」、ToDoは「しゅくだい」、ガントチャートは「生活記録表」など、タブの呼び名も総入れ替えされます。
+            </p>
+            <HeaderImageSetting mode="natsuyasumi" themeLabel="ぼくのなつやすみ風" />
+          </>
         )}
         {visualMode === "powerpro" && (
-          <p className="text-xs text-cream/50">
-            画面全体が白地に緑・紺・金を効かせたスコアボード風ライトテーマに丸ごと反転します。パネルには球場グリーンの太枠、査定ランクのようなメダル型バッジ（G〜S）、球場の芝目模様が入ります。アプリ名は「球団ノート」、ToDoは「伝令メモ」、ガントチャートは「スタメン表」など、タブの呼び名も野球用語に総入れ替えされます。
-          </p>
+          <>
+            <p className="text-xs text-cream/50">
+              画面全体が白地に緑・紺・金を効かせたスコアボード風ライトテーマに丸ごと反転します。パネルには球場グリーンの太枠、査定ランクのようなメダル型バッジ（G〜S）、球場の芝目模様が入ります。アプリ名は「球団ノート」、ToDoは「伝令メモ」、ガントチャートは「スタメン表」など、タブの呼び名も野球用語に総入れ替えされます。
+            </p>
+            <HeaderImageSetting mode="powerpro" themeLabel="パワプロ風" />
+          </>
         )}
         {visualMode === "claude" && (
           <p className="text-xs text-cream/50">
@@ -1666,6 +1681,92 @@ function PresetListEditor({
           追加
         </button>
       </div>
+    </div>
+  );
+}
+
+// 選ばれた画像ファイルを、ヘッダーの帯に収まる程度の幅まで縮小してからJPEGの
+// data URLに変換する。端末内(IndexedDB)に丸ごと保存するため、元画像のままだと
+// 容量を圧迫しやすいことへの対策
+function resizeImageToDataUrl(file: File, maxWidth: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      URL.revokeObjectURL(objectUrl);
+      if (!ctx) {
+        reject(new Error("canvas unavailable"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("画像の読み込みに失敗しました"));
+    };
+    img.src = objectUrl;
+  });
+}
+
+// 演出テーマのヘッダー画像を、端末内の画像ファイルに差し替える設定。
+// 「今のヘッダーをオリジナルとし、それ以外も自分で画像設定できるように」という
+// 要望に対応したもので、未設定(空文字)ならHeaderArt.tsxが従来どおりテーマ専用の
+// イラストを描画し、設定済みならそちらの画像がヘッダーの帯にそのまま使われる
+function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: string }) {
+  const [image, setImage] = useSetting(`theme.headerImage.${mode}`, "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      const dataUrl = await resizeImageToDataUrl(file, 1600);
+      await setImage(dataUrl);
+    } catch {
+      setError("画像の読み込みに失敗しました。別の画像でお試しください。");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg bg-ink/40 px-3 py-2">
+      {image ? (
+        <img src={image} alt="" className="h-10 w-20 shrink-0 rounded object-cover" />
+      ) : (
+        <div className="flex h-10 w-20 shrink-0 items-center justify-center rounded border border-dashed border-cream/25 text-[10px] text-cream/40">
+          オリジナル
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-bold text-cream/80">{themeLabel}のヘッダー画像</p>
+        <p className="text-[11px] text-cream/50">{image ? "自分の画像を使用中です。" : "テーマ専用のイラスト(オリジナル)を使用中です。"}</p>
+        {error && <p className="text-[11px] text-alert">{error}</p>}
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <button className="btn-pill-outline text-xs" onClick={() => inputRef.current?.click()} disabled={busy}>
+          {busy ? "読み込み中…" : "画像を選ぶ"}
+        </button>
+        {image && (
+          <button className="btn-pill-outline text-xs" onClick={() => setImage("")}>
+            オリジナルに戻す
+          </button>
+        )}
+      </div>
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useVisualMode } from "@/lib/theme";
+import { useSetting } from "@/lib/settings";
 
 function DefaultArt() {
   return (
@@ -439,7 +440,15 @@ function ZenArt() {
 }
 
 export default function HeaderArt() {
-  const { natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode } = useVisualMode();
+  const { mode, natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode } = useVisualMode();
+  // ロボトミー/VA-11 HALL-A/ペルソナ5/ぼくのなつやすみ/パワプロの5テーマは、設定画面から
+  // 自分の画像にヘッダーを差し替えられる。未設定(空文字)なら従来どおりテーマ専用の
+  // イラストを描画する(=「オリジナル」)。Claude/禅/オフには画像差し替えの仕組みは無い
+  const customizable = persona5Mode || lobotomyMode || va11hallaMode || natsuyasumiMode || powerproMode;
+  const [customImage] = useSetting(`theme.headerImage.${mode}`, "");
+  if (customizable && customImage) {
+    return <img src={customImage} alt="" className="h-24 w-full object-cover sm:h-28" />;
+  }
   if (claudeMode) return <ClaudeArt />;
   if (zenMode) return <ZenArt />;
   if (persona5Mode) return <Persona5Art />;
