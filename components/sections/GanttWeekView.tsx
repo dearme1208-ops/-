@@ -28,7 +28,9 @@ interface WeekBlock {
 }
 
 // 縦の時間軸上に置くブロック。左右いっぱいに広がる(横幅は列=曜日の幅に合わせる)ため、
-// GanttSection.tsxのHoverBar(左右とも数値pxで指定する横長バー向け)とは別に用意する
+// GanttSection.tsxのHoverBar(左右とも数値pxで指定する横長バー向け)とは別に用意する。
+// スマホでは列の幅が狭く作業名が省略され読み切れないため、タップでその日の1日表示
+// (省略されない詳細な一覧)へ切り替えられるようにする
 function WeekBlockBar({
   top,
   height,
@@ -36,6 +38,7 @@ function WeekBlockBar({
   textClassName,
   tooltip,
   label,
+  onSelect,
 }: {
   top: number;
   height: number;
@@ -43,16 +46,22 @@ function WeekBlockBar({
   textClassName: string;
   tooltip: string;
   label: string;
+  onSelect: () => void;
 }) {
   return (
-    <div className="group absolute inset-x-0.5" style={{ top, height }}>
+    <button
+      type="button"
+      onClick={onSelect}
+      className="group absolute inset-x-0.5 appearance-none border-0 bg-transparent p-0 text-left"
+      style={{ top, height }}
+    >
       <div className={`h-full w-full overflow-hidden ${className}`}>
         <span className={`block truncate px-1 pt-0.5 text-[9px] leading-tight ${textClassName}`}>{label}</span>
       </div>
       <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
         {tooltip}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -309,6 +318,7 @@ export default function GanttWeekView({
                         ? "rounded border-2 border-cream/70 bg-ink/60"
                         : `rounded ${b.overPlan ? "bg-alert" : "bg-cream"} opacity-90`
                     }
+                    onSelect={() => onSelectDate(ds)}
                   />
                 );
               })}
