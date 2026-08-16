@@ -7,7 +7,6 @@ import { useSetting } from "@/lib/settings";
 import { DOW_LABELS, buildWeekGrid, type WeekViewMode } from "@/lib/calendarGrid";
 import { formatClock, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
-import { ganttOverrunClass, useVisualMode } from "@/lib/theme";
 import { usePinchZoom, useSwipeNavigate } from "@/lib/gestures";
 
 const DEFAULT_HOUR_PX = 44;
@@ -93,7 +92,6 @@ export default function GanttWeekView({
   const [weekViewMode] = useSetting("calendar.weekViewMode", "fixedStart");
   const [weekStartDayStr] = useSetting("calendar.weekStartDay", "0");
   const weekStartDay = Number(weekStartDayStr);
-  const { themedMode } = useVisualMode();
   const gridRef = useRef<HTMLDivElement>(null);
 
   // タッチパネルの2本指ピンチで時間軸の縦の詰まり具合(hourPx)を拡大縮小する
@@ -293,7 +291,10 @@ export default function GanttWeekView({
                         b.ongoing ? "計測中" : formatClock(dayBase + b.endHour * 3600000)
                       }`;
                 // bg-creamは明るい背景色のため、通常の実績ブロックだけラベルを暗い文字色にする
-                // (超過=bg-alert・カレンダー予定=bg-ink/60はどちらも暗い背景なのでcreamの明るい文字のまま)
+                // (超過=bg-alert・カレンダー予定=bg-ink/60はどちらも暗い背景なのでcreamの明るい文字のまま)。
+                // 超過の背景は常に単色のbg-alertにする(GanttSectionのganttOverrunClassは1日表示の
+                // 横長バー向けに走査線状の派手なグラデーションを敷く演出で、この週表示のような
+                // 狭いブロックに使うと文字が完全に埋もれて読めなくなるため、ここでは使わない)
                 const isLightBackground = b.kind === "actual" && !b.overPlan;
                 return (
                   <WeekBlockBar
@@ -306,7 +307,7 @@ export default function GanttWeekView({
                     className={
                       b.kind === "scheduled"
                         ? "rounded border-2 border-cream/70 bg-ink/60"
-                        : `rounded ${b.overPlan ? `bg-alert ${themedMode ? ganttOverrunClass(themedMode) : ""}` : "bg-cream"} opacity-90`
+                        : `rounded ${b.overPlan ? "bg-alert" : "bg-cream"} opacity-90`
                     }
                   />
                 );
