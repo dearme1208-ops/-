@@ -1189,6 +1189,7 @@ export default function SettingsSection() {
             </p>
             <HeaderImageSetting mode="natsuyasumi" themeLabel="ぼくのなつやすみ風" />
             <NatsuyasumiWeatherSetting />
+            <NatsuyasumiTimeSetting />
           </>
         )}
         {visualMode === "powerpro" && (
@@ -1843,6 +1844,26 @@ function NatsuyasumiWeatherSetting() {
       </div>
       <p className="text-[11px] text-cream/50">
         ONにすると、ヘッダーの空模様（晴れ・くもり・夕立・雷雨・雪）が実際の天気に合わせて変わります。位置は「天気変化の通知」に登録済みの地点があればそれを優先し、無ければ端末の位置情報（未許可・失敗時は東京）を使い、約30分ごとに再取得します。
+        {image && " 現在はオリジナルの代わりに自分の画像を使用中のため、この設定は反映されません。"}
+      </p>
+    </div>
+  );
+}
+
+function NatsuyasumiTimeSetting() {
+  const [image] = useSetting("theme.headerImage.natsuyasumi", "");
+  const [syncStr, setSyncStr] = useSetting("theme.natsuyasumiTimeSync", "true");
+  const sync = syncStr === "true";
+  return (
+    <div className="space-y-2 rounded-lg bg-ink/40 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold text-cream/80">ヘッダーの明るさを実際の時刻に連動</p>
+        <button className={sync ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={() => setSyncStr(sync ? "false" : "true")}>
+          時間帯連動: {sync ? "ON" : "OFF"}
+        </button>
+      </div>
+      <p className="text-[11px] text-cream/50">
+        ONにすると、ヘッダーが端末の現在時刻に合わせて昼(5-16時)・夕方(17-18時)・夜(19-4時)を描き分けます。夜は太陽の代わりに月と星、蝶の代わりに蛍が現れます。天気連動と組み合わせて使えます（例: 夜の夕立、夜のくもり）。
         {image && " 現在はオリジナルの代わりに自分の画像を使用中のため、この設定は反映されません。"}
       </p>
     </div>

@@ -623,6 +623,19 @@ html[data-high-contrast="true"] :focus-visible {
       transform: translate(1260px, 0) rotate(0deg);
     }
   }
+  /* 夜のヘッダーで、蝶の代わりに草むらに舞う蛍がゆっくり明滅する */
+  .nat-firefly {
+    animation: nat-firefly-glow 2.6s ease-in-out infinite;
+  }
+  @keyframes nat-firefly-glow {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
   /* Claudeモード専用の「今日の集中」画面で、実行中インジケーターとして使う脈動ドット */
   .claude-pulse-dot {
     animation: claude-pulse-dot-beat 1.4s ease-in-out infinite;
@@ -2252,6 +2265,7 @@ html[data-high-contrast="true"] :focus-visible {
   h2.font-display,
   h3.font-display,
   .nat-butterfly,
+  .nat-firefly,
   .claude-spark,
   .claude-pulse-dot {
     animation: none !important;

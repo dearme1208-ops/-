@@ -11,6 +11,53 @@ const NATSUYASUMI_WEATHER_REFRESH_MS = 30 * 60000;
 // 位置情報が使えない場合のフォールバック地点(東京駅)
 const NATSUYASUMI_FALLBACK_LOCATION = { lat: 35.6812, lon: 139.7671 };
 
+type TimeBand = "day" | "dusk" | "night";
+const NATSUYASUMI_TIME_REFRESH_MS = 5 * 60000;
+
+function computeNatsuyasumiTimeBand(hour: number): TimeBand {
+  if (hour >= 17 && hour < 19) return "dusk";
+  if (hour >= 19 || hour < 5) return "night";
+  return "day";
+}
+
+// なつやすみモードのヘッダーの時間帯(昼/夕方/夜)を、端末の現在時刻(ネットワーク不要)に
+// 連動させる。5分ごとに再計算し、時刻をまたいだら自動で切り替わる
+function useNatsuyasumiTimeBand(active: boolean): TimeBand {
+  const [syncEnabledStr] = useSetting("theme.natsuyasumiTimeSync", "true");
+  const syncEnabled = syncEnabledStr === "true";
+  const [band, setBand] = useState<TimeBand>(() => computeNatsuyasumiTimeBand(new Date().getHours()));
+
+  useEffect(() => {
+    if (!active || !syncEnabled) return;
+    const update = () => setBand(computeNatsuyasumiTimeBand(new Date().getHours()));
+    update();
+    const timer = setInterval(update, NATSUYASUMI_TIME_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [active, syncEnabled]);
+
+  return active && syncEnabled ? band : "day";
+}
+
+// 空グラデーション上端の色・不透明度を、天気×時間帯の組み合わせから決める。
+// 下端は常にrgb(var(--ink-rgb))(ページ本体の背景色)のままにして、他テーマ同様
+// ヘッダーと本文の継ぎ目が滑らかに馴染むようにする
+function natSkyTopStop(weather: WeatherCategory, timeBand: TimeBand): { color: string; opacity: number } {
+  const isWet = weather === "rain" || weather === "thunderstorm";
+  if (timeBand === "night") {
+    const opacity = isWet ? 0.92 : weather === "snow" ? 0.72 : weather === "cloudy" ? 0.86 : 0.8;
+    return { color: "rgb(22 26 48)", opacity };
+  }
+  if (timeBand === "dusk") {
+    if (isWet) return { color: "rgb(120 95 115)", opacity: 0.6 };
+    if (weather === "snow") return { color: "rgb(165 155 175)", opacity: 0.55 };
+    if (weather === "cloudy") return { color: "rgb(220 155 130)", opacity: 0.7 };
+    return { color: "rgb(235 140 70)", opacity: 0.65 };
+  }
+  if (weather === "cloudy") return { color: "rgb(var(--panel-rgb))", opacity: 0.8 };
+  if (weather === "snow") return { color: "rgb(var(--nat-sea-rgb))", opacity: 0.2 };
+  return { color: "rgb(var(--nat-sea-rgb))", opacity: isWet ? 0.28 : 0.55 };
+}
+
 // なつやすみモードのヘッダー背景の空模様を、実際の天気に連動させる。
 // 位置は「天気変化通知」に登録済みの地点があればそれを優先し(権限確認不要)、
 // 無ければ端末の位置情報(未許可・失敗時は東京)を使う。約30分ごとに再取得し、
@@ -123,7 +170,7 @@ const NATSUYASUMI_WEATHER_LABEL: Record<WeatherCategory, string> = {
   snow: "雪の降る緑の丘、鳥居と風鈴、ひまわり畑のイラスト",
 };
 
-function NatsuyasumiArt({ weather = "clear" }: { weather?: WeatherCategory }) {
+function NatsuyasumiArt({ weather = "clear", timeBand = "day" }: { weather?: WeatherCategory; timeBand?: TimeBand }) {
   const sunflowerPetals = Array.from({ length: 8 }, (_, i) => i * 45);
   const sunflowers = [
     { x: 60, y: 208, r: 15 },
@@ -131,13 +178,19 @@ function NatsuyasumiArt({ weather = "clear" }: { weather?: WeatherCategory }) {
     { x: 1150, y: 210, r: 14 },
     { x: 1110, y: 216, r: 10 },
   ];
-  // 雨/雷雨/雪の日はひまわりを心持ち沈ませ、蝶は隠れて羽ばたかない
   const isWet = weather === "rain" || weather === "thunderstorm";
-  const isDim = isWet || weather === "snow";
+  const isNight = timeBand === "night";
+  const isDusk = timeBand === "dusk";
+  // 雨/雷雨/雪、または夜は花をひとまわり沈ませる(夜は闇に溶けるシルエット、他は湿って心持ち沈む)
+  const isDim = isWet || weather === "snow" || isNight;
   // 晴れ以外は入道雲を1段厚くして空を覆う
   const extraClouds = weather !== "clear";
-  const showSun = weather === "clear" || weather === "cloudy";
-  const showButterfly = weather === "clear";
+  // 太陽/月を見せるかどうかは天気(晴れ・くもりの時だけ空が開けている)で決め、
+  // 昼/夕方は太陽、夜は月+星に描き分ける
+  const showCelestial = weather === "clear" || weather === "cloudy";
+  const showButterfly = !isNight && weather === "clear";
+  const showFireflies = isNight && showCelestial;
+  const topStop = natSkyTopStop(weather, timeBand);
   // 斜めの雨脚(決定的な配列。VA-11のドット状とは違い、柔らかい線で夕立らしさを出す)
   const rainLines = Array.from({ length: weather === "thunderstorm" ? 34 : 22 }, (_, i) => ({
     x: (i * 53) % 1200,
@@ -149,37 +202,49 @@ function NatsuyasumiArt({ weather = "clear" }: { weather?: WeatherCategory }) {
     y: 6 + ((i * 23) % 160),
     r: 1.5 + (i % 3),
   }));
+  // 夜空の星(決定的な配列。晴れた夜だけ見える)
+  const stars = Array.from({ length: 20 }, (_, i) => ({ x: (i * 61) % 1200, y: 6 + ((i * 17) % 78) }));
+  // 草むらを舞う蛍(決定的な配列。夜だけ、蝶の代わりに現れる)
+  const fireflies = [
+    { x: 40, y: 152 }, { x: 88, y: 130 }, { x: 700, y: 158 }, { x: 1102, y: 128 }, { x: 1150, y: 148 },
+  ];
+  const hillFill = isNight ? "rgb(24 32 24)" : "rgb(var(--nat-leaf-rgb))";
+  const sunflowerFill = isNight ? "rgb(120 100 45)" : "rgb(var(--nat-sun-rgb))";
   return (
     <svg
       viewBox="0 0 1200 220"
       preserveAspectRatio="none"
       className="h-24 w-full sm:h-28"
       role="img"
-      aria-label={NATSUYASUMI_WEATHER_LABEL[weather]}
+      aria-label={`${isNight ? "夜の" : isDusk ? "夕方の" : ""}${NATSUYASUMI_WEATHER_LABEL[weather]}`}
     >
       <defs>
         <linearGradient id="natSky" x1="0" y1="0" x2="0" y2="1">
-          {weather === "cloudy" ? (
-            <>
-              <stop offset="0%" stopColor="rgb(var(--panel-rgb))" stopOpacity="0.8" />
-              <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
-            </>
-          ) : weather === "snow" ? (
-            <>
-              <stop offset="0%" stopColor="rgb(var(--nat-sea-rgb))" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
-            </>
-          ) : (
-            <>
-              <stop offset="0%" stopColor="rgb(var(--nat-sea-rgb))" stopOpacity={isWet ? "0.28" : "0.55"} />
-              <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
-            </>
-          )}
+          <stop offset="0%" stopColor={topStop.color} stopOpacity={topStop.opacity} />
+          <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
         </linearGradient>
       </defs>
       <rect x="0" y="0" width="1200" height="220" fill="url(#natSky)" />
-      {isWet && <rect x="0" y="0" width="1200" height="220" fill="rgb(var(--ink-rgb))" opacity="0.3" />}
-      {showSun && <circle cx="1040" cy="55" r="34" fill="rgb(var(--nat-sun-rgb))" opacity={weather === "clear" ? "0.9" : "0.35"} />}
+      {isWet && !isNight && <rect x="0" y="0" width="1200" height="220" fill="rgb(var(--ink-rgb))" opacity="0.3" />}
+      {showCelestial && !isNight && (
+        <circle
+          cx="1040"
+          cy="55"
+          r={isDusk ? 40 : 34}
+          fill={isDusk ? "rgb(235 120 40)" : "rgb(var(--nat-sun-rgb))"}
+          opacity={weather === "clear" ? "0.9" : "0.35"}
+        />
+      )}
+      {showCelestial && isNight && (
+        <>
+          {weather === "clear" &&
+            stars.map((s, i) => <circle key={i} cx={s.x} cy={s.y} r={i % 3 === 0 ? 1.6 : 1} fill="rgb(240 238 225)" opacity="0.8" />)}
+          <g transform="translate(1040 50)">
+            <circle r="24" fill="rgb(238 236 220)" opacity={weather === "clear" ? "0.95" : "0.45"} />
+            <circle cx="10" cy="-8" r="21" fill={topStop.color} opacity={weather === "clear" ? "1" : "0.6"} />
+          </g>
+        </>
+      )}
       {weather === "thunderstorm" && (
         <polygon points="1000,8 984,58 1006,58 984,102 1036,46 1012,46 1030,8" fill="rgb(var(--nat-sun-rgb))" opacity="0.9" />
       )}
@@ -197,11 +262,7 @@ function NatsuyasumiArt({ weather = "clear" }: { weather?: WeatherCategory }) {
           </>
         )}
       </g>
-      <path
-        d="M0,220 L0,160 Q150,110 300,150 T600,140 T900,160 T1200,140 L1200,220 Z"
-        fill="rgb(var(--nat-leaf-rgb))"
-        opacity="0.55"
-      />
+      <path d="M0,220 L0,160 Q150,110 300,150 T600,140 T900,160 T1200,140 L1200,220 Z" fill={hillFill} opacity="0.55" />
       {/* 遠くの鳥居(小さな神社への参道を思わせる) */}
       <g stroke="rgb(var(--nat-sun-rgb))" strokeOpacity="0.45" strokeWidth="4" fill="none">
         <line x1="470" y1="128" x2="470" y2="164" />
@@ -209,10 +270,7 @@ function NatsuyasumiArt({ weather = "clear" }: { weather?: WeatherCategory }) {
         <line x1="460" y1="128" x2="540" y2="128" />
         <line x1="454" y1="118" x2="546" y2="118" />
       </g>
-      <path
-        d="M0,220 L0,190 Q200,150 420,185 T840,180 T1200,175 L1200,220 Z"
-        fill="rgb(var(--nat-leaf-rgb))"
-      />
+      <path d="M0,220 L0,190 Q200,150 420,185 T840,180 T1200,175 L1200,220 Z" fill={hillFill} />
       {isWet && (
         <g stroke="rgb(var(--nat-sea-rgb))" strokeOpacity={weather === "thunderstorm" ? 0.55 : 0.42} strokeWidth="2" strokeLinecap="round">
           {rainLines.map((d, i) => (
@@ -223,19 +281,29 @@ function NatsuyasumiArt({ weather = "clear" }: { weather?: WeatherCategory }) {
       {/* 手前のひまわり畑(茎+花びら)。シリーズ原風景を象徴するモチーフ */}
       {sunflowers.map((f, i) => (
         <g key={i} transform={`translate(${f.x} ${f.y})`} opacity={isDim ? 0.75 : 1}>
-          <line x1="0" y1="0" x2="0" y2={220 - f.y} stroke="rgb(var(--nat-leaf-rgb))" strokeWidth="3" />
+          <line x1="0" y1="0" x2="0" y2={220 - f.y} stroke={hillFill} strokeWidth="3" />
           <g>
             {sunflowerPetals.map((deg) => (
-              <ellipse key={deg} cx="0" cy={-f.r} rx={f.r * 0.32} ry={f.r * 0.62} fill="rgb(var(--nat-sun-rgb))" transform={`rotate(${deg})`} />
+              <ellipse key={deg} cx="0" cy={-f.r} rx={f.r * 0.32} ry={f.r * 0.62} fill={sunflowerFill} transform={`rotate(${deg})`} />
             ))}
           </g>
-          <circle r={f.r * 0.42} fill="rgb(var(--nat-leaf-rgb))" opacity="0.9" />
+          <circle r={f.r * 0.42} fill={hillFill} opacity="0.9" />
         </g>
       ))}
       {showButterfly && (
         <text x="0" y="110" fontSize="26" className="nat-butterfly">
           🦋
         </text>
+      )}
+      {showFireflies && (
+        <g>
+          {fireflies.map((f, i) => (
+            <g key={i} className="nat-firefly" style={{ animationDelay: `${i * 0.7}s` }}>
+              <circle cx={f.x} cy={f.y} r="6" fill="rgb(224 240 150)" opacity="0.22" />
+              <circle cx={f.x} cy={f.y} r="2.2" fill="rgb(224 240 150)" opacity="0.9" />
+            </g>
+          ))}
+        </g>
       )}
       {/* 軒先の風鈴 */}
       <text x="1110" y="60" fontSize="24" opacity="0.7">
@@ -584,6 +652,7 @@ export default function HeaderArt() {
   const [customImage] = useSetting(`theme.headerImage.${mode}`, "");
   const [customPosition] = useSetting(`theme.headerImagePosition.${mode}`, "50% 50%");
   const natsuyasumiWeather = useNatsuyasumiWeather(natsuyasumiMode && !(customizable && customImage));
+  const natsuyasumiTimeBand = useNatsuyasumiTimeBand(natsuyasumiMode && !(customizable && customImage));
   if (customizable && customImage) {
     return (
       <img
@@ -599,7 +668,7 @@ export default function HeaderArt() {
   if (persona5Mode) return <Persona5Art />;
   if (lobotomyMode) return <LobotomyArt />;
   if (va11hallaMode) return <Va11Art />;
-  if (natsuyasumiMode) return <NatsuyasumiArt weather={natsuyasumiWeather} />;
+  if (natsuyasumiMode) return <NatsuyasumiArt weather={natsuyasumiWeather} timeBand={natsuyasumiTimeBand} />;
   if (powerproMode) return <PowerproArt />;
   return <DefaultArt />;
 }
