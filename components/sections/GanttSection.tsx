@@ -682,17 +682,52 @@ export default function GanttSection() {
               </div>
             </>
           ) : (
-            ganttRows.map((row) => (
-              <div
-                key={row.key}
-                className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
-                style={{ height: ROW_H }}
-                title={row.sublabel ? `${row.sublabel} / ${row.label}` : row.label}
-              >
-                {row.sublabel && <span className="truncate text-cream/50">{row.sublabel}</span>}
-                <span className="truncate">{row.label}</span>
-              </div>
-            ))
+            ganttRows.map((row) => {
+              // タイムライン上のバーは拡大率次第で数pxしかなく、スマホでは狙って正確にタップするのが
+              // 難しい。この左のラベル列は横スクロール・拡大縮小の影響を受けず常にROW_H分の高さが
+              // あるので、ここもタップ可能にして確実に詳細を見られるようにする
+              const rowDetail =
+                row.items.length === 1
+                  ? row.items[0].block
+                    ? segmentTooltip(
+                        row.items[0].task.name,
+                        timelineBase + row.items[0].block.start * 60000,
+                        timelineBase + row.items[0].block.end * 60000,
+                        row.items[0].block.ongoing
+                      )
+                    : predictedTooltip(
+                        row.items[0].task.name,
+                        timelineBase + row.items[0].scheduledStartMin * 60000,
+                        timelineBase +
+                          (row.items[0].scheduledStartMin +
+                            planLayoutMinutes(row.items[0].task.status, 0, row.items[0].task.estimatedSeconds, row.items[0].predictedSeconds)) *
+                            60000,
+                        row.items[0].predictedSeconds
+                      )
+                  : `${row.label}\n` +
+                    row.items
+                      .map((item) =>
+                        item.block
+                          ? `・${item.task.name} ${formatClock(timelineBase + item.block.start * 60000)}〜${
+                              item.block.ongoing ? "計測中" : formatClock(timelineBase + item.block.end * 60000)
+                            }`
+                          : `・${item.task.name}（予測のみ）`
+                      )
+                      .join("\n");
+              return (
+                <button
+                  key={row.key}
+                  type="button"
+                  onClick={() => setSelectedDetail(rowDetail)}
+                  className="flex appearance-none flex-col justify-center overflow-hidden border-0 bg-transparent p-0 text-left text-[11px] leading-tight text-cream/70"
+                  style={{ height: ROW_H }}
+                  title={row.sublabel ? `${row.sublabel} / ${row.label}` : row.label}
+                >
+                  {row.sublabel && <span className="truncate text-cream/50">{row.sublabel}</span>}
+                  <span className="truncate">{row.label}</span>
+                </button>
+              );
+            })
           )}
         </div>
 
@@ -1038,7 +1073,9 @@ export default function GanttSection() {
         <span className="flex items-center gap-1">
           <ConditionGlyph level="3" size={14} /> 体調の変化（縦線が記録時刻）
         </span>
-        <span className="text-cream/40">バーをタップすると詳細を表示します</span>
+        <span className="text-cream/40">
+          バーをタップすると詳細を表示します（タイムライン上のバーは細くタップしづらいことがあるため、左の作業名欄をタップする方が確実です）
+        </span>
       </div>
 
       {(!tasks || tasks.length === 0) && (
