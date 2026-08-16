@@ -228,59 +228,65 @@ export default function RecordsSection() {
         </div>
       )}
 
-      {journalEntries.length > 0 && (
-        <div className="panel p-4">
-          <button
-            className="flex w-full items-center justify-between text-left"
-            onClick={() => setJournalCollapsedStr(journalCollapsed ? "false" : "true")}
-          >
-            <h3 className="font-display text-sm font-bold text-cream/80">
-              📓 記録の履歴（本日タブの「今日の記録」）
-              {journalCollapsed && <span className="ml-1 font-normal text-cream/40">（{journalEntries.length}件）</span>}
-            </h3>
-            <span className="text-xs text-cream/40">{journalCollapsed ? "▶" : "▼"}</span>
-          </button>
-          {!journalCollapsed && (
-            <div className="mt-3 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  placeholder="日付・内容で検索"
-                  value={journalSearch}
-                  onChange={(e) => setJournalSearch(e.target.value)}
-                  className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-                />
-                <button className="btn-pill-outline text-xs" onClick={exportJournalCsv}>
-                  記録CSVエクスポート
-                </button>
-              </div>
-              <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
-                {filteredJournal.map((e) => (
-                  <div key={e.date} className="space-y-1 px-3 py-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-cream/60 tabular-nums">{e.date}</span>
-                      <button
-                        className="text-xs text-alert"
-                        aria-label={`${e.date}の記録を削除`}
-                        onClick={() => confirm(`${e.date}の記録を削除しますか?`) && updateJournalText(e.date, "")}
-                      >
-                        削除
-                      </button>
+      <div className="panel p-4">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setJournalCollapsedStr(journalCollapsed ? "false" : "true")}
+        >
+          <h3 className="font-display text-sm font-bold text-cream/80">
+            📓 記録の履歴（本日タブの「今日の記録」）
+            {journalCollapsed && <span className="ml-1 font-normal text-cream/40">（{journalEntries.length}件）</span>}
+          </h3>
+          <span className="text-xs text-cream/40">{journalCollapsed ? "▶" : "▼"}</span>
+        </button>
+        {!journalCollapsed && (
+          <div className="mt-3 space-y-3">
+            {journalEntries.length === 0 ? (
+              <p className="text-sm text-cream/50">
+                まだ記録がありません。「本日の作業」タブの「今日の記録」に書くと、ここに一覧で表示されます。
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    placeholder="日付・内容で検索"
+                    value={journalSearch}
+                    onChange={(e) => setJournalSearch(e.target.value)}
+                    className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                  />
+                  <button className="btn-pill-outline text-xs" onClick={exportJournalCsv}>
+                    記録CSVエクスポート
+                  </button>
+                </div>
+                <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
+                  {filteredJournal.map((e) => (
+                    <div key={e.date} className="space-y-1 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-cream/60 tabular-nums">{e.date}</span>
+                        <button
+                          className="text-xs text-alert"
+                          aria-label={`${e.date}の記録を削除`}
+                          onClick={() => confirm(`${e.date}の記録を削除しますか?`) && updateJournalText(e.date, "")}
+                        >
+                          削除
+                        </button>
+                      </div>
+                      <textarea
+                        key={`journal-${e.date}`}
+                        defaultValue={e.text}
+                        rows={2}
+                        onBlur={(ev) => updateJournalText(e.date, ev.target.value)}
+                        className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                      />
                     </div>
-                    <textarea
-                      key={`journal-${e.date}`}
-                      defaultValue={e.text}
-                      rows={2}
-                      onBlur={(ev) => updateJournalText(e.date, ev.target.value)}
-                      className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-                    />
-                  </div>
-                ))}
-                {filteredJournal.length === 0 && <p className="px-3 py-4 text-sm text-cream/50">該当する記録がありません。</p>}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+                  ))}
+                  {filteredJournal.length === 0 && <p className="px-3 py-4 text-sm text-cream/50">該当する記録がありません。</p>}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="panel divide-y divide-cream/10">
         {filtered.map((r) => (
