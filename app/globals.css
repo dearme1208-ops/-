@@ -1781,6 +1781,23 @@ html[data-high-contrast="true"] :focus-visible {
     border-radius: 999px;
     background-color: rgb(var(--accent-rgb) / 0.5);
   }
+  /* ガントチャート週表示の超過ブロック用。上のgantt-bar-overrun-*は1日表示の横長バー向けに
+     背景そのものを走査線グラデーションへ差し替える演出だが、週表示の狭いブロックでは
+     それをやると作業名が完全に埋もれて読めなくなる。そこで背景は読みやすい単色(bg-alert)
+     のままにし、縁をテーマのアクセントカラー(--accent-rgb、テーマごとに値が違う)で
+     パルス発光させるだけに留めて、演出テーマらしさは保ちつつ文字も読めるようにする */
+  .week-block-overrun-glow {
+    animation: week-block-overrun-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes week-block-overrun-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 10px 3px rgb(var(--accent-rgb) / 0.85);
+    }
+  }
 
   /* 予測超過中のタイマー数字を、より強く色収差させて明滅させる(通常のoverrun-flickerより過激) */
   .overrun-flicker-intense {
@@ -2267,7 +2284,8 @@ html[data-high-contrast="true"] :focus-visible {
   .nat-butterfly,
   .nat-firefly,
   .claude-spark,
-  .claude-pulse-dot {
+  .claude-pulse-dot,
+  .week-block-overrun-glow {
     animation: none !important;
   }
   .crt-scanlines,

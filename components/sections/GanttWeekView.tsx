@@ -312,7 +312,9 @@ export default function GanttWeekView({
                 // (超過=bg-alert・カレンダー予定=bg-ink/60はどちらも暗い背景なのでcreamの明るい文字のまま)。
                 // 超過の背景は常に単色のbg-alertにする(GanttSectionのganttOverrunClassは1日表示の
                 // 横長バー向けに走査線状の派手なグラデーションを敷く演出で、この週表示のような
-                // 狭いブロックに使うと文字が完全に埋もれて読めなくなるため、ここでは使わない)
+                // 狭いブロックに使うと文字が完全に埋もれて読めなくなるため、ここでは使わない)。
+                // 代わりにweek-block-overrun-glowで縁をテーマのアクセントカラーでパルス発光させ、
+                // 演出テーマらしさを保ちつつ文字は読めるようにする
                 const isLightBackground = b.kind === "actual" && !b.overPlan;
                 return (
                   <WeekBlockBar
@@ -325,7 +327,7 @@ export default function GanttWeekView({
                     className={
                       b.kind === "scheduled"
                         ? "rounded border-2 border-cream/70 bg-ink/60"
-                        : `rounded ${b.overPlan ? "bg-alert" : "bg-cream"} opacity-90`
+                        : `rounded ${b.overPlan ? "bg-alert week-block-overrun-glow" : "bg-cream"} opacity-90`
                     }
                     onSelect={() => onSelectDate(ds)}
                   />
