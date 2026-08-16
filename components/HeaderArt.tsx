@@ -446,8 +446,16 @@ export default function HeaderArt() {
   // イラストを描画する(=「オリジナル」)。Claude/禅/オフには画像差し替えの仕組みは無い
   const customizable = persona5Mode || lobotomyMode || va11hallaMode || natsuyasumiMode || powerproMode;
   const [customImage] = useSetting(`theme.headerImage.${mode}`, "");
+  const [customPosition] = useSetting(`theme.headerImagePosition.${mode}`, "50% 50%");
   if (customizable && customImage) {
-    return <img src={customImage} alt="" className="h-24 w-full object-cover sm:h-28" />;
+    return (
+      <img
+        src={customImage}
+        alt=""
+        style={{ objectPosition: customPosition }}
+        className="h-24 w-full object-cover sm:h-28"
+      />
+    );
   }
   if (claudeMode) return <ClaudeArt />;
   if (zenMode) return <ZenArt />;

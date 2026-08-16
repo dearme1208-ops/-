@@ -1720,8 +1720,24 @@ function resizeImageToDataUrl(file: File, maxWidth: number): Promise<string> {
 // 「今のヘッダーをオリジナルとし、それ以外も自分で画像設定できるように」という
 // 要望に対応したもので、未設定(空文字)ならHeaderArt.tsxが従来どおりテーマ専用の
 // イラストを描画し、設定済みならそちらの画像がヘッダーの帯にそのまま使われる
+// ヘッダーの帯はもとの画像よりかなり横長になることが多く、object-fit:coverで
+// 収める際にどうしても上下(または左右)が切り落とされる。切り取られる位置を
+// 3x3の基準点(CSSのobject-position相当)から選べるようにする
+const HEADER_IMAGE_POSITIONS: { key: string; label: string }[] = [
+  { key: "0% 0%", label: "左上" },
+  { key: "50% 0%", label: "上" },
+  { key: "100% 0%", label: "右上" },
+  { key: "0% 50%", label: "左" },
+  { key: "50% 50%", label: "中央" },
+  { key: "100% 50%", label: "右" },
+  { key: "0% 100%", label: "左下" },
+  { key: "50% 100%", label: "下" },
+  { key: "100% 100%", label: "右下" },
+];
+
 function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: string }) {
   const [image, setImage] = useSetting(`theme.headerImage.${mode}`, "");
+  const [position, setPosition] = useSetting(`theme.headerImagePosition.${mode}`, "50% 50%");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1743,30 +1759,54 @@ function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: st
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg bg-ink/40 px-3 py-2">
-      {image ? (
-        <img src={image} alt="" className="h-10 w-20 shrink-0 rounded object-cover" />
-      ) : (
-        <div className="flex h-10 w-20 shrink-0 items-center justify-center rounded border border-dashed border-cream/25 text-[10px] text-cream/40">
-          オリジナル
+    <div className="space-y-2 rounded-lg bg-ink/40 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-3">
+        {image ? (
+          <img src={image} alt="" style={{ objectPosition: position }} className="h-10 w-20 shrink-0 rounded object-cover" />
+        ) : (
+          <div className="flex h-10 w-20 shrink-0 items-center justify-center rounded border border-dashed border-cream/25 text-[10px] text-cream/40">
+            オリジナル
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold text-cream/80">{themeLabel}のヘッダー画像</p>
+          <p className="text-[11px] text-cream/50">{image ? "自分の画像を使用中です。" : "テーマ専用のイラスト(オリジナル)を使用中です。"}</p>
+          {error && <p className="text-[11px] text-alert">{error}</p>}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button className="btn-pill-outline text-xs" onClick={() => inputRef.current?.click()} disabled={busy}>
+            {busy ? "読み込み中…" : "画像を選ぶ"}
+          </button>
+          {image && (
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={() => {
+                setImage("");
+                setPosition("50% 50%");
+              }}
+            >
+              オリジナルに戻す
+            </button>
+          )}
+        </div>
+        <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      </div>
+      {image && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-cream/10 pt-2">
+          <span className="text-[11px] text-cream/50">帯に収まらない分をどこで切り取るか:</span>
+          <div className="grid grid-cols-3 gap-1">
+            {HEADER_IMAGE_POSITIONS.map((p) => (
+              <button
+                key={p.key}
+                className={position === p.key ? "btn-pill px-2 py-1 text-[10px]" : "btn-pill-outline px-2 py-1 text-[10px]"}
+                onClick={() => setPosition(p.key)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-bold text-cream/80">{themeLabel}のヘッダー画像</p>
-        <p className="text-[11px] text-cream/50">{image ? "自分の画像を使用中です。" : "テーマ専用のイラスト(オリジナル)を使用中です。"}</p>
-        {error && <p className="text-[11px] text-alert">{error}</p>}
-      </div>
-      <div className="flex shrink-0 gap-2">
-        <button className="btn-pill-outline text-xs" onClick={() => inputRef.current?.click()} disabled={busy}>
-          {busy ? "読み込み中…" : "画像を選ぶ"}
-        </button>
-        {image && (
-          <button className="btn-pill-outline text-xs" onClick={() => setImage("")}>
-            オリジナルに戻す
-          </button>
-        )}
-      </div>
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
     </div>
   );
 }
