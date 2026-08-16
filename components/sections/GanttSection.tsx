@@ -147,7 +147,7 @@ export default function GanttSection() {
   const conditionLogs = useLiveQuery(() => db.conditionLogs.where("date").equals(date).sortBy("loggedAt"), [date]);
   const masterMap = useMemo(() => new Map((masterTasks ?? []).map((m) => [m.id, m])), [masterTasks]);
 
-  // 予定バーの起点: 実際に最初に計測を開始した作業の開始時刻、または最初に
+  // 軸(左端)の起点: 実際に最初に計測を開始した作業の開始時刻、または最初に
   // 体調を記録した時刻のうち、より早い方を優先する（体調だけ計測開始前に記録した
   // 場合でも表示範囲外にならないようにする）。どちらもなければ「表示開始時刻」の設定に
   // フォールバックする
@@ -162,6 +162,19 @@ export default function GanttSection() {
     if (starts.length > 0) return Math.min(...starts);
     return baseAtHour(date, startHour);
   }, [tasks, conditionLogs, date, startHour]);
+
+  // 予定(予測)バー列の起点: 軸の起点(timelineBase)とは別に、実際に最初に計測を
+  // 開始した作業の開始時刻のみを基準にする。体調記録だけを作業開始前にしていた場合、
+  // timelineBaseにその時刻が含まれてしまい、予定バーの先頭が体調記録時刻から始まって
+  // 実際の作業開始時刻とずれて見えてしまうため、体調記録は含めずに算出する
+  const scheduleBase = useMemo(() => {
+    const starts: number[] = [];
+    if (tasks) {
+      for (const t of tasks) if (t.startedAt) starts.push(t.startedAt);
+    }
+    if (starts.length > 0) return Math.min(...starts);
+    return baseAtHour(date, startHour);
+  }, [tasks, date, startHour]);
 
   const rows = useMemo(() => {
     if (!tasks) return [];
@@ -220,7 +233,9 @@ export default function GanttSection() {
     // かかった時間ぶんだけカーソルを進める。そうしないと、超過した作業があった場合に
     // 後続の予測位置が現実とずれ、間延びして見えたり終了時刻を正しく可視化できなくなる。
     // まだ完了していない作業は、これからの見込みとして予定/予測の大きい方を使う
-    let cursor = 0; // minutes from timelineBase
+    // 体調記録が作業開始前にあってもtimelineBase(軸の起点)はそちらに引っ張られるため、
+    // 予定バーの先頭は軸の起点ではなくscheduleBase(実際の作業開始時刻のみ基準)から始める
+    let cursor = Math.max(0, (scheduleBase - timelineBase) / 60000); // minutes from timelineBase
     const withLayout = base.map((r) => {
       const predictedSeconds = predictedByTaskId.get(r.task.id) ?? r.rawPredictedSeconds;
       const layoutDurationMin = planLayoutMinutes(r.task.status, r.actualSeconds / 60, r.task.estimatedSeconds, predictedSeconds);
@@ -230,7 +245,7 @@ export default function GanttSection() {
     });
 
     return withLayout.map((r) => ({ ...r, overPlan: overPlanByTaskId.get(r.task.id) ?? false }));
-  }, [tasks, masterMap, now, timelineBase]);
+  }, [tasks, masterMap, now, timelineBase, scheduleBase]);
 
   // 「予定・実績を1本ずつの行で表示」時、違う作業まで1本にまとめてしまうと
   // どれをどこまで行ったか分からなくなるため、異なる作業のバーは分けたまま表示する。
@@ -325,7 +340,10 @@ export default function GanttSection() {
       .sort((a, b) => a.scheduledStartMin - b.scheduledStartMin);
 
     function stackPlans(items: GanttItem[]) {
-      let cursor = 0;
+      // rowsのcursor初期値と同じ理由: 軸の起点(timelineBase)ではなく、実際の作業開始時刻
+      // 基準のscheduleBaseから積み上げる(体調記録だけが作業開始前にあった場合に、
+      // 予定バーの先頭が体調記録時刻にずれてしまうのを防ぐ)
+      let cursor = Math.max(0, (scheduleBase - timelineBase) / 60000);
       for (const item of items) {
         if (!item.showPlan) continue;
         item.scheduledStartMin = cursor;
@@ -425,7 +443,7 @@ export default function GanttSection() {
       stackPlans(items);
       return { key: `cat-${category}`, label: category, sublabel: "", items };
     });
-  }, [rows, groupMode]);
+  }, [rows, groupMode, scheduleBase, timelineBase]);
 
   const autoMinutes = Math.max(
     ...rows.map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
