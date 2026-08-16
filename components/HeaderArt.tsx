@@ -275,149 +275,125 @@ function Persona5Art() {
   );
 }
 
-// ロボトミーコーポレーション風: 本家キービジュアル(黒地に酸性の黄緑が鋭く割れて
-// 放射する背景、切り絵のようなギザギザの岩山シルエット、隅の暗いティールに浮かぶ
-// 三日月、赤×黄緑のロゴエンブレム)を踏まえて描き替えた。基調色(ink/cream/panel)
-// 自体は他テーマと違い据え置きのままだが、このヘッダーの一枚絵だけは本家の
-// 黄緑・ティールという実在の固定色を使う
+// ロボトミーコーポレーション風: タイトル画面の背景グラフィック(文字・ロゴを除く)を
+// ユーザー指定の仕様に基づいて再現する。16:9(1920x1080)で設計し、コンテナも
+// aspect-videoにして非uniformなストレッチによる歪みを避ける。
+// 構成: (1)左下から中央へ伸びる淡い黄色の帯(上辺は鋭い直線、下は末広がり)、
+// (2)中央から右上へ稲妻/根のように鋭角に枝分かれする亀裂、
+// (3)右上の円弧状の地平線に沿って立ち並ぶ摩天楼シルエット(黄色の背景+黒い建物)、
+// (4)右上端の細いリング状の円弧アイコン。フラットな単色塗りのみで、
+// グラデーションや光彩などの装飾は加えない
 function LobotomyArt() {
-  const burstCx = 620;
-  const burstCy = 60;
-  // 黄緑の光条を2層重ねる: 外側は大きく淡いハロー、内側は本体。
-  // どちらも指数を元にした決定的な揺らぎでギザギザにする(SSR/CSHでずれないようMath.randomは使わない)
-  function burstPolygon(spikes: number, outer: number, inner: number, cx: number, cy: number, jitter: number) {
-    return Array.from({ length: spikes }, (_, i) => {
-      const angle = (i / spikes) * Math.PI * 2;
-      const r = i % 2 === 0 ? outer + ((i * 7) % jitter) : inner + ((i * 5) % (jitter * 0.6));
-      return `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)}`;
-    }).join(" ");
+  // 中心線の点列を、法線方向へ幅(w)ぶん左右にオフセットして
+  // 先細りするリボン状の多角形(稲妻/根のような亀裂)を作る
+  function ribbon(points: { x: number; y: number; w: number }[]): string {
+    const left: string[] = [];
+    const right: string[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const prev = points[i - 1] ?? p;
+      const next = points[i + 1] ?? p;
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      left.push(`${(p.x + nx * p.w).toFixed(1)},${(p.y + ny * p.w).toFixed(1)}`);
+      right.push(`${(p.x - nx * p.w).toFixed(1)},${(p.y - ny * p.w).toFixed(1)}`);
+    }
+    return [...left, ...right.reverse()].join(" ");
   }
-  const haloPoints = burstPolygon(20, 205, 120, burstCx, burstCy, 26);
-  const burstPoints = burstPolygon(28, 165, 60, burstCx, burstCy, 30);
-  // 光条内部を走る亀裂線(結晶が割れたような細い線を放射状に何本か)
-  const cracks = Array.from({ length: 9 }, (_, i) => {
-    const angle = (i / 9) * Math.PI * 2 + 0.3;
-    const len = 40 + ((i * 11) % 55);
+
+  // (2) 中央から右上へ向かう主要な亀裂と、そこから分岐する2本の根
+  const mainCrack = ribbon([
+    { x: 660, y: 420, w: 50 },
+    { x: 760, y: 380, w: 34 },
+    { x: 820, y: 436, w: 20 },
+    { x: 940, y: 300, w: 26 },
+    { x: 1010, y: 346, w: 16 },
+    { x: 1140, y: 222, w: 22 },
+    { x: 1220, y: 266, w: 14 },
+    { x: 1360, y: 170, w: 20 },
+    { x: 1480, y: 140, w: 34 },
+  ]);
+  const branchA = ribbon([
+    { x: 940, y: 300, w: 15 },
+    { x: 995, y: 190, w: 8 },
+    { x: 1035, y: 100, w: 2 },
+  ]);
+  const branchB = ribbon([
+    { x: 1140, y: 222, w: 13 },
+    { x: 1230, y: 130, w: 6 },
+    { x: 1280, y: 50, w: 2 },
+  ]);
+
+  // (3) 右上の湾曲した地平線(2次ベジェ)に沿って建ち並ぶビル群
+  const arcP0 = { x: 1480, y: 140 };
+  const arcC = { x: 1750, y: 520 };
+  const arcP1 = { x: 1920, y: 420 };
+  function pointOnArc(t: number) {
+    const mt = 1 - t;
     return {
-      x1: burstCx,
-      y1: burstCy,
-      x2: (burstCx + len * Math.cos(angle)).toFixed(1),
-      y2: (burstCy + len * Math.sin(angle)).toFixed(1),
+      x: mt * mt * arcP0.x + 2 * mt * t * arcC.x + t * t * arcP1.x,
+      y: mt * mt * arcP0.y + 2 * mt * t * arcC.y + t * t * arcP1.y,
     };
+  }
+  const buildingCount = 20;
+  const buildings = Array.from({ length: buildingCount }, (_, i) => {
+    const t = 0.06 + (i / (buildingCount - 1)) * 0.88;
+    const base = pointOnArc(t);
+    const h = 55 + ((i * 41) % 150);
+    const w = 20 + ((i * 17) % 24);
+    return { x: base.x, y: base.y, h, w, antenna: i % 4 === 0 };
   });
-  // 光条まわりに散る火の粉(小さな粒)
-  const embers = Array.from({ length: 14 }, (_, i) => {
-    const angle = (i / 14) * Math.PI * 2 + 0.5;
-    const r = 175 + ((i * 13) % 70);
-    return { cx: burstCx + r * Math.cos(angle), cy: burstCy + r * Math.sin(angle), s: i % 3 === 0 ? 2.6 : 1.5 };
-  });
-  const lights = Array.from({ length: 5 }, (_, i) => i);
-  const ticks = Array.from({ length: 16 }, (_, i) => i * 22.5);
+
   return (
     <svg
-      viewBox="0 0 1200 220"
-      preserveAspectRatio="none"
-      className="h-24 w-full sm:h-28"
+      viewBox="0 0 1920 1080"
+      preserveAspectRatio="xMidYMin slice"
+      className="aspect-video max-h-[380px] w-full"
       role="img"
-      aria-label="黄緑に割れた背景と多層の黒い岩山シルエット、精緻なロゴエンブレムのイラスト"
+      aria-label="左下から伸びる淡い黄色の帯、右上へ枝分かれする亀裂、円弧状の摩天楼シルエットのイラスト"
     >
-      <defs>
-        <radialGradient id="loboBgGlow" cx={`${(burstCx / 1200) * 100}%`} cy={`${(burstCy / 220) * 100}%`} r="70%">
-          <stop offset="0%" stopColor="rgb(var(--lobo-yellow-dark-rgb) / 0.35)" />
-          <stop offset="100%" stopColor="#050505" />
-        </radialGradient>
-        <radialGradient id="loboEmblemShine" cx="35%" cy="30%" r="70%">
-          <stop offset="0%" stopColor="rgb(var(--lobo-yellow-rgb) / 0.5)" />
-          <stop offset="60%" stopColor="rgb(var(--accent-rgb))" />
-          <stop offset="100%" stopColor="rgb(var(--accent-rgb))" />
-        </radialGradient>
-      </defs>
-      <rect x="0" y="0" width="1200" height="220" fill="url(#loboBgGlow)" />
-      {/* 光条: 淡いハロー→本体→内部の亀裂線→火の粉、の順に重ねて奥行きを出す */}
-      <polygon points={haloPoints} fill="rgb(var(--lobo-yellow-rgb) / 0.22)" />
-      <polygon points={burstPoints} fill="rgb(var(--lobo-yellow-rgb))" />
-      <g stroke="rgb(var(--lobo-yellow-dark-rgb))" strokeWidth="1.6" opacity="0.6">
-        {cracks.map((c, i) => (
-          <line key={i} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} />
+      {/* 背景(漆黒) */}
+      <rect x="0" y="0" width="1920" height="1080" fill="#0a0a0a" />
+      {/* (1) 左下〜中央の光の帯: 上辺は鋭い直線境界、下は末広がり */}
+      <polygon points="0,1080 0,600 660,420 900,1080" fill="rgb(var(--lobo-yellow-rgb))" />
+      {/* (2) 中央〜右上の分岐(稲妻/根のような鋭角の亀裂) */}
+      <polygon points={mainCrack} fill="rgb(var(--lobo-yellow-rgb))" />
+      <polygon points={branchA} fill="rgb(var(--lobo-yellow-rgb))" />
+      <polygon points={branchB} fill="rgb(var(--lobo-yellow-rgb))" />
+      {/* (3) 右上の淡い黄色の地平線ポケット+摩天楼シルエット */}
+      <path d="M1480,140 Q1750,520 1920,420 L1920,0 Z" fill="rgb(var(--lobo-yellow-rgb))" />
+      <g fill="#0a0a0a">
+        {buildings.map((b, i) => (
+          <g key={i}>
+            <rect x={b.x - b.w / 2} y={b.y - b.h} width={b.w} height={b.h} />
+            {b.antenna && <line x1={b.x} y1={b.y - b.h} x2={b.x} y2={b.y - b.h - 26} stroke="#0a0a0a" strokeWidth="2" />}
+          </g>
         ))}
       </g>
-      <g fill="rgb(var(--lobo-yellow-rgb))">
-        {embers.map((e, i) => (
-          <circle key={i} cx={e.cx} cy={e.cy} r={e.s} opacity={i % 2 === 0 ? 0.8 : 0.4} />
-        ))}
+      {/* ビルの窓格子(細い縦線) */}
+      <g stroke="rgb(var(--lobo-yellow-dark-rgb))" strokeWidth="1.5" opacity="0.8">
+        {buildings.map((b, i) =>
+          Array.from({ length: Math.max(1, Math.floor(b.w / 10)) }, (_, j) => {
+            const lx = b.x - b.w / 2 + 6 + j * 10;
+            return <line key={`${i}-${j}`} x1={lx} y1={b.y - b.h + 6} x2={lx} y2={b.y - 6} />;
+          })
+        )}
       </g>
-      {/* 隅の暗いティール(右上)。グラデーションと星屑で夜空らしい奥行きを足す */}
-      <polygon points="940,0 1200,0 1200,190" fill="rgb(var(--lobo-teal-rgb))" />
-      <g fill="rgb(var(--cream-rgb))">
-        <circle cx="1010" cy="26" r="1.3" opacity="0.6" />
-        <circle cx="1060" cy="70" r="1" opacity="0.5" />
-        <circle cx="990" cy="100" r="1.4" opacity="0.4" />
-        <circle cx="1155" cy="110" r="1" opacity="0.5" />
-      </g>
-      <circle cx="1130" cy="42" r="26" fill="rgb(var(--cream-rgb) / 0.12)" />
-      <g transform="translate(1130,42)">
-        <circle r="18" fill="rgb(var(--cream-rgb))" opacity="0.94" />
-        <circle cx="8" cy="-6" r="16" fill="rgb(var(--lobo-teal-rgb))" />
-      </g>
-      {/* 遠景の岩山(淡く低いシルエット。奥行きを出すための背後の層) */}
-      <polygon
-        points="0,220 0,196 90,206 170,178 250,200 340,160 430,192 520,172 610,150 700,182 790,162 880,196 970,176 1060,204 1150,188 1200,198 1200,220"
-        fill="rgb(var(--cream-rgb) / 0.07)"
-      />
-      {/* 近景のギザギザの黒い岩山シルエット(光条にかぶさる切り絵のような構図)。
-          縁にわずかな稜線のハイライトを添えて、平坦な塗りに見えないようにする */}
-      <polygon
-        points="0,220 0,168 70,190 130,120 190,175 260,90 320,165 400,70 470,150 540,110 610,50 680,130 750,85 820,155 890,115 960,170 1030,130 1100,175 1170,140 1200,165 1200,220"
-        fill="#050505"
-      />
-      <polyline
-        points="0,168 70,190 130,120 190,175 260,90 320,165 400,70 470,150 540,110 610,50 680,130 750,85 820,155 890,115 960,170 1030,130 1100,175 1170,140 1200,165"
+      {/* (4) 右上端の細いリング状の円弧アイコン */}
+      <circle
+        cx="1840"
+        cy="70"
+        r="34"
         fill="none"
-        stroke="rgb(var(--lobo-yellow-dark-rgb) / 0.7)"
-        strokeWidth="1.5"
+        stroke="#0a0a0a"
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeDasharray="180 40"
+        strokeDashoffset="-20"
       />
-      {/* ロゴエンブレム: 外側のダイヤル状の目盛りリング+2重リング+光沢グラデーション+
-          複数の脳回線+中央のL字。アプリタイトルの定位置(左下)と重ならない右下に配置 */}
-      <g transform="translate(1080,150)" className="lobo-warning-light">
-        <g stroke="rgb(var(--accent-rgb))" strokeWidth="2" opacity="0.55">
-          {ticks.map((deg) => (
-            <line key={deg} x1="0" y1="-40" x2="0" y2="-46" transform={`rotate(${deg})`} />
-          ))}
-        </g>
-        <circle r="36" fill="none" stroke="rgb(var(--accent-rgb))" strokeWidth="1.5" opacity="0.5" />
-        <circle r="30" fill="none" stroke="rgb(var(--accent-rgb))" strokeWidth="3" opacity="0.9" />
-        <circle r="23" fill="url(#loboEmblemShine)" />
-        <path
-          d="M -10,-13 Q 2,-16 8,-6 Q 13,2 5,8 Q -3,13 -11,5"
-          fill="none"
-          stroke="rgb(var(--lobo-yellow-rgb))"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-        <path
-          d="M -6,-4 Q 0,-7 4,-2"
-          fill="none"
-          stroke="rgb(var(--lobo-yellow-rgb) / 0.7)"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-        <polygon points="-5,-2 6,-2 6,3 3,3 3,14 -5,14" fill="rgb(var(--lobo-yellow-rgb))" />
-      </g>
-      {/* 監視ステータスランプ。時間差で明滅し、管制卓らしさを足す */}
-      <g transform="translate(30 24)">
-        {lights.map((i) => (
-          <rect
-            key={i}
-            x={i * 16}
-            y="0"
-            width="9"
-            height="9"
-            fill="rgb(var(--accent-rgb))"
-            className="lobo-status-light"
-            style={{ animationDelay: `${i * 0.35}s` }}
-          />
-        ))}
-      </g>
     </svg>
   );
 }

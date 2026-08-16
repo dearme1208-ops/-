@@ -25,13 +25,13 @@
   --pp-gold-rgb: 224 168 38;
   /* Claudeモード専用の、ヘッダーの光彩に使う淡いエンバー色(固定色) */
   --claude-glow-rgb: 232 168 130;
-  /* ロボトミーコーポレーション風演出テーマ専用の、本家キービジュアルに実在する
-     酸性の黄緑と、隅の暗いティール(固定色)。基調色(ink/cream/panel)自体は
-     他テーマと違い据え置きのままだが、このヘッダーの一枚絵だけは本家配色を再現する */
-  --lobo-yellow-rgb: 219 232 58;
-  --lobo-teal-rgb: 20 74 66;
-  /* 光条内部の亀裂線・岩肌の陰影に使う、黄緑を沈めた深いオリーブ(固定色) */
-  --lobo-yellow-dark-rgb: 96 104 26;
+  /* ロボトミーコーポレーション風タイトル画面の背景仕様で指定された、
+     彩度控えめのペールイエロー(#f4f5a6〜#e8eb88の中間、固定色)。
+     基調色(ink/cream/panel)自体は他テーマと違い据え置きのままだが、
+     このヘッダー一枚絵だけはタイトル画面の配色を再現する */
+  --lobo-yellow-rgb: 238 240 151;
+  /* ビルの窓格子に使う、ペールイエローを沈めた深いオリーブ(固定色) */
+  --lobo-yellow-dark-rgb: 140 142 88;
 }
 
 html,
@@ -748,29 +748,6 @@ html[data-high-contrast="true"] :focus-visible {
     transform: rotate(-6deg);
     pointer-events: none;
   }
-  /* ヘッダーの隔壁扉に添えた警告灯が、明滅を繰り返す */
-  .lobo-warning-light {
-    opacity: 0;
-  }
-  html[data-visual-mode="lobotomy"] .lobo-warning-light {
-    animation: lobo-warning-blink 2.6s ease-in-out infinite;
-  }
-  @keyframes lobo-warning-blink {
-    0%,
-    100% {
-      opacity: 0.35;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-  /* ヘッダーの監視ステータスランプも、警告灯と同じ明滅を時間差で使う */
-  .lobo-status-light {
-    opacity: 0.2;
-  }
-  html[data-visual-mode="lobotomy"] .lobo-status-light {
-    animation: lobo-warning-blink 2s ease-in-out infinite;
-  }
   /* ロボトミーコーポレーション風: 画面全体の背景に「機密」の巨大な透かし文字を斜めに置く。
      ペルソナ5風の透かし(右下・赤)とは逆の左上に置き、混同しないようにする */
   .lobo-watermark {
@@ -1384,6 +1361,16 @@ html[data-high-contrast="true"] :focus-visible {
     position: absolute;
     inset: 0;
     opacity: 0;
+  }
+  /* タイトル画面の背景が黒地/淡い黄色地のどちらの上にも乗りうるため、
+     濃い輪郭を添えてどちらの背景でも読めるようにする */
+  html[data-visual-mode="lobotomy"] .app-title {
+    text-shadow:
+      1px 1px 0 #000,
+      -1px -1px 0 #000,
+      1px -1px 0 #000,
+      -1px 1px 0 #000,
+      0 2px 6px rgb(0 0 0 / 0.6);
   }
   html[data-visual-mode="lobotomy"] .app-title::before {
     color: rgb(var(--accent-rgb));
@@ -2266,9 +2253,7 @@ html[data-high-contrast="true"] :focus-visible {
   h3.font-display,
   .nat-butterfly,
   .claude-spark,
-  .claude-pulse-dot,
-  .lobo-warning-light,
-  .lobo-status-light {
+  .claude-pulse-dot {
     animation: none !important;
   }
   .crt-scanlines,
