@@ -275,22 +275,21 @@ function Persona5Art() {
   );
 }
 
-// ロボトミーコーポレーション風: 中央に据えた収容ユニットの隔壁扉(同心円+スポーク+
-// 明滅する警告灯)と、下端に走るハザードストライプ(黒×アクセント色の斜めテープ)。
-// 他テーマは共通のDefaultArt(岩肌と高層ビル)をそのまま使っているが、ロボトミー風だけは
-// 既存の情景を流用せず丸ごと描き替える(UIデザインの縛りを破ってほしいという要望に対応)。
-// 配色は基調色をそのまま使い(ペルソナ5風のように固定パレットへは差し替えない)、
-// 素っ気ない管理局施設らしい抑制の効いた見た目を保つ
+// ロボトミーコーポレーション風: 本家キービジュアル(黒地に酸性の黄緑が鋭く割れて
+// 放射する背景、切り絵のようなギザギザの岩山シルエット、隅の暗いティールに浮かぶ
+// 三日月、赤×黄緑のロゴエンブレム)を踏まえて描き替えた。基調色(ink/cream/panel)
+// 自体は他テーマと違い据え置きのままだが、このヘッダーの一枚絵だけは本家の
+// 黄緑・ティールという実在の固定色を使う
 function LobotomyArt() {
-  const spokes = Array.from({ length: 8 }, (_, i) => i * 45);
-  const redactions = [
-    { x: 44, y: 40, w: 150 },
-    { x: 44, y: 60, w: 108 },
-    { x: 44, y: 80, w: 172 },
-    { x: 44, y: 100, w: 90 },
-    { x: 44, y: 120, w: 140 },
-    { x: 44, y: 140, w: 118 },
-  ];
+  // 黄緑の爆発/亀裂のようなギザギザした光条(本家キービジュアルの背景を再現)。
+  // 中心を画面中央寄りに置き、下の岩山シルエットの高い峰と実際に重なるようにする
+  const burstPoints = Array.from({ length: 28 }, (_, i) => {
+    const angle = (i / 28) * Math.PI * 2;
+    const r = i % 2 === 0 ? 165 + ((i * 7) % 30) : 60 + ((i * 5) % 20);
+    const cx = 620;
+    const cy = 60;
+    return `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)}`;
+  }).join(" ");
   const lights = Array.from({ length: 5 }, (_, i) => i);
   return (
     <svg
@@ -298,38 +297,39 @@ function LobotomyArt() {
       preserveAspectRatio="none"
       className="h-24 w-full sm:h-28"
       role="img"
-      aria-label="黒塗りにされた記録と収容ユニットの隔壁扉、監視ランプのイラスト"
+      aria-label="黄緑に割れた背景と黒い岩山シルエット、赤いロゴエンブレムのイラスト"
     >
-      <defs>
-        <linearGradient id="loboSky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgb(var(--ink-rgb))" />
-          <stop offset="100%" stopColor="rgb(var(--panel-rgb))" />
-        </linearGradient>
-        <pattern id="loboHazard" width="26" height="26" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <rect width="13" height="26" fill="rgb(var(--accent-rgb))" />
-          <rect x="13" width="13" height="26" fill="rgb(var(--ink-rgb))" />
-        </pattern>
-      </defs>
-      <rect x="0" y="0" width="1200" height="220" fill="url(#loboSky)" />
-      {/* 検閲された記録の黒塗り(左側)。機密文書らしさを足す */}
-      <g fill="rgb(var(--cream-rgb))" opacity="0.5">
-        {redactions.map((r, i) => (
-          <rect key={i} x={r.x} y={r.y} width={r.w} height="8" />
-        ))}
+      <rect x="0" y="0" width="1200" height="220" fill="#050505" />
+      {/* 黄緑の爆発/亀裂のような光条 */}
+      <polygon points={burstPoints} fill="rgb(var(--lobo-yellow-rgb))" />
+      {/* 隅の暗いティールのくさび(右上)+白い三日月 */}
+      <polygon points="980,0 1200,0 1200,150" fill="rgb(var(--lobo-teal-rgb))" />
+      <g transform="translate(1130,42)">
+        <circle r="18" fill="rgb(var(--cream-rgb))" opacity="0.92" />
+        <circle cx="8" cy="-6" r="16" fill="rgb(var(--lobo-teal-rgb))" />
       </g>
-      {/* 隔壁扉: 同心円+放射スポーク */}
-      <g transform="translate(600 106)" fill="none" stroke="rgb(var(--cream-rgb))">
-        <circle r="94" strokeOpacity="0.14" strokeWidth="10" />
-        <circle r="68" strokeOpacity="0.22" strokeWidth="2.5" />
-        <circle r="46" strokeOpacity="0.28" strokeWidth="2" />
-        {spokes.map((deg) => (
-          <line key={deg} x1="0" y1="0" x2="94" y2="0" strokeOpacity="0.13" strokeWidth="2" transform={`rotate(${deg})`} />
-        ))}
+      {/* ギザギザの黒い岩山シルエット(黄緑の光条にかぶさる切り絵のような構図。
+          高い峰がいくつか光条の中心付近まで伸び、シルエットとして浮かび上がる) */}
+      <polygon
+        points="0,220 0,168 70,190 130,120 190,175 260,90 320,165 400,70 470,150 540,110 610,50 680,130 750,85 820,155 890,115 960,170 1030,130 1100,175 1170,140 1200,165 1200,220"
+        fill="#050505"
+      />
+      {/* ロゴエンブレム(赤いリング+黄緑の芯+赤い"L")。アプリタイトルは左下に
+          重なる配置のため、タイトルと被らない右下寄りに置く */}
+      <g transform="translate(1080,150)" className="lobo-warning-light">
+        <circle r="34" fill="none" stroke="rgb(var(--accent-rgb))" strokeWidth="3" opacity="0.85" />
+        <circle r="24" fill="rgb(var(--accent-rgb))" opacity="0.9" />
+        <path
+          d="M -10,-13 Q 2,-16 8,-6 Q 13,2 5,8 Q -3,13 -11,5"
+          fill="none"
+          stroke="rgb(var(--lobo-yellow-rgb))"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+        />
+        <polygon points="-5,-2 6,-2 6,3 3,3 3,14 -5,14" fill="rgb(var(--lobo-yellow-rgb))" />
       </g>
-      {/* 明滅する警告灯 */}
-      <circle cx="600" cy="106" r="7" fill="rgb(var(--accent-rgb))" className="lobo-warning-light" />
-      {/* 監視ステータスランプ(右上)。時間差で明滅し、管制卓らしさを足す */}
-      <g transform="translate(1000 32)">
+      {/* 監視ステータスランプ。時間差で明滅し、管制卓らしさを足す */}
+      <g transform="translate(30 24)">
         {lights.map((i) => (
           <rect
             key={i}
@@ -343,8 +343,6 @@ function LobotomyArt() {
           />
         ))}
       </g>
-      {/* 下端のハザードストライプ */}
-      <rect x="0" y="194" width="1200" height="26" fill="url(#loboHazard)" opacity="0.6" />
     </svg>
   );
 }
