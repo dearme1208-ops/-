@@ -60,7 +60,11 @@ function planLayoutMinutes(
 }
 
 // バー自体が数pxしかないことがあり、ブラウザ標準のtitleツールチップは狙ってホバーしにくく
-// 表示されないことがあるため、CSSのgroup-hoverで即座に確実に出る独自ツールチップを使う
+// 表示されないことがあるため、CSSのgroup-hoverで即座に確実に出る独自ツールチップを使う。
+// ただしgroup-hoverはPC(マウス)向けで、スマホ等のタッチ端末には「ホバー」という概念自体が
+// 無いため機能しない(タップしても出ない、あるいは直前に触れた1個だけ表示されたように見える等
+// 挙動が不安定になる)。そこでタップ操作では別途onTapで下部の詳細パネルを開かせ、
+// タッチでも内容を確実に確認できるようにする(ホバーのツールチップはPC向けに残す)
 function HoverBar({
   left,
   width,
@@ -69,6 +73,7 @@ function HoverBar({
   className,
   style,
   tooltip,
+  onTap,
 }: {
   left: number;
   width: number;
@@ -77,14 +82,20 @@ function HoverBar({
   className: string;
   style?: CSSProperties;
   tooltip: string;
+  onTap?: () => void;
 }) {
   return (
-    <div className="group absolute" style={{ left, width, top, height }}>
+    <button
+      type="button"
+      onClick={onTap}
+      className="group absolute appearance-none border-0 bg-transparent p-0 text-left"
+      style={{ left, width, top, height }}
+    >
       <div className={`h-full w-full ${className}`} style={style} />
       <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
         {tooltip}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -106,6 +117,9 @@ export default function GanttSection() {
   const viewMode: "day" | "week" = viewModeStr === "week" ? "week" : "day";
   const scrollRef = useRef<HTMLDivElement>(null);
   const { themedMode } = useVisualMode();
+  // 各バーのCSSホバー(:hover)によるツールチップは、タッチ端末には「ホバー」自体が
+  // 無いため機能しない。タップした時はこちらに詳細文を入れ、下部の詳細パネルで確実に見せる
+  const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
 
   const startHour = Math.min(23, Math.max(0, Number(startHourStr) || 0));
   const stackBars = stackBarsStr === "true";
@@ -122,6 +136,11 @@ export default function GanttSection() {
     const id = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(id);
   }, []);
+
+  // 日付を切り替えたら、前の日の詳細パネルが残らないよう閉じる
+  useEffect(() => {
+    setSelectedDetail(null);
+  }, [date]);
 
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).sortBy("order"), [date]);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -477,7 +496,10 @@ export default function GanttSection() {
   });
 
   // 「現在時刻」を初期位置にする設定の場合、日付・拡大縮小を変えるたびに
-  // 現在時刻の位置が見える所までスクロールする(「設定時刻」の場合は既定の左端=0のままにする)
+  // 現在時刻の位置が見える所までスクロールする(「設定時刻」の場合は既定の左端=0のままにする)。
+  // totalMinutesは依存配列に含めない: 作業が進行中だと5秒おきのタイマーで際限なく
+  // 増え続け、閲覧中に何度もスクロール位置を強制的に巻き戻してしまっていたため
+  // (このeffect内では実際には使っていない値だった)
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -487,7 +509,8 @@ export default function GanttSection() {
     }
     const nowMin = (Date.now() - timelineBase) / 60000;
     el.scrollLeft = Math.max(0, nowMin * pxPerMin - el.clientWidth / 2);
-  }, [date, initialAnchor, pxPerMin, totalMinutes, timelineBase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, initialAnchor, pxPerMin, timelineBase]);
 
   return (
     <div className="space-y-4">
@@ -694,19 +717,25 @@ export default function GanttSection() {
             {/* 体調の変化: 記録された時刻にアイコンを表示する */}
             {conditionMarkers.length > 0 && (
               <div className="relative mb-1 h-5">
-                {conditionMarkers.map(({ log, minutes }) => (
-                  <div
-                    key={log.id}
-                    className="group absolute -translate-x-1/2"
-                    style={{ left: minutes * pxPerMin }}
-                  >
-                    <ConditionGlyph level={log.level} size={16} />
-                    <div className="pointer-events-none absolute top-full left-1/2 z-20 mt-1 hidden -translate-x-1/2 whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
-                      {formatClock(log.loggedAt)} 体調:{" "}
-                      {CONDITION_LEVELS.find((c) => c.level === log.level)?.label ?? log.level}
-                    </div>
-                  </div>
-                ))}
+                {conditionMarkers.map(({ log, minutes }) => {
+                  const conditionDetail = `${formatClock(log.loggedAt)} 体調: ${
+                    CONDITION_LEVELS.find((c) => c.level === log.level)?.label ?? log.level
+                  }`;
+                  return (
+                    <button
+                      key={log.id}
+                      type="button"
+                      onClick={() => setSelectedDetail(conditionDetail)}
+                      className="group absolute -translate-x-1/2 appearance-none border-0 bg-transparent p-0"
+                      style={{ left: minutes * pxPerMin }}
+                    >
+                      <ConditionGlyph level={log.level} size={16} />
+                      <div className="pointer-events-none absolute top-full left-1/2 z-20 mt-1 hidden -translate-x-1/2 whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
+                        {conditionDetail}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -716,18 +745,25 @@ export default function GanttSection() {
               <div className="mb-4">
                 <div className="mb-1 text-[10px] text-cream/40">カレンダー予定</div>
                 <div className="relative" style={{ height: 24 }}>
-                  {scheduleItems.map(({ task, startMin, endMin }) => (
-                    <div
-                      key={`sched-${task.id}`}
-                      className="group absolute flex items-center overflow-hidden rounded border-2 border-cream/70 bg-ink/60 px-1 text-[10px] leading-none text-cream/90"
-                      style={{ left: startMin * pxPerMin, width: Math.max((endMin - startMin) * pxPerMin, 3), top: 0, height: 20 }}
-                    >
-                      <span className="truncate">{task.name}</span>
-                      <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
-                        {`${task.name}（カレンダー予定）\n${task.scheduledTime} 〜 ${formatClock(timelineBase + endMin * 60000)}`}
-                      </div>
-                    </div>
-                  ))}
+                  {scheduleItems.map(({ task, startMin, endMin }) => {
+                    const scheduleDetail = `${task.name}（カレンダー予定）\n${task.scheduledTime} 〜 ${formatClock(
+                      timelineBase + endMin * 60000
+                    )}`;
+                    return (
+                      <button
+                        key={`sched-${task.id}`}
+                        type="button"
+                        onClick={() => setSelectedDetail(scheduleDetail)}
+                        className="group absolute flex appearance-none items-center overflow-hidden rounded border-2 border-cream/70 bg-ink/60 px-1 text-left text-[10px] leading-none text-cream/90"
+                        style={{ left: startMin * pxPerMin, width: Math.max((endMin - startMin) * pxPerMin, 3), top: 0, height: 20 }}
+                      >
+                        <span className="truncate">{task.name}</span>
+                        <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
+                          {scheduleDetail}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -772,26 +808,32 @@ export default function GanttSection() {
                     const gapLeft = planLeft + COMPACT_BAR_GAP_PX / 2;
                     const gapPredWidth = Math.max(predWidth - COMPACT_BAR_GAP_PX, 3);
                     const gapPlanWidth = Math.max(planWidth - COMPACT_BAR_GAP_PX, 3);
+                    const predTip = predictedTooltip(
+                      r.task.name,
+                      timelineBase + startMin * 60000,
+                      timelineBase + predEndMin * 60000,
+                      r.predictedSeconds
+                    );
                     return (
                       <div key={`plan-${r.task.id}`} className="absolute left-0 right-0" style={{ top: 0, height: ROW_H }}>
-                        <div
-                          className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                        {/* バー本体だけでなく、名前ラベルをタップしても同じ詳細が見られるようにする
+                            (バーはラベルと縦位置が離れているため、ラベル部分だけタップされることが多い) */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDetail(predTip)}
+                          className="absolute appearance-none whitespace-nowrap border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-3 text-cream/90"
                           style={{ left: planLeft + 2, top: 1 }}
                         >
                           {r.task.name}
-                        </div>
+                        </button>
                         <HoverBar
                           left={gapLeft}
                           width={gapPredWidth}
                           top={14}
                           height={20}
                           className="rounded bg-cream/70"
-                          tooltip={predictedTooltip(
-                            r.task.name,
-                            timelineBase + startMin * 60000,
-                            timelineBase + predEndMin * 60000,
-                            r.predictedSeconds
-                          )}
+                          tooltip={predTip}
+                          onTap={() => setSelectedDetail(predTip)}
                         />
                         {/* 個人が設定した「予定」(任意)は、目標ラインとして予測バーに重ねて薄く表示するだけに留める */}
                         {r.task.hasPlan === true && (
@@ -802,6 +844,7 @@ export default function GanttSection() {
                             height={20}
                             className="rounded border border-dashed border-cream/70"
                             tooltip={personalPlanTooltip(r.task.name, r.task.estimatedSeconds)}
+                            onTap={() => setSelectedDetail(personalPlanTooltip(r.task.name, r.task.estimatedSeconds))}
                           />
                         )}
                         <div
@@ -822,14 +865,17 @@ export default function GanttSection() {
                     const label = iv.name;
                     const gapLeft = actualLeft + COMPACT_BAR_GAP_PX / 2;
                     const gapWidth = Math.max(actualWidth - COMPACT_BAR_GAP_PX, 3);
+                    const actualTip = segmentTooltip(label, timelineBase + iv.start * 60000, timelineBase + iv.end * 60000, iv.ongoing);
                     return (
                       <div key={`actual-${idx}`} className="absolute left-0 right-0" style={{ top: ROW_H, height: ROW_H }}>
-                        <div
-                          className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDetail(actualTip)}
+                          className="absolute appearance-none whitespace-nowrap border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-3 text-cream/90"
                           style={{ left: actualLeft + 2, top: 1 }}
                         >
                           {label}
-                        </div>
+                        </button>
                         <HoverBar
                           left={gapLeft}
                           width={gapWidth}
@@ -841,12 +887,8 @@ export default function GanttSection() {
                               : "bg-cream"
                           } opacity-90`}
                           style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
-                          tooltip={segmentTooltip(
-                            label,
-                            timelineBase + iv.start * 60000,
-                            timelineBase + iv.end * 60000,
-                            iv.ongoing
-                          )}
+                          tooltip={actualTip}
+                          onTap={() => setSelectedDetail(actualTip)}
                         />
                         <div
                           className="absolute whitespace-nowrap text-[10px] leading-3 text-cream/60"
@@ -881,15 +923,34 @@ export default function GanttSection() {
                         const endMin = hasActual ? item.block!.end : predEndMin;
                         const endLeft = endMin * pxPerMin;
                         const endLabel = formatClock(timelineBase + endMin * 60000);
+                        const predTip = predictedTooltip(
+                          item.task.name,
+                          timelineBase + item.scheduledStartMin * 60000,
+                          timelineBase + predEndMin * 60000,
+                          item.predictedSeconds
+                        );
+                        const actualTip = item.block
+                          ? segmentTooltip(
+                              item.task.name,
+                              timelineBase + item.block.start * 60000,
+                              timelineBase + item.block.end * 60000,
+                              item.block.ongoing
+                            )
+                          : null;
+                        // 名前ラベルのタップでは、実績があればそちらを、無ければ予測を詳細として見せる
+                        // (ラベルはバーと縦位置が離れているため、ラベルだけタップされることが多い)
+                        const nameLabelTip = actualTip ?? predTip;
                         return (
                           <div key={itemIdx}>
                             {/* 作業名ラベル */}
-                            <div
-                              className="absolute whitespace-nowrap text-[10px] font-medium leading-3 text-cream/90"
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDetail(nameLabelTip)}
+                              className="absolute appearance-none whitespace-nowrap border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-3 text-cream/90"
                               style={{ left: nameLeft + 2, top: 1 }}
                             >
                               {item.task.name}
-                            </div>
+                            </button>
                             {/* 予測バー（実線・主役）・個人が設定した予定(点線・任意): 同じ作業の2回目以降のブロックでは重複表示しない */}
                             {item.showPlan && (
                               <>
@@ -899,12 +960,8 @@ export default function GanttSection() {
                                   top={planBarTop}
                                   height={planBarHeight}
                                   className="rounded bg-cream/70"
-                                  tooltip={predictedTooltip(
-                                    item.task.name,
-                                    timelineBase + item.scheduledStartMin * 60000,
-                                    timelineBase + predEndMin * 60000,
-                                    item.predictedSeconds
-                                  )}
+                                  tooltip={predTip}
+                                  onTap={() => setSelectedDetail(predTip)}
                                 />
                                 {item.task.hasPlan === true && (
                                   <HoverBar
@@ -914,12 +971,13 @@ export default function GanttSection() {
                                     height={planBarHeight}
                                     className="rounded border border-dashed border-cream/70"
                                     tooltip={personalPlanTooltip(item.task.name, item.task.estimatedSeconds)}
+                                    onTap={() => setSelectedDetail(personalPlanTooltip(item.task.name, item.task.estimatedSeconds))}
                                   />
                                 )}
                               </>
                             )}
                             {/* 実績バー: 一時停止・再開で区切られた区間ごとに描画される */}
-                            {item.block && (
+                            {item.block && actualTip && (
                               <HoverBar
                                 left={item.block.start * pxPerMin}
                                 width={Math.max((item.block.end - item.block.start) * pxPerMin, 3)}
@@ -931,12 +989,8 @@ export default function GanttSection() {
                                     : "bg-cream"
                                 } opacity-90`}
                                 style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
-                                tooltip={segmentTooltip(
-                                  item.task.name,
-                                  timelineBase + item.block.start * 60000,
-                                  timelineBase + item.block.end * 60000,
-                                  item.block.ongoing
-                                )}
+                                tooltip={actualTip}
+                                onTap={() => setSelectedDetail(actualTip)}
                               />
                             )}
                             {/* 終了時刻ラベル */}
@@ -958,6 +1012,19 @@ export default function GanttSection() {
         </div>
       </div>
 
+      {selectedDetail && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-cream/20 bg-ink p-3">
+          <p className="min-w-0 whitespace-pre-line break-words text-sm text-cream">{selectedDetail}</p>
+          <button
+            className="shrink-0 text-lg leading-none text-cream/50 hover:text-cream"
+            onClick={() => setSelectedDetail(null)}
+            aria-label="詳細を閉じる"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-4 text-xs text-cream/60">
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-cream/70" /> 予測（実績ベースの見込み）</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded border border-dashed border-cream/70" /> 予定（個人が設定した目標。任意）</span>
@@ -971,6 +1038,7 @@ export default function GanttSection() {
         <span className="flex items-center gap-1">
           <ConditionGlyph level="3" size={14} /> 体調の変化（縦線が記録時刻）
         </span>
+        <span className="text-cream/40">バーをタップすると詳細を表示します</span>
       </div>
 
       {(!tasks || tasks.length === 0) && (
