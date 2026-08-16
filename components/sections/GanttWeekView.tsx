@@ -48,6 +48,9 @@ function WeekBlockBar({
   label: string;
   onSelect: () => void;
 }) {
+  // ブロックの高さに余裕がある時は、1行で省略せずに折り返して表示する
+  // (短いブロックは従来通り1行+省略記号のまま。タップすれば1日表示で全文も見られる)
+  const canWrap = height >= 30;
   return (
     <button
       type="button"
@@ -56,7 +59,13 @@ function WeekBlockBar({
       style={{ top, height }}
     >
       <div className={`h-full w-full overflow-hidden ${className}`}>
-        <span className={`block truncate px-1 pt-0.5 text-[9px] leading-tight ${textClassName}`}>{label}</span>
+        <span
+          className={`block px-1 pt-0.5 text-[9px] leading-tight ${
+            canWrap ? "whitespace-normal break-words" : "truncate"
+          } ${textClassName}`}
+        >
+          {label}
+        </span>
       </div>
       <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
         {tooltip}
