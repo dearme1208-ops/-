@@ -93,6 +93,8 @@ export default function SettingsSection() {
   const conditionEnabled = conditionEnabledStr === "true";
   const [simpleButtonsStr, setSimpleButtonsStr] = useSetting("today.simpleButtons", "false");
   const simpleButtons = simpleButtonsStr === "true";
+  const [growthStageEnabledStr, setGrowthStageEnabledStr] = useSetting("today.growthStageEnabled", "true");
+  const growthStageEnabled = growthStageEnabledStr === "true";
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [tagPresetsJson, setTagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
@@ -1408,6 +1410,21 @@ export default function SettingsSection() {
           {simpleButtons
             ? "「トラブル発生」「突発作業を追加」「音声で操作」ボタンをアイコンのみで表示します。"
             : "「トラブル発生」「突発作業を追加」「音声で操作」ボタンを文字付きで表示します。"}
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">本日の育成度表示</h3>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={growthStageEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setGrowthStageEnabledStr(growthStageEnabled ? "false" : "true")}
+          >
+            育成度表示: {growthStageEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          演出テーマ選択時、「本日の作業リスト」の見出し横に、本日の作業時間に応じた育成度バッジ（例: ロボトミー風の「完全収容」、ぼくのなつやすみ風の「大輪」など）を表示します。OFFにすると、このバッジだけ非表示になります（他の演出は変わりません）。
         </p>
       </div>
 

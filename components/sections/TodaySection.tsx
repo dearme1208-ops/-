@@ -201,6 +201,8 @@ export default function TodaySection({
   const conditionEnabled = conditionEnabledStr === "true";
   const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
   const simpleButtons = simpleButtonsStr === "true";
+  const [growthStageEnabledStr] = useSetting("today.growthStageEnabled", "true");
+  const growthStageEnabled = growthStageEnabledStr === "true";
   const [weeklyAfterHoursNotifyEnabledStr] = useSetting("notify.afterHoursWeeklyEnabled", "false");
   const weeklyAfterHoursNotifyEnabled = weeklyAfterHoursNotifyEnabledStr === "true";
   const [weeklyAfterHoursThresholdStr] = useSetting("notify.afterHoursWeeklyThresholdHours", "5");
@@ -2252,7 +2254,8 @@ export default function TodaySection({
               🔥 連続{streakDays}日
             </span>
           )}
-          {todayTotalSeconds > 0 &&
+          {growthStageEnabled &&
+            todayTotalSeconds > 0 &&
             (() => {
               const { stage } = computeGrowthStage(themedMode, todayTotalSeconds);
               return (
