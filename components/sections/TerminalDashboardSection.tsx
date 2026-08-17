@@ -7,10 +7,13 @@ import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatHms, formatMsClock, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
-import { computeGrowthStage } from "@/lib/growth";
-import { useVisualMode, getRiskTier, riskBadgeClasses, riskBadgeLabel } from "@/lib/theme";
+import { computeGrowthStage, TERMINAL_STAGES } from "@/lib/growth";
+import { useVisualMode, getRiskTier, riskBadgeClasses, riskBadgeLabel, RISK_TIERS_TERMINAL } from "@/lib/theme";
 import { fetchCurrentWeatherCode, weatherCodeToCategory, type WeatherCategory } from "@/lib/weather";
 import type { DailyTask, MasterTask } from "@/lib/types";
+
+// computeGrowthStageの分岐(0h/1h/2h/4h/6h/8h以上)と対応させた表示用ラベル
+const GROWTH_HOUR_LABELS = ["0h", "1h", "2h", "4h", "6h", "8h+"];
 
 // ターミナルモード専用の「本日」タブ。Claude/禅がタブや情報を削ぎ落とす方向だったのに対し、
 // こちらはユーザーの要望どおり正反対の方向 ── マルチモニターのトレーディングフロア並みの
@@ -256,6 +259,76 @@ export default function TerminalDashboardSection() {
     return [`[${d.category}] ${d.name}`, `${startLabel} 〜 ${endLabel}`, `実績 ${formatHms(seconds)} / ${estimateLine}`].join("\n");
   }
 
+  function clockDetail(): string {
+    const weekday = ["日", "月", "火", "水", "木", "金", "土"][nowDate.getDay()];
+    return [
+      `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, "0")}-${String(nowDate.getDate()).padStart(2, "0")} (${weekday})`,
+      `TODAY TOTAL ${formatMsClock(totalMsToday)}`,
+    ].join("\n");
+  }
+
+  function loadDetail(): string {
+    // 昇順(NOMINAL→SYSTEM OVERLOAD)に並べ替え、現在の階級を明示する
+    const tiers = [...RISK_TIERS_TERMINAL].reverse();
+    const lines = tiers.map(
+      (t) => `${t.level === loadTier.level ? "▶ " : "  "}[${t.name}] ratio >= ${t.threshold.toFixed(1)}`
+    );
+    return [
+      `LOAD RATIO ×${loadRatio.toFixed(2)} (${formatMsClock(totalMsToday)} / 8h基準)`,
+      ...lines,
+    ].join("\n");
+  }
+
+  function growthDetail(): string {
+    const hours = totalMsToday / 1000 / 3600;
+    const lines = TERMINAL_STAGES.map(
+      (s, i) => `${s.label === growthStage.label ? "▶ " : "  "}${s.icon} ${s.label} (${GROWTH_HOUR_LABELS[i]}〜)`
+    );
+    return [`本日の稼働時間 ${formatMsClock(totalMsToday)} (${hours.toFixed(1)}h)`, ...lines].join("\n");
+  }
+
+  function streakDetail(): string {
+    const dates = [...new Set((records ?? []).filter((r) => r.seconds > 0).map((r) => r.date))].sort().reverse().slice(0, 10);
+    const lines = dates.length > 0 ? dates.map((d) => `  ${d}`) : ["  記録なし"];
+    return [`STREAK ${streakDays} DAYS`, "直近の記録日:", ...lines].join("\n");
+  }
+
+  function completedDetail(): string {
+    if (doneToday.length === 0) return "COMPLETED 0件\n本日完了した作業はまだありません。";
+    const lines = doneToday.map((d) => `・[${d.category}] ${d.name} ${formatMsClock(d.accumulatedMs)}`);
+    return [`COMPLETED ${doneToday.length}件`, ...lines].join("\n");
+  }
+
+  function queueDetail(): string {
+    if (activeTodos.length === 0) return "QUEUE (TODO) 0件\n未完了のToDoはありません。";
+    const lines = activeTodos
+      .slice(0, 20)
+      .map((t) => `・${t.title}${t.dueDate ? ` (期日 ${t.dueDate})` : ""}`);
+    return [`QUEUE (TODO) ${activeTodos.length}件`, ...lines].join("\n");
+  }
+
+  function positionsDetail(): string {
+    if (activeProjects.length === 0) return "POSITIONS 0件\n進行中の案件はありません。";
+    const lines = activeProjects.slice(0, 20).map((p) => `・${p.title} (期日 ${p.dueDate})`);
+    return [`POSITIONS ${activeProjects.length}件`, ...lines].join("\n");
+  }
+
+  function todayTotalDetail(): string {
+    const map = new Map<string, number>();
+    for (const d of dailyTasks ?? []) {
+      map.set(d.category, (map.get(d.category) ?? 0) + segmentsAccumulatedMs(d, now));
+    }
+    const all = [...map.entries()].sort((a, b) => b[1] - a[1]);
+    if (all.length === 0) return "TODAY TOTAL\n本日の記録はまだありません。";
+    const lines = all.map(([c, ms]) => `・${c || "未分類"} ${formatMsClock(ms)}`);
+    return [`TODAY TOTAL ${formatMsClock(totalMsToday)}`, ...lines].join("\n");
+  }
+
+  function weatherDetail(): string {
+    if (!weather) return "WEATHER 取得中/取得できませんでした";
+    return [`WEATHER ${WEATHER_LABEL[weather]}`, "現在地(または既定地点)の直近取得結果です。30分ごとに自動更新します。"].join("\n");
+  }
+
   const nowDate = new Date(now);
   const clockStr = [nowDate.getHours(), nowDate.getMinutes(), nowDate.getSeconds()]
     .map((v) => String(v).padStart(2, "0"))
@@ -263,26 +336,27 @@ export default function TerminalDashboardSection() {
 
   return (
     <div className="space-y-3 font-sans">
-      {/* --- ヘッダー行: 時刻・システム負荷・育成ステージ・継続日数を横並びで一望する --- */}
+      {/* --- ヘッダー行: 時刻・システム負荷・育成ステージ・継続日数を横並びで一望する。
+           いずれもタップすると下部のDETAILパネルに内訳が出る --- */}
       <div className="panel grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
-        <div>
+        <button type="button" className="text-left hover:opacity-80" onClick={() => setSelectedDetail(clockDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">CLOCK</div>
           <div className="tabular-nums text-2xl font-bold text-[rgb(var(--term-up-rgb))]">{clockStr}</div>
-        </div>
-        <div>
+        </button>
+        <button type="button" className="text-left hover:opacity-80" onClick={() => setSelectedDetail(loadDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">SYSTEM LOAD</div>
           <span className={riskBadgeClasses(loadTier.level, mode)}>{riskBadgeLabel(loadTier, mode)}</span>
-        </div>
-        <div>
+        </button>
+        <button type="button" className="text-left hover:opacity-80" onClick={() => setSelectedDetail(growthDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">GROWTH STAGE</div>
           <div className="text-sm font-bold text-cream">
             {growthStage.icon} {growthStage.label}
           </div>
-        </div>
-        <div>
+        </button>
+        <button type="button" className="text-left hover:opacity-80" onClick={() => setSelectedDetail(streakDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">STREAK</div>
           <div className="tabular-nums text-sm font-bold text-cream">{streakDays} DAYS</div>
-        </div>
+        </button>
       </div>
 
       {/* --- 現在実行中の作業。LIVEランプは他テーマのような柔らかい呼吸ではなく硬い点滅にする --- */}
@@ -313,32 +387,32 @@ export default function TerminalDashboardSection() {
         <div className="panel p-4 text-xs text-cream/40">計測中の作業はありません。下のクイックスタートから開始できます。</div>
       )}
 
-      {/* --- 密なステータスタイル群 --- */}
+      {/* --- 密なステータスタイル群。いずれもタップで下部のDETAILパネルに内訳が出る --- */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <div className="panel p-3">
+        <button type="button" className="panel p-3 text-left hover:opacity-80" onClick={() => setSelectedDetail(todayTotalDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">TODAY TOTAL</div>
           <div className="tabular-nums text-lg font-bold text-cream">{formatMsClock(totalMsToday)}</div>
-        </div>
-        <div className="panel p-3">
+        </button>
+        <button type="button" className="panel p-3 text-left hover:opacity-80" onClick={() => setSelectedDetail(completedDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">COMPLETED</div>
           <div className="tabular-nums text-lg font-bold text-cream">{doneToday.length}</div>
-        </div>
-        <div className="panel p-3">
+        </button>
+        <button type="button" className="panel p-3 text-left hover:opacity-80" onClick={() => setSelectedDetail(queueDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">QUEUE (TODO)</div>
           <div className="tabular-nums text-lg font-bold text-cream">{activeTodos.length}</div>
-        </div>
-        <div className="panel p-3">
+        </button>
+        <button type="button" className="panel p-3 text-left hover:opacity-80" onClick={() => setSelectedDetail(positionsDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">POSITIONS</div>
           <div className="tabular-nums text-lg font-bold text-cream">{activeProjects.length}</div>
-        </div>
-        <div className="panel p-3">
+        </button>
+        <button type="button" className="panel p-3 text-left hover:opacity-80" onClick={() => setSelectedDetail(loadDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">LOAD RATIO</div>
           <div className="tabular-nums text-lg font-bold text-cream">×{loadRatio.toFixed(2)}</div>
-        </div>
-        <div className="panel p-3">
+        </button>
+        <button type="button" className="panel p-3 text-left hover:opacity-80" onClick={() => setSelectedDetail(weatherDetail())}>
           <div className="text-[10px] uppercase tracking-widest text-cream/40">WEATHER</div>
           <div className="text-lg font-bold text-cream">{weather ? WEATHER_LABEL[weather] : "—"}</div>
-        </div>
+        </button>
       </div>
 
       {/* --- カテゴリ別内訳・時間帯アクティビティ密度 --- */}

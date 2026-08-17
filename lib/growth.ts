@@ -82,7 +82,7 @@ const ZEN_STAGES: GrowthStage[] = [
 ];
 
 // ターミナルモード: 回線がつながり、負荷が上がっていく管制室のステータス表示になぞらえた段階
-const TERMINAL_STAGES: GrowthStage[] = [
+export const TERMINAL_STAGES: GrowthStage[] = [
   { icon: "🔴", label: "OFFLINE" },
   { icon: "🟡", label: "STANDBY" },
   { icon: "🟢", label: "LIVE" },
