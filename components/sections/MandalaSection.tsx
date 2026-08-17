@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { buildMandalaGrid, emptyMandalaChart, type MandalaCell } from "@/lib/mandala";
+import { buildMandalaGrid, emptyMandalaChart, mandalaChartFromSample, MANDALA_SAMPLES, type MandalaCell } from "@/lib/mandala";
 import { showUndoToast } from "@/lib/toast";
 import Modal from "@/components/ui/Modal";
 import type { MandalaChart, TodoTask } from "@/lib/types";
@@ -47,6 +47,7 @@ export default function MandalaSection({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [editingCell, setEditingCell] = useState<MandalaCell | null>(null);
+  const [showSamples, setShowSamples] = useState(false);
 
   // 未選択、または選択中のチャートが削除された場合は先頭のチャートへフォールバックする
   useEffect(() => {
@@ -68,6 +69,14 @@ export default function MandalaSection({
     await db.mandalaCharts.add({ id, createdAt: now, updatedAt: now, ...emptyMandalaChart(title) });
     setNewChartTitle("");
     setShowNewChart(false);
+    setActiveChartId(id);
+  }
+
+  async function createChartFromSample(sample: (typeof MANDALA_SAMPLES)[number]) {
+    const now = Date.now();
+    const id = uid();
+    await db.mandalaCharts.add({ id, createdAt: now, updatedAt: now, ...mandalaChartFromSample(sample) });
+    setShowSamples(false);
     setActiveChartId(id);
   }
 
@@ -167,9 +176,27 @@ export default function MandalaSection({
               + 新規作成
             </button>
           )}
+          <div className="relative">
+            <button className="btn-pill-outline text-sm" onClick={() => setShowSamples((v) => !v)}>
+              サンプルから作成
+            </button>
+            {showSamples && (
+              <div className="absolute left-0 top-full z-10 mt-1 w-64 space-y-1 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
+                {MANDALA_SAMPLES.map((sample) => (
+                  <button
+                    key={sample.key}
+                    className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-cream/80 hover:bg-cream/10"
+                    onClick={() => createChartFromSample(sample)}
+                  >
+                    {sample.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <p className="text-xs text-cream/50">
-          中心に最終目標、その周り8マスにテーマ、各テーマの周り8マスに具体策を書き込みます。マスをタップすると編集できます。具体策のマスだけ、ToDoタスクの新規作成/紐付けができます。
+          中心に最終目標、その周り8マスにテーマ、各テーマの周り8マスに具体策を書き込みます。マスをタップすると編集できます。具体策のマスだけ、ToDoタスクの新規作成/紐付けができます。「サンプルから作成」で下書き入りのチャートをすぐに用意できます。
         </p>
       </div>
 

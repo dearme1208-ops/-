@@ -77,3 +77,123 @@ export function emptyMandalaChart(title: string): Omit<MandalaChart, "id" | "cre
     actionTodoIds: Array.from({ length: THEME_COUNT }, () => Array.from({ length: ACTIONS_PER_THEME }, () => undefined)),
   };
 }
+
+export interface MandalaSample {
+  key: string;
+  label: string;
+  goal: string;
+  themes: string[];
+  actions: string[][];
+}
+
+// 「家庭円満をテーマに」の相談を受けて作成したマンダラチャートの下書きサンプル。
+// あくまで一例として、そのままチャート化してから自由に書き換えられるようにする
+export const MANDALA_SAMPLES: MandalaSample[] = [
+  {
+    key: "katei-enman",
+    label: "家庭円満マンダラ(サンプル)",
+    goal: "家庭円満",
+    themes: [
+      "夫婦の対話",
+      "子どもとの時間",
+      "暮らしの基盤",
+      "家計・将来設計",
+      "家族の健康",
+      "心を通わせる",
+      "自分を整える",
+      "思い出づくり",
+    ],
+    actions: [
+      [
+        "週1で二人の時間",
+        "「ありがとう」を毎日",
+        "最後まで話を聞く",
+        "月1のデート",
+        "家事分担を話し合う",
+        "疲れに気づき手伝う",
+        "記念日を祝う",
+        "不満はその日に伝える",
+      ],
+      [
+        "毎日10分向き合う",
+        "話を否定せず聞く",
+        "週末は一緒に遊ぶ",
+        "成長を言葉で伝える",
+        "勉強を一緒に見る",
+        "理由を話して叱る",
+        "友達関係に関心を持つ",
+        "家族写真を残す",
+      ],
+      [
+        "家事分担表を作る",
+        "掃除洗濯のルーティン",
+        "1週間の献立を決める",
+        "使ったら元に戻す",
+        "定期的に断捨離",
+        "家計簿で見える化",
+        "防災グッズを見直す",
+        "家・車の点検計画",
+      ],
+      [
+        "毎月家計を確認",
+        "貯蓄目標を共有",
+        "教育費を計画",
+        "固定費を年1見直し",
+        "お小遣いのルール",
+        "大きな買い物は相談",
+        "予備資金を確保",
+        "ライフイベントを話す",
+      ],
+      [
+        "定期健診を受ける",
+        "一緒に体を動かす",
+        "睡眠時間を確保",
+        "バランスの良い食事",
+        "疲れたら早めに休む",
+        "体調変化に気を配る",
+        "かかりつけ医を決める",
+        "笑う機会を増やす",
+      ],
+      [
+        "食事は一緒にとる",
+        "「今日どうだった?」",
+        "日中もこまめに連絡",
+        "月1の家族会議",
+        "良いも悪いも共有",
+        "まず受け止める",
+        "スマホを置いて話す",
+        "感謝を言葉にする",
+      ],
+      [
+        "週1の自分の時間",
+        "趣味の時間を作る",
+        "息抜きの場所を持つ",
+        "完璧を求めすぎない",
+        "素直に頼る",
+        "休養優先の日を作る",
+        "一呼吸置く習慣",
+        "自分を労う時間",
+      ],
+      [
+        "年数回の家族旅行",
+        "誕生日を必ず祝う",
+        "季節の行事を楽しむ",
+        "アルバムを整理する",
+        "祖父母と交流の機会",
+        "恒例行事を1つ作る",
+        "小さなサプライズ",
+        "語れる経験を増やす",
+      ],
+    ],
+  },
+];
+
+export function mandalaChartFromSample(sample: MandalaSample): Omit<MandalaChart, "id" | "createdAt" | "updatedAt"> {
+  return {
+    title: sample.label,
+    goal: sample.goal,
+    themes: [...sample.themes],
+    actions: sample.actions.map((row) => [...row]),
+    actionTodoIds: Array.from({ length: THEME_COUNT }, () => Array.from({ length: ACTIONS_PER_THEME }, () => undefined)),
+  };
+}
