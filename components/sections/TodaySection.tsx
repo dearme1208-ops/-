@@ -49,7 +49,7 @@ import { computeGrowthStage } from "@/lib/growth";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
-import { formatClock, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
+import { formatClock, formatDateJp, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
 import {
   getNotificationPermission,
   notify,
@@ -69,6 +69,15 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
+
+// 天気変化通知の「次に閾値を超える時刻」表示用。予報は当日〜翌日早朝まで含むため、
+// 日付が今日と異なる場合(=翌日の予報)は時刻だけでなく日付も明示し、日をまたいだ
+// 見込みを取り違えないようにする
+function formatCrossingDateTime(atIso: string): string {
+  const d = new Date(atIso);
+  const dateLabel = todayStr(d) !== todayStr() ? `${formatDateJp(todayStr(d))} ` : "";
+  return `${dateLabel}${formatClock(d.getTime())}`;
+}
 
 export default function TodaySection({
   onOpenTodoDetail,
@@ -1947,7 +1956,7 @@ export default function TodaySection({
       {weatherAlert && (
         <div className="panel flex items-center justify-between gap-2 border border-alert/40 p-4">
           <p className="text-sm font-bold text-cream">
-            ☔ {weatherAlert.placeLabel}で{formatClock(new Date(weatherAlert.atIso).getTime())}頃、降水確率
+            ☔ {weatherAlert.placeLabel}で{formatCrossingDateTime(weatherAlert.atIso)}頃、降水確率
             {weatherAlert.precipProbability}%の見込みです（{Math.round(weatherAlert.hoursUntil * 10) / 10}時間後）
           </p>
           <button className="text-xs text-cream/50" onClick={() => setWeatherAlert(null)}>
@@ -2127,6 +2136,9 @@ export default function TodaySection({
               {weatherChecking ? "取得中..." : "🔄 今すぐ取得"}
             </button>
           </div>
+          {weatherCurrent.length === 0 && !weatherCheckError && (
+            <p className="text-cream/40">取得中...（初回は数秒かかることがあります）</p>
+          )}
           {weatherCurrent.length > 0 && (
             <div className="flex flex-col gap-1 text-cream/70">
               {weatherCurrent.map((c) => {
@@ -2137,7 +2149,7 @@ export default function TodaySection({
                     {next
                       ? next.hoursUntil <= 0.01
                         ? `・すでに${weatherThresholdStr}%以上です`
-                        : `・次に${weatherThresholdStr}%以上: ${formatClock(new Date(next.atIso).getTime())}頃（${next.precipProbability}%）`
+                        : `・次に${weatherThresholdStr}%以上: ${formatCrossingDateTime(next.atIso)}頃（${next.precipProbability}%）`
                       : `・当面${weatherThresholdStr}%以上の予報なし`}
                   </span>
                 );
