@@ -59,7 +59,7 @@ type DisplayMode = "list" | "gantt" | "calendar" | "kanban" | "tree";
 
 // リスト内の並び替え。「手動」はドラッグ&ドロップで決めたorder順、それ以外は
 // 選んだ項目でその都度並べ替える(手動の並び順自体は保持され、いつでも「手動」に戻せる)
-type TodoSortMode = "manual" | "category" | "title" | "customer" | "dueDate" | "important";
+type TodoSortMode = "manual" | "category" | "title" | "customer" | "dueDate" | "important" | "status";
 
 const TODO_SORT_MODE_LABELS: Record<TodoSortMode, string> = {
   manual: "手動(ドラッグ&ドロップ)",
@@ -68,6 +68,7 @@ const TODO_SORT_MODE_LABELS: Record<TodoSortMode, string> = {
   customer: "客先名順",
   dueDate: "期日順",
   important: "重要度順",
+  status: "対応状況順",
 };
 
 // 日本語のロケール比較。空欄は常に末尾に回す
@@ -80,7 +81,24 @@ function compareJaOrBlankLast(a: string | undefined, b: string | undefined): num
   return av.localeCompare(bv, "ja");
 }
 
-function compareTodoTasksBySortMode(a: TodoTask, b: TodoTask, mode: TodoSortMode): number {
+// 対応状況(tag)は設定タブで並び替え可能なプリセット(社内確認中→客先確認中→…)を持つため、
+// 名前順ではなくそのプリセットの並び順で比較する。プリセットに無いカスタム値は末尾側(名前順)、
+// 未設定は常に最後
+function compareStatusTag(a: string | undefined, b: string | undefined, statusOrder: string[]): number {
+  const av = a?.trim() || null;
+  const bv = b?.trim() || null;
+  if (av === bv) return 0;
+  if (av === null) return 1;
+  if (bv === null) return -1;
+  const ai = statusOrder.indexOf(av);
+  const bi = statusOrder.indexOf(bv);
+  if (ai !== -1 && bi !== -1) return ai - bi;
+  if (ai !== -1) return -1;
+  if (bi !== -1) return 1;
+  return av.localeCompare(bv, "ja");
+}
+
+function compareTodoTasksBySortMode(a: TodoTask, b: TodoTask, mode: TodoSortMode, statusOrder: string[]): number {
   switch (mode) {
     case "category":
       return compareJaOrBlankLast(a.category, b.category);
@@ -92,6 +110,8 @@ function compareTodoTasksBySortMode(a: TodoTask, b: TodoTask, mode: TodoSortMode
       return compareJaOrBlankLast(a.dueDate, b.dueDate);
     case "important":
       return Number(b.important) - Number(a.important);
+    case "status":
+      return compareStatusTag(a.tag, b.tag, statusOrder);
     default:
       return 0;
   }
@@ -389,7 +409,7 @@ export default function TodoSection({
         return dueA.localeCompare(dueB);
       }
       if (currentListId && !searchActive && sortMode !== "manual") {
-        const cmp = compareTodoTasksBySortMode(a, b, sortMode);
+        const cmp = compareTodoTasksBySortMode(a, b, sortMode, tagOptions);
         if (cmp !== 0) return cmp;
       }
       return a.order - b.order;
@@ -407,6 +427,7 @@ export default function TodoSection({
     filterCustomer,
     subtasksByParent,
     sortMode,
+    tagOptions,
   ]);
 
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
