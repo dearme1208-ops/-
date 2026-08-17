@@ -5,6 +5,7 @@ import { formatClock, formatHms } from "@/lib/time";
 import { TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 
 const DAY_MS = 86400000;
 
@@ -46,6 +47,7 @@ export default function EditTaskDialog({
   const [startTouched, setStartTouched] = useState(false);
   const [endTouched, setEndTouched] = useState(false);
   const [note, setNote] = useState(task.note ?? "");
+  const [showMasterPicker, setShowMasterPicker] = useState(false);
   const isDone = task.status === "done";
 
   // 開始・終了それぞれ、編集していなければ元の値(秒まで正確)、編集していれば
@@ -94,6 +96,9 @@ export default function EditTaskDialog({
           onChange={(e) => setName(e.target.value)}
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
+        <button type="button" className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
+          作業マスタから選択
+        </button>
         {task.isTrouble && (
           <div className="flex flex-wrap gap-1.5">
             {TROUBLE_DETAIL_OPTIONS.map((opt) => (
@@ -174,6 +179,20 @@ export default function EditTaskDialog({
           保存
         </button>
       </div>
+      {showMasterPicker && (
+        <CategoryWorkNameDialog
+          title="作業マスタから選択"
+          confirmLabel="この内容を使う"
+          defaultCategory={category}
+          defaultWorkName={name}
+          onConfirm={(newCategory, newName) => {
+            setCategory(newCategory);
+            setName(newName);
+            setShowMasterPicker(false);
+          }}
+          onClose={() => setShowMasterPicker(false)}
+        />
+      )}
     </Modal>
   );
 }
