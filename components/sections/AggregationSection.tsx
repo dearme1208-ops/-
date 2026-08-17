@@ -26,6 +26,7 @@ import DonutChart from "@/components/charts/DonutChart";
 import LineChart from "@/components/charts/LineChart";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
+import WeekdayBreakdownDialog from "@/components/sections/WeekdayBreakdownDialog";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 const HALF_LABELS: Record<"h1" | "h2", string> = { h1: "上期", h2: "下期" };
@@ -75,11 +76,18 @@ export default function AggregationSection() {
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
-  const weekdayAverages = useMemo(() => {
+  // 曜日別バーの内訳ダイアログでも同じ絞り込み後のレコードを使うため、平均の算出と分けて保持する
+  const weekdayFilteredRecords = useMemo(() => {
     const range = fiscalPeriodRange(weekdayPeriodType, weekdayFiscalYear);
-    const filtered = range ? (records ?? []).filter((r) => isDateStrInRange(r.date, range)) : records ?? [];
-    return computeWeekdayAverages(filtered);
+    return range ? (records ?? []).filter((r) => isDateStrInRange(r.date, range)) : records ?? [];
   }, [records, weekdayPeriodType, weekdayFiscalYear]);
+  const weekdayAverages = useMemo(
+    () => computeWeekdayAverages(weekdayFilteredRecords),
+    [weekdayFilteredRecords]
+  );
+  const weekdayChartData = useMemo(() => weekdayAverages.filter((w) => w.dayCount > 0), [weekdayAverages]);
+  const [weekdayDetailDow, setWeekdayDetailDow] = useState<number | null>(null);
+  const weekdayDetail = weekdayChartData.find((w) => w.dow === weekdayDetailDow) ?? null;
   const switchCost = useMemo(() => computeSwitchCostAnalysis(records ?? []), [records]);
   const tagRows = useMemo(() => computeTimeByTag(records ?? [], masterTasks ?? []), [records, masterTasks]);
   const totalTrendPoints = useMemo(
@@ -346,15 +354,28 @@ export default function AggregationSection() {
           )}
         </div>
         <RankingBarChart
-          data={weekdayAverages
-            .filter((w) => w.dayCount > 0)
-            .map((w) => ({ label: w.label, sublabel: `${w.dayCount}日分の平均`, value: w.avgSeconds }))}
+          data={weekdayChartData.map((w) => ({ label: w.label, sublabel: `${w.dayCount}日分の平均`, value: w.avgSeconds }))}
           formatValue={formatHms}
+          onBarClick={(i) => setWeekdayDetailDow(weekdayChartData[i].dow)}
         />
+        {weekdayChartData.length > 0 && (
+          <p className="mt-2 text-[10px] text-cream/40">棒をタップ/クリックすると内訳を表示します。</p>
+        )}
         {weekdayAverages.every((w) => w.dayCount === 0) && (
           <p className="text-sm text-cream/50">データがありません。</p>
         )}
       </CollapsiblePanel>
+
+      {weekdayDetail && (
+        <WeekdayBreakdownDialog
+          dow={weekdayDetail.dow}
+          label={weekdayDetail.label}
+          dayCount={weekdayDetail.dayCount}
+          avgSeconds={weekdayDetail.avgSeconds}
+          records={weekdayFilteredRecords}
+          onClose={() => setWeekdayDetailDow(null)}
+        />
+      )}
 
       {(switchCost.low || switchCost.high) && (
         <CollapsiblePanel
