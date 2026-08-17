@@ -1,8 +1,16 @@
 import { db, uid } from "./db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
 import { diffHmToSeconds } from "./time";
-import type { DailyTask, MasterTask } from "./types";
+import type { DailyTask, MasterTask, TimeSegment, WorkRecord } from "./types";
 import type { ScheduleRow } from "./scheduleCsv";
+
+// 同日・同じ作業の実績が既にある場合に、実働区間(segments)を合算する。
+// 既存の実績にsegmentsが無い(この機能追加より前に作られた記録など、区間が不明な記録)場合は、
+// 既存のstartedAt〜endedAtをひとつの区間とみなして引き継ぐ(それ以前の挙動を再現する近似値)
+export function mergeRecordSegments(existing: WorkRecord, newSegments: TimeSegment[]): TimeSegment[] {
+  const prev = existing.segments ?? [{ start: existing.startedAt, end: existing.endedAt }];
+  return [...prev, ...newSegments].sort((a, b) => a.start - b.start);
+}
 
 // 一時停止中/完了時点で確定している合計時間（「時間を加算」による手動加算分を含む。
 // 計測中セグメントの経過分は含まない）
@@ -134,6 +142,7 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
       seconds: existing.seconds + seconds,
       endedAt: Math.max(existing.endedAt, closeAt),
       isTrouble: existing.isTrouble || task.isTrouble,
+      segments: mergeRecordSegments(existing, segments),
     });
   } else {
     await db.records.add({
@@ -149,6 +158,7 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
       projectId: task.projectId,
       stageId: task.stageId,
       isTrouble: task.isTrouble,
+      segments,
     });
   }
 

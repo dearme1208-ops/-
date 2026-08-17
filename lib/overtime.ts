@@ -103,8 +103,12 @@ export interface AfterHoursResult {
   byTask: BreakdownRow[];
 }
 
-// 各実績(startedAt〜endedAt)のうち、その日の「定時(cutoffTime)」より後にかかっている時間だけを積み上げる。
-// 所定労働時間による概算残業（computeMonthlyOvertime）とは異なり、実際に働いていた時刻ベースで判定する
+// 各実績のうち、その日の「定時(cutoffTime)」より後にかかっている時間だけを積み上げる。
+// 所定労働時間による概算残業（computeMonthlyOvertime）とは異なり、実際に働いていた時刻ベースで判定する。
+// segments(一時停止で分断された実働区間)を保持している実績はその区間ごとに重なりを計算するため、
+// 定時前に一時停止して定時後に再開した場合などでも、実際に働いていない一時停止中の時間を
+// 定時以降の実働として数えてしまうことがない。segmentsが無い(手動編集・CSV取り込み等で区間が
+// 不明な)古い実績では、startedAt〜endedAtをひとつながりの実働とみなす従来の近似計算にフォールバックする
 export function computeAfterHoursBreakdown(records: WorkRecord[], cutoffTime: string): AfterHoursResult {
   const [hh, mm] = cutoffTime.split(":").map((v) => Number(v));
   const cutoffMinutes = (Number.isFinite(hh) ? hh : 18) * 60 + (Number.isFinite(mm) ? mm : 0);
@@ -117,9 +121,18 @@ export function computeAfterHoursBreakdown(records: WorkRecord[], cutoffTime: st
     const dayStart = new Date(r.date + "T00:00:00").getTime();
     const cutoffMs = dayStart + cutoffMinutes * 60000;
     const dayEndMs = dayStart + 86400000;
-    const overlapStart = Math.max(r.startedAt, cutoffMs);
-    const overlapEnd = Math.min(r.endedAt, dayEndMs);
-    const overlapSeconds = Math.max(0, (overlapEnd - overlapStart) / 1000);
+
+    const intervals =
+      r.segments && r.segments.length > 0
+        ? r.segments.filter((s): s is { start: number; end: number } => s.end !== undefined && s.end > s.start)
+        : [{ start: r.startedAt, end: r.endedAt }];
+
+    let overlapSeconds = 0;
+    for (const seg of intervals) {
+      const overlapStart = Math.max(seg.start, cutoffMs);
+      const overlapEnd = Math.min(seg.end, dayEndMs);
+      overlapSeconds += Math.max(0, (overlapEnd - overlapStart) / 1000);
+    }
     if (overlapSeconds <= 0) continue;
 
     totalSeconds += overlapSeconds;

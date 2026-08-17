@@ -25,6 +25,7 @@ import {
   computeRemainingEstimatedSeconds,
   computeRunningOverrunTaskIds,
   importScheduleRows,
+  mergeRecordSegments,
   segmentsAccumulatedMs,
 } from "@/lib/tasks";
 import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
@@ -1367,11 +1368,17 @@ export default function TodaySection({
           .first()
       : undefined;
 
+    // 開始/終了時刻の直接編集や実績時間の手動変更は、合算元の他インスタンス分まで
+    // 正確な区間を再構成できないため、既存のsegmentsは破棄して(定時以降の判定は
+    // startedAt〜endedAtによる従来通りの近似に戻す)、ズレたまま残さないようにする
+    const clearSegments = delta !== 0 || segmentsChanged;
+
     if (!renamed) {
       if (existingOld) {
         await db.records.update(existingOld.id, {
           ...(delta !== 0 ? { seconds: Math.max(0, existingOld.seconds + delta) } : {}),
           note,
+          ...(clearSegments ? { segments: undefined } : {}),
         });
       }
       await db.dailyTasks.update(task.id, taskUpdates);
@@ -1390,6 +1397,7 @@ export default function TodaySection({
         await db.records.update(existingOld.id, {
           ...(delta !== 0 ? { seconds: Math.max(0, existingOld.seconds + delta) } : {}),
           note,
+          ...(clearSegments ? { segments: undefined } : {}),
         });
       }
       await db.dailyTasks.update(task.id, taskUpdates);
@@ -1403,7 +1411,7 @@ export default function TodaySection({
     if (existingOld) {
       const remaining = existingOld.seconds - oldSeconds;
       if (remaining <= 0) await db.records.delete(existingOld.id);
-      else await db.records.update(existingOld.id, { seconds: remaining });
+      else await db.records.update(existingOld.id, { seconds: remaining, segments: undefined });
     }
     const existingNew = await db.records
       .where("date")
@@ -1415,6 +1423,7 @@ export default function TodaySection({
         seconds: existingNew.seconds + newSeconds,
         endedAt: newEndedAt,
         note,
+        segments: undefined,
       });
     } else {
       await db.records.add({
@@ -1549,6 +1558,7 @@ export default function TodaySection({
         endedAt: nowMs,
         isTrouble: existing.isTrouble || task.isTrouble,
         ...(task.secondaryProjectIds ? { secondaryProjectIds: task.secondaryProjectIds } : {}),
+        segments: mergeRecordSegments(existing, segments),
       });
     } else {
       await db.records.add({
@@ -1565,6 +1575,7 @@ export default function TodaySection({
         stageId: task.stageId,
         isTrouble: task.isTrouble,
         secondaryProjectIds: task.secondaryProjectIds,
+        segments,
       });
     }
 

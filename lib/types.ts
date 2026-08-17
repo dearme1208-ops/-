@@ -129,6 +129,10 @@ export interface WorkRecord {
   // ランキング等の集計では詳細作業名を無視し、大項目でひとつにまとめて集計する
   note?: string; // 作業完了時の一言メモ（複数の実績が合算された場合は最後に編集したメモで上書きされる）
   secondaryProjectIds?: string[]; // 主案件(projectId)以外にも時間を按分したい場合の追加の案件タグ
+  segments?: TimeSegment[]; // 実際に計測していた区間(一時停止で分断された区間ごと)。
+  // 定時以降の実働判定など、startedAt〜endedAtの範囲をそのまま「働いていた」とみなすと
+  // 一時停止していた間も含めてしまうため、可能な場合はここから正確な重なりを計算する。
+  // 手動加算分やCSV取り込み・実績編集など区間が不明な記録ではundefinedのままになる
 }
 
 export interface AppSetting {

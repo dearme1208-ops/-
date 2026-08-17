@@ -81,6 +81,11 @@ export default function RecordsSection() {
     const nameChanged = patch.name !== undefined && patch.name !== r.name;
     const categoryChanged = patch.category !== undefined && patch.category !== r.category;
     const finalPatch: Partial<WorkRecord> = { ...patch };
+    // 開始/終了時刻や実績時間を手動編集すると、保持していた実働区間(segments)と
+    // 矛盾してしまうため破棄する(定時以降の判定はstartedAt〜endedAtの近似に戻る)
+    if (r.segments && (patch.startedAt !== undefined || patch.endedAt !== undefined || patch.seconds !== undefined)) {
+      finalPatch.segments = undefined;
+    }
     let oldMasterId: string | undefined;
     let newMasterId: string | undefined;
 
