@@ -376,6 +376,7 @@ export type TabKey =
   | "attention"
   | "overtime"
   | "yearlyChart"
+  | "mandala"
   | "report"
   | "records"
   | "settings";
@@ -394,6 +395,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     attention: "異常個体リスト",
     overtime: "深夜稼働記録",
     yearlyChart: "年次記録",
+    mandala: "目標統制盤",
     report: "週次・月次報告書",
     records: "記録の改竄",
     settings: "管理局設定",
@@ -411,6 +413,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     attention: "クレーム一覧",
     overtime: "深夜営業分析",
     yearlyChart: "年間営業記録",
+    mandala: "夢のメニュー構想",
     report: "週次・月次売上報告",
     records: "伝票の修正",
     settings: "バーの設定",
@@ -428,6 +431,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     attention: "警戒対象リスト",
     overtime: "深夜潜入記録",
     yearlyChart: "年間活動記録",
+    mandala: "野望達成マンダラ",
     report: "怪盗団 週報・月報",
     records: "記録の書き換え",
     settings: "アジト設定",
@@ -445,6 +449,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     attention: "先生からのお便り",
     overtime: "がんばりすぎ度チェック",
     yearlyChart: "夏の思い出年表",
+    mandala: "めあてシート",
     report: "週のふりかえり・月のふりかえり",
     records: "日記の書き直し",
     settings: "ふでばこ",
@@ -462,6 +467,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     attention: "戦力外通告候補",
     overtime: "登板過多チェック",
     yearlyChart: "球歴年表",
+    mandala: "目標達成シート",
     report: "週間・月間MVP",
     records: "スコアブック修正",
     settings: "球団運営設定",
@@ -479,6 +485,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     attention: "要フォロー",
     overtime: "負荷チェック",
     yearlyChart: "年間ふりかえり",
+    mandala: "ゴールマップ",
     report: "レポート",
     records: "ログ編集",
     settings: "設定",
@@ -498,6 +505,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     attention: "気にかかること",
     overtime: "根を詰めた日",
     yearlyChart: "一年",
+    mandala: "願い",
     report: "ふりかえり",
     records: "記録",
     settings: "設定",
@@ -517,6 +525,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     attention: "ALERTS",
     overtime: "OVERLOAD",
     yearlyChart: "ARCHIVE",
+    mandala: "OBJECTIVES",
     report: "DIGEST",
     records: "LEDGER",
     settings: "CONFIG",

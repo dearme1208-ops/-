@@ -243,3 +243,20 @@ export interface TodoTask {
   recurrence?: RecurrenceRule;
   projectId?: string; // 案件タブに反映済みの場合、その案件のID
 }
+
+// ---- マンダラチャート ----
+
+// 大谷翔平選手の目標達成シートで知られる9x9マス(3x3ブロックのさらに3x3)の目標設定図。
+// 中心1マスの目標→周囲8マスのテーマ→各テーマごとの8マスの具体策、という構造を
+// 素直に配列で持つ(グリッド上の座標計算はlib/mandala.ts側で行う)
+export interface MandalaChart {
+  id: string;
+  title: string;
+  goal: string;
+  themes: string[]; // 長さ8
+  actions: string[][]; // actions[themeIndex][actionIndex]、8x8
+  // 具体策セルだけ、既存/新規のToDoタスクと紐付けられる。未紐付けはundefined
+  actionTodoIds: (string | undefined)[][]; // actionTodoIds[themeIndex][actionIndex]、8x8
+  createdAt: number;
+  updatedAt: number;
+}

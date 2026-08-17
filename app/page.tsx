@@ -40,6 +40,7 @@ const RecordsSection = dynamic(() => import("@/components/sections/RecordsSectio
 const SettingsSection = dynamic(() => import("@/components/sections/SettingsSection"), { ssr: false });
 const OvertimeSection = dynamic(() => import("@/components/sections/OvertimeSection"), { ssr: false });
 const YearlyChartSection = dynamic(() => import("@/components/sections/YearlyChartSection"), { ssr: false });
+const MandalaSection = dynamic(() => import("@/components/sections/MandalaSection"), { ssr: false });
 
 const TABS: TabDef[] = [
   { key: "today", label: "本日の作業" },
@@ -54,6 +55,7 @@ const TABS: TabDef[] = [
   { key: "attention", label: "要注意リスト" },
   { key: "overtime", label: "残業分析" },
   { key: "yearlyChart", label: "年表" },
+  { key: "mandala", label: "マンダラチャート" },
   { key: "report", label: "週報・月報" },
   { key: "records", label: "実績編集" },
   { key: "settings", label: "設定" },
@@ -185,6 +187,14 @@ export default function HomePage() {
       {active === "attention" && <AttentionSection />}
       {active === "overtime" && <OvertimeSection />}
       {active === "yearlyChart" && <YearlyChartSection />}
+      {active === "mandala" && (
+        <MandalaSection
+          onOpenTodoDetail={(taskId) => {
+            setPendingTodoDetailId(taskId);
+            setActive("todo");
+          }}
+        />
+      )}
       {active === "report" && mode === "claude" && <ClaudeReportSection />}
       {active === "report" && mode !== "claude" && <ReportSection />}
       {active === "records" && <RecordsSection />}

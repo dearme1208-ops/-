@@ -12,6 +12,7 @@ import type {
   GeoPlace,
   WeatherPlace,
   WeatherForecast,
+  MandalaChart,
 } from "./types";
 
 export class KouteiDB extends Dexie {
@@ -27,6 +28,7 @@ export class KouteiDB extends Dexie {
   geoPlaces!: Table<GeoPlace, string>;
   weatherPlaces!: Table<WeatherPlace, string>;
   weatherForecasts!: Table<WeatherForecast, string>;
+  mandalaCharts!: Table<MandalaChart, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -104,6 +106,21 @@ export class KouteiDB extends Dexie {
       geoPlaces: "id, createdAt",
       weatherForecasts: "id, placeId, date",
       weatherPlaces: "id, createdAt",
+    });
+    this.version(8).stores({
+      masterTasks: "id, category, name, isFavorite",
+      templateItems: "id, weekday, order",
+      dailyTasks: "id, date, status, order",
+      records: "id, date, category, name, masterTaskId, excludedFromStats",
+      settings: "key",
+      projects: "id, dueDate, createdAt",
+      todoLists: "id, order",
+      todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+      conditionLogs: "id, date, loggedAt",
+      geoPlaces: "id, createdAt",
+      weatherForecasts: "id, placeId, date",
+      weatherPlaces: "id, createdAt",
+      mandalaCharts: "id, createdAt",
     });
   }
 }
