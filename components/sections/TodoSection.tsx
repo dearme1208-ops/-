@@ -30,7 +30,7 @@ import { cardOverrunClass, emphasisTextClass, useVisualMode } from "@/lib/theme"
 import { daysBetweenDateStrs, todayStr, formatDateJp } from "@/lib/time";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
-import type { DailyTask, ProjectItem, RecurrenceRule, RecurrenceType, TodoTask } from "@/lib/types";
+import type { DailyTask, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
@@ -85,6 +85,10 @@ export default function TodoSection({
   const [showNewList, setShowNewList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  // タスク追加欄でどのリストに追加するかを選べるようにする。閲覧中のビューが特定の
+  // リストに紐付いていない(マイデイ・重要・期日・期限切れ・検索結果)場合、既定では
+  // 先頭のリストに入ってしまうため、明示的に選び直せるようにしておく
+  const [newTaskListId, setNewTaskListId] = useState("");
   const [newTaskAction, setNewTaskAction] = useState("");
   const [newTaskTagMode, setNewTaskTagMode] = useState<string>(NO_TAG_VALUE);
   const [newTaskCustomTag, setNewTaskCustomTag] = useState("");
@@ -287,6 +291,12 @@ export default function TodoSection({
   }, [allTasks, topLevelTasks, subtasksByParent, today]);
 
   const currentListId = view.startsWith("list:") ? view.slice(5) : null;
+
+  // ビューを切り替えたら、タスク追加欄の「追加先リスト」選択は一旦既定(閲覧中のリスト)に
+  // 戻す。空文字は「未選択=既定を使う」を表す
+  useEffect(() => {
+    setNewTaskListId("");
+  }, [view]);
 
   const searchActive = searchQuery.trim() !== "" || filterTag !== "" || filterCategory !== "" || filterCustomer !== "";
 
@@ -492,7 +502,7 @@ export default function TodoSection({
 
   async function addTask() {
     if (!newTaskTitle.trim()) return;
-    const targetListId = currentListId ?? lists?.[0]?.id;
+    const targetListId = newTaskListId || currentListId || lists?.[0]?.id;
     if (!targetListId) return;
     const count = (allTasks ?? []).filter((t) => t.listId === targetListId && !t.parentTaskId).length;
     const tag = resolveTag(newTaskTagMode, newTaskCustomTag);
@@ -580,6 +590,19 @@ export default function TodoSection({
     for (const t of targets) {
       await completeTodoTask(t, today);
     }
+    setSelectedTaskIds(new Set());
+  }
+
+  // 選択中タスクをまとめて別リストへ移動する。子から親だけ選んでも取り残されないよう、
+  // 選択したタスクのサブタスクも一緒に移す
+  async function applyBulkMoveList(targetListId: string) {
+    const ids = [...selectedTaskIds];
+    if (ids.length === 0 || !targetListId) return;
+    const targets = (allTasks ?? []).filter((t) => ids.includes(t.id));
+    const subs = targets.flatMap((t) => subtasksByParent.get(t.id) ?? []);
+    await db.transaction("rw", db.todoTasks, async () => {
+      for (const t of [...targets, ...subs]) await db.todoTasks.update(t.id, { listId: targetListId });
+    });
     setSelectedTaskIds(new Set());
   }
 
@@ -1006,6 +1029,20 @@ export default function TodoSection({
             placeholder="アクション（任意）"
             className="min-w-[8rem] flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
+          {(lists ?? []).length > 1 && (
+            <select
+              value={newTaskListId || currentListId || lists?.[0]?.id || ""}
+              onChange={(e) => setNewTaskListId(e.target.value)}
+              title="追加先のリスト"
+              className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
+            >
+              {(lists ?? []).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.title}へ追加
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={newTaskTagMode}
             onChange={(e) => setNewTaskTagMode(e.target.value)}
@@ -1241,6 +1278,26 @@ export default function TodoSection({
                     </option>
                   ))}
                 </select>
+                {(lists ?? []).length > 1 && (
+                  <select
+                    disabled={selectedTaskIds.size === 0}
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) applyBulkMoveList(e.target.value);
+                      e.target.value = "";
+                    }}
+                    className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream disabled:opacity-40"
+                  >
+                    <option value="" disabled>
+                      リストへ移動...
+                    </option>
+                    {(lists ?? []).map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <button
                   className="btn-pill-outline text-xs disabled:opacity-40"
                   disabled={selectedTaskIds.size === 0}
@@ -1346,6 +1403,7 @@ export default function TodoSection({
         <TaskDetailModal
           task={detailTask}
           subtasks={subtasksByParent.get(detailTask.id) ?? []}
+          lists={lists ?? []}
           tagOptions={tagOptions}
           categoryOptions={categoryOptions}
           customerOptions={customerOptions}
@@ -1891,6 +1949,7 @@ function TaskRow({
 function TaskDetailModal({
   task,
   subtasks,
+  lists,
   tagOptions,
   categoryOptions,
   customerOptions,
@@ -1905,6 +1964,7 @@ function TaskDetailModal({
 }: {
   task: TodoTask;
   subtasks: TodoTask[];
+  lists: TodoList[];
   tagOptions: string[];
   categoryOptions: string[];
   customerOptions: string[];
@@ -1921,6 +1981,7 @@ function TaskDetailModal({
   const [showReflectDialog, setShowReflectDialog] = useState(false);
   const [showAddToTodayDialog, setShowAddToTodayDialog] = useState(false);
   const [title, setTitle] = useState(task.title);
+  const [listId, setListId] = useState(task.listId);
   const [action, setAction] = useState(task.action ?? "");
   const [url, setUrl] = useState(task.url ?? "");
   const [notes, setNotes] = useState(task.notes ?? "");
@@ -1984,12 +2045,28 @@ function TaskDetailModal({
     if (dueDate === today) {
       updates.myDayDate = today;
     }
+    // リストを変更した場合、サブタスクも一緒に新しいリストへ移す(サブタスクだけ元の
+    // リストに取り残されて宙に浮いてしまうのを防ぐ)。並び順は移動先リストの末尾にする
+    const listChanged = listId !== task.listId;
+    if (listChanged) {
+      updates.listId = listId;
+      if (!task.parentTaskId) {
+        const count = (await db.todoTasks.where("listId").equals(listId).toArray()).filter((t) => !t.parentTaskId).length;
+        updates.order = count;
+      }
+    }
     // 開始日(優先)または期日が設定されていれば、リスト内で日付順の位置に並べ替える
+    // (リストを変更した場合は移動先リストの末尾を優先するため、ここでは上書きしない)
     const sortDate = startDate || dueDate;
-    if (sortDate && !task.parentTaskId) {
+    if (sortDate && !task.parentTaskId && !listChanged) {
       updates.order = await computeDateOrderedPosition(task.listId, task.id, sortDate);
     }
     await db.todoTasks.update(task.id, updates);
+    if (listChanged && subtasks.length > 0) {
+      await db.transaction("rw", db.todoTasks, async () => {
+        for (const sub of subtasks) await db.todoTasks.update(sub.id, { listId });
+      });
+    }
     onClose();
   }
 
@@ -2035,6 +2112,23 @@ function TaskDetailModal({
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           placeholder="タイトル"
         />
+
+        {lists.length > 1 && (
+          <label className="flex items-center gap-2 text-xs text-cream/60">
+            リスト
+            <select
+              value={listId}
+              onChange={(e) => setListId(e.target.value)}
+              className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
+            >
+              {lists.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <input
           value={action}
