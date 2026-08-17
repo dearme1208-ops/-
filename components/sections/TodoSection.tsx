@@ -1622,7 +1622,9 @@ function TaskBlock({
   onToggleSelect?: () => void;
 }) {
   const today = todayStr();
-  const [showCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
+  // 設定画面の「完了済みサブタスクの表示」と同じキーを共有する。ここで切り替えても
+  // 設定画面側の表示に反映され、逆に設定画面で変えてもここに反映される(単一の値)
+  const [showCompletedSubtasksStr, setShowCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
   const showCompletedSubtasks = showCompletedSubtasksStr === "true";
   const [subtasksCollapsed, setSubtasksCollapsed] = useState(false);
   const subtaskSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -1665,24 +1667,33 @@ function TaskBlock({
           />
         </div>
       </div>
-      {visibleSubtasks.length > 0 && (
+      {subtasks.length > 0 && (
         <div className="ml-7 space-y-1 border-l border-cream/10 pl-3">
-          <button
-            type="button"
-            onClick={() => setSubtasksCollapsed((c) => !c)}
-            className="flex items-center gap-1 text-[10px] text-cream/40"
-            aria-expanded={!subtasksCollapsed}
-            aria-label={subtasksCollapsed ? "サブタスクを展開" : "サブタスクを折りたたむ"}
-          >
-            <span className={`inline-block transition-transform ${subtasksCollapsed ? "-rotate-90" : ""}`}>▾</span>
-            サブタスク {doneSubtaskCount}/{subtasks.length}
-          </button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <button
+              type="button"
+              onClick={() => setSubtasksCollapsed((c) => !c)}
+              className="flex items-center gap-1 text-[10px] text-cream/40"
+              aria-expanded={!subtasksCollapsed}
+              aria-label={subtasksCollapsed ? "サブタスクを展開" : "サブタスクを折りたたむ"}
+            >
+              <span className={`inline-block transition-transform ${subtasksCollapsed ? "-rotate-90" : ""}`}>▾</span>
+              サブタスク {doneSubtaskCount}/{subtasks.length}
+            </button>
+            {doneSubtaskCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowCompletedSubtasksStr(showCompletedSubtasks ? "false" : "true")}
+                className="text-[10px] text-cream/40 underline decoration-dotted underline-offset-2 hover:text-cream/70"
+              >
+                {showCompletedSubtasks ? "完了済みを隠す" : `完了済み${doneSubtaskCount}件を表示`}
+              </button>
+            )}
+          </div>
           {!subtasksCollapsed && (
             <>
-              {!showCompletedSubtasks && visibleSubtasks.length < subtasks.length && (
-                <div className="text-[10px] text-cream/30">
-                  完了済み{subtasks.length - visibleSubtasks.length}件を非表示中
-                </div>
+              {visibleSubtasks.length === 0 && (
+                <p className="text-[10px] text-cream/30">未完了のサブタスクはありません</p>
               )}
               {onReorderSubtasks ? (
                 <DndContext sensors={subtaskSensors} collisionDetection={closestCenter} onDragEnd={handleSubtaskDragEnd}>
