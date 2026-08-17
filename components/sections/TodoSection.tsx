@@ -57,6 +57,46 @@ const MIN_LABEL_SPACING_PX = 50;
 type ViewKey = "myday" | "important" | "planned" | "overdue" | `list:${string}`;
 type DisplayMode = "list" | "gantt" | "calendar" | "kanban" | "tree";
 
+// リスト内の並び替え。「手動」はドラッグ&ドロップで決めたorder順、それ以外は
+// 選んだ項目でその都度並べ替える(手動の並び順自体は保持され、いつでも「手動」に戻せる)
+type TodoSortMode = "manual" | "category" | "title" | "customer" | "dueDate" | "important";
+
+const TODO_SORT_MODE_LABELS: Record<TodoSortMode, string> = {
+  manual: "手動(ドラッグ&ドロップ)",
+  category: "分類名順",
+  title: "タスク名順",
+  customer: "客先名順",
+  dueDate: "期日順",
+  important: "重要度順",
+};
+
+// 日本語のロケール比較。空欄は常に末尾に回す
+function compareJaOrBlankLast(a: string | undefined, b: string | undefined): number {
+  const av = a?.trim() || null;
+  const bv = b?.trim() || null;
+  if (av === bv) return 0;
+  if (av === null) return 1;
+  if (bv === null) return -1;
+  return av.localeCompare(bv, "ja");
+}
+
+function compareTodoTasksBySortMode(a: TodoTask, b: TodoTask, mode: TodoSortMode): number {
+  switch (mode) {
+    case "category":
+      return compareJaOrBlankLast(a.category, b.category);
+    case "title":
+      return compareJaOrBlankLast(a.title, b.title);
+    case "customer":
+      return compareJaOrBlankLast(a.customer, b.customer);
+    case "dueDate":
+      return compareJaOrBlankLast(a.dueDate, b.dueDate);
+    case "important":
+      return Number(b.important) - Number(a.important);
+    default:
+      return 0;
+  }
+}
+
 interface SavedTodoView {
   id: string;
   name: string;
@@ -291,6 +331,9 @@ export default function TodoSection({
   }, [allTasks, topLevelTasks, subtasksByParent, today]);
 
   const currentListId = view.startsWith("list:") ? view.slice(5) : null;
+  // 並び替えはリストごとに独立して覚える(あるリストを分類名順にしても他のリストには影響しない)
+  const [sortModeStr, setSortModeStr] = useSetting(`todo.sortMode.${currentListId ?? "__none__"}`, "manual");
+  const sortMode = (sortModeStr as TodoSortMode) || "manual";
 
   // ビューを切り替えたら、タスク追加欄の「追加先リスト」選択は一旦既定(閲覧中のリスト)に
   // 戻す。空文字は「未選択=既定を使う」を表す
@@ -345,9 +388,26 @@ export default function TodoSection({
         const dueB = effectiveDueDate(b, subtasksByParent.get(b.id) ?? []) ?? "9999-99-99";
         return dueA.localeCompare(dueB);
       }
+      if (currentListId && !searchActive && sortMode !== "manual") {
+        const cmp = compareTodoTasksBySortMode(a, b, sortMode);
+        if (cmp !== 0) return cmp;
+      }
       return a.order - b.order;
     });
-  }, [view, currentListId, topLevelTasks, overdueTasks, today, searchActive, searchQuery, filterTag, filterCategory, filterCustomer, subtasksByParent]);
+  }, [
+    view,
+    currentListId,
+    topLevelTasks,
+    overdueTasks,
+    today,
+    searchActive,
+    searchQuery,
+    filterTag,
+    filterCategory,
+    filterCustomer,
+    subtasksByParent,
+    sortMode,
+  ]);
 
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
   const completedTasks = visibleTasks.filter((t) => t.completed);
@@ -455,7 +515,8 @@ export default function TodoSection({
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
 
-  const reorderEnabled = displayMode === "list" && !searchActive && view !== "planned" && view !== "overdue";
+  const reorderEnabled =
+    displayMode === "list" && !searchActive && view !== "planned" && view !== "overdue" && sortMode === "manual";
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -997,6 +1058,22 @@ export default function TodoSection({
                   className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
                 />
                 完了済みも表示
+              </label>
+            )}
+            {displayMode === "list" && currentListId && !searchActive && (
+              <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
+                並び替え:
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortModeStr(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                >
+                  {(Object.keys(TODO_SORT_MODE_LABELS) as TodoSortMode[]).map((m) => (
+                    <option key={m} value={m}>
+                      {TODO_SORT_MODE_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
               </label>
             )}
             {displayMode === "list" && view !== "overdue" && (
