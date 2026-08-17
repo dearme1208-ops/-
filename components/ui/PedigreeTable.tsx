@@ -56,12 +56,14 @@ interface FlatRow {
 }
 
 // タスク(中)→サブタスク(小)の行を組み立てる。グループ列は呼び出し元が埋める
-function buildTaskRows(taskNodes: TreeNode[], expandedTasks: Set<string>): FlatRow[] {
+function buildTaskRows(taskNodes: TreeNode[], collapsedTasks: Set<string>): FlatRow[] {
   const rows: FlatRow[] = [];
   for (const task of taskNodes) {
     const subtasks = task.children ?? [];
     const subtaskCount = subtasks.length;
-    const expanded = expandedTasks.has(task.id);
+    // 案件の段階配下の実績とは違いサブタスクは大量になりがちではないため、既定で開いた状態にする
+    // (collapsedTasksは「明示的に折りたたんだタスク」だけを持つ集合。空集合なら全て展開状態)
+    const expanded = !collapsedTasks.has(task.id);
     if (subtaskCount === 0) {
       rows.push({
         key: `${task.id}-empty`,
@@ -120,14 +122,14 @@ function buildTaskRows(taskNodes: TreeNode[], expandedTasks: Set<string>): FlatR
 
 // グループ階層(リスト→分類→対応状況など、任意の深さ)を再帰的にたどり、同じ親を持つ行の
 // グループセルをrowSpanで縦結合する。最下層(depth === groupDepth)に達したらタスク行を組み立てる
-function buildRows(groupNodes: TreeNode[], depth: number, groupDepth: number, expandedTasks: Set<string>): FlatRow[] {
+function buildRows(groupNodes: TreeNode[], depth: number, groupDepth: number, collapsedTasks: Set<string>): FlatRow[] {
   if (depth === groupDepth) {
-    return buildTaskRows(groupNodes, expandedTasks);
+    return buildTaskRows(groupNodes, collapsedTasks);
   }
   const rows: FlatRow[] = [];
   for (const node of groupNodes) {
     const start = rows.length;
-    const childRows = buildRows(node.children ?? [], depth + 1, groupDepth, expandedTasks);
+    const childRows = buildRows(node.children ?? [], depth + 1, groupDepth, collapsedTasks);
     for (const r of childRows) {
       r.groups[depth] = { key: node.id, label: node.label, rowSpan: 0, badges: node.badges };
     }
@@ -143,10 +145,11 @@ function buildRows(groupNodes: TreeNode[], depth: number, groupDepth: number, ex
 // 縦に結合して1回だけ表示し、名前は縦書き、値(アクション/期日)は横書きで見せる。
 // groupLabelsの数だけリスト→分類→対応状況…といった任意の深さのグループ階層を表現できる
 export default function PedigreeTable({ nodes, groupLabels }: { nodes: TreeNode[]; groupLabels: string[] }) {
-  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  // 初期状態(空集合)では誰も折りたたまれていない=全タスクのサブタスクが開いた状態で表示される
+  const [collapsedTasks, setCollapsedTasks] = useState<Set<string>>(new Set());
   const rows = useMemo(
-    () => buildRows(nodes, 0, groupLabels.length, expandedTasks),
-    [nodes, groupLabels.length, expandedTasks]
+    () => buildRows(nodes, 0, groupLabels.length, collapsedTasks),
+    [nodes, groupLabels.length, collapsedTasks]
   );
 
   if (rows.length === 0) {
@@ -154,7 +157,7 @@ export default function PedigreeTable({ nodes, groupLabels }: { nodes: TreeNode[
   }
 
   const toggleTask = (id: string) => {
-    setExpandedTasks((prev) => {
+    setCollapsedTasks((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -209,12 +212,12 @@ export default function PedigreeTable({ nodes, groupLabels }: { nodes: TreeNode[
                           type="button"
                           onClick={() => toggleTask(row.taskId)}
                           className="shrink-0 text-cream/50 hover:text-cream"
-                          aria-label={expandedTasks.has(row.taskId) ? "折りたたむ" : "展開"}
-                          aria-expanded={expandedTasks.has(row.taskId)}
+                          aria-label={collapsedTasks.has(row.taskId) ? "展開" : "折りたたむ"}
+                          aria-expanded={!collapsedTasks.has(row.taskId)}
                         >
                           <span
                             className={`inline-block transition-transform ${
-                              expandedTasks.has(row.taskId) ? "" : "-rotate-90"
+                              collapsedTasks.has(row.taskId) ? "-rotate-90" : ""
                             }`}
                           >
                             ▾
