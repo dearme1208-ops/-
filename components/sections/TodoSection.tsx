@@ -336,6 +336,10 @@ export default function TodoSection({
     return [...filtered].sort((a, b) => {
       const doneDiff = Number(a.completed) - Number(b.completed);
       if (doneDiff !== 0) return doneDiff;
+      // 完了済み同士は、完了した順(直近に完了したものが一番上)に並べる
+      if (a.completed && b.completed) {
+        return (b.completedAt ?? 0) - (a.completedAt ?? 0);
+      }
       if ((view === "planned" || view === "overdue") && !searchActive) {
         const dueA = effectiveDueDate(a, subtasksByParent.get(a.id) ?? []) ?? "9999-99-99";
         const dueB = effectiveDueDate(b, subtasksByParent.get(b.id) ?? []) ?? "9999-99-99";
