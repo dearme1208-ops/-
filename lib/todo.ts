@@ -21,9 +21,12 @@ export function serializePresetList(list: string[]): string {
   return JSON.stringify(list);
 }
 
-// タスク全体の期日を、自分自身の期日とサブタスクの期日の中で最も早いものとして算出する
+// タスク全体の期日を、自分自身の期日と未完了サブタスクの期日の中で最も早いものとして算出する。
+// 完了済みサブタスクの期日はもう対応が必要ないため、期限切れ・期日が近い等の判定から除外する
 export function effectiveDueDate(task: TodoTask, subtasks: TodoTask[]): string | undefined {
-  const dates = [task.dueDate, ...subtasks.map((s) => s.dueDate)].filter((d): d is string => !!d);
+  const dates = [task.dueDate, ...subtasks.filter((s) => !s.completed).map((s) => s.dueDate)].filter(
+    (d): d is string => !!d
+  );
   if (dates.length === 0) return undefined;
   return dates.reduce((min, d) => (d < min ? d : min));
 }
