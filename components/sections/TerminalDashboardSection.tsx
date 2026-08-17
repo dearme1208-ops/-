@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
-import { formatHms, formatMsClock, todayStr } from "@/lib/time";
+import { formatClock, formatHms, formatMsClock, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage } from "@/lib/growth";
 import { useVisualMode, getRiskTier, riskBadgeClasses, riskBadgeLabel } from "@/lib/theme";
@@ -25,16 +26,30 @@ const WEATHER_LABEL: Record<WeatherCategory, string> = {
   snow: "SNOW",
 };
 
-function CategoryBar({ category, ms, maxMs }: { category: string; ms: number; maxMs: number }) {
+function CategoryBar({
+  category,
+  ms,
+  maxMs,
+  onTap,
+}: {
+  category: string;
+  ms: number;
+  maxMs: number;
+  onTap: () => void;
+}) {
   const pct = maxMs > 0 ? Math.max(2, Math.round((ms / maxMs) * 100)) : 0;
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <button
+      type="button"
+      onClick={onTap}
+      className="flex w-full items-center gap-2 text-left text-xs hover:opacity-80"
+    >
       <span className="w-20 shrink-0 truncate text-cream/60">{category || "未分類"}</span>
       <div className="h-2 flex-1 overflow-hidden rounded-sm bg-cream/10">
         <div className="h-full bg-[rgb(var(--term-up-rgb))]" style={{ width: `${pct}%` }} />
       </div>
       <span className="w-14 shrink-0 tabular-nums text-right text-cream/50">{formatHms(ms / 1000)}</span>
-    </div>
+    </button>
   );
 }
 
@@ -52,6 +67,11 @@ export default function TerminalDashboardSection() {
   );
   const [now, setNow] = useState(Date.now());
   const [weather, setWeather] = useState<WeatherCategory | null>(null);
+  const [newTaskCategory, setNewTaskCategory] = useState("");
+  const [newTaskName, setNewTaskName] = useState("");
+  // カテゴリ内訳・時間帯バー・ティッカーはタップで詳細を1箇所にまとめて出す(ホバーの
+  // ネイティブtitleはタッチ端末で機能しないため、Ganttタブ等と同じタップ詳細パネル方式にする)
+  const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -169,6 +189,73 @@ export default function TerminalDashboardSection() {
     await db.dailyTasks.add(task);
   }
 
+  // クイックスタート(お気に入り)に無い作業も、大項目・詳細作業名を直接打ち込んで
+  // その場で計測を開始できるようにする(お気に入りからしか選べない、という制約を無くす)
+  async function startNewTask() {
+    const category = newTaskCategory.trim();
+    const name = newTaskName.trim();
+    if (!category || !name) return;
+    if (runningDaily) await pauseDaily(runningDaily);
+    const master = await findOrCreateMasterTask(category, name, 0);
+    const task: DailyTask = {
+      id: uid(),
+      date: today,
+      order: (dailyTasks ?? []).length,
+      masterTaskId: master.id,
+      category,
+      name,
+      estimatedSeconds: master.estimatedSeconds,
+      hasPlan: master.estimatedSeconds > 0,
+      status: "running",
+      segments: [{ start: Date.now() }],
+      accumulatedMs: 0,
+      startedAt: Date.now(),
+      isSpontaneous: true,
+    };
+    await db.dailyTasks.add(task);
+    setNewTaskCategory("");
+    setNewTaskName("");
+  }
+
+  function categoryDetail(category: string): string {
+    const items = (dailyTasks ?? []).filter((d) => d.category === category);
+    const total = items.reduce((sum, d) => sum + segmentsAccumulatedMs(d, now), 0);
+    const lines = items.map(
+      (d) => `${d.status === "running" ? "● LIVE " : ""}${d.name} ${formatMsClock(segmentsAccumulatedMs(d, now))}`
+    );
+    return [`[${category || "未分類"}] 合計 ${formatMsClock(total)}`, ...lines].join("\n");
+  }
+
+  function hourDetail(hour: number): string {
+    const dayStart = new Date(today + "T00:00:00").getTime();
+    const hStart = dayStart + hour * 3600000;
+    const hEnd = hStart + 3600000;
+    const lines: string[] = [];
+    for (const d of dailyTasks ?? []) {
+      for (const seg of d.segments) {
+        const segEnd = seg.end ?? now;
+        const clipStart = Math.max(seg.start, hStart);
+        const clipEnd = Math.min(segEnd, hEnd);
+        if (clipEnd > clipStart) {
+          lines.push(
+            `[${d.category}] ${d.name} ${formatClock(clipStart)}〜${seg.end === undefined && clipEnd === segEnd ? "計測中" : formatClock(clipEnd)}`
+          );
+        }
+      }
+    }
+    const header = `${String(hour).padStart(2, "0")}:00-${String((hour + 1) % 24).padStart(2, "0")}:00`;
+    return lines.length > 0 ? [header, ...lines].join("\n") : `${header}\n記録なし`;
+  }
+
+  function tickerDetail(d: DailyTask): string {
+    const seconds = d.accumulatedMs / 1000;
+    const over = d.estimatedSeconds > 0 && seconds > d.estimatedSeconds;
+    const estimateLine = d.estimatedSeconds > 0 ? `予測 ${formatHms(d.estimatedSeconds)}${over ? "(超過)" : ""}` : "予測なし";
+    const startLabel = d.startedAt ? formatClock(d.startedAt) : "-";
+    const endLabel = d.endedAt ? formatClock(d.endedAt) : "-";
+    return [`[${d.category}] ${d.name}`, `${startLabel} 〜 ${endLabel}`, `実績 ${formatHms(seconds)} / ${estimateLine}`].join("\n");
+  }
+
   const nowDate = new Date(now);
   const clockStr = [nowDate.getHours(), nowDate.getMinutes(), nowDate.getSeconds()]
     .map((v) => String(v).padStart(2, "0"))
@@ -261,17 +348,27 @@ export default function TerminalDashboardSection() {
           {categoryTotals.length === 0 ? (
             <p className="text-xs text-cream/30">本日の記録はまだありません。</p>
           ) : (
-            categoryTotals.map(([category, ms]) => <CategoryBar key={category} category={category} ms={ms} maxMs={maxCategoryMs} />)
+            categoryTotals.map(([category, ms]) => (
+              <CategoryBar
+                key={category}
+                category={category}
+                ms={ms}
+                maxMs={maxCategoryMs}
+                onTap={() => setSelectedDetail(categoryDetail(category))}
+              />
+            ))
           )}
         </div>
         <div className="panel space-y-1.5 p-4">
           <div className="mb-1 text-[10px] uppercase tracking-widest text-cream/40">HOURLY ACTIVITY (00-23)</div>
           <div className="flex h-16 items-end gap-[2px]">
             {hourlyBuckets.map((ms, h) => (
-              <div
+              <button
                 key={h}
+                type="button"
                 title={`${h}時台: ${formatHms(ms / 1000)}`}
-                className="flex-1 rounded-t-sm bg-[rgb(var(--term-up-rgb))]"
+                onClick={() => setSelectedDetail(hourDetail(h))}
+                className="flex-1 rounded-t-sm bg-[rgb(var(--term-up-rgb))] hover:opacity-70"
                 style={{ height: `${Math.max(3, Math.round((ms / maxBucketMs) * 100))}%`, opacity: ms > 0 ? 1 : 0.15 }}
               />
             ))}
@@ -283,6 +380,48 @@ export default function TerminalDashboardSection() {
             <span>18</span>
             <span>23</span>
           </div>
+        </div>
+      </div>
+
+      {/* --- カテゴリ内訳・時間帯バー・下部ティッカーをタップした際の詳細パネル(共通1箇所) --- */}
+      {selectedDetail && (
+        <div className="panel space-y-1 p-3 ring-1 ring-[rgb(var(--term-up-rgb))]/40">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-widest text-cream/40">DETAIL</span>
+            <button type="button" className="text-xs text-cream/40 hover:text-cream" onClick={() => setSelectedDetail(null)}>
+              close ✕
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap font-sans text-xs text-cream/80">{selectedDetail}</pre>
+        </div>
+      )}
+
+      {/* --- 新規エントリー: お気に入りに無い作業も大項目・詳細作業名を直接打ち込んで即計測開始できる --- */}
+      <div className="panel space-y-2 p-4">
+        <div className="text-[10px] uppercase tracking-widest text-cream/40">NEW ENTRY</div>
+        <div className="flex flex-wrap gap-1.5">
+          <input
+            value={newTaskCategory}
+            onChange={(e) => setNewTaskCategory(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && startNewTask()}
+            placeholder="CATEGORY"
+            className="min-w-[6rem] flex-1 rounded-sm border border-cream/15 bg-ink/40 px-2 py-1.5 text-xs text-cream placeholder:text-cream/30"
+          />
+          <input
+            value={newTaskName}
+            onChange={(e) => setNewTaskName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && startNewTask()}
+            placeholder="TASK NAME"
+            className="min-w-[8rem] flex-[2] rounded-sm border border-cream/15 bg-ink/40 px-2 py-1.5 text-xs text-cream placeholder:text-cream/30"
+          />
+          <button
+            type="button"
+            onClick={startNewTask}
+            disabled={!newTaskCategory.trim() || !newTaskName.trim()}
+            className="btn-pill text-xs disabled:opacity-40"
+          >
+            ▶ START
+          </button>
         </div>
       </div>
 
@@ -321,12 +460,14 @@ export default function TerminalDashboardSection() {
             {[...doneToday, ...doneToday].map((d, i) => {
               const over = d.estimatedSeconds > 0 && d.accumulatedMs / 1000 > d.estimatedSeconds;
               return (
-                <span
+                <button
                   key={`${d.id}-${i}`}
-                  className={`mx-4 text-xs tabular-nums ${over ? "text-alert" : "text-[rgb(var(--term-up-rgb))]"}`}
+                  type="button"
+                  onClick={() => setSelectedDetail(tickerDetail(d))}
+                  className={`mx-4 shrink-0 text-xs tabular-nums hover:underline ${over ? "text-alert" : "text-[rgb(var(--term-up-rgb))]"}`}
                 >
                   {over ? "▼" : "▲"} [{d.category}] {d.name} {formatMsClock(d.accumulatedMs)}
-                </span>
+                </button>
               );
             })}
           </div>

@@ -2163,11 +2163,17 @@ html[data-high-contrast="true"] :focus-visible {
   .term-blink {
     animation: risk-badge-terminal-blink 1s steps(1, end) infinite;
   }
-  /* ダッシュボード下部の完了タスクのティッカーテープ。右から左へ等速で流れ続ける */
+  /* ダッシュボード下部の完了タスクのティッカーテープ。右から左へ等速で流れ続ける。
+     各項目はタップ/クリックで詳細を出せるが、流れたままだと狙って押しにくいため、
+     ホバー中(PC)・フォーカス中(キーボード操作・タップ直後)は一時停止させる */
   .term-ticker-track {
     display: inline-flex;
     white-space: nowrap;
     animation: term-ticker-scroll 22s linear infinite;
+  }
+  .term-ticker:hover .term-ticker-track,
+  .term-ticker:focus-within .term-ticker-track {
+    animation-play-state: paused;
   }
   @keyframes term-ticker-scroll {
     from {
