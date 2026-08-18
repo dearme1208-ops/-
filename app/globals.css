@@ -368,6 +368,25 @@ html[data-high-contrast="true"] :focus-visible {
     --panel-rgb: 8 14 10;
   }
 
+  /* 冒険者モード: RPGの羊皮紙の書物を思わせる、金の装飾の効いた明るいライトテーマに丸ごと反転する */
+  html[data-visual-mode="adventurer"] {
+    color-scheme: light;
+    --accent-rgb: 176 130 40;
+    --ink-rgb: 248 238 210;
+    --cream-rgb: 58 42 20;
+    --panel-rgb: 252 246 226;
+  }
+
+  /* 探偵モード: 雨の降る夜の街を思わせる、藍がかった暗闇にスチールブルーの灯りだけが
+     効いたダーク固定パレット。他テーマの赤系アクセントとは意図的に色相をずらしている */
+  html[data-visual-mode="noir"] {
+    color-scheme: dark;
+    --accent-rgb: 107 142 168;
+    --ink-rgb: 15 16 18;
+    --cream-rgb: 205 208 208;
+    --panel-rgb: 21 23 26;
+  }
+
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
      vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
      日本語には効かず数字・記号にしか効かない。そこで時刻・パーセンテージ等の
@@ -1811,6 +1830,82 @@ html[data-high-contrast="true"] :focus-visible {
     background-size: 200% 100%;
     animation: hazard-bar-scroll 0.6s steps(6, end) infinite;
   }
+
+  /* --- 冒険者モード: 実行中は宝箱が輝くような温かい金色の光暈、超過は戦闘中を思わせる
+     やや速い鼓動で伝える --- */
+  .card-running-adv {
+    animation: card-running-adv-glow 2.2s ease-in-out infinite;
+  }
+  @keyframes card-running-adv-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.35), 0 0 0 0 rgb(var(--accent-rgb) / 0);
+    }
+    50% {
+      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.6), 0 0 16px 3px rgb(var(--accent-rgb) / 0.35);
+    }
+  }
+  .card-overrun-adv {
+    animation: card-overrun-adv-pulse 0.9s ease-in-out infinite;
+  }
+  @keyframes card-overrun-adv-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.5), 0 4px 0 0 rgb(var(--accent-rgb) / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.85), 0 0 20px 4px rgb(var(--accent-rgb) / 0.5);
+    }
+  }
+  .hazard-bar-adv {
+    height: 6px;
+    border-radius: 999px;
+    background-image: repeating-linear-gradient(
+      65deg,
+      rgb(var(--accent-rgb)) 0 8px,
+      rgb(var(--accent-rgb) / 0.4) 8px 16px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 1.4s linear infinite;
+  }
+
+  /* --- 探偵モード: 実行中は張り込み中の懐中電灯のような静かな明滅、超過は緊迫した
+     尋問シーンのような速いフラッシュで伝える --- */
+  .card-running-noir {
+    animation: card-running-noir-glow 3.4s ease-in-out infinite;
+  }
+  @keyframes card-running-noir-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.3);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.7), 0 0 14px 2px rgb(var(--accent-rgb) / 0.3);
+    }
+  }
+  .card-overrun-noir {
+    animation: card-overrun-noir-flash 0.8s steps(2, end) infinite;
+  }
+  @keyframes card-overrun-noir-flash {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.95), 0 0 18px 3px rgb(var(--accent-rgb) / 0.4);
+    }
+  }
+  .hazard-bar-noir {
+    height: 3px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb)) 0 10px,
+      rgba(0, 0, 0, 0.85) 10px 20px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 2s linear infinite;
+  }
+
   /* --- Ganttチャートで想定を超過した実績バー。警戒度をバー自体の見た目で示す --- */
   .gantt-bar-overrun {
     background-image: repeating-linear-gradient(
@@ -1916,6 +2011,25 @@ html[data-high-contrast="true"] :focus-visible {
     50% {
       box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.25);
     }
+  }
+  .gantt-bar-overrun-adv {
+    border-radius: 4px;
+    background-image: repeating-linear-gradient(
+      65deg,
+      rgb(var(--accent-rgb)) 0 8px,
+      rgb(var(--accent-rgb) / 0.4) 8px 16px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 1.4s linear infinite;
+  }
+  .gantt-bar-overrun-noir {
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb)) 0 10px,
+      rgba(0, 0, 0, 0.85) 10px 20px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 2s linear infinite;
   }
   /* ガントチャート週表示の超過ブロック用。上のgantt-bar-overrun-*は1日表示の横長バー向けに
      背景そのものを走査線グラデーションへ差し替える演出だが、週表示の狭いブロックでは
@@ -2436,6 +2550,10 @@ html[data-high-contrast="true"] :focus-visible {
   .card-overrun-zen,
   .card-running-terminal,
   .card-overrun-terminal,
+  .card-running-adv,
+  .card-overrun-adv,
+  .card-running-noir,
+  .card-overrun-noir,
   .hazard-bar,
   .hazard-bar-v11,
   .hazard-bar-p5,
@@ -2443,6 +2561,8 @@ html[data-high-contrast="true"] :focus-visible {
   .hazard-bar-pp,
   .hazard-bar-claude,
   .hazard-bar-terminal,
+  .hazard-bar-adv,
+  .hazard-bar-noir,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,
@@ -2450,6 +2570,8 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-pp,
   .gantt-bar-overrun-claude,
   .gantt-bar-overrun-terminal,
+  .gantt-bar-overrun-adv,
+  .gantt-bar-overrun-noir,
   .zen-enso,
   .overrun-flicker,
   .overrun-flicker-intense,

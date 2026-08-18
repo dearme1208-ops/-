@@ -91,6 +91,26 @@ export const TERMINAL_STAGES: GrowthStage[] = [
   { icon: "🚀", label: "MAX THROUGHPUT" },
 ];
 
+// 冒険者風: 駆け出しから伝説の英雄へと至る、RPGの定番の成長段階になぞらえた段階
+const ADVENTURER_STAGES: GrowthStage[] = [
+  { icon: "🗡️", label: "かけだし冒険者" },
+  { icon: "🛡️", label: "見習い" },
+  { icon: "⚔️", label: "一人前" },
+  { icon: "🏆", label: "熟練" },
+  { icon: "👑", label: "英雄" },
+  { icon: "✨", label: "伝説" },
+];
+
+// 探偵風: 手がかりのない状態から真相解明へと迫っていく捜査の進展になぞらえた段階
+const NOIR_STAGES: GrowthStage[] = [
+  { icon: "🔦", label: "新米刑事" },
+  { icon: "📓", label: "聞き込み中" },
+  { icon: "🔎", label: "手がかり発見" },
+  { icon: "🕵️", label: "核心に迫る" },
+  { icon: "💡", label: "真相解明" },
+  { icon: "🎩", label: "伝説の探偵" },
+];
+
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
   powerpro: POWERPRO_STAGES,
@@ -100,6 +120,8 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   claude: CLAUDE_STAGES,
   zen: ZEN_STAGES,
   terminal: TERMINAL_STAGES,
+  adventurer: ADVENTURER_STAGES,
+  noir: NOIR_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り
