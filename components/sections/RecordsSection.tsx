@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db";
+import { db, uid } from "@/lib/db";
 import {
   findOrCreateMasterTask,
   recomputeEstimateFromRecords,
@@ -14,8 +14,11 @@ import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
 import { JOURNAL_KEY_PREFIX, journalEntriesFromSettings, journalEntriesToCsv } from "@/lib/journal";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { formatClock, formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
+import { mergeRecordSegments } from "@/lib/tasks";
+import { formatClock, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
+import Modal from "@/components/ui/Modal";
+import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 
 // 時刻入力(HH:MM)の変更を、元のタイムスタンプの日付部分は保ったまま時刻だけ差し替える。
 // 日をまたいだ実績(例: 23:42開始〜翌7:02終了)でも、開始・終了それぞれの本来の日付がずれないようにする
@@ -35,6 +38,8 @@ export default function RecordsSection() {
   const [importStatus, setImportStatus] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
+  // パソコンを閉じていた等で計測できず、後日まとめて過去の実績を手入力したい場合に使う
+  const [showAddRecord, setShowAddRecord] = useState(false);
 
   const records = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
 
@@ -182,6 +187,43 @@ export default function RecordsSection() {
     setImportStatus(`${fullRecords.length}件を取り込みました。`);
   }
 
+  // 計測できずに後日まとめて手入力する過去の実績を1件追加する。同日・同じ作業の実績が
+  // 既にあれば、通常の作業完了時と同じルールで合算する(区分・作業名の統一、時間の合算)
+  async function addPastRecord(date: string, category: string, name: string, startedAt: number, endedAt: number) {
+    const master = await findOrCreateMasterTask(category, name, 0);
+    const seconds = Math.round((endedAt - startedAt) / 1000);
+    const segments = [{ start: startedAt, end: endedAt }];
+
+    const existing = await db.records
+      .where("date")
+      .equals(date)
+      .filter((r) => r.masterTaskId === master.id && !r.projectId && !r.stageId)
+      .first();
+
+    if (existing) {
+      await db.records.update(existing.id, {
+        seconds: existing.seconds + seconds,
+        startedAt: Math.min(existing.startedAt, startedAt),
+        endedAt: Math.max(existing.endedAt, endedAt),
+        segments: mergeRecordSegments(existing, segments),
+      });
+    } else {
+      await db.records.add({
+        id: uid(),
+        date,
+        category,
+        name,
+        masterTaskId: master.id,
+        seconds,
+        startedAt,
+        endedAt,
+        excludedFromStats: false,
+        segments,
+      });
+    }
+    await recomputeEstimateFromRecords(master.id);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -204,6 +246,9 @@ export default function RecordsSection() {
           </label>
         </div>
         <div className="flex gap-2">
+          <button className="btn-pill-outline text-sm" onClick={() => setShowAddRecord(true)}>
+            + 実績を追加
+          </button>
           <button className="btn-pill-outline text-sm" onClick={exportCsv}>
             CSVエクスポート
           </button>
@@ -357,6 +402,134 @@ export default function RecordsSection() {
         ))}
         {filtered.length === 0 && <p className="px-4 py-6 text-sm text-cream/50">実績データがありません。</p>}
       </div>
+
+      {showAddRecord && (
+        <AddRecordDialog
+          onSave={async (date, category, name, startedAt, endedAt) => {
+            await addPastRecord(date, category, name, startedAt, endedAt);
+            setShowAddRecord(false);
+          }}
+          onClose={() => setShowAddRecord(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// パソコンを閉じていた・呼び止められた等でその場で計測できず、後日まとめて過去の実績を
+// 手入力するためのダイアログ。日付+開始/終了時刻(HH:MM)で入力し、終了が開始以前の場合は
+// 日をまたいで開始したものとみなす(EditTaskDialogの時刻編集と同じ考え方)
+function AddRecordDialog({
+  onSave,
+  onClose,
+}: {
+  onSave: (date: string, category: string, name: string, startedAt: number, endedAt: number) => void;
+  onClose: () => void;
+}) {
+  const [date, setDate] = useState(() => shiftDateStr(todayStr(), -1));
+  const [category, setCategory] = useState("");
+  const [name, setName] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [showMasterPicker, setShowMasterPicker] = useState(false);
+
+  function toEpoch(hm: string): number | null {
+    if (!hm) return null;
+    const [y, mo, d] = date.split("-").map(Number);
+    const [hh, mm] = hm.split(":").map(Number);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return new Date(y, mo - 1, d, hh, mm, 0, 0).getTime();
+  }
+
+  const rawStart = toEpoch(startTime);
+  const rawEnd = toEpoch(endTime);
+  // 終了が開始と同じか前の時刻なら、前日から日をまたいで始まっていたとみなす
+  // (例: 23:40開始〜翌0:10終了、というケースを「終了が早い」だけで弾いてしまわないため)
+  const crossesMidnight = rawStart !== null && rawEnd !== null && rawStart >= rawEnd;
+  const resolvedStart = crossesMidnight && rawStart !== null ? rawStart - 86400000 : rawStart;
+  const durationSeconds = resolvedStart !== null && rawEnd !== null ? Math.round((rawEnd - resolvedStart) / 1000) : 0;
+  const canSave = !!category.trim() && !!name.trim() && resolvedStart !== null && rawEnd !== null && durationSeconds > 0;
+
+  function save() {
+    if (!canSave || resolvedStart === null || rawEnd === null) return;
+    onSave(date, category.trim(), name.trim(), resolvedStart, rawEnd);
+  }
+
+  return (
+    <Modal title="実績を追加" onClose={onClose}>
+      <div className="space-y-2">
+        <p className="text-xs text-cream/50">
+          パソコンを閉じていた・呼び止められた等でその場で計測できず、後日まとめて入力する過去の実績を追加します。
+        </p>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <input
+          placeholder="業務区分（大項目）"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <input
+          placeholder="詳細作業名"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <button type="button" className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
+          作業マスタから選択
+        </button>
+        <div>
+          <label className="mb-1 block text-xs text-cream/60">開始〜終了時刻</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+            <span className="text-cream/50">〜</span>
+            <input
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+          </div>
+          {startTime && endTime && (
+            <p className="mt-1 text-xs tabular-nums text-cream/60">
+              {durationSeconds > 0 ? `実績時間 ${formatHms(durationSeconds)}` : "開始・終了の時刻を確認してください"}
+            </p>
+          )}
+          {crossesMidnight && durationSeconds > 0 && (
+            <p className="mt-1 text-xs text-alert">
+              終了より遅い開始時刻のため、前日の{startTime}から日をまたいで始まったものとして保存します。
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <button className="btn-pill text-sm disabled:opacity-40" disabled={!canSave} onClick={save}>
+          保存
+        </button>
+      </div>
+      {showMasterPicker && (
+        <CategoryWorkNameDialog
+          title="作業マスタから選択"
+          confirmLabel="この内容を使う"
+          defaultCategory={category}
+          defaultWorkName={name}
+          onConfirm={(newCategory, newName) => {
+            setCategory(newCategory);
+            setName(newName);
+            setShowMasterPicker(false);
+          }}
+          onClose={() => setShowMasterPicker(false)}
+        />
+      )}
+    </Modal>
   );
 }
