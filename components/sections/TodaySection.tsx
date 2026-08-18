@@ -56,14 +56,16 @@ import {
   notify,
   requestNotificationPermission,
 } from "@/lib/notifications";
-import type { DailyTask, GeoPlace, ProjectItem, TimeSegment, Weekday } from "@/lib/types";
+import type { DailyTask, GeoPlace, MasterTask, ProjectItem, TimeSegment, Weekday, WorkRecord } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
+import { showUndoToast } from "@/lib/toast";
 import Modal from "@/components/ui/Modal";
 import RadialTimer from "@/components/ui/RadialTimer";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
 import AddTimeDialog from "@/components/sections/AddTimeDialog";
 import EditTaskDialog from "@/components/sections/EditTaskDialog";
+import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
@@ -100,6 +102,7 @@ export default function TodaySection({
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   const [stageConfirmTask, setStageConfirmTask] = useState<DailyTask | null>(null);
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
+  const [deletingCompletedTask, setDeletingCompletedTask] = useState<DailyTask | null>(null);
   // 兼務・並行作業向けに、主案件(projectId)以外の追加の案件タグを付ける小さなモーダルの対象タスク
   const [secondaryProjectsTask, setSecondaryProjectsTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
@@ -1488,6 +1491,57 @@ export default function TodaySection({
     await db.dailyTasks.delete(task.id);
   }
 
+  // 完了済みの作業を、本日の作業リストから削除する(必要に応じて紐づく実績・作業マスタも
+  // あわせて削除する)。同じ区分/作業名の実績は日付ごとに1件へ合算されているため、
+  // この作業インスタンス分の秒数だけ差し引く(合算後0以下になれば実績ごと削除する)
+  async function deleteCompletedTask(task: DailyTask, deleteRecord: boolean, deleteMaster: boolean) {
+    const taskSnapshot = { ...task };
+    let recordSnapshot: WorkRecord | undefined;
+    let masterSnapshot: MasterTask | undefined;
+
+    const existing = task.masterTaskId
+      ? await db.records
+          .where("date")
+          .equals(task.date)
+          .filter((r) => r.masterTaskId === task.masterTaskId && r.projectId === task.projectId && r.stageId === task.stageId)
+          .first()
+      : undefined;
+
+    await db.dailyTasks.delete(task.id);
+
+    if (deleteRecord && existing) {
+      recordSnapshot = { ...existing };
+      const taskSeconds = Math.round(task.accumulatedMs / 1000);
+      const remaining = existing.seconds - taskSeconds;
+      if (remaining <= 0) {
+        await db.records.delete(existing.id);
+      } else {
+        // 合算元のうちどの区間がこの作業分だったか厳密には切り分けられないため、
+        // segmentsは破棄する(定時以降の判定はstartedAt〜endedAtの近似に戻る)
+        await db.records.update(existing.id, { seconds: remaining, segments: undefined });
+      }
+    }
+
+    if (deleteMaster && task.masterTaskId) {
+      masterSnapshot = await db.masterTasks.get(task.masterTaskId);
+      await db.masterTasks.delete(task.masterTaskId);
+    } else if (deleteRecord && existing && task.masterTaskId) {
+      await recomputeEstimateFromRecords(task.masterTaskId);
+    }
+
+    const parts = ["本日の作業"];
+    if (deleteRecord && existing) parts.push("実績");
+    if (deleteMaster && masterSnapshot) parts.push("作業マスタ");
+    showUndoToast(`「${task.name}」の${parts.join("・")}を削除しました`, async () => {
+      await db.dailyTasks.add(taskSnapshot);
+      if (recordSnapshot) await db.records.put(recordSnapshot);
+      if (masterSnapshot) await db.masterTasks.put(masterSnapshot);
+      if (deleteRecord && existing && task.masterTaskId && !deleteMaster) {
+        await recomputeEstimateFromRecords(task.masterTaskId);
+      }
+    });
+  }
+
   // 未着手(pending)の作業カードをドラッグ&ドロップで並べ替える。計測中・完了は表示上
   // 常に上/下に固定されるため、同じ未着手グループ内での並べ替えのみを対象にする
   async function reorderPendingTask(draggedId: string, targetId: string) {
@@ -2812,6 +2866,12 @@ export default function TodaySection({
                             {formatClock(task.startedAt)}〜{formatClock(task.endedAt)}
                           </div>
                         )}
+                        <button
+                          className="mt-1 text-xs text-cream/40 hover:text-alert"
+                          onClick={() => setDeletingCompletedTask(task)}
+                        >
+                          削除
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2950,6 +3010,17 @@ export default function TodaySection({
             applyTaskEdit(editingTask, category, name, actualSeconds, note, startedAt, endedAt)
           }
           onClose={() => setEditingTask(null)}
+        />
+      )}
+
+      {deletingCompletedTask && (
+        <DeleteCompletedTaskDialog
+          task={deletingCompletedTask}
+          onDelete={(deleteRecord, deleteMaster) => {
+            deleteCompletedTask(deletingCompletedTask, deleteRecord, deleteMaster);
+            setDeletingCompletedTask(null);
+          }}
+          onClose={() => setDeletingCompletedTask(null)}
         />
       )}
 
