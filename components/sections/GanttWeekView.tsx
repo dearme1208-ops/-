@@ -15,6 +15,11 @@ const MAX_HOUR_PX = 140;
 const DEFAULT_START_HOUR = 6;
 const DEFAULT_END_HOUR = 22;
 const MIN_BLOCK_PX = 13;
+// 「見やすい大きさに拡大」ボタンが目指す、一番短いブロックの最低表示高さ(px)。
+// これより低いと、MIN_BLOCK_PXの床上げ分同士が重なって隣接ブロックが折り重なって見えてしまう
+const MIN_READABLE_BLOCK_PX = 20;
+// 二度打ち等による極端に短い区間(1秒未満など)を外れ値とみなし、拡大の基準から除外する
+const MIN_CONSIDERED_DURATION_HOUR = 0.5 / 60;
 
 interface WeekBlock {
   key: string;
@@ -250,6 +255,19 @@ export default function GanttWeekView({
     return { startHour: min, endHour: max };
   }, [blocksByDate, weekDateStrs, todayDateStr, now]);
 
+  // 「見やすい大きさに拡大」: 一番短いブロックでも最低MIN_READABLE_BLOCK_PXの高さで
+  // 表示できる大きさまで自動でズームする(短い作業が近い時刻に連続していると、
+  // MIN_BLOCK_PXの床上げ分同士が重なって隣接ブロックが折り重なって見えてしまうため)
+  function fitToReadableSize() {
+    const durationsHour = [...blocksByDate.values()]
+      .flatMap((blocks) => blocks.map((b) => b.endHour - b.startHour))
+      .filter((d) => d >= MIN_CONSIDERED_DURATION_HOUR);
+    if (durationsHour.length === 0) return;
+    const minDurationHour = Math.min(...durationsHour);
+    const desired = MIN_READABLE_BLOCK_PX / minDurationHour;
+    setHourPx(Math.min(MAX_HOUR_PX, Math.max(MIN_HOUR_PX, Math.round(desired))));
+  }
+
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i);
   const totalHeight = (endHour - startHour) * hourPx;
   const nowHourToday = (now - new Date(todayDateStr + "T00:00:00").getTime()) / 3600000;
@@ -271,6 +289,13 @@ export default function GanttWeekView({
           aria-label="拡大"
         >
           ＋
+        </button>
+        <button
+          className="btn-pill-outline text-xs"
+          onClick={fitToReadableSize}
+          title="一番短いブロックでも重ならずに見分けられる大きさまで拡大します"
+        >
+          見やすい大きさに拡大
         </button>
       </div>
       <div className="flex">

@@ -24,6 +24,14 @@ const COMPACT_BAR_GAP_PX = 2;
 // 「見やすい大きさに拡大」ボタンが目指す、一番短いバーの最低表示幅(px)。
 // これより狭いと隣接するバー同士が視覚的にくっついて折り重なって見えてしまう
 const MIN_READABLE_BAR_PX = 24;
+// これより短い区間は、二度打ち等による極端に短い区間(1秒未満など)を外れ値とみなし、
+// 「見やすい大きさに拡大」の基準からは除外する。除外しないと、その1件だけのために
+// 全体が異常に拡大され、下記MAX_TIMELINE_WIDTH_PXの上限に達して逆に見づらくなる
+const MIN_CONSIDERED_DURATION_MIN = 0.5;
+// 「見やすい大きさに拡大」で作る全体の横幅の上限(px)。これが無いと、外れ値でなくても
+// 表示範囲(totalMinutes)が長い日には非常に大きな幅になり、ブラウザの描画上限に達して
+// 時刻軸やバーの表示が壊れたり、あらぬ位置にバーがずれて見えてしまうことがあった
+const MAX_TIMELINE_WIDTH_PX = 20000;
 
 type RangeMode = "auto" | "24h";
 
@@ -511,16 +519,20 @@ export default function GanttSection() {
 
   // 「全体表示」とは逆に、一番短いバーでも最低MIN_READABLE_BAR_PXの幅で表示できる
   // 大きさまで自動で拡大する(短い作業が連続していると、ズームアウトしたままでは
-  // 隣接するバー同士が視覚的にくっついて折り重なって見えてしまうため)
+  // 隣接するバー同士が視覚的にくっついて折り重なって見えてしまうため)。
+  // ただし、極端に短い1件だけに合わせて拡大しすぎると全体の横幅が異常に大きくなり、
+  // かえって時刻軸やバーの表示が壊れてしまうため、外れ値の除外と横幅の上限で抑える
   function fitToReadableSize() {
     const durationsMin = [
       ...rows.flatMap((r) => r.actualSegments.map((s) => s.endMin - s.startMin)),
       ...rows.map((r) => r.layoutMin),
-    ].filter((d) => d > 0);
+    ].filter((d) => d >= MIN_CONSIDERED_DURATION_MIN);
     if (durationsMin.length === 0) return;
     const minDurationMin = Math.min(...durationsMin);
     const desired = MIN_READABLE_BAR_PX / minDurationMin;
-    setPxPerMin(Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +desired.toFixed(3))));
+    const maxByWidth = totalMinutes > 0 ? MAX_TIMELINE_WIDTH_PX / totalMinutes : MAX_PX_PER_MIN;
+    const clamped = Math.min(MAX_PX_PER_MIN, maxByWidth, desired);
+    setPxPerMin(Math.max(MIN_PX_PER_MIN, +clamped.toFixed(3)));
   }
 
   // タッチパネルの2本指ピンチで、従来の＋/－ボタンと同じpxPerMinを拡大縮小する
