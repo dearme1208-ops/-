@@ -11,7 +11,7 @@ import { usePinchZoom, useSwipeNavigate } from "@/lib/gestures";
 
 const DEFAULT_HOUR_PX = 44;
 const MIN_HOUR_PX = 18;
-const MAX_HOUR_PX = 140;
+const MAX_HOUR_PX = 400;
 const DEFAULT_START_HOUR = 6;
 const DEFAULT_END_HOUR = 22;
 const MIN_BLOCK_PX = 13;
