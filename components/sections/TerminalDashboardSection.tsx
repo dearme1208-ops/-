@@ -329,6 +329,24 @@ export default function TerminalDashboardSection() {
     return [`WEATHER ${WEATHER_LABEL[weather]}`, "現在地(または既定地点)の直近取得結果です。30分ごとに自動更新します。"].join("\n");
   }
 
+  function runningDetail(daily: DailyTask): string {
+    const elapsedSeconds = segmentsAccumulatedMs(daily, now) / 1000;
+    const startLabel = daily.startedAt ? formatClock(daily.startedAt) : "-";
+    const lines = [`[${daily.category}] ${daily.name}`, `開始 ${startLabel}`, `実績 ${formatHms(elapsedSeconds)}`];
+    if (daily.estimatedSeconds > 0) {
+      const remaining = daily.estimatedSeconds - elapsedSeconds;
+      lines.push(
+        `予測 ${formatHms(daily.estimatedSeconds)}`,
+        remaining >= 0 ? `残り ${formatHms(remaining)}` : `超過 ${formatHms(-remaining)}`
+      );
+    } else {
+      lines.push("予測なし");
+    }
+    const pauseCount = daily.segments.filter((s) => s.end !== undefined).length;
+    if (pauseCount > 0) lines.push(`一時停止回数 ${pauseCount}回`);
+    return lines.join("\n");
+  }
+
   const nowDate = new Date(now);
   const clockStr = [nowDate.getHours(), nowDate.getMinutes(), nowDate.getSeconds()]
     .map((v) => String(v).padStart(2, "0"))
@@ -366,14 +384,18 @@ export default function TerminalDashboardSection() {
             <span className="term-blink inline-flex h-2 w-2 rounded-full bg-alert" aria-hidden="true" />
             ● LIVE
           </div>
-          <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-2 text-left hover:opacity-80"
+            onClick={() => setSelectedDetail(runningDetail(runningDaily))}
+          >
             <p className="text-base font-bold text-cream">
               [{runningDaily.category}] {runningDaily.name}
             </p>
             <span className="tabular-nums text-xl font-bold text-alert">
               {formatMsClock(segmentsAccumulatedMs(runningDaily, now))}
             </span>
-          </div>
+          </button>
           <div className="flex gap-2 pt-1">
             <button className="btn-pill-outline text-xs" onClick={() => pauseDaily(runningDaily)}>
               一時停止
