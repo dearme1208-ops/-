@@ -116,6 +116,11 @@ export default function EditTaskDialog({
         {isDone && (
           <div>
             <label className="mb-1 block text-xs text-cream/60">開始〜終了時刻</label>
+            {previousTaskEndedAt != null && (
+              <p className="mb-1 text-[11px] tabular-nums text-cream/50">
+                参考: 前の作業の終了時刻 {formatClock(previousTaskEndedAt)}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <input
                 type="time"
@@ -156,6 +161,20 @@ export default function EditTaskDialog({
             {crossesMidnight && !invalidRange && (
               <p className="mt-1 text-xs text-alert">
                 終了より遅い開始時刻のため、前日の{startTime}から日をまたいで始まったものとして保存します。
+              </p>
+            )}
+            {/* 前の作業の終了時刻を基準に、今選んでいる開始時刻がどちらにどれだけずれているかをその場で見せる。
+                ネイティブの時刻ピッカー(画面全体を覆うダイヤル等)を開いている間はこの案内が隠れてしまうが、
+                ピッカーを閉じて戻ってくれば即座に確認できる */}
+            {previousTaskEndedAt != null && !invalidRange && (
+              <p className={`mt-1 text-xs tabular-nums ${resolvedStart < previousTaskEndedAt ? "text-alert" : "text-cream/50"}`}>
+                {resolvedStart < previousTaskEndedAt
+                  ? `⚠ 前の作業の終了(${formatClock(previousTaskEndedAt)})より${formatHms(
+                      Math.round((previousTaskEndedAt - resolvedStart) / 1000)
+                    )}早い開始です`
+                  : `前の作業の終了(${formatClock(previousTaskEndedAt)})から${formatHms(
+                      Math.round((resolvedStart - previousTaskEndedAt) / 1000)
+                    )}後の開始です`}
               </p>
             )}
             <p className="mt-1 text-[10px] text-cream/40">
