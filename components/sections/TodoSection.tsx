@@ -153,6 +153,7 @@ export default function TodoSection({
   // 先頭のリストに入ってしまうため、明示的に選び直せるようにしておく
   const [newTaskListId, setNewTaskListId] = useState("");
   const [newTaskAction, setNewTaskAction] = useState("");
+  const [newTaskDueDate, setNewTaskDueDate] = useState("");
   const [newTaskTagMode, setNewTaskTagMode] = useState<string>(NO_TAG_VALUE);
   const [newTaskCustomTag, setNewTaskCustomTag] = useState("");
   const [newTaskCategoryMode, setNewTaskCategoryMode] = useState<string>(NO_CATEGORY_VALUE);
@@ -593,32 +594,50 @@ export default function TodoSection({
     if (!newTaskTitle.trim()) return;
     const targetListId = newTaskListId || currentListId || lists?.[0]?.id;
     if (!targetListId) return;
-    const count = (allTasks ?? []).filter((t) => t.listId === targetListId && !t.parentTaskId).length;
+    const id = uid();
+    const dueDate = newTaskDueDate || undefined;
+    // 期日を入れた場合はリスト内で日付順の位置に(既存タスクの編集時と同じ並べ替えロジック)、
+    // 期日なしの場合は埋もれないよう一番上に挿入する(どちらも既存タスクのorderを1つずつ後ろにずらす)
+    const order = dueDate
+      ? await computeDateOrderedPosition(targetListId, id, dueDate)
+      : await shiftSiblingsForTopInsert(targetListId);
     const tag = resolveTag(newTaskTagMode, newTaskCustomTag);
     const task: TodoTask = {
-      id: uid(),
+      id,
       listId: targetListId,
       title: newTaskTitle.trim(),
       action: newTaskAction.trim() || undefined,
       tag,
       category: resolveCategory(newTaskCategoryMode, newTaskCustomCategory),
       customer: resolveCustomer(newTaskCustomerMode, newTaskCustomCustomer),
+      dueDate,
       // 設定で指定したタグが選択されていれば自動的に重要にする（それ以外は閲覧中のビューに従う）
       important: view === "important" || (!!autoImportantTag && tag === autoImportantTag),
       completed: false,
-      order: count,
+      order,
       createdAt: Date.now(),
       myDayDate: view === "myday" ? today : undefined,
     };
     await db.todoTasks.add(task);
     setNewTaskTitle("");
     setNewTaskAction("");
+    setNewTaskDueDate("");
     setNewTaskTagMode(NO_TAG_VALUE);
     setNewTaskCustomTag("");
     setNewTaskCategoryMode(NO_CATEGORY_VALUE);
     setNewTaskCustomCategory("");
     setNewTaskCustomerMode(NO_CUSTOMER_VALUE);
     setNewTaskCustomCustomer("");
+  }
+
+  // 期日を入れずに追加したタスクを一番上に置くため、同じリストの既存タスク(トップレベルのみ)の
+  // orderを1つずつ後ろにずらし、新タスクの挿入位置(0)を返す
+  async function shiftSiblingsForTopInsert(listId: string): Promise<number> {
+    const siblings = (await db.todoTasks.where("listId").equals(listId).toArray()).filter((t) => !t.parentTaskId);
+    await db.transaction("rw", db.todoTasks, async () => {
+      for (const s of siblings) await db.todoTasks.update(s.id, { order: s.order + 1 });
+    });
+    return 0;
   }
 
   async function setTaskColumnValue(task: TodoTask, axis: KanbanAxis, value: string | undefined) {
@@ -1142,6 +1161,13 @@ export default function TodoSection({
             onKeyDown={(e) => e.key === "Enter" && addTask()}
             placeholder="アクション（任意）"
             className="min-w-[8rem] flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+          <input
+            type="date"
+            value={newTaskDueDate}
+            onChange={(e) => setNewTaskDueDate(e.target.value)}
+            title="期日（任意）。設定するとリスト内で期日順の位置に入ります"
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
           />
           {(lists ?? []).length > 1 && (
             <select
