@@ -20,6 +20,9 @@ const MIN_BLOCK_PX = 13;
 const MIN_READABLE_BLOCK_PX = 20;
 // 二度打ち等による極端に短い区間(1秒未満など)を外れ値とみなし、拡大の基準から除外する
 const MIN_CONSIDERED_DURATION_HOUR = 0.5 / 60;
+// グリッド表示領域の最大高さ(CSSのmax-h-[560px]と合わせる)。「全体」表示位置は
+// この高さに範囲全体(startHour〜endHour)が収まるようhourPxを逆算する
+const WEEK_GRID_MAX_HEIGHT_PX = 560;
 
 interface WeekBlock {
   key: string;
@@ -118,6 +121,11 @@ export default function GanttWeekView({
   const [weekViewMode] = useSetting("calendar.weekViewMode", "fixedStart");
   const [weekStartDayStr] = useSetting("calendar.weekStartDay", "0");
   const weekStartDay = Number(weekStartDayStr);
+  // 1日表示の「初期表示位置」と同様、週表示を開いた際にどこを基準に見せるかを選べる。
+  // 「設定時刻」「現在時刻」はスクロール位置だけを変える(1日表示と同じ考え方)。
+  // 「全体」は週表示独自の選択肢で、範囲全体(startHour〜endHour)が縦スクロールなしで
+  // 収まる大きさまでhourPxを自動調整してから表示する
+  const [weekInitialAnchor, setWeekInitialAnchor] = useSetting("gantt.weekInitialAnchor", "start");
   const gridRef = useRef<HTMLDivElement>(null);
   // ブロックをタップした時に、画面を切り替えずその場で詳細(作業名・区分・時刻)を見せるためのパネル。
   // 週全体を見比べている途中でタップのたびに1日表示へ飛んでしまうと不便なため、
@@ -273,30 +281,77 @@ export default function GanttWeekView({
   const nowHourToday = (now - new Date(todayDateStr + "T00:00:00").getTime()) / 3600000;
   const showNowLine = weekDateStrs.includes(todayDateStr) && nowHourToday >= startHour && nowHourToday <= endHour;
 
+  // 週を開いた/切り替えた際の初期表示位置。「設定時刻」「現在時刻」はスクロール位置のみ、
+  // 「全体」はhourPxそのものを範囲全体が収まる大きさに調整する(1日表示の「初期表示位置」は
+  // スクロール位置のみを変えるが、週表示は縦一覧でスクロール量の感覚が掴みにくいため、
+  // 「全体」だけは拡大率も含めて確実に全部を一望できるようにする)
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    if (weekInitialAnchor === "fit") {
+      const range = endHour - startHour;
+      if (range > 0) {
+        const fitPx = Math.min(MAX_HOUR_PX, Math.max(MIN_HOUR_PX, Math.floor(WEEK_GRID_MAX_HEIGHT_PX / range)));
+        setHourPx(fitPx);
+      }
+      el.scrollTop = 0;
+      return;
+    }
+    if (weekInitialAnchor === "now" && weekDateStrs.includes(todayDateStr)) {
+      el.scrollTop = Math.max(0, (nowHourToday - startHour) * hourPx - el.clientHeight / 2);
+      return;
+    }
+    el.scrollTop = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekInitialAnchor, weekDateStrsKey, startHour, endHour]);
+
   return (
     <div className="panel p-4">
-      <div className="mb-2 flex items-center justify-end gap-1">
-        <button
-          className="btn-pill-outline px-3 py-1 text-sm"
-          onClick={() => setHourPx((v) => Math.max(MIN_HOUR_PX, Math.round(v / 1.3)))}
-          aria-label="縮小"
-        >
-          －
-        </button>
-        <button
-          className="btn-pill-outline px-3 py-1 text-sm"
-          onClick={() => setHourPx((v) => Math.min(MAX_HOUR_PX, Math.round(v * 1.3)))}
-          aria-label="拡大"
-        >
-          ＋
-        </button>
-        <button
-          className="btn-pill-outline text-xs"
-          onClick={fitToReadableSize}
-          title="一番短いブロックでも重ならずに見分けられる大きさまで拡大します"
-        >
-          見やすい大きさに拡大
-        </button>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-cream/60">初期表示位置</label>
+          <button
+            className={weekInitialAnchor === "start" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setWeekInitialAnchor("start")}
+          >
+            設定時刻
+          </button>
+          <button
+            className={weekInitialAnchor === "now" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setWeekInitialAnchor("now")}
+          >
+            現在時刻
+          </button>
+          <button
+            className={weekInitialAnchor === "fit" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setWeekInitialAnchor("fit")}
+          >
+            全体
+          </button>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            className="btn-pill-outline px-3 py-1 text-sm"
+            onClick={() => setHourPx((v) => Math.max(MIN_HOUR_PX, Math.round(v / 1.3)))}
+            aria-label="縮小"
+          >
+            －
+          </button>
+          <button
+            className="btn-pill-outline px-3 py-1 text-sm"
+            onClick={() => setHourPx((v) => Math.min(MAX_HOUR_PX, Math.round(v * 1.3)))}
+            aria-label="拡大"
+          >
+            ＋
+          </button>
+          <button
+            className="btn-pill-outline text-xs"
+            onClick={fitToReadableSize}
+            title="一番短いブロックでも重ならずに見分けられる大きさまで拡大します"
+          >
+            見やすい大きさに拡大
+          </button>
+        </div>
       </div>
       <div className="flex">
         <div className="w-12 shrink-0 sm:w-14" />
