@@ -21,6 +21,9 @@ const ROW_H_STACKED = 64;
 const DAY_MINUTES = 24 * 60;
 // 1本化表示で隣り合う別々のバーが視覚的に1本に繋がって見えないよう、間に隙間を空ける
 const COMPACT_BAR_GAP_PX = 2;
+// 「見やすい大きさに拡大」ボタンが目指す、一番短いバーの最低表示幅(px)。
+// これより狭いと隣接するバー同士が視覚的にくっついて折り重なって見えてしまう
+const MIN_READABLE_BAR_PX = 24;
 
 type RangeMode = "auto" | "24h";
 
@@ -108,6 +111,11 @@ export default function GanttSection() {
   // ガントチャートを開いた際の初期スクロール位置。「現在時刻」を基準にするか、
   // 従来通り左端(「表示開始時刻」設定・または最初の実績/体調記録の時刻)のままにするかを選べる
   const [initialAnchor, setInitialAnchor] = useSetting("gantt.initialAnchor", "start");
+  // 開いた時・日付を切り替えた時に、一番短いバーでも重ならず見分けられる大きさまで
+  // 自動でズームするかどうか。既定はオフ(従来通りDEFAULT_PX_PER_MINのまま)
+  const [autoFitOnOpenStr, setAutoFitOnOpenStr] = useSetting("gantt.autoFitOnOpen", "false");
+  const autoFitOnOpen = autoFitOnOpenStr === "true";
+  const autoFitDateRef = useRef<string | null>(null);
   const [stackBarsStr, setStackBarsStr] = useSetting("gantt.stackBars", "false");
   const [compactViewStr, setCompactViewStr] = useSetting("gantt.compactView", "false");
   const [groupModeStr, setGroupModeStr] = useSetting("gantt.groupMode", "detail");
@@ -501,6 +509,20 @@ export default function GanttSection() {
     setPxPerMin(Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +fit.toFixed(3))));
   }
 
+  // 「全体表示」とは逆に、一番短いバーでも最低MIN_READABLE_BAR_PXの幅で表示できる
+  // 大きさまで自動で拡大する(短い作業が連続していると、ズームアウトしたままでは
+  // 隣接するバー同士が視覚的にくっついて折り重なって見えてしまうため)
+  function fitToReadableSize() {
+    const durationsMin = [
+      ...rows.flatMap((r) => r.actualSegments.map((s) => s.endMin - s.startMin)),
+      ...rows.map((r) => r.layoutMin),
+    ].filter((d) => d > 0);
+    if (durationsMin.length === 0) return;
+    const minDurationMin = Math.min(...durationsMin);
+    const desired = MIN_READABLE_BAR_PX / minDurationMin;
+    setPxPerMin(Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +desired.toFixed(3))));
+  }
+
   // タッチパネルの2本指ピンチで、従来の＋/－ボタンと同じpxPerMinを拡大縮小する
   usePinchZoom(scrollRef, (factor) => {
     setPxPerMin((v) => Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, +(v * factor).toFixed(3))));
@@ -529,6 +551,21 @@ export default function GanttSection() {
     el.scrollLeft = Math.max(0, nowMin * pxPerMin - el.clientWidth / 2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, initialAnchor, pxPerMin, timelineBase]);
+
+  // 設定がオンの場合、日付を開いた/切り替えたタイミングで一度だけ「見やすい大きさに拡大」を
+  // 自動実行する。同じ日付で何度も再実行しないようrefで一度きりにする(そうしないと、
+  // 作業が進行中のたびに再計算されて閲覧中の拡大率が勝手に変わり続けてしまう)。
+  // useLiveQueryは日付切り替え直後、新しいクエリが解決するまで前の日付のtasksを
+  // 一瞬保持し続けることがあるため、tasksが実際にこの日付のものになるまで待つ
+  // (でないと古い日付のデータのまま「実行済み」として記録され、二度と再計算されなくなる)
+  useEffect(() => {
+    if (!autoFitOnOpen || viewMode !== "day" || !tasks) return;
+    if (tasks.length > 0 && tasks[0].date !== date) return;
+    if (autoFitDateRef.current === date) return;
+    autoFitDateRef.current = date;
+    fitToReadableSize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFitOnOpen, viewMode, date, tasks]);
 
   return (
     <div className="space-y-4">
@@ -581,6 +618,13 @@ export default function GanttSection() {
             <button className="btn-pill-outline text-xs" onClick={fitToView}>
               全体表示
             </button>
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={fitToReadableSize}
+              title="一番短いバーでも重ならずに見分けられる大きさまで拡大します"
+            >
+              見やすい大きさに拡大
+            </button>
           </div>
         )}
       </div>
@@ -602,6 +646,15 @@ export default function GanttSection() {
             現在時刻
           </button>
         </div>
+        <label className="flex items-center gap-2 text-xs text-cream/60">
+          <input
+            type="checkbox"
+            checked={autoFitOnOpen}
+            onChange={(e) => setAutoFitOnOpenStr(e.target.checked ? "true" : "false")}
+            className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+          />
+          開いた時に自動で見やすい大きさに拡大
+        </label>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">表示開始時刻（未着手の日のみ）</label>
           <select
