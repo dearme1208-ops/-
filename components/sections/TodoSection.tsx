@@ -144,6 +144,9 @@ export default function TodoSection({
   const [displayMode, setDisplayMode] = useState<DisplayMode>("list");
   const [showNewList, setShowNewList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
+  // タスク追加フォームは既定で畳んでおき、「+ タスクを追加」ボタンで必要な入力欄を
+  // まとめて開く(常時表示だと入力欄が多く、狭い画面では特に圧迫感があったため)
+  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   // タスク追加欄でどのリストに追加するかを選べるようにする。閲覧中のビューが特定の
   // リストに紐付いていない(マイデイ・重要・期日・期限切れ・検索結果)場合、既定では
@@ -1116,12 +1119,21 @@ export default function TodoSection({
           </div>
         </div>
 
+        {!showAddTaskForm && (
+          <div className="mb-3">
+            <button className="btn-pill-outline text-sm" onClick={() => setShowAddTaskForm(true)}>
+              + タスクを追加
+            </button>
+          </div>
+        )}
+        {showAddTaskForm && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <input
+            autoFocus
             value={newTaskTitle}
             onChange={(e) => setNewTaskTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addTask()}
-            placeholder="+ タスクを追加"
+            placeholder="件名"
             className="min-w-[10rem] flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
           <input
@@ -1211,7 +1223,11 @@ export default function TodoSection({
           <button className="btn-pill text-sm" onClick={addTask} disabled={!newTaskTitle.trim()}>
             追加
           </button>
+          <button className="btn-pill-outline text-xs" onClick={() => setShowAddTaskForm(false)} aria-label="閉じる">
+            ×
+          </button>
         </div>
+        )}
 
         {displayMode === "calendar" ? (
           <TodoCalendarView tasks={tasksForTimeline} subtasks={subtasksForTimeline} today={today} />
