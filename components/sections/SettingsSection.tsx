@@ -174,6 +174,7 @@ export default function SettingsSection() {
   const monthlySummaryEnabled = monthlySummaryEnabledStr === "true";
   const [shortcutsEnabledStr, setShortcutsEnabledStr] = useSetting("today.shortcutsEnabled", "true");
   const shortcutsEnabled = shortcutsEnabledStr === "true";
+  const [dailyGoalHoursStr, setDailyGoalHoursStr] = useSetting("report.dailyGoalHours", "");
   const [weeklyGoalHoursStr, setWeeklyGoalHoursStr] = useSetting("report.weeklyGoalHours", "");
   const [monthlyGoalHoursStr, setMonthlyGoalHoursStr] = useSetting("report.monthlyGoalHours", "");
   const [staleMasterDaysStr, setStaleMasterDaysStr] = useSetting("master.staleDays", "90");
@@ -1297,7 +1298,20 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">週・月の目標時間</h3>
+        <h3 className="font-display text-sm font-bold text-cream/80">日・週・月の目標時間</h3>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+          <span>日の目標</span>
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            placeholder="未設定"
+            value={dailyGoalHoursStr}
+            onChange={(e) => setDailyGoalHoursStr(e.target.value)}
+            className="w-16 rounded border border-cream/20 bg-ink px-2 py-1 text-center text-cream"
+          />
+          <span>時間</span>
+        </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <span>週の目標</span>
           <input
@@ -1325,7 +1339,7 @@ export default function SettingsSection() {
           <span>時間</span>
         </div>
         <p className="text-xs text-cream/50">
-          週報・月報に達成率を表示します。空欄のままなら目標表示は行いません。
+          日報・週報・月報に達成率を表示します。空欄のままなら目標表示は行いません。
         </p>
       </div>
 

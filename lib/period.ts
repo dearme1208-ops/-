@@ -1,11 +1,13 @@
 import {
+  startOfDay,
+  endOfDay,
   startOfWeek,
   endOfWeek,
   startOfMonth,
   endOfMonth,
 } from "date-fns";
 
-export type PeriodType = "all" | "h1" | "h2" | "month" | "week";
+export type PeriodType = "all" | "h1" | "h2" | "month" | "week" | "day";
 
 export interface PeriodFilter {
   type: PeriodType;
@@ -31,6 +33,8 @@ export function getPeriodRange(filter: PeriodFilter, now: Date = new Date()): { 
   switch (filter.type) {
     case "all":
       return null;
+    case "day":
+      return { start: startOfDay(now), end: endOfDay(now) };
     case "week":
       return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
     case "month":
@@ -54,4 +58,5 @@ export const PERIOD_LABELS: Record<PeriodType, string> = {
   h2: "下期",
   month: "今月",
   week: "今週",
+  day: "今日",
 };

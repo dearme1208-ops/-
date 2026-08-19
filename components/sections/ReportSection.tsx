@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { subMonths, subWeeks } from "date-fns";
+import { subDays, subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import { aggregateRecords } from "@/lib/aggregate";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
@@ -26,13 +26,14 @@ const TOP_N = 10;
 const MEDALS = ["🥇", "🥈", "🥉"];
 
 export default function ReportSection() {
-  const [kind, setKind] = useState<"week" | "month">("week");
+  const [kind, setKind] = useState<"day" | "week" | "month">("week");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [standardHoursStr] = useSetting("overtime.standardDailyHours", "8");
   const standardDailySeconds = Math.max(0, Number(standardHoursStr) || 0) * 3600;
+  const [dailyGoalHoursStr] = useSetting("report.dailyGoalHours", "");
   const [weeklyGoalHoursStr] = useSetting("report.weeklyGoalHours", "");
   const [monthlyGoalHoursStr] = useSetting("report.monthlyGoalHours", "");
-  const goalHoursStr = kind === "week" ? weeklyGoalHoursStr : monthlyGoalHoursStr;
+  const goalHoursStr = kind === "day" ? dailyGoalHoursStr : kind === "week" ? weeklyGoalHoursStr : monthlyGoalHoursStr;
   const goalSeconds = Number(goalHoursStr) > 0 ? Number(goalHoursStr) * 3600 : null;
   const [defaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
   const defaultHourlyRate = Number(defaultHourlyRateStr) > 0 ? Number(defaultHourlyRateStr) : null;
@@ -47,22 +48,23 @@ export default function ReportSection() {
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const weatherForecasts = useLiveQuery(() => db.weatherForecasts.toArray(), []);
 
-  const title = kind === "week" ? "週報" : "月報";
-  const periodLabel = kind === "week" ? "週" : "月";
+  const title = kind === "week" ? "週報" : kind === "month" ? "月報" : "日報";
+  const periodLabel = kind === "week" ? "週" : kind === "month" ? "月" : "日";
   const filter: PeriodFilter = { type: kind };
   const today = todayStr();
 
-  // 今週/今月の一言メモ。期間の開始日をキーにして保存する
+  // 今日/今週/今月の一言メモ。期間の開始日をキーにして保存する
   const periodKey = useMemo(() => {
     const range = getPeriodRange(filter);
     if (!range) return "all";
-    return kind === "week" ? range.start.toISOString().slice(0, 10) : range.start.toISOString().slice(0, 7);
+    return kind === "month" ? range.start.toISOString().slice(0, 7) : range.start.toISOString().slice(0, 10);
   }, [kind]);
   const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, "");
   const [goalCelebratedKey, setGoalCelebratedKey] = useSetting(`report.goalCelebrated.${kind}.${periodKey}`, "");
   // 負担にならない「1問だけ」の振り返り。自由記述の一言メモとは別に、
   // 期間ごとに固定の1問だけ答える軽い振り返りの儀式として設ける
-  const reflectionQuestion = kind === "week" ? "今週、一番良かった判断は?" : "今月、一番の成長は?";
+  const reflectionQuestion =
+    kind === "week" ? "今週、一番良かった判断は?" : kind === "month" ? "今月、一番の成長は?" : "今日、一番手応えがあった作業は?";
   const [reflectionAnswer, setReflectionAnswer] = useDraftSetting(`report.reflection.${kind}.${periodKey}`, "");
 
   const data = useMemo(() => {
@@ -78,8 +80,8 @@ export default function ReportSection() {
     const totalSeconds = ranking.reduce((s, r) => s + r.totalSeconds, 0);
     const totalCount = ranking.reduce((s, r) => s + r.count, 0);
 
-    // 前週/前月との比較（自動サマリー文章用）
-    const prevNow = kind === "week" ? subWeeks(new Date(), 1) : subMonths(new Date(), 1);
+    // 前日/前週/前月との比較（自動サマリー文章用）
+    const prevNow = kind === "week" ? subWeeks(new Date(), 1) : kind === "month" ? subMonths(new Date(), 1) : subDays(new Date(), 1);
     const prevRanking = aggregateRecords(records, filter, "total", false, prevNow);
     const prevTotalSeconds = prevRanking.reduce((s, r) => s + r.totalSeconds, 0);
     const prevByKey = new Map(prevRanking.map((r) => [r.key, r.totalSeconds]));
@@ -145,7 +147,8 @@ export default function ReportSection() {
     // この期間中、天気変化の通知機能でキャッシュが残っている日ごとの平均降水確率
     const dailyWeather: { date: string; avgPrecipProbability: number }[] = [];
     if (range && weatherForecasts) {
-      const dayCount = Math.round((range.end.getTime() - range.start.getTime()) / 86400000) + 1;
+      // "day"は開始・終了が同日(23:59:59.999差)のため、ms差分の四捨五入では2日分と誤判定されてしまう
+      const dayCount = kind === "day" ? 1 : Math.round((range.end.getTime() - range.start.getTime()) / 86400000) + 1;
       if (dayCount > 0 && dayCount <= 31) {
         for (let i = 0; i < dayCount; i++) {
           const d = new Date(range.start.getTime() + i * 86400000);
@@ -196,7 +199,7 @@ export default function ReportSection() {
   function download() {
     if (!records || !masterTasks) return;
     const text = generateReportText(title, filter, records, masterTasks, afterHoursCutoff, note);
-    const label = kind === "week" ? "weekly" : "monthly";
+    const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
     downloadTextFile(`report_${label}_${todayStr()}.txt`, text);
   }
 
@@ -206,7 +209,7 @@ export default function ReportSection() {
   // ままにしたいため
   function downloadIcs() {
     if (!data) return;
-    const label = kind === "week" ? "weekly" : "monthly";
+    const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
     downloadTextFile(`records_${label}_${todayStr()}.ics`, recordsToIcs(data.periodRecords));
   }
 
@@ -227,7 +230,7 @@ export default function ReportSection() {
     if (!reportRef.current) return;
     setPdfExporting(true);
     try {
-      const label = kind === "week" ? "weekly" : "monthly";
+      const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
       await exportElementToPdf(reportRef.current, `report_${label}_${todayStr()}.pdf`);
     } finally {
       setPdfExporting(false);
@@ -277,13 +280,19 @@ ul{padding-left:20px;font-size:13px}
 ${data.attention.length > 0 ? `<h2>要注意項目</h2><ul>${attentionRows}</ul>` : ""}
 ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 </body></html>`;
-    const label = kind === "week" ? "weekly" : "monthly";
+    const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
     downloadTextFile(`report_${label}_${todayStr()}.html`, html);
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
+        <button
+          className={kind === "day" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+          onClick={() => setKind("day")}
+        >
+          日報
+        </button>
         <button
           className={kind === "week" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
           onClick={() => setKind("week")}
@@ -440,7 +449,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             </div>
           )}
 
-          {overlayPoints.length > 0 && (
+          {overlayPoints.length > 1 && (
             <div className="panel p-4">
               <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
                 📈 前{periodLabel}との重ね合わせ比較（日別）

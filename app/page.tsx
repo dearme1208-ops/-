@@ -56,7 +56,7 @@ const TABS: TabDef[] = [
   { key: "overtime", label: "残業分析" },
   { key: "yearlyChart", label: "年表" },
   { key: "mandala", label: "マンダラチャート" },
-  { key: "report", label: "週報・月報" },
+  { key: "report", label: "日報・週報・月報" },
   { key: "records", label: "実績編集" },
   { key: "settings", label: "設定" },
 ];

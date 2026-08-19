@@ -1,4 +1,4 @@
-import { subMonths, subWeeks } from "date-fns";
+import { subDays, subMonths, subWeeks } from "date-fns";
 import type { MasterTask, WorkRecord } from "./types";
 import { aggregateRecords } from "./aggregate";
 import { computeAttentionList } from "./attention";
@@ -15,15 +15,16 @@ export interface OverlayPoint {
   previousSeconds: number;
 }
 
-// 今週/今月と前週/前月を、同じ日次インデックス(週なら曜日、月なら日付)で
-// 重ね合わせて比較するためのデータを作る。週報・月報の推移グラフで使う
+// 今日/今週/今月と前日/前週/前月を、同じ日次インデックス(週なら曜日、月なら日付、
+// 日なら1点のみ)で重ね合わせて比較するためのデータを作る。週報・月報の推移グラフで使う。
+// 日報は期間が1日のみのため、呼び出し側では点が2点未満の場合はグラフを表示しない運用にしている
 export function computeDailyOverlayComparison(
   records: WorkRecord[],
-  kind: "week" | "month",
+  kind: "day" | "week" | "month",
   now: Date = new Date()
 ): OverlayPoint[] {
   const currentRange = getPeriodRange({ type: kind }, now);
-  const prevNow = kind === "week" ? subWeeks(now, 1) : subMonths(now, 1);
+  const prevNow = kind === "week" ? subWeeks(now, 1) : kind === "month" ? subMonths(now, 1) : subDays(now, 1);
   const prevRange = getPeriodRange({ type: kind }, prevNow);
   if (!currentRange || !prevRange) return [];
 
@@ -38,7 +39,9 @@ export function computeDailyOverlayComparison(
 
   const currentTotals = dailyTotals(currentRange);
   const prevTotals = dailyTotals(prevRange);
-  const dayCount = Math.round((currentRange.end.getTime() - currentRange.start.getTime()) / 86400000) + 1;
+  // "day"は開始・終了が同日(23:59:59.999差)のため、ms差分の四捨五入では2日分と誤判定されてしまう。
+  // 日報は元々1点しか意味を持たないため、ここで固定で1日分とする
+  const dayCount = kind === "day" ? 1 : Math.round((currentRange.end.getTime() - currentRange.start.getTime()) / 86400000) + 1;
 
   const points: OverlayPoint[] = [];
   for (let i = 0; i < dayCount; i++) {
@@ -46,7 +49,7 @@ export function computeDailyOverlayComparison(
     const prevDate = new Date(prevRange.start.getTime() + i * 86400000);
     points.push({
       key: String(i),
-      label: kind === "week" ? WEEKDAY_JP_SHORT[curDate.getDay()] : String(curDate.getDate()),
+      label: kind === "week" ? WEEKDAY_JP_SHORT[curDate.getDay()] : kind === "month" ? String(curDate.getDate()) : todayStr(curDate).slice(5),
       currentSeconds: currentTotals.get(todayStr(curDate)) ?? 0,
       previousSeconds: prevTotals.get(todayStr(prevDate)) ?? 0,
     });
@@ -112,7 +115,7 @@ export function generateReportText(
   }
   if (note.trim()) {
     lines.push("");
-    lines.push(`【今${title === "週報" ? "週" : "月"}の一言】`);
+    lines.push(`【今${title === "週報" ? "週" : title === "月報" ? "月" : "日"}の一言】`);
     lines.push(note.trim());
   }
   lines.push("");

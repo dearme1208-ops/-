@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { subMonths, subWeeks } from "date-fns";
+import { subDays, subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { formatHms, formatDateJp } from "@/lib/time";
@@ -35,22 +35,23 @@ function pickVariant<T>(options: readonly T[], seed: string): T {
 // リフレクション」「今週/今月の一言」は通常のレポートタブと同じ保存先を使い、
 // モードを切り替えても内容は共有される
 export default function ClaudeReportSection() {
-  const [kind, setKind] = useState<"week" | "month">("week");
+  const [kind, setKind] = useState<"day" | "week" | "month">("week");
   const records = useLiveQuery(() => db.records.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
 
   const filter: PeriodFilter = { type: kind };
-  const periodLabel = kind === "week" ? "今週" : "今月";
-  const prevLabel = kind === "week" ? "先週" : "先月";
+  const periodLabel = kind === "week" ? "今週" : kind === "month" ? "今月" : "今日";
+  const prevLabel = kind === "week" ? "先週" : kind === "month" ? "先月" : "昨日";
 
   const periodKey = useMemo(() => {
     const range = getPeriodRange(filter);
     if (!range) return "all";
-    return kind === "week" ? range.start.toISOString().slice(0, 10) : range.start.toISOString().slice(0, 7);
+    return kind === "month" ? range.start.toISOString().slice(0, 7) : range.start.toISOString().slice(0, 10);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
   const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, "");
-  const reflectionQuestion = kind === "week" ? "今週、一番良かった判断は?" : "今月、一番の成長は?";
+  const reflectionQuestion =
+    kind === "week" ? "今週、一番良かった判断は?" : kind === "month" ? "今月、一番の成長は?" : "今日、一番手応えがあった作業は?";
   const [reflectionAnswer, setReflectionAnswer] = useDraftSetting(`report.reflection.${kind}.${periodKey}`, "");
 
   const summary = useMemo(() => {
@@ -63,7 +64,7 @@ export default function ClaudeReportSection() {
     for (const r of periodRecords) byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.seconds);
     const categoryRanking = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    const prevNow = kind === "week" ? subWeeks(new Date(), 1) : subMonths(new Date(), 1);
+    const prevNow = kind === "week" ? subWeeks(new Date(), 1) : kind === "month" ? subMonths(new Date(), 1) : subDays(new Date(), 1);
     const prevRange = getPeriodRange(filter, prevNow);
     const prevTotalSeconds = records
       .filter((r) => isDateStrInRange(r.date, prevRange) && !r.excludedFromStats)
@@ -210,6 +211,9 @@ export default function ClaudeReportSection() {
         <div className="flex items-center justify-between gap-2">
           <h2 className="font-display text-lg font-bold text-cream">レポート</h2>
           <div className="flex gap-2">
+            <button className={kind === "day" ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={() => setKind("day")}>
+              日
+            </button>
             <button className={kind === "week" ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={() => setKind("week")}>
               週
             </button>
