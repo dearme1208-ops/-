@@ -123,8 +123,17 @@ interface SavedTodoView {
   filterTag: string;
   filterCategory: string;
   filterCustomer: string;
+  // 対応状況を複数指定してOR条件で絞り込みたい場合に使う(単一のfilterTagでは表せない)。
+  // 指定がある場合はfilterTagより優先される
+  filterTags?: string[];
 }
 type KanbanAxis = "tag" | "category";
+
+// 「対応中・客先確認中・社内確認中」だけを自動抽出するビューを、初回起動時に一度だけ
+// 自動生成しておく。以後ユーザーが削除しても復活しないよう、生成済みかどうかは
+// 別のフラグ(todo.autoStatusViewSeeded)で管理する
+const AUTO_STATUS_VIEW_TAGS = ["対応中", "客先確認中", "社内確認中"];
+const AUTO_STATUS_VIEW_NAME = "対応中・確認中";
 
 // スキームなしで貼られたURL（例: example.com）もリンクボタンから開けるよう補う
 function normalizeUrl(url: string): string {
@@ -164,6 +173,9 @@ export default function TodoSection({
   const [showCompleted, setShowCompleted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTag, setFilterTag] = useState("");
+  // 対応状況を複数選んでOR条件で絞り込むビュー(保存済みビューから適用された場合のみ使う)。
+  // 単一選択のfilterTagとは独立して持ち、どちらか一方だけが有効になる
+  const [filterTagsMulti, setFilterTagsMulti] = useState<string[]>([]);
   const [filterCategory, setFilterCategory] = useState("");
   const [filterCustomer, setFilterCustomer] = useState("");
   // 対応状況・分類・客先の組み合わせに名前を付けて保存し、1タップで呼び出せるようにする
@@ -179,17 +191,65 @@ export default function TodoSection({
   function saveCurrentAsView() {
     const name = prompt("この条件に名前を付けて保存します");
     if (!name || !name.trim()) return;
-    const view: SavedTodoView = { id: uid(), name: name.trim(), filterTag, filterCategory, filterCustomer };
+    const view: SavedTodoView =
+      filterTagsMulti.length > 0
+        ? { id: uid(), name: name.trim(), filterTag: "", filterCategory, filterCustomer, filterTags: filterTagsMulti }
+        : { id: uid(), name: name.trim(), filterTag, filterCategory, filterCustomer };
     setSavedViewsJson(JSON.stringify([...savedViews, view]));
   }
   function applySavedView(view: SavedTodoView) {
-    setFilterTag(view.filterTag);
+    if (view.filterTags && view.filterTags.length > 0) {
+      setFilterTagsMulti(view.filterTags);
+      setFilterTag("");
+    } else {
+      setFilterTagsMulti([]);
+      setFilterTag(view.filterTag);
+    }
     setFilterCategory(view.filterCategory);
     setFilterCustomer(view.filterCustomer);
   }
   function deleteSavedView(id: string) {
     setSavedViewsJson(JSON.stringify(savedViews.filter((v) => v.id !== id)));
   }
+
+  // 初回起動時のみ、「対応中・客先確認中・社内確認中」を自動抽出する保存済みビューを
+  // 1つ用意しておく。生成済みフラグを見ているので、ユーザーが後で削除しても復活しない。
+  // db.settings.get()はキー未設定時もundefinedを返すため、useLiveQueryの戻り値だけでは
+  // 「読み込み中」と「未設定」を区別できない。1回限りのasync effectでawaitの完了そのものを
+  // 「読み込み終わった」の合図として使う
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const seededRow = await db.settings.get("todo.autoStatusViewSeeded");
+      if (cancelled || seededRow?.value === "true") return;
+      await db.settings.put({ key: "todo.autoStatusViewSeeded", value: "true" });
+      const savedRow = await db.settings.get("todo.savedViews");
+      let parsed: SavedTodoView[] = [];
+      try {
+        const p = JSON.parse(savedRow?.value ?? "[]");
+        if (Array.isArray(p)) parsed = p;
+      } catch {
+        parsed = [];
+      }
+      const alreadyExists = parsed.some(
+        (v) =>
+          v.filterTags && v.filterTags.length === AUTO_STATUS_VIEW_TAGS.length && AUTO_STATUS_VIEW_TAGS.every((t) => v.filterTags!.includes(t))
+      );
+      if (alreadyExists || cancelled) return;
+      const autoView: SavedTodoView = {
+        id: uid(),
+        name: AUTO_STATUS_VIEW_NAME,
+        filterTag: "",
+        filterCategory: "",
+        filterCustomer: "",
+        filterTags: AUTO_STATUS_VIEW_TAGS,
+      };
+      await db.settings.put({ key: "todo.savedViews", value: JSON.stringify([...parsed, autoView]) });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [kanbanAxis, setKanbanAxis] = useState<KanbanAxis>("tag");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
@@ -365,7 +425,8 @@ export default function TodoSection({
     setNewTaskListId("");
   }, [view]);
 
-  const searchActive = searchQuery.trim() !== "" || filterTag !== "" || filterCategory !== "" || filterCustomer !== "";
+  const searchActive =
+    searchQuery.trim() !== "" || filterTag !== "" || filterTagsMulti.length > 0 || filterCategory !== "" || filterCustomer !== "";
 
   const visibleTasks = useMemo(() => {
     let filtered: TodoTask[];
@@ -394,7 +455,11 @@ export default function TodoSection({
           !(t.notes ?? "").toLowerCase().includes(q)
         )
           return false;
-        if (filterTag && t.tag !== filterTag) return false;
+        if (filterTagsMulti.length > 0) {
+          if (!filterTagsMulti.includes(t.tag ?? "")) return false;
+        } else if (filterTag && t.tag !== filterTag) {
+          return false;
+        }
         if (filterCategory && t.category !== filterCategory) return false;
         if (filterCustomer && t.customer !== filterCustomer) return false;
         return true;
@@ -427,6 +492,7 @@ export default function TodoSection({
     searchActive,
     searchQuery,
     filterTag,
+    filterTagsMulti,
     filterCategory,
     filterCustomer,
     subtasksByParent,
@@ -969,7 +1035,10 @@ export default function TodoSection({
         />
         <select
           value={filterTag}
-          onChange={(e) => setFilterTag(e.target.value)}
+          onChange={(e) => {
+            setFilterTag(e.target.value);
+            setFilterTagsMulti([]);
+          }}
           className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
         >
           <option value="">対応状況: すべて</option>
@@ -979,6 +1048,14 @@ export default function TodoSection({
             </option>
           ))}
         </select>
+        {filterTagsMulti.length > 0 && (
+          <span className="flex items-center gap-1 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream">
+            対応状況: {filterTagsMulti.join(" / ")}
+            <button className="text-cream/40 hover:text-alert" onClick={() => setFilterTagsMulti([])} aria-label="対応状況の条件を解除">
+              ✕
+            </button>
+          </span>
+        )}
         <select
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
@@ -1009,6 +1086,7 @@ export default function TodoSection({
             onClick={() => {
               setSearchQuery("");
               setFilterTag("");
+              setFilterTagsMulti([]);
               setFilterCategory("");
               setFilterCustomer("");
             }}
@@ -1018,7 +1096,7 @@ export default function TodoSection({
         )}
       </div>
 
-      {(savedViews.length > 0 || (filterTag || filterCategory || filterCustomer)) && (
+      {(savedViews.length > 0 || filterTag || filterTagsMulti.length > 0 || filterCategory || filterCustomer) && (
         <div className="flex flex-wrap items-center gap-2">
           {savedViews.length > 0 && <span className="text-xs text-cream/40">保存済みビュー:</span>}
           {savedViews.map((v) => (
@@ -1031,7 +1109,7 @@ export default function TodoSection({
               </button>
             </div>
           ))}
-          {(filterTag || filterCategory || filterCustomer) && (
+          {(filterTag || filterTagsMulti.length > 0 || filterCategory || filterCustomer) && (
             <button className="btn-pill-outline text-xs" onClick={saveCurrentAsView}>
               + この条件を保存
             </button>
