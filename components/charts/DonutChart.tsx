@@ -49,17 +49,23 @@ export default function DonutChart({
           boxShadow: "inset 0 0 0 28px #151517",
         }}
       />
-      <div className="min-w-0 flex-1 space-y-1.5">
+      <div className="min-w-0 flex-1 space-y-2">
         {slices.map((d, i) => (
-          <div key={d.label} className="flex items-center gap-2 text-xs">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: segmentColor(i, slices.length) }}
-            />
-            <span className="min-w-0 flex-1 truncate text-cream/80">{d.label}</span>
-            <span className="shrink-0 tabular-nums text-cream/50">
+          <div key={d.label} className="text-xs">
+            {/* 区分名と値を同じ行に並べて幅を取り合わせると、狭い画面では区分名側が
+                1文字分の幅まで押しつぶされ、truncateだとほぼ消え、折り返しだと
+                縦に1文字ずつ並ぶ縦書きのようになってしまう。区分名を単独の行いっぱいに
+                使わせ、値はその下に置くことで、区分名の幅を値の長さに左右されないようにする */}
+            <div className="flex items-start gap-2">
+              <span
+                className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-sm"
+                style={{ backgroundColor: segmentColor(i, slices.length) }}
+              />
+              <span className="min-w-0 break-words text-cream/80">{d.label}</span>
+            </div>
+            <div className="pl-[18px] tabular-nums text-cream/50">
               {formatValue(d.value)} ({Math.round((d.value / total) * 100)}%)
-            </span>
+            </div>
           </div>
         ))}
       </div>
