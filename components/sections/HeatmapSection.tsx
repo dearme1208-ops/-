@@ -23,6 +23,9 @@ export default function HeatmapSection() {
   const [viewMode, setViewMode] = useState<ViewMode>("category");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const records = useLiveQuery(() => db.records.toArray(), []);
+  // ホバーが効かないタッチ端末でも確実に内訳を見せるため、セルタップ時にここへ整形済みの
+  // 詳細文を入れ、テーブル下の詳細パネルで表示する(GanttSectionと同じパターン)
+  const [selectedHourDetail, setSelectedHourDetail] = useState<string | null>(null);
 
   const hourMatrix = useMemo(
     () => computeHourDowMatrix((records ?? []).filter((r) => !r.excludedFromStats)),
@@ -33,6 +36,20 @@ export default function HeatmapSection() {
     if (hourMatrix.max === 0 || value === 0) return "rgba(233,230,189,0.04)";
     const ratio = Math.min(1, value / hourMatrix.max);
     return `rgb(var(--accent-rgb) / ${0.08 + ratio * 0.72})`;
+  }
+
+  function hourCellDetail(dow: number, hour: number): string {
+    const nextHour = (hour + 1) % 24;
+    const label = `${DOW_LABELS[dow]}曜日 ${String(hour).padStart(2, "0")}:00〜${String(nextHour).padStart(2, "0")}:00`;
+    const total = hourMatrix.matrix[dow][hour];
+    const items = hourMatrix.details[dow][hour];
+    if (total === 0 || items.length === 0) return `${label}\nこの時間帯の記録はありません。`;
+    const lines = [label, `合計 ${formatHms(total)}`, ""];
+    for (const item of items.slice(0, 10)) {
+      lines.push(`・${item.category} / ${item.name}: ${formatHms(item.seconds)}（${item.count}件・${item.dates.length}日）`);
+    }
+    if (items.length > 10) lines.push(`ほか${items.length - 10}件`);
+    return lines.join("\n");
   }
 
   const calendarData = useMemo(
@@ -140,9 +157,18 @@ export default function HeatmapSection() {
                     return (
                       <td
                         key={dow}
-                        className="rounded-md text-center text-[10px] tabular-nums text-cream/90"
+                        role="button"
+                        tabIndex={0}
+                        className="cursor-pointer rounded-md text-center text-[10px] tabular-nums text-cream/90 transition hover:ring-1 hover:ring-cream/50 focus:outline-none focus:ring-1 focus:ring-cream/60"
                         style={{ backgroundColor: hourCellColor(v), height: 26 }}
                         title={formatHms(v)}
+                        onClick={() => setSelectedHourDetail(hourCellDetail(dow, hour))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedHourDetail(hourCellDetail(dow, hour));
+                          }
+                        }}
                       >
                         {v > 0 ? formatHms(v) : ""}
                       </td>
@@ -153,6 +179,18 @@ export default function HeatmapSection() {
             </tbody>
           </table>
           {hourMatrix.max === 0 && <p className="py-6 text-sm text-cream/50">データがありません。</p>}
+          {selectedHourDetail && (
+            <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-cream/20 bg-ink p-3">
+              <p className="min-w-0 whitespace-pre-line break-words text-sm text-cream">{selectedHourDetail}</p>
+              <button
+                className="shrink-0 text-lg leading-none text-cream/50 hover:text-cream"
+                onClick={() => setSelectedHourDetail(null)}
+                aria-label="詳細を閉じる"
+              >
+                ×
+              </button>
+            </div>
+          )}
         </div>
       )}
 
