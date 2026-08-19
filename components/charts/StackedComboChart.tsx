@@ -87,7 +87,18 @@ export default function StackedComboChart({
                 {p.segments.map((seg, si) => {
                   const h = (seg.value / maxBar) * PLOT_H;
                   cursorY -= h;
-                  return <rect key={si} x={x} y={cursorY} width={barWidth} height={h} className={seg.className} />;
+                  return (
+                    <rect
+                      key={si}
+                      x={x}
+                      y={cursorY}
+                      width={barWidth}
+                      height={h}
+                      className={`${seg.className} stroke-ink`}
+                      strokeWidth={0.5}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  );
                 })}
               </g>
             );

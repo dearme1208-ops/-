@@ -8,16 +8,18 @@ export const TODO_TREND_MAX_TAGS = 5;
 const UNSET_TAG_LABEL = "未設定";
 const OTHER_TAG_LABEL = "その他";
 
-// StackedComboChartのsegment.classNameに渡す固定の塗り分け(単一色相の濃淡)。
-// テーマの--accent-rgbに追従するfill-alertを使い、動的な文字列結合ではなく
-// リテラルの配列として書くことでTailwindのビルド時スキャンに拾わせる
+// StackedComboChartのsegment.classNameに渡す固定の塗り分け。
+// アクセント色(fill-alert)だけの濃淡だと隣り合う区分の区別がつきにくいため、
+// テーマ基調色のfill-creamと交互に組み合わせて隣接区分の見分けやすさを確保する。
+// どちらもテーマのCSS変数に追従する色なので、単一色相方針は崩さない。
+// 動的な文字列結合ではなくリテラルの配列として書き、Tailwindのビルド時スキャンに拾わせる
 export const TODO_TAG_SEGMENT_CLASSES = [
-  "fill-alert/90",
-  "fill-alert/75",
-  "fill-alert/60",
-  "fill-alert/45",
+  "fill-alert/85",
+  "fill-cream/65",
+  "fill-alert/55",
+  "fill-cream/40",
   "fill-alert/30",
-  "fill-alert/20",
+  "fill-cream/18",
 ];
 
 export interface TodoTrendTagCount {
