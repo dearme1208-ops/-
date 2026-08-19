@@ -27,6 +27,7 @@ import LineChart from "@/components/charts/LineChart";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
 import WeekdayBreakdownDialog from "@/components/sections/WeekdayBreakdownDialog";
+import TotalTrendBreakdownDialog from "@/components/sections/TotalTrendBreakdownDialog";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 const HALF_LABELS: Record<"h1" | "h2", string> = { h1: "上期", h2: "下期" };
@@ -87,6 +88,7 @@ export default function AggregationSection() {
   );
   const weekdayChartData = useMemo(() => weekdayAverages.filter((w) => w.dayCount > 0), [weekdayAverages]);
   const [weekdayDetailDow, setWeekdayDetailDow] = useState<number | null>(null);
+  const [totalTrendDetailKey, setTotalTrendDetailKey] = useState<string | null>(null);
   const weekdayDetail = weekdayChartData.find((w) => w.dow === weekdayDetailDow) ?? null;
   const switchCost = useMemo(() => computeSwitchCostAnalysis(records ?? []), [records]);
   const tagRows = useMemo(() => computeTimeByTag(records ?? [], masterTasks ?? []), [records, masterTasks]);
@@ -94,6 +96,7 @@ export default function AggregationSection() {
     () => computeTotalTimeTrend(records ?? [], totalTrendGranularity),
     [records, totalTrendGranularity]
   );
+  const totalTrendDetail = totalTrendPoints.find((p) => p.sortKey === totalTrendDetailKey) ?? null;
   const halfYearComparison = useMemo(() => {
     if (!records || (period !== "h1" && period !== "h2")) return null;
     return computeHalfYearComparison(records, { type: period, fiscalYear }, compareTarget);
@@ -350,6 +353,7 @@ export default function AggregationSection() {
           <RankingBarChart
             data={totalTrendPoints.map((p) => ({ label: p.label, value: p.totalSeconds }))}
             formatValue={formatHms}
+            onBarClick={(i) => setTotalTrendDetailKey(totalTrendPoints[i].sortKey)}
           />
         ) : (
           <LineChart
@@ -357,7 +361,21 @@ export default function AggregationSection() {
             formatValue={formatHms}
           />
         )}
+        {totalTrendChartType === "bar" && totalTrendPoints.length > 0 && (
+          <p className="mt-2 text-[10px] text-cream/40">棒をタップ/クリックすると内訳を表示します。</p>
+        )}
       </CollapsiblePanel>
+
+      {totalTrendDetail && (
+        <TotalTrendBreakdownDialog
+          granularity={totalTrendGranularity}
+          sortKey={totalTrendDetail.sortKey}
+          label={totalTrendDetail.label}
+          totalSeconds={totalTrendDetail.totalSeconds}
+          records={records ?? []}
+          onClose={() => setTotalTrendDetailKey(null)}
+        />
+      )}
 
       <CollapsiblePanel
         title="曜日別の平均稼働時間"

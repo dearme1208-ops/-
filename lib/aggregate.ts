@@ -101,7 +101,7 @@ export type TrendGranularity = "year" | "half" | "month";
 
 // 日付を年度・半期・月単位の集計バケットに変換する。sortKeyは文字列比較でそのまま
 // 時系列順になる形式にしている
-function bucketFor(dateStr: string, granularity: TrendGranularity): { sortKey: string; label: string } {
+export function bucketFor(dateStr: string, granularity: TrendGranularity): { sortKey: string; label: string } {
   const d = new Date(dateStr + "T12:00:00");
   const fy = currentFiscalYear(d);
   if (granularity === "year") {
