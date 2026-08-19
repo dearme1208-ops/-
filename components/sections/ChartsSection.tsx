@@ -6,9 +6,11 @@ import { db } from "@/lib/db";
 import { aggregateRecords, type SortMetric } from "@/lib/aggregate";
 import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
 import { buildTrend, TREND_GRANULARITY_LABELS, type TrendGranularity } from "@/lib/trend";
+import { buildTodoTrend, TODO_TAG_SEGMENT_CLASSES, TODO_TREND_MAX_TAGS } from "@/lib/todoTrend";
 import { formatHms } from "@/lib/time";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import TrendBarChart from "@/components/charts/TrendBarChart";
+import StackedComboChart, { type StackedComboPoint } from "@/components/charts/StackedComboChart";
 
 const TOP_N = 10;
 
@@ -17,11 +19,27 @@ export default function ChartsSection() {
   const [fiscalYear, setFiscalYear] = useState(() => currentFiscalYear());
   const [sortBy, setSortBy] = useState<SortMetric>("total");
   const [granularity, setGranularity] = useState<TrendGranularity>("day");
+  const [todoGranularity, setTodoGranularity] = useState<TrendGranularity>("day");
 
   const records = useLiveQuery(() => db.records.toArray(), []);
+  const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
 
   const rankingRows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy).slice(0, TOP_N) : [];
   const trendPoints = records ? buildTrend(records, granularity) : [];
+  const todoTrendPoints = todoTasks ? buildTodoTrend(todoTasks, todoGranularity) : [];
+  const todoStackedPoints: StackedComboPoint[] = todoTrendPoints.map((p) => ({
+    key: p.key,
+    label: p.label,
+    segments: p.byTag.map((t, i) => ({
+      value: t.count,
+      className: TODO_TAG_SEGMENT_CLASSES[Math.min(i, TODO_TAG_SEGMENT_CLASSES.length - 1)],
+    })),
+    lineValue: p.totalOpen,
+  }));
+  const todoTagLegend = (todoTrendPoints[todoTrendPoints.length - 1]?.byTag ?? []).map((t, i) => ({
+    label: t.tag,
+    className: TODO_TAG_SEGMENT_CLASSES[Math.min(i, TODO_TAG_SEGMENT_CLASSES.length - 1)],
+  }));
 
   const metricFormat: Record<SortMetric, (v: number) => string> = {
     total: formatHms,
@@ -101,6 +119,33 @@ export default function ChartsSection() {
         <div className="panel p-4">
           <TrendBarChart points={trendPoints} formatValue={formatHms} />
           <p className="mt-3 text-xs text-cream/40">棒をタップすると数値を表示します。</p>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="mb-3 font-display text-lg font-bold">ToDoの推移</h2>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {(Object.keys(TREND_GRANULARITY_LABELS) as TrendGranularity[]).map((g) => (
+            <button
+              key={g}
+              onClick={() => setTodoGranularity(g)}
+              className={todoGranularity === g ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            >
+              {TREND_GRANULARITY_LABELS[g]}
+            </button>
+          ))}
+        </div>
+        <div className="panel p-4">
+          <StackedComboChart
+            points={todoStackedPoints}
+            formatBar={(v) => `${v}件`}
+            formatLine={(v) => `${v}件`}
+            barLegendItems={todoTagLegend}
+            lineLabel="未完了の総数"
+          />
+          <p className="mt-3 text-xs text-cream/40">
+            棒(積み上げ)は未完了ToDoの対応状況別の内訳、折れ線は未完了の総数の推移です。サブタスクは含みません。対応状況は現在の値を使って過去に遡って集計しているため(変更履歴は保持していません)、実際に当時その対応状況だったとは限らない近似値です。件数の多い上位{TODO_TREND_MAX_TAGS}件以外は「その他」にまとめています。
+          </p>
         </div>
       </div>
     </div>

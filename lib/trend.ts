@@ -9,7 +9,7 @@ export interface TrendPoint {
   totalSeconds: number;
 }
 
-function isoWeekKey(d: Date): string {
+export function isoWeekKey(d: Date): string {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const dayNum = date.getUTCDay() || 7;
   date.setUTCDate(date.getUTCDate() + 4 - dayNum);
