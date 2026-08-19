@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
-import { breakdownByCategory, breakdownByProject, computeMonthlyOvertime, formatHoursJp } from "@/lib/overtime";
+import { breakdownByCategory, breakdownByProject, computeMonthlyOvertime, formatHoursJp, type BreakdownRow } from "@/lib/overtime";
 import { formatDateJp } from "@/lib/time";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import DiffLineChart from "@/components/charts/DiffLineChart";
-import DonutChart from "@/components/charts/DonutChart";
+import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
 import Modal from "@/components/ui/Modal";
 
 type BreakdownMode = "category" | "project";
@@ -87,6 +87,45 @@ export default function OvertimeSection() {
       ? breakdownByCategory(currentMonthRecords)
       : breakdownByProject(currentMonthRecords, projectTitleById);
   }, [currentMonthRecords, breakdownMode, projectTitleById]);
+
+  // ドーナツグラフの区分をタップした際、その区分の元になった実績(日付ごと)を見せる詳細パネル
+  const [breakdownDetail, setBreakdownDetail] = useState<string | null>(null);
+  function findBreakdownRow(d: DonutDatum): BreakdownRow | undefined {
+    return (
+      breakdownRows.find((r) => r.label === d.label && r.seconds === d.value) ??
+      breakdownRows.find((r) => r.label === d.label)
+    );
+  }
+  function recordsForBreakdownRow(row: BreakdownRow) {
+    if (breakdownMode === "category") {
+      if (row.key.startsWith("__trouble__::")) {
+        const category = row.key.slice("__trouble__::".length);
+        return currentMonthRecords.filter((r) => r.category === category && r.isTrouble);
+      }
+      return currentMonthRecords.filter((r) => r.category === row.sublabel && r.name === row.label && !r.isTrouble);
+    }
+    if (row.key === "__none__") return currentMonthRecords.filter((r) => !r.projectId);
+    return currentMonthRecords.filter((r) => r.projectId === row.key);
+  }
+  function breakdownDetailText(d: DonutDatum, meta: { isOther: boolean; otherItems: DonutDatum[] }): string {
+    if (meta.isOther) {
+      const items = [...meta.otherItems].sort((a, b) => b.value - a.value);
+      const lines = ["その他（上位に入らなかった内訳）", `合計 ${formatHoursJp(d.value)}`, ""];
+      for (const item of items.slice(0, 15)) lines.push(`・${item.label}: ${formatHoursJp(item.value)}`);
+      if (items.length > 15) lines.push(`ほか${items.length - 15}件`);
+      return lines.join("\n");
+    }
+    const row = findBreakdownRow(d);
+    if (!row) return `${d.label}\n合計 ${formatHoursJp(d.value)}`;
+    const records = recordsForBreakdownRow(row).sort((a, b) => b.date.localeCompare(a.date));
+    const title = breakdownMode === "category" && row.sublabel ? `${row.sublabel} / ${row.label}` : row.label;
+    const lines = [title, `合計 ${formatHoursJp(d.value)}`, ""];
+    for (const r of records.slice(0, 15)) {
+      lines.push(`・${r.date}: ${formatHoursJp(r.seconds)}`);
+    }
+    if (records.length > 15) lines.push(`ほか${records.length - 15}件`);
+    return lines.join("\n");
+  }
 
   // 手入力残業が登録されている月について、手入力と概算の差（手入力－概算）を古い月から新しい月へ並べる
   const diffPoints = useMemo(() => {
@@ -169,7 +208,10 @@ export default function OvertimeSection() {
               return (
                 <tr
                   key={month}
-                  onClick={() => setSelectedMonth(month)}
+                  onClick={() => {
+                    setSelectedMonth(month);
+                    setBreakdownDetail(null);
+                  }}
                   className={`cursor-pointer border-b border-cream/5 ${
                     isSelected ? "bg-cream/10" : "hover:bg-cream/5"
                   }`}
@@ -240,13 +282,19 @@ export default function OvertimeSection() {
             <div className="flex gap-2">
               <button
                 className={breakdownMode === "category" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                onClick={() => setBreakdownMode("category")}
+                onClick={() => {
+                  setBreakdownMode("category");
+                  setBreakdownDetail(null);
+                }}
               >
                 業務区分別
               </button>
               <button
                 className={breakdownMode === "project" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                onClick={() => setBreakdownMode("project")}
+                onClick={() => {
+                  setBreakdownMode("project");
+                  setBreakdownDetail(null);
+                }}
               >
                 案件別
               </button>
@@ -272,10 +320,25 @@ export default function OvertimeSection() {
                 formatValue={formatHoursJp}
               />
             ) : (
-              <DonutChart
-                data={breakdownRows.map((r) => ({ label: r.label, value: r.seconds }))}
-                formatValue={formatHoursJp}
-              />
+              <>
+                <DonutChart
+                  data={breakdownRows.map((r) => ({ label: r.label, value: r.seconds }))}
+                  formatValue={formatHoursJp}
+                  onSliceClick={(d, meta) => setBreakdownDetail(breakdownDetailText(d, meta))}
+                />
+                {breakdownDetail && (
+                  <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-cream/20 bg-ink p-3">
+                    <p className="min-w-0 whitespace-pre-line break-words text-sm text-cream">{breakdownDetail}</p>
+                    <button
+                      className="shrink-0 text-lg leading-none text-cream/50 hover:text-cream"
+                      onClick={() => setBreakdownDetail(null)}
+                      aria-label="詳細を閉じる"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

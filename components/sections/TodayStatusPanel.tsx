@@ -6,7 +6,7 @@ import { computeTodayNarrative, computeTodaySummarySentence } from "@/lib/narrat
 import { useSetting } from "@/lib/settings";
 import { formatHms, parseHourStr } from "@/lib/time";
 import type { ConditionLog, DailyTask } from "@/lib/types";
-import DonutChart from "@/components/charts/DonutChart";
+import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
 
 // ガントチャート以外で「本日の作業状況」を一目で把握するための panel。
 // 1) 進捗サマリーカード(完了件数・実績/予定の進捗バー・ペース判定)
@@ -71,6 +71,28 @@ export default function TodayStatusPanel({
     return [...map.entries()].map(([label, value]) => ({ label, value }));
   }, [realTasks, now]);
 
+  // ドーナツグラフの区分をタップした際、その区分内の本日の作業内訳を見せる詳細パネル
+  const [categoryDetail, setCategoryDetail] = useState<string | null>(null);
+  function categoryDetailText(d: DonutDatum, meta: { isOther: boolean; otherItems: DonutDatum[] }): string {
+    if (meta.isOther) {
+      const items = [...meta.otherItems].sort((a, b) => b.value - a.value);
+      const lines = ["その他（上位に入らなかった区分）", `合計 ${formatHms(d.value)}`, ""];
+      for (const item of items.slice(0, 15)) lines.push(`・${item.label}: ${formatHms(item.value)}`);
+      if (items.length > 15) lines.push(`ほか${items.length - 15}件`);
+      return lines.join("\n");
+    }
+    const matching = realTasks
+      .map((t) => ({ task: t, seconds: segmentsAccumulatedMs(t, now) / 1000 }))
+      .filter((x) => x.task.category === d.label && x.seconds > 0)
+      .sort((a, b) => b.seconds - a.seconds);
+    const lines = [d.label, `合計 ${formatHms(d.value)}`, ""];
+    for (const x of matching.slice(0, 15)) {
+      lines.push(`・${x.task.name}: ${formatHms(x.seconds)}${x.task.status === "done" ? "（完了）" : ""}`);
+    }
+    if (matching.length > 15) lines.push(`ほか${matching.length - 15}件`);
+    return lines.join("\n");
+  }
+
   const narrativeItems = useMemo(() => computeTodayNarrative(realTasks, conditionLogs, now), [realTasks, conditionLogs, now]);
   const summarySentence = useMemo(
     () => computeTodaySummarySentence(realTasks, conditionLogs, now),
@@ -130,7 +152,23 @@ export default function TodayStatusPanel({
 
       {showDonut && (
         <div className="pt-1">
-          <DonutChart data={donutData} formatValue={formatHms} />
+          <DonutChart
+            data={donutData}
+            formatValue={formatHms}
+            onSliceClick={(d, meta) => setCategoryDetail(categoryDetailText(d, meta))}
+          />
+          {categoryDetail && (
+            <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-cream/20 bg-ink p-3">
+              <p className="min-w-0 whitespace-pre-line break-words text-sm text-cream">{categoryDetail}</p>
+              <button
+                className="shrink-0 text-lg leading-none text-cream/50 hover:text-cream"
+                onClick={() => setCategoryDetail(null)}
+                aria-label="詳細を閉じる"
+              >
+                ×
+              </button>
+            </div>
+          )}
         </div>
       )}
 

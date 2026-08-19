@@ -22,7 +22,7 @@ import { computeTimeByTag } from "@/lib/tags";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { useSetting } from "@/lib/settings";
 import RankingBarChart from "@/components/charts/RankingBarChart";
-import DonutChart from "@/components/charts/DonutChart";
+import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
 import LineChart from "@/components/charts/LineChart";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
@@ -125,6 +125,25 @@ export default function AggregationSection() {
       .sort((a, b) => b.value - a.value);
   }, [rows]);
 
+  // ドーナツグラフの区分をタップした際、その区分内の作業別内訳を見せるための詳細パネル
+  const [categoryDetail, setCategoryDetail] = useState<string | null>(null);
+  function categoryDetailText(d: DonutDatum, meta: { isOther: boolean; otherItems: DonutDatum[] }): string {
+    if (meta.isOther) {
+      const items = [...meta.otherItems].sort((a, b) => b.value - a.value);
+      const lines = ["その他（上位に入らなかった区分）", `合計 ${formatHms(d.value)}`, ""];
+      for (const item of items.slice(0, 15)) lines.push(`・${item.label}: ${formatHms(item.value)}`);
+      if (items.length > 15) lines.push(`ほか${items.length - 15}件`);
+      return lines.join("\n");
+    }
+    const matching = rows.filter((r) => r.category === d.label).sort((a, b) => b.totalSeconds - a.totalSeconds);
+    const lines = [d.label, `合計 ${formatHms(d.value)}`, ""];
+    for (const r of matching.slice(0, 15)) {
+      lines.push(`・${r.name}: ${formatHms(r.totalSeconds)}（平均${formatHms(r.avgSeconds)}・${r.count}件）`);
+    }
+    if (matching.length > 15) lines.push(`ほか${matching.length - 15}件`);
+    return lines.join("\n");
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -174,7 +193,23 @@ export default function AggregationSection() {
         collapsed={!!collapsed.categoryDonut}
         onToggle={() => toggleSection("categoryDonut")}
       >
-        <DonutChart data={categoryTotals} formatValue={formatHms} />
+        <DonutChart
+          data={categoryTotals}
+          formatValue={formatHms}
+          onSliceClick={(d, meta) => setCategoryDetail(categoryDetailText(d, meta))}
+        />
+        {categoryDetail && (
+          <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-cream/20 bg-ink p-3">
+            <p className="min-w-0 whitespace-pre-line break-words text-sm text-cream">{categoryDetail}</p>
+            <button
+              className="shrink-0 text-lg leading-none text-cream/50 hover:text-cream"
+              onClick={() => setCategoryDetail(null)}
+              aria-label="詳細を閉じる"
+            >
+              ×
+            </button>
+          </div>
+        )}
       </CollapsiblePanel>
 
       {(period === "h1" || period === "h2") && (
