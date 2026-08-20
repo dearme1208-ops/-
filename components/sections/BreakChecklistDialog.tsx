@@ -24,7 +24,7 @@ export default function BreakChecklistDialog({ range, onClose }: { range: BreakR
                 type="checkbox"
                 checked={!!checked[i]}
                 onChange={(e) => setChecked((c) => ({ ...c, [i]: e.target.checked }))}
-                className="h-4 w-4 shrink-0"
+                className="h-4 w-4 shrink-0 rounded border-cream/30 bg-ink accent-cream"
               />
               <span className={checked[i] ? "text-cream/40 line-through" : ""}>{item}</span>
             </label>
