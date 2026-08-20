@@ -290,6 +290,14 @@ export interface MemoNote {
   order: number; // 重なった際の前後関係(ドラッグ/新規作成のたびに最前面へ)
   createdAt: number;
   updatedAt: number;
+  isChecklist?: boolean; // trueの場合、textではなくchecklistItemsを表示する
+  checklistItems?: MemoChecklistItem[];
+}
+
+export interface MemoChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
 }
 
 export interface MemoStroke {
@@ -309,4 +317,5 @@ export interface MemoConnector {
   fromNoteId: string;
   toNoteId: string;
   createdAt: number;
+  label?: string; // 線に添える短いラベル(「原因」「対応」等)
 }

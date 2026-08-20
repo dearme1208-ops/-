@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
@@ -14,6 +14,7 @@ import {
   DEFAULT_MEMO_PEN_WIDTH,
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
+  MEMO_ERASER_RADIUS,
   MEMO_NOTE_COLORS,
   MEMO_NOTE_MIN_HEIGHT,
   MEMO_NOTE_MIN_WIDTH,
@@ -21,8 +22,17 @@ import {
   parseMemoBoardImport,
   serializeMemoBoard,
 } from "@/lib/memo";
-import type { MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
+import type { MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
+
+// 直前に削除した付箋/手書き/連結を一時的に保持しておき、トーストから元に戻せるようにする
+type MemoUndoEntry =
+  | { type: "note"; note: MemoNote; connectors: MemoConnector[] }
+  | { type: "strokes"; strokes: MemoStroke[]; label: string }
+  | { type: "connector"; connector: MemoConnector };
+
+const MEMO_MINIMAP_WIDTH = 140;
+const MEMO_MINIMAP_HEIGHT = Math.round((MEMO_MINIMAP_WIDTH * MEMO_BOARD_HEIGHT) / MEMO_BOARD_WIDTH);
 
 // 付箋+手書きのメモボード。無限キャンバスにはせず、固定サイズの1ページを
 // スクロールして使う(はみ出す分は横/縦スクロール)。複数ボードを切り替えられる
@@ -65,14 +75,24 @@ export default function MemoSection() {
   // 連結モード。ONの間は付箋をドラッグする代わりに、タップした2つの付箋を線で結ぶ
   const [connectMode, setConnectMode] = useState(false);
   const [connectFromId, setConnectFromId] = useState<string | null>(null);
+  // 消しゴムモード。ONの間はなぞった位置に点を持つ手書きストロークを丸ごと消す
+  const [eraseMode, setEraseMode] = useState(false);
   function togglePenMode() {
     setPenMode((v) => !v);
     setConnectMode(false);
     setConnectFromId(null);
+    setEraseMode(false);
   }
   function toggleConnectMode() {
     setConnectMode((v) => !v);
     setPenMode(false);
+    setConnectFromId(null);
+    setEraseMode(false);
+  }
+  function toggleEraseMode() {
+    setEraseMode((v) => !v);
+    setPenMode(false);
+    setConnectMode(false);
     setConnectFromId(null);
   }
   async function selectNoteForConnect(id: string) {
@@ -94,7 +114,41 @@ export default function MemoSection() {
     await db.memoConnectors.add({ id: uid(), boardId: selectedBoardId, fromNoteId: fromId, toNoteId: id, createdAt: Date.now() });
   }
   async function deleteConnector(id: string) {
+    const connector = (connectors ?? []).find((c) => c.id === id);
     await db.memoConnectors.delete(id);
+    if (connector) pushUndo({ type: "connector", connector });
+  }
+  async function editConnectorLabel(c: MemoConnector) {
+    const label = prompt("線のラベル(空欄で削除)", c.label ?? "");
+    if (label === null) return;
+    await db.memoConnectors.update(c.id, { label: label.trim() });
+  }
+
+  // 誤って消してしまった付箋・手書き・連結線を、トーストの「元に戻す」から復元できるようにする
+  const [undoEntry, setUndoEntry] = useState<MemoUndoEntry | null>(null);
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function pushUndo(entry: MemoUndoEntry) {
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    setUndoEntry(entry);
+    undoTimeoutRef.current = setTimeout(() => setUndoEntry(null), 8000);
+  }
+  async function restoreUndo() {
+    if (!undoEntry) return;
+    if (undoEntry.type === "note") {
+      await db.memoNotes.add(undoEntry.note);
+      if (undoEntry.connectors.length > 0) await db.memoConnectors.bulkAdd(undoEntry.connectors);
+    } else if (undoEntry.type === "strokes") {
+      await db.memoStrokes.bulkAdd(undoEntry.strokes);
+    } else if (undoEntry.type === "connector") {
+      await db.memoConnectors.add(undoEntry.connector);
+    }
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    setUndoEntry(null);
+  }
+  function undoMessage(entry: MemoUndoEntry): string {
+    if (entry.type === "note") return "付箋を削除しました";
+    if (entry.type === "connector") return "連結を削除しました";
+    return entry.label;
   }
   const [penColor, setPenColor] = useState(DEFAULT_MEMO_PEN_COLOR);
   const [penWidth, setPenWidth] = useState(DEFAULT_MEMO_PEN_WIDTH);
@@ -197,6 +251,62 @@ export default function MemoSection() {
       scrollContainerRef.current.scrollTop = minY * newZoom - (container.clientHeight - contentHeight * newZoom) / 2;
     });
   }
+  // 付箋の検索。ヒットした付箋へジャンプ(スクロール)+一瞬ハイライトする
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(0);
+  const [highlightedNoteId, setHighlightedNoteId] = useState<string | null>(null);
+  const searchMatches = (() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return (notes ?? []).filter((n) => {
+      const haystack = n.isChecklist ? (n.checklistItems ?? []).map((i) => i.text).join(" ") : n.text;
+      return haystack.toLowerCase().includes(q);
+    });
+  })();
+  function jumpToNote(note: MemoNote) {
+    const container = scrollContainerRef.current;
+    if (container) {
+      const cx = (note.x + note.width / 2) * zoom;
+      const cy = (note.y + note.height / 2) * zoom;
+      container.scrollLeft = cx - container.clientWidth / 2;
+      container.scrollTop = cy - container.clientHeight / 2;
+    }
+    setHighlightedNoteId(note.id);
+    setTimeout(() => setHighlightedNoteId((v) => (v === note.id ? null : v)), 1600);
+  }
+  function searchStep(delta: number) {
+    if (searchMatches.length === 0) return;
+    const next = (searchIndex + delta + searchMatches.length) % searchMatches.length;
+    setSearchIndex(next);
+    jumpToNote(searchMatches[next]);
+  }
+  function handleSearchSubmit() {
+    setSearchIndex(0);
+    if (searchMatches.length > 0) jumpToNote(searchMatches[0]);
+  }
+
+  // ミニマップ用に現在のスクロール位置・表示範囲を追跡する
+  const [scrollPos, setScrollPos] = useState({ left: 0, top: 0, w: 0, h: 0 });
+  function handleScroll() {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    setScrollPos({ left: el.scrollLeft, top: el.scrollTop, w: el.clientWidth, h: el.clientHeight });
+  }
+  useEffect(() => {
+    handleScroll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom, selectedBoardId]);
+  function handleMinimapClick(e: ReactMouseEvent<HTMLDivElement>) {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mmScale = MEMO_MINIMAP_WIDTH / MEMO_BOARD_WIDTH;
+    const boardX = (e.clientX - rect.left) / mmScale;
+    const boardY = (e.clientY - rect.top) / mmScale;
+    container.scrollLeft = boardX * zoom - container.clientWidth / 2;
+    container.scrollTop = boardY * zoom - container.clientHeight / 2;
+  }
+
   // 描画中のストローク座標。React stateにせず、pointermoveのたびに再レンダーが
   // 走らないようにする(タッチペンでの手書きが重くならないようにするための要)
   const drawingRef = useRef<{ x: number; y: number }[] | null>(null);
@@ -253,6 +363,54 @@ export default function MemoSection() {
     return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom };
   }
 
+  // 消しゴムでなぞった軌跡上にあるストロークを丸ごと削除する。1回のドラッグで消した分は
+  // まとめて1件のUndoエントリにする
+  const erasedIdsRef = useRef<Set<string>>(new Set());
+  const erasedStrokesRef = useRef<MemoStroke[]>([]);
+  function eraseAt(point: { x: number; y: number }) {
+    for (const s of strokes ?? []) {
+      if (erasedIdsRef.current.has(s.id)) continue;
+      const hit = s.points.some((p) => Math.hypot(p.x - point.x, p.y - point.y) <= MEMO_ERASER_RADIUS);
+      if (hit) {
+        erasedIdsRef.current.add(s.id);
+        erasedStrokesRef.current.push(s);
+        db.memoStrokes.delete(s.id);
+      }
+    }
+  }
+  function handleErasePointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (!eraseMode) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.setPointerCapture(e.pointerId);
+    erasedIdsRef.current = new Set();
+    erasedStrokesRef.current = [];
+    eraseAt(getBoardPoint(e.clientX, e.clientY));
+  }
+  function handleErasePointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (!eraseMode || e.buttons !== 1) return;
+    eraseAt(getBoardPoint(e.clientX, e.clientY));
+  }
+  function handleErasePointerUp() {
+    if (erasedStrokesRef.current.length > 0) {
+      pushUndo({ type: "strokes", strokes: erasedStrokesRef.current, label: `手書き${erasedStrokesRef.current.length}本を消しました` });
+    }
+    erasedIdsRef.current = new Set();
+    erasedStrokesRef.current = [];
+  }
+  function handleCanvasPointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (eraseMode) return handleErasePointerDown(e);
+    return handlePenPointerDown(e);
+  }
+  function handleCanvasPointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (eraseMode) return handleErasePointerMove(e);
+    return handlePenPointerMove(e);
+  }
+  function handleCanvasPointerUp(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (eraseMode) return handleErasePointerUp();
+    return handlePenPointerUp();
+  }
+
   function handlePenPointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (!penMode) return;
     const canvas = canvasRef.current;
@@ -296,7 +454,9 @@ export default function MemoSection() {
   async function clearStrokes() {
     if (!selectedBoardId || !strokes || strokes.length === 0) return;
     if (!confirm("この手書きをすべて消去します。よろしいですか?")) return;
+    const removed = [...strokes];
     await db.memoStrokes.where("boardId").equals(selectedBoardId).delete();
+    pushUndo({ type: "strokes", strokes: removed, label: "手書きを全消去しました" });
   }
 
   async function addNote(text = "") {
@@ -332,20 +492,55 @@ export default function MemoSection() {
     await db.memoNotes.update(id, { text, updatedAt: Date.now() });
   }
   async function deleteNote(id: string) {
+    const note = notesById.get(id);
+    const relatedConnectors = (connectors ?? []).filter((c) => c.fromNoteId === id || c.toNoteId === id);
     await db.transaction("rw", db.memoNotes, db.memoConnectors, async () => {
       await db.memoNotes.delete(id);
       await db.memoConnectors.where("fromNoteId").equals(id).delete();
       await db.memoConnectors.where("toNoteId").equals(id).delete();
     });
+    if (note) pushUndo({ type: "note", note, connectors: relatedConnectors });
   }
   async function setNoteColor(id: string, color: string) {
     await db.memoNotes.update(id, { color });
   }
+  async function duplicateNote(note: MemoNote) {
+    maxOrderRef.current += 1;
+    const copy: MemoNote = {
+      ...note,
+      id: uid(),
+      x: Math.min(MEMO_BOARD_WIDTH - note.width, note.x + 24),
+      y: Math.min(MEMO_BOARD_HEIGHT - note.height, note.y + 24),
+      order: maxOrderRef.current,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      checklistItems: note.checklistItems?.map((item) => ({ ...item, id: uid() })),
+    };
+    await db.memoNotes.add(copy);
+  }
+  async function toggleChecklistMode(note: MemoNote) {
+    const next = !note.isChecklist;
+    const items = next && (!note.checklistItems || note.checklistItems.length === 0) ? [{ id: uid(), text: "", done: false }] : note.checklistItems;
+    await db.memoNotes.update(note.id, { isChecklist: next, checklistItems: items });
+  }
+  async function updateChecklistItems(id: string, items: MemoChecklistItem[]) {
+    await db.memoNotes.update(id, { checklistItems: items, updatedAt: Date.now() });
+  }
 
   // 付箋のテキストを、そのままToDoの新規タスクとして追加する。既存のリストが
   // あればその先頭に、無ければ「タスク」という名前のリストを作って追加する
+  function noteTextForConvert(note: MemoNote): string {
+    if (note.isChecklist) {
+      return (note.checklistItems ?? [])
+        .map((i) => i.text.trim())
+        .filter(Boolean)
+        .join(" / ");
+    }
+    return note.text.trim();
+  }
+
   async function convertNoteToTodo(note: MemoNote) {
-    const title = note.text.trim();
+    const title = noteTextForConvert(note);
     if (!title) return;
     let list = await db.todoLists.orderBy("order").first();
     if (!list) {
@@ -368,7 +563,7 @@ export default function MemoSection() {
   // 付箋のテキストを、そのまま案件の新規項目として追加する。期日は未定のため
   // ひとまず今日にしておき、案件タブで後から調整してもらう想定
   async function convertNoteToProject(note: MemoNote) {
-    const title = note.text.trim();
+    const title = noteTextForConvert(note);
     if (!title) return;
     await db.projects.add({
       id: uid(),
@@ -413,6 +608,87 @@ export default function MemoSection() {
       `memo_${currentBoard.title}_${todayStr()}.json`,
       serializeMemoBoard(currentBoard.title, notes ?? [], strokes ?? [], connectors ?? [])
     );
+  }
+
+  // 付箋・手書き・連結線を1枚の画像として書き出す(共有用)。DOM要素をそのまま
+  // 画像化するのではなく、オフスクリーンcanvasへ手動で再描画する
+  function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const lines: string[] = [];
+    for (const rawLine of text.split("\n")) {
+      let current = "";
+      for (const ch of rawLine) {
+        const trial = current + ch;
+        if (current && ctx.measureText(trial).width > maxWidth) {
+          lines.push(current);
+          current = ch;
+        } else {
+          current = trial;
+        }
+      }
+      lines.push(current);
+    }
+    return lines;
+  }
+  function exportBoardImage() {
+    if (!currentBoard) return;
+    const off = document.createElement("canvas");
+    off.width = MEMO_BOARD_WIDTH;
+    off.height = MEMO_BOARD_HEIGHT;
+    const ctx = off.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#0f0f10";
+    ctx.fillRect(0, 0, MEMO_BOARD_WIDTH, MEMO_BOARD_HEIGHT);
+    if (canvasRef.current) ctx.drawImage(canvasRef.current, 0, 0, MEMO_BOARD_WIDTH, MEMO_BOARD_HEIGHT);
+    for (const c of connectors ?? []) {
+      const from = notesById.get(c.fromNoteId);
+      const to = notesById.get(c.toNoteId);
+      if (!from || !to) continue;
+      const x1 = from.x + from.width / 2;
+      const y1 = from.y + from.height / 2;
+      const x2 = to.x + to.width / 2;
+      const y2 = to.y + to.height / 2;
+      ctx.strokeStyle = "rgba(253,230,138,0.75)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      if (c.label) {
+        ctx.fillStyle = "#fde68a";
+        ctx.font = "10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(c.label, (x1 + x2) / 2, (y1 + y2) / 2 - 6);
+      }
+    }
+    for (const n of notes ?? []) {
+      const colors = MEMO_NOTE_COLORS[n.color] ?? MEMO_NOTE_COLORS[DEFAULT_MEMO_NOTE_COLOR];
+      ctx.fillStyle = colors.bg;
+      ctx.strokeStyle = colors.border;
+      ctx.lineWidth = 2;
+      ctx.fillRect(n.x, n.y, n.width, n.height);
+      ctx.strokeRect(n.x, n.y, n.width, n.height);
+      ctx.fillStyle = "#1a1a1a";
+      ctx.font = "13px sans-serif";
+      ctx.textAlign = "left";
+      const bodyText = n.isChecklist
+        ? (n.checklistItems ?? []).map((i) => `${i.done ? "☑" : "☐"} ${i.text}`).join("\n")
+        : n.text;
+      const lines = wrapCanvasText(ctx, bodyText, n.width - 16);
+      lines.slice(0, Math.max(1, Math.floor((n.height - 16) / 16))).forEach((line, i) => {
+        ctx.fillText(line, n.x + 8, n.y + 20 + i * 16, n.width - 16);
+      });
+    }
+    off.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `memo_${currentBoard.title}_${todayStr()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, "image/png");
   }
 
   async function importBoard(file: File) {
@@ -514,6 +790,9 @@ export default function MemoSection() {
         <button className={connectMode ? "btn-pill text-sm" : "btn-pill-outline text-sm"} onClick={toggleConnectMode}>
           🔗 連結: {connectMode ? "ON" : "OFF"}
         </button>
+        <button className={eraseMode ? "btn-pill text-sm" : "btn-pill-outline text-sm"} onClick={toggleEraseMode}>
+          🧹 消しゴム: {eraseMode ? "ON" : "OFF"}
+        </button>
         {penMode && (
           <>
             <div className="flex items-center gap-1">
@@ -558,6 +837,9 @@ export default function MemoSection() {
         <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
           インポート (.json)
         </button>
+        <button className="btn-pill-outline text-sm" onClick={exportBoardImage}>
+          画像として書き出し (.png)
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -576,7 +858,45 @@ export default function MemoSection() {
           {connectFromId ? "つなげる相手の付箋をタップしてください(同じ付箋をもう一度タップで取り消し)" : "つなげたい付箋を1つ目タップしてください"}
         </p>
       )}
+      {eraseMode && <p className="text-xs text-cream/50">消したい手書きの上をなぞってください</p>}
       {statusMessage && <p className="text-xs text-cream/50">{statusMessage}</p>}
+      {undoEntry && (
+        <div className="panel flex flex-wrap items-center gap-2 p-2 text-xs">
+          <span className="text-cream/70">{undoMessage(undoEntry)}</span>
+          <button className="btn-pill-outline text-xs" onClick={restoreUndo}>
+            元に戻す
+          </button>
+        </div>
+      )}
+
+      <div className="panel flex flex-wrap items-center gap-2 p-3">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setSearchIndex(0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSearchSubmit();
+          }}
+          placeholder="付箋を検索..."
+          className="w-40 rounded border border-cream/20 bg-ink px-2 py-1 text-sm text-cream"
+        />
+        {searchQuery.trim() && (
+          <>
+            <span className="text-xs tabular-nums text-cream/50">
+              {searchMatches.length > 0 ? `${searchIndex + 1} / ${searchMatches.length}件` : "0件"}
+            </span>
+            <button className="btn-pill-outline text-xs" onClick={() => searchStep(-1)} disabled={searchMatches.length === 0}>
+              ＜前へ
+            </button>
+            <button className="btn-pill-outline text-xs" onClick={() => searchStep(1)} disabled={searchMatches.length === 0}>
+              次へ＞
+            </button>
+          </>
+        )}
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <button className="btn-pill-outline text-sm" onClick={() => setZoom((z) => clampMemoZoom(z - 0.1))} aria-label="縮小">
@@ -595,83 +915,143 @@ export default function MemoSection() {
         <span className="text-[10px] text-cream/40">2本指ピンチ / Ctrl+ホイールでも拡大縮小できます</span>
       </div>
 
-      <div
-        ref={scrollContainerRef}
-        className="panel overflow-auto p-0"
-        style={{ maxHeight: "70vh", touchAction: "pan-x pan-y" }}
-        onWheel={handleWheelZoom}
-      >
-        <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
-          <div
-            className="relative bg-[#0f0f10]"
-            style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
-          >
-            <canvas
-              ref={canvasRef}
-              width={MEMO_BOARD_WIDTH}
-              height={MEMO_BOARD_HEIGHT}
-              className="absolute left-0 top-0"
-              style={{ touchAction: "none", pointerEvents: penMode ? "auto" : "none" }}
-              onPointerDown={handlePenPointerDown}
-              onPointerMove={handlePenPointerMove}
-              onPointerUp={handlePenPointerUp}
-              onPointerCancel={handlePenPointerUp}
-            />
-            <svg
-              className="absolute left-0 top-0"
-              width={MEMO_BOARD_WIDTH}
-              height={MEMO_BOARD_HEIGHT}
-              style={{ pointerEvents: "none" }}
+      <div className="relative">
+        <div
+          ref={scrollContainerRef}
+          className="panel overflow-auto p-0"
+          style={{ maxHeight: "70vh", touchAction: "pan-x pan-y" }}
+          onWheel={handleWheelZoom}
+          onScroll={handleScroll}
+        >
+          <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
+            <div
+              className="relative bg-[#0f0f10]"
+              style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
             >
-              {(connectors ?? []).map((c) => {
-                const from = notesById.get(c.fromNoteId);
-                const to = notesById.get(c.toNoteId);
-                if (!from || !to) return null;
-                const x1 = from.x + from.width / 2;
-                const y1 = from.y + from.height / 2;
-                const x2 = to.x + to.width / 2;
-                const y2 = to.y + to.height / 2;
-                const mx = (x1 + x2) / 2;
-                const my = (y1 + y2) / 2;
-                return (
-                  <g key={c.id} style={{ pointerEvents: penMode ? "none" : "auto" }}>
-                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(253,230,138,0.75)" strokeWidth={2} />
-                    <circle
-                      cx={mx}
-                      cy={my}
-                      r={8}
-                      fill="rgba(0,0,0,0.55)"
-                      className="cursor-pointer"
-                      onClick={() => deleteConnector(c.id)}
-                    >
-                      <title>クリックでこの連結を削除</title>
-                    </circle>
-                    <text x={mx} y={my + 3} fontSize={9} textAnchor="middle" fill="#fff" style={{ pointerEvents: "none" }}>
-                      ✕
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-            {(notes ?? []).map((note) => (
-              <StickyNoteCard
-                key={note.id}
-                note={note}
-                penMode={penMode}
-                connectMode={connectMode}
-                isConnectSource={connectFromId === note.id}
-                zoom={zoom}
-                onDragEnd={moveNote}
-                onResizeEnd={resizeNote}
-                onCommitText={commitNoteText}
-                onDelete={deleteNote}
-                onColorChange={setNoteColor}
-                onFocusNote={() => bringToFront(note.id)}
-                onSelectConnect={() => selectNoteForConnect(note.id)}
-                onConvertTodo={() => convertNoteToTodo(note)}
-                onConvertProject={() => convertNoteToProject(note)}
+              <canvas
+                ref={canvasRef}
+                width={MEMO_BOARD_WIDTH}
+                height={MEMO_BOARD_HEIGHT}
+                className="absolute left-0 top-0"
+                style={{
+                  touchAction: "none",
+                  pointerEvents: penMode || eraseMode ? "auto" : "none",
+                  cursor: eraseMode ? "cell" : undefined,
+                }}
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onPointerCancel={handleCanvasPointerUp}
               />
-            ))}
+              <svg
+                className="absolute left-0 top-0"
+                width={MEMO_BOARD_WIDTH}
+                height={MEMO_BOARD_HEIGHT}
+                style={{ pointerEvents: "none" }}
+              >
+                {(connectors ?? []).map((c) => {
+                  const from = notesById.get(c.fromNoteId);
+                  const to = notesById.get(c.toNoteId);
+                  if (!from || !to) return null;
+                  const x1 = from.x + from.width / 2;
+                  const y1 = from.y + from.height / 2;
+                  const x2 = to.x + to.width / 2;
+                  const y2 = to.y + to.height / 2;
+                  const mx = (x1 + x2) / 2;
+                  const my = (y1 + y2) / 2;
+                  return (
+                    <g key={c.id} style={{ pointerEvents: penMode ? "none" : "auto" }}>
+                      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(253,230,138,0.75)" strokeWidth={2} />
+                      <circle
+                        cx={mx}
+                        cy={my}
+                        r={8}
+                        fill="rgba(0,0,0,0.55)"
+                        className="cursor-pointer"
+                        onClick={() => deleteConnector(c.id)}
+                      >
+                        <title>クリックでこの連結を削除</title>
+                      </circle>
+                      <text x={mx} y={my + 3} fontSize={9} textAnchor="middle" fill="#fff" style={{ pointerEvents: "none" }}>
+                        ✕
+                      </text>
+                      <text
+                        x={mx}
+                        y={my - 12}
+                        fontSize={c.label ? 10 : 9}
+                        textAnchor="middle"
+                        fill={c.label ? "#fde68a" : "rgba(255,255,255,0.35)"}
+                        className="cursor-pointer"
+                        onClick={() => editConnectorLabel(c)}
+                      >
+                        {c.label || "＋ラベル"}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+              {(notes ?? []).map((note) => (
+                <StickyNoteCard
+                  key={note.id}
+                  note={note}
+                  penMode={penMode}
+                  connectMode={connectMode}
+                  eraseMode={eraseMode}
+                  isConnectSource={connectFromId === note.id}
+                  isHighlighted={highlightedNoteId === note.id}
+                  zoom={zoom}
+                  onDragEnd={moveNote}
+                  onResizeEnd={resizeNote}
+                  onCommitText={commitNoteText}
+                  onDelete={deleteNote}
+                  onColorChange={setNoteColor}
+                  onFocusNote={() => bringToFront(note.id)}
+                  onSelectConnect={() => selectNoteForConnect(note.id)}
+                  onConvertTodo={() => convertNoteToTodo(note)}
+                  onConvertProject={() => convertNoteToProject(note)}
+                  onDuplicate={() => duplicateNote(note)}
+                  onToggleChecklist={() => toggleChecklistMode(note)}
+                  onUpdateChecklistItems={(items) => updateChecklistItems(note.id, items)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div
+          className="absolute right-2 top-2 rounded border border-cream/20 bg-black/70 p-1"
+          style={{ width: MEMO_MINIMAP_WIDTH + 4, height: MEMO_MINIMAP_HEIGHT + 4 }}
+        >
+          <div
+            className="relative cursor-pointer bg-[#0f0f10]"
+            style={{ width: MEMO_MINIMAP_WIDTH, height: MEMO_MINIMAP_HEIGHT }}
+            onClick={handleMinimapClick}
+          >
+            {(notes ?? []).map((n) => {
+              const mmScale = MEMO_MINIMAP_WIDTH / MEMO_BOARD_WIDTH;
+              const colors = MEMO_NOTE_COLORS[n.color] ?? MEMO_NOTE_COLORS[DEFAULT_MEMO_NOTE_COLOR];
+              return (
+                <div
+                  key={n.id}
+                  className="absolute"
+                  style={{
+                    left: n.x * mmScale,
+                    top: n.y * mmScale,
+                    width: Math.max(2, n.width * mmScale),
+                    height: Math.max(2, n.height * mmScale),
+                    backgroundColor: colors.bg,
+                  }}
+                />
+              );
+            })}
+            <div
+              className="pointer-events-none absolute border border-cream"
+              style={{
+                left: (scrollPos.left / zoom) * (MEMO_MINIMAP_WIDTH / MEMO_BOARD_WIDTH),
+                top: (scrollPos.top / zoom) * (MEMO_MINIMAP_WIDTH / MEMO_BOARD_WIDTH),
+                width: Math.min(MEMO_MINIMAP_WIDTH, (scrollPos.w / zoom) * (MEMO_MINIMAP_WIDTH / MEMO_BOARD_WIDTH)),
+                height: Math.min(MEMO_MINIMAP_HEIGHT, (scrollPos.h / zoom) * (MEMO_MINIMAP_WIDTH / MEMO_BOARD_WIDTH)),
+              }}
+            />
           </div>
         </div>
       </div>
@@ -686,7 +1066,9 @@ function StickyNoteCard({
   note,
   penMode,
   connectMode,
+  eraseMode,
   isConnectSource,
+  isHighlighted,
   zoom,
   onDragEnd,
   onResizeEnd,
@@ -697,11 +1079,16 @@ function StickyNoteCard({
   onSelectConnect,
   onConvertTodo,
   onConvertProject,
+  onDuplicate,
+  onToggleChecklist,
+  onUpdateChecklistItems,
 }: {
   note: MemoNote;
   penMode: boolean;
   connectMode: boolean;
+  eraseMode: boolean;
   isConnectSource: boolean;
+  isHighlighted: boolean;
   zoom: number;
   onDragEnd: (id: string, x: number, y: number) => void;
   onResizeEnd: (id: string, width: number, height: number) => void;
@@ -712,6 +1099,9 @@ function StickyNoteCard({
   onSelectConnect: () => void;
   onConvertTodo: () => void;
   onConvertProject: () => void;
+  onDuplicate: () => void;
+  onToggleChecklist: () => void;
+  onUpdateChecklistItems: (items: MemoChecklistItem[]) => void;
 }) {
   // テキストはローカルの下書きとして保持し、フォーカスが外れた時だけDBへ確定する。
   // Dexieの書き込みのたびにliveQueryのechoで再レンダーされる値をcontrolledな
@@ -801,10 +1191,11 @@ function StickyNoteCard({
         width,
         height,
         zIndex: note.order,
-        pointerEvents: penMode ? "none" : "auto",
+        pointerEvents: penMode || eraseMode ? "none" : "auto",
         backgroundColor: colors.bg,
-        borderColor: isConnectSource ? "#fff" : colors.border,
-        boxShadow: isConnectSource ? "0 0 0 2px #fff" : undefined,
+        borderColor: isConnectSource ? "#fff" : isHighlighted ? "#38bdf8" : colors.border,
+        boxShadow: isConnectSource ? "0 0 0 2px #fff" : isHighlighted ? "0 0 0 3px #38bdf8" : undefined,
+        transition: "box-shadow 0.2s, border-color 0.2s",
       }}
       onClick={connectMode ? onSelectConnect : undefined}
     >
@@ -818,6 +1209,10 @@ function StickyNoteCard({
       >
         <span className="text-[10px] text-black/40">⠿</span>
         <button
+          // 親ヘッダーのonPointerDown(ドラッグ用のsetPointerCapture)にバブリングすると、
+          // 以降のclickイベントまでヘッダー側へ奪われてボタンのonClickが発火しなくなるため、
+          // ここで先に止めておく
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onDelete(note.id);
@@ -828,7 +1223,7 @@ function StickyNoteCard({
           ✕
         </button>
       </div>
-      <div className="flex shrink-0 items-center justify-between gap-1 px-1.5 pb-1">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 px-1.5 pb-1">
         <div className="flex items-center gap-1">
           {Object.keys(MEMO_NOTE_COLORS).map((c) => (
             <button
@@ -844,6 +1239,28 @@ function StickyNoteCard({
           ))}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDuplicate();
+            }}
+            className="text-xs leading-none hover:opacity-70"
+            title="付箋を複製"
+            aria-label="付箋を複製"
+          >
+            ⧉
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleChecklist();
+            }}
+            className="text-xs leading-none hover:opacity-70"
+            title="チェックリスト表示を切り替え"
+            aria-label="チェックリスト表示を切り替え"
+          >
+            📋
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -868,15 +1285,24 @@ function StickyNoteCard({
           </button>
         </div>
       </div>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onFocus={onFocusNote}
-        onBlur={() => onCommitText(note.id, text)}
-        placeholder="メモ..."
-        readOnly={connectMode}
-        className="min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-black/80 outline-none"
-      />
+      {note.isChecklist ? (
+        <ChecklistBody
+          items={note.checklistItems ?? []}
+          connectMode={connectMode}
+          onFocus={onFocusNote}
+          onUpdate={onUpdateChecklistItems}
+        />
+      ) : (
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={onFocusNote}
+          onBlur={() => onCommitText(note.id, text)}
+          placeholder="メモ..."
+          readOnly={connectMode}
+          className="min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-black/80 outline-none"
+        />
+      )}
       {!penMode && !connectMode && (
         <div
           className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
@@ -890,6 +1316,122 @@ function StickyNoteCard({
             <path d="M14 14 L14 8 M14 14 L8 14" stroke="currentColor" strokeWidth="1.5" fill="none" />
           </svg>
         </div>
+      )}
+    </div>
+  );
+}
+
+// チェックリスト付箋の中身。項目の追加/削除/チェック切り替え/テキスト編集を行う。
+// 配列全体を1フィールドとしてDexieに保存しているため、どの編集でも配列を作り直して
+// onUpdateへまとめて渡す
+function ChecklistBody({
+  items,
+  connectMode,
+  onFocus,
+  onUpdate,
+}: {
+  items: MemoChecklistItem[];
+  connectMode: boolean;
+  onFocus: () => void;
+  onUpdate: (items: MemoChecklistItem[]) => void;
+}) {
+  function toggleDone(id: string) {
+    onUpdate(items.map((i) => (i.id === id ? { ...i, done: !i.done } : i)));
+  }
+  function commitText(id: string, text: string) {
+    onUpdate(items.map((i) => (i.id === id ? { ...i, text } : i)));
+  }
+  function deleteItem(id: string) {
+    onUpdate(items.filter((i) => i.id !== id));
+  }
+  function addItem() {
+    onUpdate([...items, { id: uid(), text: "", done: false }]);
+  }
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 py-1">
+      {items.map((item) => (
+        <ChecklistItemRow
+          key={item.id}
+          item={item}
+          connectMode={connectMode}
+          onFocus={onFocus}
+          onToggleDone={() => toggleDone(item.id)}
+          onCommitText={(text) => commitText(item.id, text)}
+          onDelete={() => deleteItem(item.id)}
+        />
+      ))}
+      {!connectMode && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            addItem();
+          }}
+          className="mt-0.5 text-left text-[11px] text-black/40 hover:text-black/70"
+        >
+          + 項目を追加
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ChecklistItemRow({
+  item,
+  connectMode,
+  onFocus,
+  onToggleDone,
+  onCommitText,
+  onDelete,
+}: {
+  item: MemoChecklistItem;
+  connectMode: boolean;
+  onFocus: () => void;
+  onToggleDone: () => void;
+  onCommitText: (text: string) => void;
+  onDelete: () => void;
+}) {
+  // ノート本文と同じ理由(IME保護)で、テキストはローカル下書き経由でコミットする
+  const [text, setText] = useState(item.text);
+  const idRef = useRef(item.id);
+  useEffect(() => {
+    if (idRef.current !== item.id) {
+      idRef.current = item.id;
+      setText(item.text);
+    }
+  }, [item.id, item.text]);
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="checkbox"
+        checked={item.done}
+        onChange={(e) => {
+          e.stopPropagation();
+          onToggleDone();
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="h-3 w-3 shrink-0"
+      />
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={onFocus}
+        onBlur={() => onCommitText(text)}
+        placeholder="項目..."
+        readOnly={connectMode}
+        className={`min-w-0 flex-1 bg-transparent text-xs text-black/80 outline-none ${item.done ? "line-through opacity-50" : ""}`}
+      />
+      {!connectMode && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="shrink-0 text-[10px] leading-none text-black/30 hover:text-red-600"
+          aria-label="項目を削除"
+        >
+          ✕
+        </button>
       )}
     </div>
   );

@@ -28,16 +28,20 @@ export function clampMemoZoom(z: number): number {
   return Math.max(MEMO_MIN_ZOOM, Math.min(MEMO_MAX_ZOOM, z));
 }
 
+// 消しゴムでなぞった位置から、この半径(ボード論理px)以内に点を持つ手書きストロークを消す対象とする
+export const MEMO_ERASER_RADIUS = 14;
+
 // 付箋を結ぶ線は、書き出し時にIDではなくnotes配列内でのインデックスで参照する。
 // インポート時に付箋へ新しいIDが振り直されるため、IDのままでは対応が取れなくなるため
 export interface MemoConnectorExport {
   fromIndex: number;
   toIndex: number;
+  label?: string;
 }
 
 export interface MemoBoardExport {
   format: "koutei-hyo-memo";
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   title: string;
   exportedAt: number;
   notes: Omit<MemoNote, "id" | "boardId">[];
@@ -49,14 +53,18 @@ export function serializeMemoBoard(title: string, notes: MemoNote[], strokes: Me
   const indexById = new Map(notes.map((n, i) => [n.id, i]));
   const data: MemoBoardExport = {
     format: "koutei-hyo-memo",
-    version: 2,
+    version: 3,
     title,
     exportedAt: Date.now(),
     notes: notes.map(({ id: _id, boardId: _boardId, ...rest }) => rest),
     strokes: strokes.map(({ id: _id, boardId: _boardId, ...rest }) => rest),
     connectors: connectors
-      .map((c) => ({ fromIndex: indexById.get(c.fromNoteId), toIndex: indexById.get(c.toNoteId) }))
-      .filter((c): c is MemoConnectorExport => c.fromIndex !== undefined && c.toIndex !== undefined),
+      .filter((c) => indexById.has(c.fromNoteId) && indexById.has(c.toNoteId))
+      .map((c) => {
+        const entry: MemoConnectorExport = { fromIndex: indexById.get(c.fromNoteId)!, toIndex: indexById.get(c.toNoteId)! };
+        if (c.label) entry.label = c.label;
+        return entry;
+      }),
   };
   return JSON.stringify(data, null, 2);
 }
@@ -79,18 +87,24 @@ export function parseMemoBoardImport(json: string): MemoBoardExport | null {
     );
     // 旧バージョン(v1)のファイルにはconnectorsが無いため、その場合は空配列にフォールバックする
     const rawConnectors = Array.isArray(parsed.connectors) ? parsed.connectors : [];
-    const connectors = rawConnectors.filter(
-      (c: unknown): c is MemoConnectorExport =>
-        !!c &&
-        typeof c === "object" &&
-        typeof (c as MemoConnectorExport).fromIndex === "number" &&
-        typeof (c as MemoConnectorExport).toIndex === "number" &&
-        (c as MemoConnectorExport).fromIndex < notes.length &&
-        (c as MemoConnectorExport).toIndex < notes.length
-    );
+    const connectors: MemoConnectorExport[] = rawConnectors
+      .filter(
+        (c: unknown): c is MemoConnectorExport =>
+          !!c &&
+          typeof c === "object" &&
+          typeof (c as MemoConnectorExport).fromIndex === "number" &&
+          typeof (c as MemoConnectorExport).toIndex === "number" &&
+          (c as MemoConnectorExport).fromIndex < notes.length &&
+          (c as MemoConnectorExport).toIndex < notes.length
+      )
+      .map((c: MemoConnectorExport) => ({
+        fromIndex: c.fromIndex,
+        toIndex: c.toIndex,
+        label: typeof c.label === "string" ? c.label : undefined,
+      }));
     return {
       format: "koutei-hyo-memo",
-      version: 2,
+      version: 3,
       title: typeof parsed.title === "string" ? parsed.title : "インポートしたメモ",
       exportedAt: typeof parsed.exportedAt === "number" ? parsed.exportedAt : Date.now(),
       notes,
