@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatClock, formatHms } from "@/lib/time";
-import { TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
+import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
+import { parsePresetList } from "@/lib/todo";
+import { useSetting } from "@/lib/settings";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
@@ -49,6 +51,8 @@ export default function EditTaskDialog({
   const [note, setNote] = useState(task.note ?? "");
   const [showMasterPicker, setShowMasterPicker] = useState(false);
   const isDone = task.status === "done";
+  const [troubleDetailOptionsJson] = useSetting("trouble.detailOptions", JSON.stringify(DEFAULT_TROUBLE_DETAIL_OPTIONS));
+  const troubleDetailOptions = useMemo(() => parsePresetList(troubleDetailOptionsJson), [troubleDetailOptionsJson]);
 
   // 開始・終了それぞれ、編集していなければ元の値(秒まで正確)、編集していれば
   // 入力欄のHH:MMをこの作業の日付にあてはめた値を使う。開始が終了以降になって
@@ -99,18 +103,21 @@ export default function EditTaskDialog({
         <button type="button" className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
           作業マスタから選択
         </button>
-        {task.isTrouble && (
-          <div className="flex flex-wrap gap-1.5">
-            {TROUBLE_DETAIL_OPTIONS.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                className="btn-pill-outline text-xs"
-                onClick={() => setName((v) => (v ? `${opt} ${v}` : opt))}
-              >
-                {opt}
-              </button>
-            ))}
+        {task.isTrouble && troubleDetailOptions.length > 0 && (
+          <div className="space-y-1">
+            <div className="flex flex-wrap gap-1.5">
+              {troubleDetailOptions.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  className="btn-pill-outline text-xs"
+                  onClick={() => setName((v) => (v ? `${opt} ${v}` : opt))}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-cream/40">あくまで参考の候補です。上の詳細作業名欄には自由に入力できます。</p>
           </div>
         )}
         {isDone && (

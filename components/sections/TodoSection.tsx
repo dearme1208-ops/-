@@ -2526,8 +2526,8 @@ function TaskDetailModal({
           <CategoryWorkNameDialog
             title="本日の作業に追加"
             confirmLabel="追加する"
-            defaultCategory="案件"
-            defaultWorkName={task.action ? `${task.title} → ${task.action}` : task.title}
+            defaultCategory={task.title}
+            defaultWorkName={task.action || task.title}
             onConfirm={(category, workName) => {
               onAddToToday(category, workName);
               setShowAddToTodayDialog(false);

@@ -6,6 +6,7 @@ import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib/todo";
+import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
 import { exportBackup, importBackup, type BackupFile } from "@/lib/backup";
 import { buildArchive, deleteArchivedRange } from "@/lib/archive";
 import { downloadTextFile } from "@/lib/report";
@@ -160,6 +161,18 @@ export default function SettingsSection() {
   }
   function removeCategoryPreset(value: string) {
     setCategoryPresetsJson(serializePresetList(categoryPresets.filter((v) => v !== value)));
+  }
+  const [troubleDetailOptionsJson, setTroubleDetailOptionsJson] = useSetting(
+    "trouble.detailOptions",
+    JSON.stringify(DEFAULT_TROUBLE_DETAIL_OPTIONS)
+  );
+  const troubleDetailOptions = useMemo(() => parsePresetList(troubleDetailOptionsJson), [troubleDetailOptionsJson]);
+  function addTroubleDetailOption(value: string) {
+    if (troubleDetailOptions.includes(value)) return;
+    setTroubleDetailOptionsJson(serializePresetList([...troubleDetailOptions, value]));
+  }
+  function removeTroubleDetailOption(value: string) {
+    setTroubleDetailOptionsJson(serializePresetList(troubleDetailOptions.filter((v) => v !== value)));
   }
   const [afterHoursCutoff, setAfterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [weeklyAfterHoursNotifyEnabledStr, setWeeklyAfterHoursNotifyEnabledStr] = useSetting(
@@ -1605,6 +1618,19 @@ export default function SettingsSection() {
         <PresetListEditor presets={categoryPresets} onAdd={addCategoryPreset} onRemove={removeCategoryPreset} placeholder="分類名" />
         <p className="text-xs text-cream/50">
           分類には既定値はありません。ここで登録したものだけがドロップダウン・かんばんの列に出てきます（自由入力でタスクに設定はできますが、ここで登録するまで選択肢やかんばんの列にはなりません）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">トラブル対応の部署・項目候補</h3>
+        <PresetListEditor
+          presets={troubleDetailOptions}
+          onAdd={addTroubleDetailOption}
+          onRemove={removeTroubleDetailOption}
+          placeholder="部署名・項目名"
+        />
+        <p className="text-xs text-cream/50">
+          トラブル対応の詳細作業名を編集する際に、クイック入力ボタンとして出てくる候補です。あくまで参考の候補であり、詳細作業名欄には常に自由入力できます。
         </p>
       </div>
 
