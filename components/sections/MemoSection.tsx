@@ -957,37 +957,7 @@ export default function MemoSection() {
                   const y1 = from.y + from.height / 2;
                   const x2 = to.x + to.width / 2;
                   const y2 = to.y + to.height / 2;
-                  const mx = (x1 + x2) / 2;
-                  const my = (y1 + y2) / 2;
-                  return (
-                    <g key={c.id} style={{ pointerEvents: penMode ? "none" : "auto" }}>
-                      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(253,230,138,0.75)" strokeWidth={2} />
-                      <circle
-                        cx={mx}
-                        cy={my}
-                        r={8}
-                        fill="rgba(0,0,0,0.55)"
-                        className="cursor-pointer"
-                        onClick={() => deleteConnector(c.id)}
-                      >
-                        <title>クリックでこの連結を削除</title>
-                      </circle>
-                      <text x={mx} y={my + 3} fontSize={9} textAnchor="middle" fill="#fff" style={{ pointerEvents: "none" }}>
-                        ✕
-                      </text>
-                      <text
-                        x={mx}
-                        y={my - 12}
-                        fontSize={c.label ? 10 : 9}
-                        textAnchor="middle"
-                        fill={c.label ? "#fde68a" : "rgba(255,255,255,0.35)"}
-                        className="cursor-pointer"
-                        onClick={() => editConnectorLabel(c)}
-                      >
-                        {c.label || "＋ラベル"}
-                      </text>
-                    </g>
-                  );
+                  return <line key={c.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(253,230,138,0.75)" strokeWidth={2} />;
                 })}
               </svg>
               {(notes ?? []).map((note) => (
@@ -1014,6 +984,45 @@ export default function MemoSection() {
                   onUpdateChecklistItems={(items) => updateChecklistItems(note.id, items)}
                 />
               ))}
+              {/* 連結の削除マーカー/ラベルは付箋より後(=DOM上でも手前)に描くことで、
+                  付箋の下に隠れて読めなくなるのを防ぐ。線自体は付箋の裏を通っても違和感がないため
+                  上のsvgのままにしてある */}
+              {!penMode &&
+                (connectors ?? []).map((c) => {
+                  const from = notesById.get(c.fromNoteId);
+                  const to = notesById.get(c.toNoteId);
+                  if (!from || !to) return null;
+                  const mx = (from.x + from.width / 2 + to.x + to.width / 2) / 2;
+                  const my = (from.y + from.height / 2 + to.y + to.height / 2) / 2;
+                  return (
+                    <div
+                      key={c.id}
+                      className="absolute flex flex-col items-center gap-1"
+                      style={{ left: mx, top: my, zIndex: 999999, transform: "translate(-50%, -50%)" }}
+                    >
+                      <button
+                        onClick={() => editConnectorLabel(c)}
+                        className="whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium leading-none"
+                        style={{
+                          backgroundColor: "rgba(0,0,0,0.8)",
+                          border: "1px solid rgba(255,255,255,0.2)",
+                          color: c.label ? "#fde68a" : "rgba(255,255,255,0.55)",
+                        }}
+                      >
+                        {c.label || "＋ラベル"}
+                      </button>
+                      <button
+                        onClick={() => deleteConnector(c.id)}
+                        title="クリックでこの連結を削除"
+                        aria-label="連結を削除"
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] leading-none text-white"
+                        style={{ backgroundColor: "rgba(0,0,0,0.8)", border: "1px solid rgba(255,255,255,0.2)" }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </div>
