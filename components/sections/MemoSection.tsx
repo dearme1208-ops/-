@@ -14,6 +14,8 @@ import {
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
   MEMO_NOTE_COLORS,
+  MEMO_NOTE_MIN_HEIGHT,
+  MEMO_NOTE_MIN_WIDTH,
   MEMO_PEN_COLORS,
   parseMemoBoardImport,
   serializeMemoBoard,
@@ -197,8 +199,8 @@ export default function MemoSection() {
       boardId: selectedBoardId,
       x: 40 + offset,
       y: 40 + offset,
-      width: 180,
-      height: 140,
+      width: 220,
+      height: 160,
       color: DEFAULT_MEMO_NOTE_COLOR,
       text,
       order: maxOrderRef.current,
@@ -213,6 +215,9 @@ export default function MemoSection() {
   }
   async function moveNote(id: string, x: number, y: number) {
     await db.memoNotes.update(id, { x, y, updatedAt: Date.now() });
+  }
+  async function resizeNote(id: string, width: number, height: number) {
+    await db.memoNotes.update(id, { width, height, updatedAt: Date.now() });
   }
   async function commitNoteText(id: string, text: string) {
     await db.memoNotes.update(id, { text, updatedAt: Date.now() });
@@ -521,6 +526,7 @@ export default function MemoSection() {
               connectMode={connectMode}
               isConnectSource={connectFromId === note.id}
               onDragEnd={moveNote}
+              onResizeEnd={resizeNote}
               onCommitText={commitNoteText}
               onDelete={deleteNote}
               onColorChange={setNoteColor}
@@ -545,6 +551,7 @@ function StickyNoteCard({
   connectMode,
   isConnectSource,
   onDragEnd,
+  onResizeEnd,
   onCommitText,
   onDelete,
   onColorChange,
@@ -558,6 +565,7 @@ function StickyNoteCard({
   connectMode: boolean;
   isConnectSource: boolean;
   onDragEnd: (id: string, x: number, y: number) => void;
+  onResizeEnd: (id: string, width: number, height: number) => void;
   onCommitText: (id: string, text: string) => void;
   onDelete: (id: string) => void;
   onColorChange: (id: string, color: string) => void;
@@ -605,9 +613,42 @@ function StickyNoteCard({
     setDragOffset(null);
   }
 
+  // 大きさの変更。右下の角をドラッグして広げる/縮める(部署名など、既定の大きさに
+  // 収まらない文字数の付箋を作れるようにするため)。移動と同様、確定はpointerupのみで行う
+  const [resizeOffset, setResizeOffset] = useState<{ dw: number; dh: number } | null>(null);
+  const resizeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  function handleResizePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (penMode || connectMode) return;
+    e.stopPropagation();
+    onFocusNote();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    resizeStartRef.current = { x: e.clientX, y: e.clientY };
+    setResizeOffset({ dw: 0, dh: 0 });
+  }
+  function handleResizePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!resizeStartRef.current) return;
+    setResizeOffset({ dw: e.clientX - resizeStartRef.current.x, dh: e.clientY - resizeStartRef.current.y });
+  }
+  function handleResizePointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    if (!resizeStartRef.current || !resizeOffset) {
+      resizeStartRef.current = null;
+      setResizeOffset(null);
+      return;
+    }
+    const newWidth = Math.max(MEMO_NOTE_MIN_WIDTH, Math.min(MEMO_BOARD_WIDTH - note.x, note.width + resizeOffset.dw));
+    const newHeight = Math.max(MEMO_NOTE_MIN_HEIGHT, Math.min(MEMO_BOARD_HEIGHT - note.y, note.height + resizeOffset.dh));
+    onResizeEnd(note.id, newWidth, newHeight);
+    resizeStartRef.current = null;
+    setResizeOffset(null);
+  }
+
   const colors = MEMO_NOTE_COLORS[note.color] ?? MEMO_NOTE_COLORS[DEFAULT_MEMO_NOTE_COLOR];
   const left = note.x + (dragOffset?.dx ?? 0);
   const top = note.y + (dragOffset?.dy ?? 0);
+  const width = Math.max(MEMO_NOTE_MIN_WIDTH, note.width + (resizeOffset?.dw ?? 0));
+  const height = Math.max(MEMO_NOTE_MIN_HEIGHT, note.height + (resizeOffset?.dh ?? 0));
 
   return (
     <div
@@ -615,8 +656,8 @@ function StickyNoteCard({
       style={{
         left,
         top,
-        width: note.width,
-        height: note.height,
+        width,
+        height,
         zIndex: note.order,
         pointerEvents: penMode ? "none" : "auto",
         backgroundColor: colors.bg,
@@ -694,6 +735,20 @@ function StickyNoteCard({
         readOnly={connectMode}
         className="min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-black/80 outline-none"
       />
+      {!penMode && !connectMode && (
+        <div
+          className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
+          style={{ touchAction: "none" }}
+          onPointerDown={handleResizePointerDown}
+          onPointerMove={handleResizePointerMove}
+          onPointerUp={handleResizePointerUp}
+          onPointerCancel={handleResizePointerUp}
+        >
+          <svg viewBox="0 0 16 16" className="h-full w-full text-black/30">
+            <path d="M14 14 L14 8 M14 14 L8 14" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          </svg>
+        </div>
+      )}
     </div>
   );
 }

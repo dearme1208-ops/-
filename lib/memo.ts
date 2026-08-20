@@ -18,6 +18,9 @@ export const DEFAULT_MEMO_PEN_WIDTH = 3;
 export const MEMO_BOARD_WIDTH = 1400;
 export const MEMO_BOARD_HEIGHT = 1000;
 
+export const MEMO_NOTE_MIN_WIDTH = 100;
+export const MEMO_NOTE_MIN_HEIGHT = 80;
+
 // 付箋を結ぶ線は、書き出し時にIDではなくnotes配列内でのインデックスで参照する。
 // インポート時に付箋へ新しいIDが振り直されるため、IDのままでは対応が取れなくなるため
 export interface MemoConnectorExport {
