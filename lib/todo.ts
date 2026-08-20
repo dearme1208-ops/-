@@ -38,7 +38,14 @@ export async function completeTodoTask(task: TodoTask, today: string): Promise<v
     const nextDue = computeNextDueDate(task.recurrence, task.dueDate ?? today);
     const updates: Partial<TodoTask> = { dueDate: nextDue };
     if (task.myDayDate === today) updates.myDayDate = undefined;
-    await db.todoTasks.update(task.id, updates);
+    await db.transaction("rw", db.todoTasks, async () => {
+      await db.todoTasks.update(task.id, updates);
+      // 次回に進む際、前回分のサブタスクの完了状態を持ち越さないよう未完了に戻す
+      const subtasks = await db.todoTasks.where("parentTaskId").equals(task.id).toArray();
+      for (const s of subtasks) {
+        if (s.completed) await db.todoTasks.update(s.id, { completed: false, completedAt: undefined });
+      }
+    });
     return;
   }
   await db.todoTasks.update(task.id, { completed: true, completedAt: Date.now() });
