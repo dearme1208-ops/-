@@ -10,6 +10,7 @@ import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { baseAccumulatedMs } from "@/lib/tasks";
 import { generateReportText, downloadTextFile, computeDailyOverlayComparison } from "@/lib/report";
+import { computeTodoPeriodSummary } from "@/lib/todoTrend";
 import { exportElementToPdf } from "@/lib/pdfExport";
 import { recordsToIcs } from "@/lib/ics";
 import { dailyAvgPrecipProbability } from "@/lib/weather";
@@ -159,6 +160,11 @@ export default function ReportSection() {
       }
     }
 
+    // ToDoの推移（この期間の期首→期末の未完了件数、新規作成・完了件数）
+    const todoSummary = range
+      ? computeTodoPeriodSummary(todoTasks ?? [], range.start.getTime(), range.end.getTime())
+      : null;
+
     return {
       rangeLabel,
       ranking,
@@ -175,6 +181,7 @@ export default function ReportSection() {
       periodRecords,
       projectMvp,
       dailyWeather,
+      todoSummary,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, masterTasks, dailyTasks, todoTasks, projects, weatherForecasts, kind, afterHoursCutoff, standardDailySeconds, today]);
@@ -198,7 +205,7 @@ export default function ReportSection() {
 
   function download() {
     if (!records || !masterTasks) return;
-    const text = generateReportText(title, filter, records, masterTasks, afterHoursCutoff, note);
+    const text = generateReportText(title, filter, records, masterTasks, afterHoursCutoff, note, todoTasks ?? []);
     const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
     downloadTextFile(`report_${label}_${todayStr()}.txt`, text);
   }
@@ -278,6 +285,13 @@ ul{padding-left:20px;font-size:13px}
 <h2>作業時間ランキング（上位${Math.min(TOP_N, data.ranking.length)}件）</h2>
 <table><tr><th>区分</th><th>作業名</th><th>合計時間</th><th>件数</th></tr>${rankingRows}</table>
 ${data.attention.length > 0 ? `<h2>要注意項目</h2><ul>${attentionRows}</ul>` : ""}
+${
+  data.todoSummary
+    ? `<h2>ToDoの推移</h2><p>未完了 ${data.todoSummary.openAtStart}件 → ${data.todoSummary.openAtEnd}件（${
+        data.todoSummary.openAtEnd - data.todoSummary.openAtStart >= 0 ? "+" : ""
+      }${data.todoSummary.openAtEnd - data.todoSummary.openAtStart}）　新規${data.todoSummary.createdInPeriod}件・完了${data.todoSummary.completedInPeriod}件</p>`
+    : ""
+}
 ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 </body></html>`;
     const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
@@ -585,6 +599,30 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
               </div>
             )}
           </div>
+
+          {data.todoSummary && (
+            <div className="panel p-4">
+              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">📋 ToDoの推移</h3>
+              <p className="text-sm text-cream/70">
+                未完了{" "}
+                <span className="font-display text-lg font-bold text-cream">{data.todoSummary.openAtStart}件</span>
+                {" → "}
+                <span className="font-display text-lg font-bold text-cream">{data.todoSummary.openAtEnd}件</span>
+                {(() => {
+                  const delta = data.todoSummary.openAtEnd - data.todoSummary.openAtStart;
+                  return (
+                    <span className={delta > 0 ? "ml-1 font-bold text-alert" : "ml-1 font-bold text-cream/60"}>
+                      （{delta >= 0 ? "+" : ""}
+                      {delta}）
+                    </span>
+                  );
+                })()}
+              </p>
+              <p className="mt-1 text-xs text-cream/50">
+                この期間の新規作成 {data.todoSummary.createdInPeriod}件・完了 {data.todoSummary.completedInPeriod}件
+              </p>
+            </div>
+          )}
 
           <div className="panel space-y-2 p-4">
             <h3 className="font-display text-sm font-bold text-cream/80">🪞 {reflectionQuestion}</h3>

@@ -1,9 +1,10 @@
 import { subDays, subMonths, subWeeks } from "date-fns";
-import type { MasterTask, WorkRecord } from "./types";
+import type { MasterTask, TodoTask, WorkRecord } from "./types";
 import { aggregateRecords } from "./aggregate";
 import { computeAttentionList } from "./attention";
 import { computeAfterHoursBreakdown } from "./overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "./period";
+import { computeTodoPeriodSummary } from "./todoTrend";
 import { formatHms, todayStr } from "./time";
 
 const WEEKDAY_JP_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -63,7 +64,8 @@ export function generateReportText(
   records: WorkRecord[],
   masterTasks: MasterTask[],
   afterHoursCutoff = "18:00",
-  note = ""
+  note = "",
+  todoTasks: TodoTask[] = []
 ): string {
   const range = getPeriodRange(filter);
   const rangeLabel = range
@@ -112,6 +114,15 @@ export function generateReportText(
         )} (+${Math.round(a.overRatio * 100)}%)`
       );
     });
+  }
+  if (range) {
+    const todoSummary = computeTodoPeriodSummary(todoTasks, range.start.getTime(), range.end.getTime());
+    const delta = todoSummary.openAtEnd - todoSummary.openAtStart;
+    lines.push("");
+    lines.push("【ToDoの推移】");
+    lines.push(
+      `未完了 ${todoSummary.openAtStart}件 → ${todoSummary.openAtEnd}件（${delta >= 0 ? "+" : ""}${delta}）　新規${todoSummary.createdInPeriod}件・完了${todoSummary.completedInPeriod}件`
+    );
   }
   if (note.trim()) {
     lines.push("");

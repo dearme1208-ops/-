@@ -40,10 +40,29 @@ export interface TodoTrendPoint {
 // ため、この開閉判定自体は過去に遡っても正確。一方、対応状況(tag)は現在の値をそのまま使うため、
 // 過去時点で本当にそのタグだったとは限らない(タグの変更履歴は保持していない)。あくまで
 // 「現在のタグ基準で見た、残タスク数の推移」という近似であることに注意
-function openTasksAsOf(tasks: TodoTask[], asOfMs: number): TodoTask[] {
+export function openTasksAsOf(tasks: TodoTask[], asOfMs: number): TodoTask[] {
   return tasks.filter(
     (t) => !t.parentTaskId && t.createdAt <= asOfMs && (!t.completed || (t.completedAt ?? Infinity) > asOfMs)
   );
+}
+
+export interface TodoPeriodSummary {
+  openAtStart: number;
+  openAtEnd: number;
+  createdInPeriod: number;
+  completedInPeriod: number;
+}
+
+// 日報・週報・月報向けに、その期間での未完了ToDo件数の推移(期首→期末、新規作成・完了件数)を
+// まとめる。buildTodoTrendと同じ「トップレベルのみ、現在のcreatedAt/completedAtに基づく」考え方
+export function computeTodoPeriodSummary(tasks: TodoTask[], startMs: number, endMs: number): TodoPeriodSummary {
+  const openAtStart = openTasksAsOf(tasks, startMs).length;
+  const openAtEnd = openTasksAsOf(tasks, endMs).length;
+  const createdInPeriod = tasks.filter((t) => !t.parentTaskId && t.createdAt >= startMs && t.createdAt < endMs).length;
+  const completedInPeriod = tasks.filter(
+    (t) => !t.parentTaskId && t.completed && t.completedAt !== undefined && t.completedAt >= startMs && t.completedAt < endMs
+  ).length;
+  return { openAtStart, openAtEnd, createdInPeriod, completedInPeriod };
 }
 
 export function buildTodoTrend(tasks: TodoTask[], granularity: TrendGranularity, now: Date = new Date()): TodoTrendPoint[] {

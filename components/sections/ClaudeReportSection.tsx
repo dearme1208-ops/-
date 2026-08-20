@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { formatHms, formatDateJp } from "@/lib/time";
 import { useDraftSetting } from "@/lib/settings";
+import { computeTodoPeriodSummary } from "@/lib/todoTrend";
 
 interface CompletionEntry {
   key: string;
@@ -38,6 +39,7 @@ export default function ClaudeReportSection() {
   const [kind, setKind] = useState<"day" | "week" | "month">("week");
   const records = useLiveQuery(() => db.records.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
+  const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
 
   const filter: PeriodFilter = { type: kind };
   const periodLabel = kind === "week" ? "今週" : kind === "month" ? "今月" : "今日";
@@ -72,6 +74,10 @@ export default function ClaudeReportSection() {
     const delta = totalSeconds - prevTotalSeconds;
 
     const troubleCount = periodRecords.filter((r) => r.isTrouble).length;
+
+    const todoSummary = range
+      ? computeTodoPeriodSummary(todoTasks ?? [], range.start.getTime(), range.end.getTime())
+      : null;
 
     // 同じタイトルの案件が大量に存在する場合、案件というより詳細作業名(workName)単位で
     // 日々の作業を記録しているだけの可能性が高い(CSVインポート元で「完了」列が立って
@@ -173,6 +179,21 @@ export default function ClaudeReportSection() {
           )
         );
       }
+      if (todoSummary) {
+        const todoDelta = todoSummary.openAtEnd - todoSummary.openAtStart;
+        if (todoDelta !== 0 || todoSummary.completedInPeriod > 0 || todoSummary.createdInPeriod > 0) {
+          const deltaText = todoDelta === 0 ? "横ばい" : todoDelta > 0 ? `+${todoDelta}件` : `${todoDelta}件`;
+          sentences.push(
+            pickVariant(
+              [
+                `ToDoは ${todoSummary.openAtStart}件 → ${todoSummary.openAtEnd}件（${deltaText}）。新規${todoSummary.createdInPeriod}件・完了${todoSummary.completedInPeriod}件です。`,
+                `ToDoの未完了は ${todoSummary.openAtEnd}件（${deltaText}）。この${periodLabel.slice(1)}で新規${todoSummary.createdInPeriod}件、完了${todoSummary.completedInPeriod}件でした。`,
+              ],
+              `${periodKey}-todo`
+            )
+          );
+        }
+      }
       if (projectCompletions.length > 0) {
         // 同名プロジェクトが繰り返し完了している場合に文章が延々と続くのを防ぐため、
         // タイトルの重複を除いた上で先頭3件までに切り詰める
@@ -202,8 +223,8 @@ export default function ClaudeReportSection() {
     }
 
     const displayCompletions = [...projectCompletions, ...stageCompletions].sort((a, b) => b.completedAt - a.completedAt);
-    return { totalSeconds, categoryRanking, sentences, completions: displayCompletions, autoCompletions };
-  }, [records, projects, kind, filter, periodLabel, prevLabel]);
+    return { totalSeconds, categoryRanking, sentences, completions: displayCompletions, autoCompletions, todoSummary };
+  }, [records, projects, todoTasks, kind, filter, periodLabel, prevLabel]);
 
   return (
     <div className="space-y-4">
