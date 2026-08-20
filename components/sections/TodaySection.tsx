@@ -2136,9 +2136,16 @@ export default function TodaySection({
                 <span className="text-cream/70">
                   {r.start}〜{r.end}
                 </span>
-                <button className="btn-pill-outline text-xs" onClick={() => setBreakAssignRange(r)}>
-                  実は作業していた分を割り当てる
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  {(r.checklist?.length ?? 0) > 0 && (
+                    <button className="btn-pill-outline text-xs" onClick={() => setBreakChecklistRange(r)}>
+                      チェックリストを見る
+                    </button>
+                  )}
+                  <button className="btn-pill-outline text-xs" onClick={() => setBreakAssignRange(r)}>
+                    実は作業していた分を割り当てる
+                  </button>
+                </div>
               </div>
             ))}
           </div>
