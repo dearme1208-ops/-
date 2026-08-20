@@ -1,4 +1,4 @@
-import type { MemoNote, MemoStroke } from "./types";
+import type { MemoConnector, MemoNote, MemoStroke } from "./types";
 
 // 付箋の色プリセット。実物の付箋に寄せた配色で、テーマのCSS変数には依存しない
 // (ボード自体がどの演出テーマでも同じ見た目であってほしいため)
@@ -18,23 +18,35 @@ export const DEFAULT_MEMO_PEN_WIDTH = 3;
 export const MEMO_BOARD_WIDTH = 1400;
 export const MEMO_BOARD_HEIGHT = 1000;
 
+// 付箋を結ぶ線は、書き出し時にIDではなくnotes配列内でのインデックスで参照する。
+// インポート時に付箋へ新しいIDが振り直されるため、IDのままでは対応が取れなくなるため
+export interface MemoConnectorExport {
+  fromIndex: number;
+  toIndex: number;
+}
+
 export interface MemoBoardExport {
   format: "koutei-hyo-memo";
-  version: 1;
+  version: 1 | 2;
   title: string;
   exportedAt: number;
   notes: Omit<MemoNote, "id" | "boardId">[];
   strokes: Omit<MemoStroke, "id" | "boardId">[];
+  connectors: MemoConnectorExport[];
 }
 
-export function serializeMemoBoard(title: string, notes: MemoNote[], strokes: MemoStroke[]): string {
+export function serializeMemoBoard(title: string, notes: MemoNote[], strokes: MemoStroke[], connectors: MemoConnector[]): string {
+  const indexById = new Map(notes.map((n, i) => [n.id, i]));
   const data: MemoBoardExport = {
     format: "koutei-hyo-memo",
-    version: 1,
+    version: 2,
     title,
     exportedAt: Date.now(),
     notes: notes.map(({ id: _id, boardId: _boardId, ...rest }) => rest),
     strokes: strokes.map(({ id: _id, boardId: _boardId, ...rest }) => rest),
+    connectors: connectors
+      .map((c) => ({ fromIndex: indexById.get(c.fromNoteId), toIndex: indexById.get(c.toNoteId) }))
+      .filter((c): c is MemoConnectorExport => c.fromIndex !== undefined && c.toIndex !== undefined),
   };
   return JSON.stringify(data, null, 2);
 }
@@ -55,13 +67,25 @@ export function parseMemoBoardImport(json: string): MemoBoardExport | null {
       (s: unknown): s is Omit<MemoStroke, "id" | "boardId"> =>
         !!s && typeof s === "object" && Array.isArray((s as MemoStroke).points)
     );
+    // 旧バージョン(v1)のファイルにはconnectorsが無いため、その場合は空配列にフォールバックする
+    const rawConnectors = Array.isArray(parsed.connectors) ? parsed.connectors : [];
+    const connectors = rawConnectors.filter(
+      (c: unknown): c is MemoConnectorExport =>
+        !!c &&
+        typeof c === "object" &&
+        typeof (c as MemoConnectorExport).fromIndex === "number" &&
+        typeof (c as MemoConnectorExport).toIndex === "number" &&
+        (c as MemoConnectorExport).fromIndex < notes.length &&
+        (c as MemoConnectorExport).toIndex < notes.length
+    );
     return {
       format: "koutei-hyo-memo",
-      version: 1,
+      version: 2,
       title: typeof parsed.title === "string" ? parsed.title : "インポートしたメモ",
       exportedAt: typeof parsed.exportedAt === "number" ? parsed.exportedAt : Date.now(),
       notes,
       strokes,
+      connectors,
     };
   } catch {
     return null;

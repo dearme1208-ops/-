@@ -18,7 +18,7 @@ import {
   parseMemoBoardImport,
   serializeMemoBoard,
 } from "@/lib/memo";
-import type { MemoNote, MemoStroke } from "@/lib/types";
+import type { MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
 
 // 付箋+手書きのメモボード。無限キャンバスにはせず、固定サイズの1ページを
@@ -51,8 +51,48 @@ export default function MemoSection() {
     () => (selectedBoardId ? db.memoStrokes.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as MemoStroke[])),
     [selectedBoardId]
   );
+  const connectors = useLiveQuery(
+    () =>
+      selectedBoardId ? db.memoConnectors.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as MemoConnector[]),
+    [selectedBoardId]
+  );
+  const notesById = new Map((notes ?? []).map((n) => [n.id, n]));
 
   const [penMode, setPenMode] = useState(false);
+  // 連結モード。ONの間は付箋をドラッグする代わりに、タップした2つの付箋を線で結ぶ
+  const [connectMode, setConnectMode] = useState(false);
+  const [connectFromId, setConnectFromId] = useState<string | null>(null);
+  function togglePenMode() {
+    setPenMode((v) => !v);
+    setConnectMode(false);
+    setConnectFromId(null);
+  }
+  function toggleConnectMode() {
+    setConnectMode((v) => !v);
+    setPenMode(false);
+    setConnectFromId(null);
+  }
+  async function selectNoteForConnect(id: string) {
+    if (!connectFromId) {
+      setConnectFromId(id);
+      return;
+    }
+    if (connectFromId === id) {
+      setConnectFromId(null);
+      return;
+    }
+    const fromId = connectFromId;
+    setConnectFromId(null);
+    if (!selectedBoardId) return;
+    const exists = (connectors ?? []).some(
+      (c) => (c.fromNoteId === fromId && c.toNoteId === id) || (c.fromNoteId === id && c.toNoteId === fromId)
+    );
+    if (exists) return;
+    await db.memoConnectors.add({ id: uid(), boardId: selectedBoardId, fromNoteId: fromId, toNoteId: id, createdAt: Date.now() });
+  }
+  async function deleteConnector(id: string) {
+    await db.memoConnectors.delete(id);
+  }
   const [penColor, setPenColor] = useState(DEFAULT_MEMO_PEN_COLOR);
   const [penWidth, setPenWidth] = useState(DEFAULT_MEMO_PEN_WIDTH);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -178,10 +218,53 @@ export default function MemoSection() {
     await db.memoNotes.update(id, { text, updatedAt: Date.now() });
   }
   async function deleteNote(id: string) {
-    await db.memoNotes.delete(id);
+    await db.transaction("rw", db.memoNotes, db.memoConnectors, async () => {
+      await db.memoNotes.delete(id);
+      await db.memoConnectors.where("fromNoteId").equals(id).delete();
+      await db.memoConnectors.where("toNoteId").equals(id).delete();
+    });
   }
   async function setNoteColor(id: string, color: string) {
     await db.memoNotes.update(id, { color });
+  }
+
+  // 付箋のテキストを、そのままToDoの新規タスクとして追加する。既存のリストが
+  // あればその先頭に、無ければ「タスク」という名前のリストを作って追加する
+  async function convertNoteToTodo(note: MemoNote) {
+    const title = note.text.trim();
+    if (!title) return;
+    let list = await db.todoLists.orderBy("order").first();
+    if (!list) {
+      list = { id: uid(), title: "タスク", order: 0, createdAt: Date.now() };
+      await db.todoLists.add(list);
+    }
+    const count = await db.todoTasks.where("listId").equals(list.id).count();
+    await db.todoTasks.add({
+      id: uid(),
+      listId: list.id,
+      title,
+      important: false,
+      completed: false,
+      order: count,
+      createdAt: Date.now(),
+    });
+    setStatusMessage(`ToDo「${title}」を追加しました`);
+  }
+
+  // 付箋のテキストを、そのまま案件の新規項目として追加する。期日は未定のため
+  // ひとまず今日にしておき、案件タブで後から調整してもらう想定
+  async function convertNoteToProject(note: MemoNote) {
+    const title = note.text.trim();
+    if (!title) return;
+    await db.projects.add({
+      id: uid(),
+      title,
+      category: "メモ",
+      workName: title,
+      dueDate: todayStr(),
+      createdAt: Date.now(),
+    });
+    setStatusMessage(`案件「${title}」を追加しました`);
   }
 
   function startVoiceListening() {
@@ -214,7 +297,7 @@ export default function MemoSection() {
     if (!currentBoard) return;
     downloadTextFile(
       `memo_${currentBoard.title}_${todayStr()}.json`,
-      serializeMemoBoard(currentBoard.title, notes ?? [], strokes ?? [])
+      serializeMemoBoard(currentBoard.title, notes ?? [], strokes ?? [], connectors ?? [])
     );
   }
 
@@ -225,18 +308,27 @@ export default function MemoSection() {
       setStatusMessage("このファイルは読み込めませんでした(メモのエクスポート形式ではありません)");
       return;
     }
-    await db.transaction("rw", db.memoNotes, db.memoStrokes, async () => {
+    await db.transaction("rw", db.memoNotes, db.memoStrokes, db.memoConnectors, async () => {
       let order = maxOrderRef.current;
+      const newIds: string[] = [];
       for (const n of data.notes) {
         order += 1;
-        await db.memoNotes.add({ ...n, id: uid(), boardId: selectedBoardId, order });
+        const id = uid();
+        newIds.push(id);
+        await db.memoNotes.add({ ...n, id, boardId: selectedBoardId, order });
       }
       for (const s of data.strokes) {
         await db.memoStrokes.add({ ...s, id: uid(), boardId: selectedBoardId });
       }
+      for (const c of data.connectors) {
+        const fromNoteId = newIds[c.fromIndex];
+        const toNoteId = newIds[c.toIndex];
+        if (!fromNoteId || !toNoteId) continue;
+        await db.memoConnectors.add({ id: uid(), boardId: selectedBoardId, fromNoteId, toNoteId, createdAt: Date.now() });
+      }
     });
     maxOrderRef.current += data.notes.length;
-    setStatusMessage(`付箋${data.notes.length}件・手書き${data.strokes.length}件を読み込みました`);
+    setStatusMessage(`付箋${data.notes.length}件・手書き${data.strokes.length}件・連結${data.connectors.length}件を読み込みました`);
   }
 
   async function addBoard() {
@@ -261,9 +353,10 @@ export default function MemoSection() {
     }
     if (!confirm(`「${currentBoard.title}」を削除します。付箋・手書きもすべて削除されます。よろしいですか?`)) return;
     const boardId = currentBoard.id;
-    await db.transaction("rw", db.memoBoards, db.memoNotes, db.memoStrokes, async () => {
+    await db.transaction("rw", db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, async () => {
       await db.memoNotes.where("boardId").equals(boardId).delete();
       await db.memoStrokes.where("boardId").equals(boardId).delete();
+      await db.memoConnectors.where("boardId").equals(boardId).delete();
       await db.memoBoards.delete(boardId);
     });
   }
@@ -301,8 +394,11 @@ export default function MemoSection() {
         <button className="btn-pill-outline text-sm" onClick={() => addNote()}>
           + 付箋を追加
         </button>
-        <button className={penMode ? "btn-pill text-sm" : "btn-pill-outline text-sm"} onClick={() => setPenMode((v) => !v)}>
+        <button className={penMode ? "btn-pill text-sm" : "btn-pill-outline text-sm"} onClick={togglePenMode}>
           ✏️ 手書き: {penMode ? "ON" : "OFF"}
+        </button>
+        <button className={connectMode ? "btn-pill text-sm" : "btn-pill-outline text-sm"} onClick={toggleConnectMode}>
+          🔗 連結: {connectMode ? "ON" : "OFF"}
         </button>
         {penMode && (
           <>
@@ -361,6 +457,11 @@ export default function MemoSection() {
         />
       </div>
 
+      {connectMode && (
+        <p className="text-xs text-cream/50">
+          {connectFromId ? "つなげる相手の付箋をタップしてください(同じ付箋をもう一度タップで取り消し)" : "つなげたい付箋を1つ目タップしてください"}
+        </p>
+      )}
       {statusMessage && <p className="text-xs text-cream/50">{statusMessage}</p>}
 
       <div className="panel overflow-auto p-0" style={{ maxHeight: "70vh" }}>
@@ -376,16 +477,57 @@ export default function MemoSection() {
             onPointerUp={handlePenPointerUp}
             onPointerCancel={handlePenPointerUp}
           />
+          <svg
+            className="absolute left-0 top-0"
+            width={MEMO_BOARD_WIDTH}
+            height={MEMO_BOARD_HEIGHT}
+            style={{ pointerEvents: "none" }}
+          >
+            {(connectors ?? []).map((c) => {
+              const from = notesById.get(c.fromNoteId);
+              const to = notesById.get(c.toNoteId);
+              if (!from || !to) return null;
+              const x1 = from.x + from.width / 2;
+              const y1 = from.y + from.height / 2;
+              const x2 = to.x + to.width / 2;
+              const y2 = to.y + to.height / 2;
+              const mx = (x1 + x2) / 2;
+              const my = (y1 + y2) / 2;
+              return (
+                <g key={c.id} style={{ pointerEvents: penMode ? "none" : "auto" }}>
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(253,230,138,0.75)" strokeWidth={2} />
+                  <circle
+                    cx={mx}
+                    cy={my}
+                    r={8}
+                    fill="rgba(0,0,0,0.55)"
+                    className="cursor-pointer"
+                    onClick={() => deleteConnector(c.id)}
+                  >
+                    <title>クリックでこの連結を削除</title>
+                  </circle>
+                  <text x={mx} y={my + 3} fontSize={9} textAnchor="middle" fill="#fff" style={{ pointerEvents: "none" }}>
+                    ✕
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
           {(notes ?? []).map((note) => (
             <StickyNoteCard
               key={note.id}
               note={note}
               penMode={penMode}
+              connectMode={connectMode}
+              isConnectSource={connectFromId === note.id}
               onDragEnd={moveNote}
               onCommitText={commitNoteText}
               onDelete={deleteNote}
               onColorChange={setNoteColor}
               onFocusNote={() => bringToFront(note.id)}
+              onSelectConnect={() => selectNoteForConnect(note.id)}
+              onConvertTodo={() => convertNoteToTodo(note)}
+              onConvertProject={() => convertNoteToProject(note)}
             />
           ))}
         </div>
@@ -400,19 +542,29 @@ export default function MemoSection() {
 function StickyNoteCard({
   note,
   penMode,
+  connectMode,
+  isConnectSource,
   onDragEnd,
   onCommitText,
   onDelete,
   onColorChange,
   onFocusNote,
+  onSelectConnect,
+  onConvertTodo,
+  onConvertProject,
 }: {
   note: MemoNote;
   penMode: boolean;
+  connectMode: boolean;
+  isConnectSource: boolean;
   onDragEnd: (id: string, x: number, y: number) => void;
   onCommitText: (id: string, text: string) => void;
   onDelete: (id: string) => void;
   onColorChange: (id: string, color: string) => void;
   onFocusNote: () => void;
+  onSelectConnect: () => void;
+  onConvertTodo: () => void;
+  onConvertProject: () => void;
 }) {
   // テキストはローカルの下書きとして保持し、フォーカスが外れた時だけDBへ確定する。
   // Dexieの書き込みのたびにliveQueryのechoで再レンダーされる値をcontrolledな
@@ -430,7 +582,7 @@ function StickyNoteCard({
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
   function handleHeaderPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
-    if (penMode) return;
+    if (penMode || connectMode) return;
     onFocusNote();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -459,7 +611,7 @@ function StickyNoteCard({
 
   return (
     <div
-      className="absolute flex flex-col rounded-md border-2 shadow-md"
+      className={`absolute flex flex-col rounded-md border-2 shadow-md ${connectMode ? "cursor-pointer" : ""}`}
       style={{
         left,
         top,
@@ -468,8 +620,10 @@ function StickyNoteCard({
         zIndex: note.order,
         pointerEvents: penMode ? "none" : "auto",
         backgroundColor: colors.bg,
-        borderColor: colors.border,
+        borderColor: isConnectSource ? "#fff" : colors.border,
+        boxShadow: isConnectSource ? "0 0 0 2px #fff" : undefined,
       }}
+      onClick={connectMode ? onSelectConnect : undefined}
     >
       <div
         className="flex shrink-0 cursor-grab items-center justify-between gap-1 px-1.5 py-1 active:cursor-grabbing"
@@ -480,22 +634,54 @@ function StickyNoteCard({
         onPointerCancel={handleHeaderPointerUp}
       >
         <span className="text-[10px] text-black/40">⠿</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(note.id);
+          }}
+          className="text-[10px] leading-none text-black/40 hover:text-red-600"
+          aria-label="付箋を削除"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="flex shrink-0 items-center justify-between gap-1 px-1.5 pb-1">
         <div className="flex items-center gap-1">
           {Object.keys(MEMO_NOTE_COLORS).map((c) => (
             <button
               key={c}
-              onClick={() => onColorChange(note.id, c)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onColorChange(note.id, c);
+              }}
               className="h-3 w-3 shrink-0 rounded-full border border-black/20"
               style={{ backgroundColor: MEMO_NOTE_COLORS[c].bg }}
               aria-label={`付箋の色を${c}にする`}
             />
           ))}
+        </div>
+        <div className="flex items-center gap-1">
           <button
-            onClick={() => onDelete(note.id)}
-            className="text-[10px] leading-none text-black/40 hover:text-red-600"
-            aria-label="付箋を削除"
+            onClick={(e) => {
+              e.stopPropagation();
+              onConvertTodo();
+            }}
+            className="text-xs leading-none hover:opacity-70"
+            title="ToDoに変換"
+            aria-label="ToDoに変換"
           >
-            ✕
+            ✅
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onConvertProject();
+            }}
+            className="text-xs leading-none hover:opacity-70"
+            title="案件に変換"
+            aria-label="案件に変換"
+          >
+            📁
           </button>
         </div>
       </div>
@@ -505,6 +691,7 @@ function StickyNoteCard({
         onFocus={onFocusNote}
         onBlur={() => onCommitText(note.id, text)}
         placeholder="メモ..."
+        readOnly={connectMode}
         className="min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-black/80 outline-none"
       />
     </div>

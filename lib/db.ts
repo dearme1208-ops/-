@@ -16,6 +16,7 @@ import type {
   MemoBoard,
   MemoNote,
   MemoStroke,
+  MemoConnector,
 } from "./types";
 
 export class KouteiDB extends Dexie {
@@ -35,6 +36,7 @@ export class KouteiDB extends Dexie {
   memoBoards!: Table<MemoBoard, string>;
   memoNotes!: Table<MemoNote, string>;
   memoStrokes!: Table<MemoStroke, string>;
+  memoConnectors!: Table<MemoConnector, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -145,6 +147,25 @@ export class KouteiDB extends Dexie {
       memoBoards: "id, order",
       memoNotes: "id, boardId, order",
       memoStrokes: "id, boardId, createdAt",
+    });
+    this.version(10).stores({
+      masterTasks: "id, category, name, isFavorite",
+      templateItems: "id, weekday, order",
+      dailyTasks: "id, date, status, order",
+      records: "id, date, category, name, masterTaskId, excludedFromStats",
+      settings: "key",
+      projects: "id, dueDate, createdAt",
+      todoLists: "id, order",
+      todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+      conditionLogs: "id, date, loggedAt",
+      geoPlaces: "id, createdAt",
+      weatherForecasts: "id, placeId, date",
+      weatherPlaces: "id, createdAt",
+      mandalaCharts: "id, createdAt",
+      memoBoards: "id, order",
+      memoNotes: "id, boardId, order",
+      memoStrokes: "id, boardId, createdAt",
+      memoConnectors: "id, boardId, fromNoteId, toNoteId",
     });
   }
 }

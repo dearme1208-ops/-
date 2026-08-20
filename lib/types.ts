@@ -300,3 +300,13 @@ export interface MemoStroke {
   width: number; // 線の太さ(px)
   createdAt: number;
 }
+
+// 付箋同士を結ぶ線。座標は持たず、両端の付箋IDだけを保持する(付箋を動かしても
+// 自動的に追従させるため、線の位置は表示側で付箋の現在位置から都度計算する)
+export interface MemoConnector {
+  id: string;
+  boardId: string;
+  fromNoteId: string;
+  toNoteId: string;
+  createdAt: number;
+}
