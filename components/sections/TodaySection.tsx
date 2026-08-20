@@ -5,7 +5,15 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
-import { adjustStopTimeForBreaks, computeEffectiveElapsedMs, isWithinBreak, parseBreakRanges } from "@/lib/breaks";
+import {
+  adjustStopTimeForBreaks,
+  breakRangeKey,
+  computeEffectiveElapsedMs,
+  findBreakRangeAt,
+  isWithinBreak,
+  parseBreakRanges,
+  timeToMsOfDay,
+} from "@/lib/breaks";
 import { useDraftSetting, useSetting } from "@/lib/settings";
 import {
   cardOverrunClass,
@@ -56,7 +64,7 @@ import {
   notify,
   requestNotificationPermission,
 } from "@/lib/notifications";
-import type { DailyTask, GeoPlace, MasterTask, ProjectItem, TimeSegment, Weekday, WorkRecord } from "@/lib/types";
+import type { BreakRange, DailyTask, GeoPlace, MasterTask, ProjectItem, TimeSegment, Weekday, WorkRecord } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import { showUndoToast } from "@/lib/toast";
 import Modal from "@/components/ui/Modal";
@@ -69,6 +77,8 @@ import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTask
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
+import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
+import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
@@ -154,6 +164,30 @@ export default function TodaySection({
   const provisionalNotifyEnabled = provisionalNotifyEnabledStr === "true";
   const [breakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
   const breakRanges = useMemo(() => parseBreakRanges(breakRangesStr), [breakRangesStr]);
+  // 強制ストップ対象の休憩帯。該当時刻になると計測中の作業を一時停止し、休憩扱いにする
+  const forceStopBreakRanges = useMemo(() => breakRanges.filter((r) => r.forceStop), [breakRanges]);
+  const activeForceStopRange = useMemo(
+    () => findBreakRangeAt(now, date, forceStopBreakRanges),
+    [now, date, forceStopBreakRanges]
+  );
+  // 本日、強制ストップ済みの休憩帯のキー一覧。1つの休憩帯につき1回だけ強制停止を行うためのガード
+  const [breakStopHandledStr, setBreakStopHandledStr] = useSetting(`today.breakStopHandled.${date}`, "[]");
+  const breakStopHandled = useMemo<Set<string>>(() => {
+    try {
+      const parsed = JSON.parse(breakStopHandledStr);
+      return new Set(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return new Set();
+    }
+  }, [breakStopHandledStr]);
+  const [breakChecklistRange, setBreakChecklistRange] = useState<BreakRange | null>(null);
+  const [breakAssignRange, setBreakAssignRange] = useState<BreakRange | null>(null);
+  // 本日すでに始まっている強制ストップ休憩帯。移動・ミーティングなどで実際には
+  // 作業していた場合に、後から作業へ割り当てられるようにする一覧表示に使う
+  const startedForceStopRanges = useMemo(
+    () => forceStopBreakRanges.filter((r) => timeToMsOfDay(date, r.start) <= now),
+    [forceStopBreakRanges, date, now]
+  );
   const provisionalNotifiedAtRef = useRef<number | null>(null);
   const [emphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
@@ -683,6 +717,21 @@ export default function TodaySection({
       await db.dailyTasks.add(task);
     })();
   }, [provisionalEnabled, tasks, now, lastStopTime, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
+
+  // 強制ストップ付きの休憩帯に入ったら、計測中の作業(仮計測含む)を一時停止し、
+  // チェックリストを表示する。1つの休憩帯につき1回だけ行い(breakStopHandledで判定)、
+  // その後は本人が休憩中に手動で計測を再開しても再度は割り込まない
+  useEffect(() => {
+    if (!activeForceStopRange || !tasks) return;
+    const key = breakRangeKey(activeForceStopRange);
+    if (breakStopHandled.has(key)) return;
+    const runningTasks = tasks.filter((t) => t.status === "running");
+    (async () => {
+      for (const t of runningTasks) await pauseTask(t);
+    })();
+    setBreakStopHandledStr(JSON.stringify([...breakStopHandled, key]));
+    setBreakChecklistRange(activeForceStopRange);
+  }, [activeForceStopRange, tasks, breakStopHandled]);
 
   // 放置検知: マウス/キーボード操作もタブの表示もない状態が一定時間続いたら、
   // 未計測の計測を「最後に操作していた時刻」で自動的に打ち切る。定時後・休日に
@@ -1564,6 +1613,42 @@ export default function TodaySection({
     await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs });
   }
 
+  // 強制ストップされた休憩帯を、「実は移動やミーティングで作業していた」として後から
+  // 既存の作業へ割り当てる。休憩帯の開始〜終了を1つの実働区間として追加し、その分だけ
+  // 計測時間を増やす(現在計測中の区間があってもそれは含めず、確定済みの区間だけを再集計する)
+  async function assignBreakTimeToTask(task: DailyTask, range: BreakRange) {
+    const startMs = timeToMsOfDay(date, range.start);
+    const endMs = timeToMsOfDay(date, range.end);
+    const segments = [...task.segments, { start: startMs, end: endMs }].sort((a, b) => a.start - b.start);
+    const accumulatedMs = segments
+      .filter((s): s is { start: number; end: number } => s.end !== undefined)
+      .reduce((sum, s) => sum + (s.end - s.start), 0);
+    await db.dailyTasks.update(task.id, { segments, accumulatedMs });
+    setBreakAssignRange(null);
+  }
+
+  // 同様に、その場で新しい作業として登録した上で休憩帯の時間を割り当てる
+  async function assignBreakTimeToNewTask(category: string, workName: string, range: BreakRange) {
+    const startMs = timeToMsOfDay(date, range.start);
+    const endMs = timeToMsOfDay(date, range.end);
+    const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
+    const task: DailyTask = {
+      id: uid(),
+      date,
+      order: count,
+      category,
+      name: workName,
+      estimatedSeconds: 0,
+      status: "paused",
+      segments: [{ start: startMs, end: endMs }],
+      accumulatedMs: endMs - startMs,
+      startedAt: startMs,
+      isSpontaneous: true,
+    };
+    await db.dailyTasks.add(task);
+    setBreakAssignRange(null);
+  }
+
   // 作業を完了にせず、計測時間だけを加算する。segmentsとは独立したmanualAdjustmentMsとして
   // 保持し、一時停止・終了時にsegments合計で上書きされて消えてしまわないようにする
   async function addTimeToTask(task: DailyTask, seconds: number) {
@@ -2037,6 +2122,27 @@ export default function TodaySection({
           standardWorkStart={standardWorkStart}
           standardWorkEnd={standardWorkEnd}
         />
+      )}
+      {startedForceStopRanges.length > 0 && (
+        <div className="panel space-y-2 p-4">
+          <h3 className="font-display text-sm font-bold text-cream/80">☕ 本日の休憩</h3>
+          <p className="text-xs text-cream/50">
+            この時間帯になると計測中の作業を自動で一時停止します。移動やミーティングなどで実際には
+            作業していた場合は、後からその作業に割り当てられます。
+          </p>
+          <div className="space-y-1.5">
+            {startedForceStopRanges.map((r, i) => (
+              <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 text-sm">
+                <span className="text-cream/70">
+                  {r.start}〜{r.end}
+                </span>
+                <button className="btn-pill-outline text-xs" onClick={() => setBreakAssignRange(r)}>
+                  実は作業していた分を割り当てる
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
       {showAutoAllocate && (
         <div className="panel p-4">
@@ -3041,6 +3147,20 @@ export default function TodaySection({
             await manualFinish(manualFinishTask, seconds);
             setManualFinishTaskTarget(null);
           }}
+        />
+      )}
+
+      {breakChecklistRange && (
+        <BreakChecklistDialog range={breakChecklistRange} onClose={() => setBreakChecklistRange(null)} />
+      )}
+
+      {breakAssignRange && (
+        <BreakAssignDialog
+          range={breakAssignRange}
+          candidateTasks={candidateTasks}
+          onAssignExisting={(task) => assignBreakTimeToTask(task, breakAssignRange)}
+          onAssignNew={(category, workName) => assignBreakTimeToNewTask(category, workName, breakAssignRange)}
+          onClose={() => setBreakAssignRange(null)}
         />
       )}
 

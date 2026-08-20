@@ -144,6 +144,8 @@ export interface AppSetting {
 export interface BreakRange {
   start: string; // HH:MM
   end: string; // HH:MM
+  forceStop?: boolean; // trueの場合、この時刻になると計測中の作業を強制的に一時停止して休憩扱いにする
+  checklist?: string[]; // forceStop時に表示するチェックリスト項目（例: 目薬をさす、水を飲む）
 }
 
 // 体調記録。1日の中で何度でも記録でき、記録時点で計測中だった作業を紐付ける

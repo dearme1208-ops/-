@@ -41,6 +41,22 @@ export default function SettingsSection() {
   const provisionalNotifyEnabled = provisionalNotifyEnabledStr === "true";
   const [breakRangesStr, setBreakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
   const breakRanges = parseBreakRanges(breakRangesStr);
+  // チェックリストのテキストエリアは、キー入力のたびにDBへ書き込んで再レンダーすると
+  // 日本語IMEの変換が壊れるため、ローカルの下書きとして保持し、フォーカスが外れた時だけ
+  // 確定してbreakRangesへ反映する(useDraftSettingと同じ考え方)
+  const [checklistDrafts, setChecklistDrafts] = useState<Record<number, string>>({});
+  function checklistDraftFor(i: number, range: BreakRange): string {
+    return checklistDrafts[i] ?? (range.checklist ?? []).join("\n");
+  }
+  function commitChecklistDraft(i: number) {
+    const text = checklistDrafts[i];
+    if (text === undefined) return;
+    const items = text
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    updateBreakRange(i, { checklist: items });
+  }
   const [provisionalIdleHoursStr, setProvisionalIdleHoursStr] = useSetting("today.provisionalIdleThresholdHours", "3");
   const [geoTrackingEnabledStr, setGeoTrackingEnabledStr] = useSetting("today.geoTrackingEnabled", "false");
   const geoTrackingEnabled = geoTrackingEnabledStr === "true";
@@ -456,23 +472,46 @@ export default function SettingsSection() {
               除外する時間帯（休憩など）。この時間帯は未計測の自動開始が始まらず、「さかのぼって開始/再開」でも対象に含まれません。
             </p>
             {breakRanges.map((r, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
-                <input
-                  type="time"
-                  value={r.start}
-                  onChange={(e) => updateBreakRange(i, { start: e.target.value })}
-                  className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
-                />
-                <span>〜</span>
-                <input
-                  type="time"
-                  value={r.end}
-                  onChange={(e) => updateBreakRange(i, { end: e.target.value })}
-                  className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
-                />
-                <button className="text-alert" onClick={() => removeBreakRange(i)} aria-label="削除">
-                  ✕
-                </button>
+              <div key={i} className="space-y-1.5 rounded-lg border border-cream/10 p-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+                  <input
+                    type="time"
+                    value={r.start}
+                    onChange={(e) => updateBreakRange(i, { start: e.target.value })}
+                    className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                  />
+                  <span>〜</span>
+                  <input
+                    type="time"
+                    value={r.end}
+                    onChange={(e) => updateBreakRange(i, { end: e.target.value })}
+                    className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
+                  />
+                  <button
+                    className={r.forceStop ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => updateBreakRange(i, { forceStop: !r.forceStop })}
+                  >
+                    強制ストップ: {r.forceStop ? "ON" : "OFF"}
+                  </button>
+                  <button className="ml-auto text-alert" onClick={() => removeBreakRange(i)} aria-label="削除">
+                    ✕
+                  </button>
+                </div>
+                {r.forceStop && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-cream/40">
+                      この時間になると計測中の作業を自動で一時停止します。休憩時にやることをチェックリストとして表示できます（1行1項目）。
+                    </p>
+                    <textarea
+                      value={checklistDraftFor(i, r)}
+                      onChange={(e) => setChecklistDrafts((d) => ({ ...d, [i]: e.target.value }))}
+                      onBlur={() => commitChecklistDraft(i)}
+                      placeholder={"目薬をさす\n水を飲む"}
+                      rows={2}
+                      className="w-full rounded border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                    />
+                  </div>
+                )}
               </div>
             ))}
             <button className="btn-pill-outline text-xs" onClick={addBreakRange}>

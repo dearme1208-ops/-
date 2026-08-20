@@ -17,11 +17,28 @@ export function serializeBreakRanges(ranges: BreakRange[]): string {
   return JSON.stringify(ranges);
 }
 
-function timeToMsOfDay(dateStr: string, hhmm: string): number {
+export function timeToMsOfDay(dateStr: string, hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   const d = new Date(dateStr + "T00:00:00");
   d.setHours(h || 0, m || 0, 0, 0);
   return d.getTime();
+}
+
+// 指定した日時(ms)を含む休憩帯を返す(無ければnull)。強制ストップ対象の絞り込み等、
+// どの休憩帯かを特定してその内容(チェックリスト等)を参照したい場合に使う
+export function findBreakRangeAt(ms: number, dateStr: string, ranges: BreakRange[]): BreakRange | null {
+  for (const r of ranges) {
+    const s = timeToMsOfDay(dateStr, r.start);
+    const e = timeToMsOfDay(dateStr, r.end);
+    if (e <= s) continue;
+    if (ms >= s && ms < e) return r;
+  }
+  return null;
+}
+
+// 休憩帯を一意に識別するためのキー(「本日この休憩帯はもう処理済み」等の判定に使う)
+export function breakRangeKey(r: BreakRange): string {
+  return `${r.start}-${r.end}`;
 }
 
 // 指定日における各休憩帯の[開始ms, 終了ms]。終了が開始より前（日をまたぐ設定）の場合は無視する
