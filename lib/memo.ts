@@ -21,6 +21,13 @@ export const MEMO_BOARD_HEIGHT = 1000;
 export const MEMO_NOTE_MIN_WIDTH = 100;
 export const MEMO_NOTE_MIN_HEIGHT = 80;
 
+export const MEMO_MIN_ZOOM = 0.25;
+export const MEMO_MAX_ZOOM = 3;
+
+export function clampMemoZoom(z: number): number {
+  return Math.max(MEMO_MIN_ZOOM, Math.min(MEMO_MAX_ZOOM, z));
+}
+
 // 付箋を結ぶ線は、書き出し時にIDではなくnotes配列内でのインデックスで参照する。
 // インポート時に付箋へ新しいIDが振り直されるため、IDのままでは対応が取れなくなるため
 export interface MemoConnectorExport {

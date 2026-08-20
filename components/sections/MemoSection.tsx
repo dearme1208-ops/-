@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { downloadTextFile } from "@/lib/report";
 import { createSpeechRecognition } from "@/lib/voice";
 import {
+  clampMemoZoom,
   DEFAULT_MEMO_NOTE_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
   DEFAULT_MEMO_PEN_WIDTH,
@@ -98,6 +99,104 @@ export default function MemoSection() {
   const [penColor, setPenColor] = useState(DEFAULT_MEMO_PEN_COLOR);
   const [penWidth, setPenWidth] = useState(DEFAULT_MEMO_PEN_WIDTH);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // フィールド(ボード)の拡大縮小率。CSSのtransform: scale()で見た目だけ拡大縮小し、
+  // 実際の付箋・手書きの座標(x, y, points等)はズームに関わらず常にボード上の
+  // 論理座標のまま保つ(ズームはあくまで表示上の話)
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(zoom);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pinchRef = useRef<{ startDist: number; startZoom: number } | null>(null);
+
+  // スマホ/タブレットでの2本指ピンチ操作でズームする。preventDefault()を確実に
+  // 効かせるため(Reactのtouchmoveはデフォルトでpassiveのため)、ここだけネイティブの
+  // addEventListenerを使う
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    function distanceOf(touches: TouchList): number {
+      const a = touches[0];
+      const b = touches[1];
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    }
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        pinchRef.current = { startDist: distanceOf(e.touches), startZoom: zoomRef.current };
+      }
+    }
+    function onTouchMove(e: TouchEvent) {
+      if (e.touches.length === 2 && pinchRef.current) {
+        e.preventDefault();
+        const scale = distanceOf(e.touches) / pinchRef.current.startDist;
+        setZoom(clampMemoZoom(pinchRef.current.startZoom * scale));
+      }
+    }
+    function onTouchEnd() {
+      pinchRef.current = null;
+    }
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [selectedBoardId]);
+
+  // PC: Ctrl/Cmd+ホイール(トラックパッドのピンチもブラウザ側でこの形になる)でズーム。
+  // 修飾キー無しの通常のホイールはこれまでどおりパネルのスクロールに使う
+  function handleWheelZoom(e: ReactWheelEvent<HTMLDivElement>) {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.01);
+    setZoom((z) => clampMemoZoom(z * factor));
+  }
+
+  // ボード上の全ての付箋・手書きがちょうど収まるように拡大縮小・スクロール位置を自動調整する
+  function fitToContent() {
+    const container = scrollContainerRef.current;
+    const allNotes = notes ?? [];
+    const allPoints = (strokes ?? []).flatMap((s) => s.points);
+    if (!container || (allNotes.length === 0 && allPoints.length === 0)) {
+      setZoom(1);
+      return;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const n of allNotes) {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + n.width);
+      maxY = Math.max(maxY, n.y + n.height);
+    }
+    for (const p of allPoints) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    const PADDING = 40;
+    minX = Math.max(0, minX - PADDING);
+    minY = Math.max(0, minY - PADDING);
+    maxX = Math.min(MEMO_BOARD_WIDTH, maxX + PADDING);
+    maxY = Math.min(MEMO_BOARD_HEIGHT, maxY + PADDING);
+    const contentWidth = Math.max(1, maxX - minX);
+    const contentHeight = Math.max(1, maxY - minY);
+    const newZoom = clampMemoZoom(Math.min(container.clientWidth / contentWidth, container.clientHeight / contentHeight));
+    setZoom(newZoom);
+    requestAnimationFrame(() => {
+      if (!scrollContainerRef.current) return;
+      scrollContainerRef.current.scrollLeft = minX * newZoom - (container.clientWidth - contentWidth * newZoom) / 2;
+      scrollContainerRef.current.scrollTop = minY * newZoom - (container.clientHeight - contentHeight * newZoom) / 2;
+    });
+  }
   // 描画中のストローク座標。React stateにせず、pointermoveのたびに再レンダーが
   // 走らないようにする(タッチペンでの手書きが重くならないようにするための要)
   const drawingRef = useRef<{ x: number; y: number }[] | null>(null);
@@ -144,12 +243,22 @@ export default function MemoSection() {
     }
   }, [strokes]);
 
+  // offsetX/offsetYはCSSのtransform: scale()配下での挙動がブラウザによって
+  // 一貫しないため、getBoundingClientRect()から自前でズーム込みのボード論理座標に
+  // 変換する(ズームしても手書きの座標が狂わないようにするための要)
+  function getBoardPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom };
+  }
+
   function handlePenPointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (!penMode) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     canvas.setPointerCapture(e.pointerId);
-    const point = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
+    const point = getBoardPoint(e.clientX, e.clientY);
     drawingRef.current = [point];
     const ctx = canvas.getContext("2d");
     if (ctx) {
@@ -163,7 +272,7 @@ export default function MemoSection() {
   }
   function handlePenPointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (!drawingRef.current) return;
-    const point = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
+    const point = getBoardPoint(e.clientX, e.clientY);
     drawingRef.current.push(point);
     const ctx = canvasRef.current?.getContext("2d");
     if (ctx) {
@@ -469,73 +578,101 @@ export default function MemoSection() {
       )}
       {statusMessage && <p className="text-xs text-cream/50">{statusMessage}</p>}
 
-      <div className="panel overflow-auto p-0" style={{ maxHeight: "70vh" }}>
-        <div className="relative bg-[#0f0f10]" style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT }}>
-          <canvas
-            ref={canvasRef}
-            width={MEMO_BOARD_WIDTH}
-            height={MEMO_BOARD_HEIGHT}
-            className="absolute left-0 top-0"
-            style={{ touchAction: "none", pointerEvents: penMode ? "auto" : "none" }}
-            onPointerDown={handlePenPointerDown}
-            onPointerMove={handlePenPointerMove}
-            onPointerUp={handlePenPointerUp}
-            onPointerCancel={handlePenPointerUp}
-          />
-          <svg
-            className="absolute left-0 top-0"
-            width={MEMO_BOARD_WIDTH}
-            height={MEMO_BOARD_HEIGHT}
-            style={{ pointerEvents: "none" }}
+      <div className="flex flex-wrap items-center gap-2">
+        <button className="btn-pill-outline text-sm" onClick={() => setZoom((z) => clampMemoZoom(z - 0.1))} aria-label="縮小">
+          －
+        </button>
+        <span className="w-12 text-center text-xs tabular-nums text-cream/60">{Math.round(zoom * 100)}%</span>
+        <button className="btn-pill-outline text-sm" onClick={() => setZoom((z) => clampMemoZoom(z + 0.1))} aria-label="拡大">
+          ＋
+        </button>
+        <button className="btn-pill-outline text-xs" onClick={() => setZoom(1)}>
+          100%
+        </button>
+        <button className="btn-pill-outline text-xs" onClick={fitToContent}>
+          🔍 全体を表示
+        </button>
+        <span className="text-[10px] text-cream/40">2本指ピンチ / Ctrl+ホイールでも拡大縮小できます</span>
+      </div>
+
+      <div
+        ref={scrollContainerRef}
+        className="panel overflow-auto p-0"
+        style={{ maxHeight: "70vh", touchAction: "pan-x pan-y" }}
+        onWheel={handleWheelZoom}
+      >
+        <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
+          <div
+            className="relative bg-[#0f0f10]"
+            style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
           >
-            {(connectors ?? []).map((c) => {
-              const from = notesById.get(c.fromNoteId);
-              const to = notesById.get(c.toNoteId);
-              if (!from || !to) return null;
-              const x1 = from.x + from.width / 2;
-              const y1 = from.y + from.height / 2;
-              const x2 = to.x + to.width / 2;
-              const y2 = to.y + to.height / 2;
-              const mx = (x1 + x2) / 2;
-              const my = (y1 + y2) / 2;
-              return (
-                <g key={c.id} style={{ pointerEvents: penMode ? "none" : "auto" }}>
-                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(253,230,138,0.75)" strokeWidth={2} />
-                  <circle
-                    cx={mx}
-                    cy={my}
-                    r={8}
-                    fill="rgba(0,0,0,0.55)"
-                    className="cursor-pointer"
-                    onClick={() => deleteConnector(c.id)}
-                  >
-                    <title>クリックでこの連結を削除</title>
-                  </circle>
-                  <text x={mx} y={my + 3} fontSize={9} textAnchor="middle" fill="#fff" style={{ pointerEvents: "none" }}>
-                    ✕
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-          {(notes ?? []).map((note) => (
-            <StickyNoteCard
-              key={note.id}
-              note={note}
-              penMode={penMode}
-              connectMode={connectMode}
-              isConnectSource={connectFromId === note.id}
-              onDragEnd={moveNote}
-              onResizeEnd={resizeNote}
-              onCommitText={commitNoteText}
-              onDelete={deleteNote}
-              onColorChange={setNoteColor}
-              onFocusNote={() => bringToFront(note.id)}
-              onSelectConnect={() => selectNoteForConnect(note.id)}
-              onConvertTodo={() => convertNoteToTodo(note)}
-              onConvertProject={() => convertNoteToProject(note)}
+            <canvas
+              ref={canvasRef}
+              width={MEMO_BOARD_WIDTH}
+              height={MEMO_BOARD_HEIGHT}
+              className="absolute left-0 top-0"
+              style={{ touchAction: "none", pointerEvents: penMode ? "auto" : "none" }}
+              onPointerDown={handlePenPointerDown}
+              onPointerMove={handlePenPointerMove}
+              onPointerUp={handlePenPointerUp}
+              onPointerCancel={handlePenPointerUp}
             />
-          ))}
+            <svg
+              className="absolute left-0 top-0"
+              width={MEMO_BOARD_WIDTH}
+              height={MEMO_BOARD_HEIGHT}
+              style={{ pointerEvents: "none" }}
+            >
+              {(connectors ?? []).map((c) => {
+                const from = notesById.get(c.fromNoteId);
+                const to = notesById.get(c.toNoteId);
+                if (!from || !to) return null;
+                const x1 = from.x + from.width / 2;
+                const y1 = from.y + from.height / 2;
+                const x2 = to.x + to.width / 2;
+                const y2 = to.y + to.height / 2;
+                const mx = (x1 + x2) / 2;
+                const my = (y1 + y2) / 2;
+                return (
+                  <g key={c.id} style={{ pointerEvents: penMode ? "none" : "auto" }}>
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(253,230,138,0.75)" strokeWidth={2} />
+                    <circle
+                      cx={mx}
+                      cy={my}
+                      r={8}
+                      fill="rgba(0,0,0,0.55)"
+                      className="cursor-pointer"
+                      onClick={() => deleteConnector(c.id)}
+                    >
+                      <title>クリックでこの連結を削除</title>
+                    </circle>
+                    <text x={mx} y={my + 3} fontSize={9} textAnchor="middle" fill="#fff" style={{ pointerEvents: "none" }}>
+                      ✕
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+            {(notes ?? []).map((note) => (
+              <StickyNoteCard
+                key={note.id}
+                note={note}
+                penMode={penMode}
+                connectMode={connectMode}
+                isConnectSource={connectFromId === note.id}
+                zoom={zoom}
+                onDragEnd={moveNote}
+                onResizeEnd={resizeNote}
+                onCommitText={commitNoteText}
+                onDelete={deleteNote}
+                onColorChange={setNoteColor}
+                onFocusNote={() => bringToFront(note.id)}
+                onSelectConnect={() => selectNoteForConnect(note.id)}
+                onConvertTodo={() => convertNoteToTodo(note)}
+                onConvertProject={() => convertNoteToProject(note)}
+              />
+            ))}
+          </div>
         </div>
       </div>
       <p className="text-[10px] text-cream/40">
@@ -550,6 +687,7 @@ function StickyNoteCard({
   penMode,
   connectMode,
   isConnectSource,
+  zoom,
   onDragEnd,
   onResizeEnd,
   onCommitText,
@@ -564,6 +702,7 @@ function StickyNoteCard({
   penMode: boolean;
   connectMode: boolean;
   isConnectSource: boolean;
+  zoom: number;
   onDragEnd: (id: string, x: number, y: number) => void;
   onResizeEnd: (id: string, width: number, height: number) => void;
   onCommitText: (id: string, text: string) => void;
@@ -598,7 +737,10 @@ function StickyNoteCard({
   }
   function handleHeaderPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
     if (!dragStartRef.current) return;
-    setDragOffset({ dx: e.clientX - dragStartRef.current.x, dy: e.clientY - dragStartRef.current.y });
+    // clientX/clientYは画面上のピクセル差分のため、拡大縮小中はボード上の論理座標の
+    // 差分に変換する(zoomで割る)必要がある。そうしないと縮小表示中に少し動かしただけで
+    // 実際には大きく移動してしまう
+    setDragOffset({ dx: (e.clientX - dragStartRef.current.x) / zoom, dy: (e.clientY - dragStartRef.current.y) / zoom });
   }
   function handleHeaderPointerUp() {
     if (!dragStartRef.current || !dragOffset) {
@@ -628,7 +770,7 @@ function StickyNoteCard({
   }
   function handleResizePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
     if (!resizeStartRef.current) return;
-    setResizeOffset({ dw: e.clientX - resizeStartRef.current.x, dh: e.clientY - resizeStartRef.current.y });
+    setResizeOffset({ dw: (e.clientX - resizeStartRef.current.x) / zoom, dh: (e.clientY - resizeStartRef.current.y) / zoom });
   }
   function handleResizePointerUp(e: ReactPointerEvent<HTMLDivElement>) {
     e.stopPropagation();
