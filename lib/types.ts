@@ -266,3 +266,37 @@ export interface MandalaChart {
   createdAt: number;
   updatedAt: number;
 }
+
+// ---- メモ(付箋+手書きボード) ----
+
+// 1ページ完結の固定サイズボード。無限キャンバスにはせず、複数ボードを切り替える形で
+// 用途ごとに分ける(付箋の一覧・タッチペンでの手書き・音声入力メモをこの上に置く)
+export interface MemoBoard {
+  id: string;
+  title: string;
+  order: number;
+  createdAt: number;
+}
+
+export interface MemoNote {
+  id: string;
+  boardId: string;
+  x: number; // ボード内の左上からのpx位置
+  y: number;
+  width: number;
+  height: number;
+  color: string; // MEMO_NOTE_COLORSのキー
+  text: string;
+  order: number; // 重なった際の前後関係(ドラッグ/新規作成のたびに最前面へ)
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MemoStroke {
+  id: string;
+  boardId: string;
+  points: { x: number; y: number }[]; // ボード内のpx座標。2点未満は保存しない
+  color: string; // CSSカラー
+  width: number; // 線の太さ(px)
+  createdAt: number;
+}

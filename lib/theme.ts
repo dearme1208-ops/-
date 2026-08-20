@@ -451,6 +451,7 @@ export type TabKey =
   | "overtime"
   | "yearlyChart"
   | "mandala"
+  | "memo"
   | "report"
   | "records"
   | "settings";
@@ -470,6 +471,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "深夜稼働記録",
     yearlyChart: "年次記録",
     mandala: "目標統制盤",
+    memo: "職員日誌",
     report: "日次・週次・月次報告書",
     records: "記録の改竄",
     settings: "管理局設定",
@@ -488,6 +490,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "深夜営業分析",
     yearlyChart: "年間営業記録",
     mandala: "夢のメニュー構想",
+    memo: "バーのメモ帳",
     report: "日次・週次・月次売上報告",
     records: "伝票の修正",
     settings: "バーの設定",
@@ -506,6 +509,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "深夜潜入記録",
     yearlyChart: "年間活動記録",
     mandala: "野望達成マンダラ",
+    memo: "作戦ノート",
     report: "怪盗団 日報・週報・月報",
     records: "記録の書き換え",
     settings: "アジト設定",
@@ -524,6 +528,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "がんばりすぎ度チェック",
     yearlyChart: "夏の思い出年表",
     mandala: "めあてシート",
+    memo: "らくがき帳",
     report: "今日・週・月のふりかえり",
     records: "日記の書き直し",
     settings: "ふでばこ",
@@ -542,6 +547,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "登板過多チェック",
     yearlyChart: "球歴年表",
     mandala: "目標達成シート",
+    memo: "監督メモ",
     report: "日間・週間・月間MVP",
     records: "スコアブック修正",
     settings: "球団運営設定",
@@ -560,6 +566,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "負荷チェック",
     yearlyChart: "年間ふりかえり",
     mandala: "ゴールマップ",
+    memo: "メモ",
     report: "レポート",
     records: "ログ編集",
     settings: "設定",
@@ -580,6 +587,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "根を詰めた日",
     yearlyChart: "一年",
     mandala: "願い",
+    memo: "書きつけ",
     report: "ふりかえり",
     records: "記録",
     settings: "設定",
@@ -600,6 +608,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "OVERLOAD",
     yearlyChart: "ARCHIVE",
     mandala: "OBJECTIVES",
+    memo: "NOTES",
     report: "DIGEST",
     records: "LEDGER",
     settings: "CONFIG",
@@ -619,6 +628,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "夜更かし警報",
     yearlyChart: "冒険の年代記",
     mandala: "目標の魔法陣",
+    memo: "冒険メモ",
     report: "日々・週間・月間の冒険記",
     records: "記録の書き換え",
     settings: "冒険の設定",
@@ -638,6 +648,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     overtime: "深夜の張り込みチェック",
     yearlyChart: "捜査年表",
     mandala: "推理ボード",
+    memo: "手帳",
     report: "日次・週次・月次 捜査報告書",
     records: "調書の訂正",
     settings: "捜査本部設定",

@@ -13,6 +13,9 @@ import type {
   WeatherPlace,
   WeatherForecast,
   MandalaChart,
+  MemoBoard,
+  MemoNote,
+  MemoStroke,
 } from "./types";
 
 export class KouteiDB extends Dexie {
@@ -29,6 +32,9 @@ export class KouteiDB extends Dexie {
   weatherPlaces!: Table<WeatherPlace, string>;
   weatherForecasts!: Table<WeatherForecast, string>;
   mandalaCharts!: Table<MandalaChart, string>;
+  memoBoards!: Table<MemoBoard, string>;
+  memoNotes!: Table<MemoNote, string>;
+  memoStrokes!: Table<MemoStroke, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -121,6 +127,24 @@ export class KouteiDB extends Dexie {
       weatherForecasts: "id, placeId, date",
       weatherPlaces: "id, createdAt",
       mandalaCharts: "id, createdAt",
+    });
+    this.version(9).stores({
+      masterTasks: "id, category, name, isFavorite",
+      templateItems: "id, weekday, order",
+      dailyTasks: "id, date, status, order",
+      records: "id, date, category, name, masterTaskId, excludedFromStats",
+      settings: "key",
+      projects: "id, dueDate, createdAt",
+      todoLists: "id, order",
+      todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+      conditionLogs: "id, date, loggedAt",
+      geoPlaces: "id, createdAt",
+      weatherForecasts: "id, placeId, date",
+      weatherPlaces: "id, createdAt",
+      mandalaCharts: "id, createdAt",
+      memoBoards: "id, order",
+      memoNotes: "id, boardId, order",
+      memoStrokes: "id, boardId, createdAt",
     });
   }
 }

@@ -41,6 +41,7 @@ const SettingsSection = dynamic(() => import("@/components/sections/SettingsSect
 const OvertimeSection = dynamic(() => import("@/components/sections/OvertimeSection"), { ssr: false });
 const YearlyChartSection = dynamic(() => import("@/components/sections/YearlyChartSection"), { ssr: false });
 const MandalaSection = dynamic(() => import("@/components/sections/MandalaSection"), { ssr: false });
+const MemoSection = dynamic(() => import("@/components/sections/MemoSection"), { ssr: false });
 
 const TABS: TabDef[] = [
   { key: "today", label: "本日の作業" },
@@ -56,6 +57,7 @@ const TABS: TabDef[] = [
   { key: "overtime", label: "残業分析" },
   { key: "yearlyChart", label: "年表" },
   { key: "mandala", label: "マンダラチャート" },
+  { key: "memo", label: "メモ" },
   { key: "report", label: "日報・週報・月報" },
   { key: "records", label: "実績編集" },
   { key: "settings", label: "設定" },
@@ -195,6 +197,7 @@ export default function HomePage() {
           }}
         />
       )}
+      {active === "memo" && <MemoSection />}
       {active === "report" && mode === "claude" && <ClaudeReportSection />}
       {active === "report" && mode !== "claude" && <ReportSection />}
       {active === "records" && <RecordsSection />}
