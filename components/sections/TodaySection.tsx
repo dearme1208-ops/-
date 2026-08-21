@@ -248,6 +248,10 @@ export default function TodaySection({
   const conditionEnabled = conditionEnabledStr === "true";
   const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
   const simpleButtons = simpleButtonsStr === "true";
+  // 実行中/予定/完了でタブ分けして表示するモード。選んだタブは端末に保存し、次回も同じ表示にする
+  const [taskViewTabRaw, setTaskViewTab] = useSetting("today.taskViewTab", "running");
+  const taskViewTab: "running" | "pending" | "done" =
+    taskViewTabRaw === "pending" || taskViewTabRaw === "done" ? taskViewTabRaw : "running";
   const [growthStageEnabledStr] = useSetting("today.growthStageEnabled", "true");
   const growthStageEnabled = growthStageEnabledStr === "true";
   const [weeklyAfterHoursNotifyEnabledStr] = useSetting("notify.afterHoursWeeklyEnabled", "false");
@@ -629,6 +633,29 @@ export default function TodaySection({
       return rankDiff || a.order - b.order;
     });
   }, [tasks]);
+
+  // 実行中(running/paused)・予定(pending)・完了(done)のタブ分け表示用。件数はタブのバッジにも使う
+  const nonProvisionalSortedTasks = useMemo(() => sortedTasks.filter((t) => !t.isProvisional), [sortedTasks]);
+  const taskCountsByTab = useMemo(() => {
+    let running = 0;
+    let pending = 0;
+    let done = 0;
+    for (const t of nonProvisionalSortedTasks) {
+      if (t.status === "running" || t.status === "paused") running++;
+      else if (t.status === "pending") pending++;
+      else if (t.status === "done") done++;
+    }
+    return { running, pending, done };
+  }, [nonProvisionalSortedTasks]);
+  const visibleTasks = useMemo(
+    () =>
+      nonProvisionalSortedTasks.filter((t) => {
+        if (taskViewTab === "running") return t.status === "running" || t.status === "paused";
+        if (taskViewTab === "pending") return t.status === "pending";
+        return t.status === "done";
+      }),
+    [nonProvisionalSortedTasks, taskViewTab]
+  );
 
   // 直近の「停止」時刻（完了した作業の終了時刻、または一時停止中の作業が
   // 一時停止した時刻のうち最新のもの）。さかのぼって開始/再開する際の起点にする。
@@ -2563,7 +2590,14 @@ export default function TodaySection({
       )}
 
       <div className="space-y-3">
-        {sortedTasks.filter((task) => !task.isProvisional).map((task) => {
+        {visibleTasks.length === 0 && (
+          <p className="panel p-4 text-center text-sm text-cream/50">
+            {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
+            {taskViewTab === "pending" && "予定している作業はありません"}
+            {taskViewTab === "done" && "完了した作業はまだありません"}
+          </p>
+        )}
+        {visibleTasks.map((task) => {
           const elapsedMs = segmentsAccumulatedMs(task, now);
           const estMs = task.estimatedSeconds * 1000;
           const predictedSecondsForTask = predictedSecondsByTaskId.get(task.id) ?? 0;
@@ -3044,6 +3078,27 @@ export default function TodaySection({
             </div>
           );
         })}
+      </div>
+
+      <div className="sticky bottom-2 z-10 pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+        <div className="panel flex items-center gap-1 p-1.5 shadow-lg backdrop-blur">
+          {(
+            [
+              { key: "running", label: "▶ 実行中", count: taskCountsByTab.running },
+              { key: "pending", label: "📋 予定", count: taskCountsByTab.pending },
+              { key: "done", label: "✅ 完了", count: taskCountsByTab.done },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTaskViewTab(t.key)}
+              className={`flex-1 ${taskViewTab === t.key ? "btn-pill" : "btn-pill-outline"} px-2 py-2 text-xs sm:text-sm`}
+            >
+              {t.label}
+              <span className={`tabular-nums ${taskViewTab === t.key ? "opacity-70" : "opacity-50"}`}>({t.count})</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {showAddDialog && (
