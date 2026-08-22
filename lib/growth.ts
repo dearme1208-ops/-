@@ -91,8 +91,10 @@ export const TERMINAL_STAGES: GrowthStage[] = [
   { icon: "🚀", label: "MAX THROUGHPUT" },
 ];
 
-// 冒険者風: 駆け出しから伝説の英雄へと至る、RPGの定番の成長段階になぞらえた段階
-const ADVENTURER_STAGES: GrowthStage[] = [
+// 冒険者風: 駆け出しから伝説の英雄へと至る、RPGの定番の成長段階になぞらえた段階。
+// AdventurerQuestSection側で「現在のランク・次のランクまでの必要けいけんち」を
+// 表示するために外部から参照できるようexportする(TERMINAL_STAGESと同じ理由)
+export const ADVENTURER_STAGES: GrowthStage[] = [
   { icon: "🗡️", label: "かけだし冒険者" },
   { icon: "🛡️", label: "見習い" },
   { icon: "⚔️", label: "一人前" },

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Oswald, Noto_Sans_JP, Yomogi, VT323, Anton, Special_Elite, Noto_Serif_JP, IBM_Plex_Mono } from "next/font/google";
+import { Oswald, Noto_Sans_JP, Yomogi, VT323, Anton, Special_Elite, Noto_Serif_JP, IBM_Plex_Mono, MedievalSharp } from "next/font/google";
 import "./globals.css";
 import HeaderArt from "@/components/HeaderArt";
 import BadgeUpdater from "@/components/BadgeUpdater";
@@ -69,6 +69,16 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
+// 冒険者モード用。RPGのタイトル画面・羊皮紙のクエストログを思わせる、
+// 角ばった彫り込み風のファンタジー書体。日本語グリフを持たないため、
+// 他のラテン専用書体と同様に数字(tabular-nums)と見出し・ボタンのラテン部分にのみ効く
+const medievalSharp = MedievalSharp({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-medieval-sharp",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "工程表",
   description: "作業時間記録・集計アプリ",
@@ -99,7 +109,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="ja"
-      className={`${oswald.variable} ${notoSansJp.variable} ${yomogi.variable} ${vt323.variable} ${anton.variable} ${specialElite.variable} ${notoSerifJp.variable} ${ibmPlexMono.variable}`}
+      className={`${oswald.variable} ${notoSansJp.variable} ${yomogi.variable} ${vt323.variable} ${anton.variable} ${specialElite.variable} ${notoSerifJp.variable} ${ibmPlexMono.variable} ${medievalSharp.variable}`}
     >
       <body className="min-h-screen bg-ink font-sans text-cream antialiased">
         <BadgeUpdater />
@@ -113,6 +123,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="v11-watermark" aria-hidden="true" />
         <div className="nat-watermark" aria-hidden="true" />
         <div className="pp-watermark" aria-hidden="true" />
+        <div className="adv-watermark" aria-hidden="true" />
         <div className="frame-corners">
           <span className="corner-tr" />
           <span className="corner-br" />

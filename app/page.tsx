@@ -25,6 +25,7 @@ const TodaySection = dynamic(() => import("@/components/sections/TodaySection"),
 const ClaudeWorkspaceSection = dynamic(() => import("@/components/sections/ClaudeWorkspaceSection"), { ssr: false });
 const ZenSection = dynamic(() => import("@/components/sections/ZenSection"), { ssr: false });
 const TerminalDashboardSection = dynamic(() => import("@/components/sections/TerminalDashboardSection"), { ssr: false });
+const AdventurerQuestSection = dynamic(() => import("@/components/sections/AdventurerQuestSection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
 const ClaudeReportSection = dynamic(() => import("@/components/sections/ClaudeReportSection"), { ssr: false });
@@ -155,7 +156,8 @@ export default function HomePage() {
       {active === "today" && mode === "claude" && <ClaudeWorkspaceSection />}
       {active === "today" && mode === "zen" && <ZenSection />}
       {active === "today" && mode === "terminal" && <TerminalDashboardSection />}
-      {active === "today" && mode !== "claude" && mode !== "zen" && mode !== "terminal" && (
+      {active === "today" && mode === "adventurer" && <AdventurerQuestSection />}
+      {active === "today" && mode !== "claude" && mode !== "zen" && mode !== "terminal" && mode !== "adventurer" && (
         <TodaySection
           onOpenTodoDetail={(taskId) => {
             setPendingTodoDetailId(taskId);
