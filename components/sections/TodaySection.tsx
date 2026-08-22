@@ -73,6 +73,7 @@ import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
 import AddTimeDialog from "@/components/sections/AddTimeDialog";
 import EditTaskDialog from "@/components/sections/EditTaskDialog";
+import CompletedTasksGantt from "@/components/sections/CompletedTasksGantt";
 import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
@@ -2586,6 +2587,16 @@ export default function TodaySection({
           onAssignExisting={resolveProvisionalToExisting}
           onAssignNew={resolveProvisionalAsNew}
           onFinishAsIs={resolveProvisionalFinish}
+        />
+      )}
+
+      {taskViewTab === "done" && (
+        <CompletedTasksGantt
+          tasks={nonProvisionalSortedTasks}
+          onOpenEdit={(task) => setEditingTask(task)}
+          onCommitTimes={(task, startedAt, endedAt) =>
+            applyTaskEdit(task, task.category, task.name, undefined, task.note, startedAt, endedAt)
+          }
         />
       )}
 
