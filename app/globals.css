@@ -2120,13 +2120,127 @@ html[data-high-contrast="true"] :focus-visible {
     }
   }
 
-  /* 未着手クエストの一覧行を、羊皮紙の依頼票のような左タブ付きチケット風に */
+  /* 未着手クエストの一覧行を、羊皮紙の依頼票のような左タブ付きチケット風に(討伐ログで使用) */
   .adv-quest-card {
     position: relative;
     border: 1.5px solid rgb(var(--adv-gold-rgb) / 0.35);
     border-left: 5px solid rgb(var(--adv-gold-rgb) / 0.65);
     border-radius: 5px;
     background: rgb(var(--panel-rgb));
+  }
+
+  /* --- 冒険者モードの「ダンジョンの道すじ」マップ。単なる一覧ではなく、ギルド受付→戦闘中→
+     未着手クエスト→帰還、と左右に蛇行しながら金の点線でつながる1本道として見せる。
+     タップすると画面全体がバトル画面に切り替わる(map⇄battleの画面遷移)ことで、
+     「一覧をスクロールして選ぶ」既存タブとは操作の手触り自体を変える */
+  .adv-path-spine {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 50%;
+    width: 3px;
+    transform: translateX(-50%);
+    background-image: repeating-linear-gradient(
+      180deg,
+      rgb(var(--adv-gold-rgb) / 0.5) 0 10px,
+      transparent 10px 22px
+    );
+    z-index: 0;
+  }
+  .adv-path-node {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 92px;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+  }
+  .adv-path-node:disabled {
+    cursor: default;
+  }
+  .adv-path-node-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    height: 60px;
+    border-radius: 999px;
+    font-size: 24px;
+    border: 3px solid rgb(var(--adv-gold-rgb) / 0.55);
+    background: radial-gradient(circle at 35% 30%, rgb(var(--panel-rgb)), rgb(var(--adv-gold-rgb) / 0.14));
+    box-shadow: 0 3px 0 0 rgb(var(--adv-gold-rgb) / 0.35), 0 8px 14px -8px rgb(58 42 20 / 0.5);
+    transition: transform 0.15s ease;
+  }
+  .adv-path-node:active .adv-path-node-badge {
+    transform: scale(0.92);
+  }
+  .adv-path-node-label {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 700;
+    color: rgb(var(--cream-rgb) / 0.8);
+  }
+  .adv-path-node-sub {
+    font-size: 10px;
+    color: rgb(var(--cream-rgb) / 0.45);
+  }
+  /* 討伐済み: 落ち着いた緑で、道の脇に静かに佇む */
+  .adv-path-node-done .adv-path-node-badge {
+    border-color: rgb(var(--adv-hp-rgb) / 0.5);
+    background: radial-gradient(circle at 35% 30%, rgb(var(--panel-rgb)), rgb(var(--adv-hp-rgb) / 0.16));
+    opacity: 0.7;
+  }
+  /* まだ先のクエスト: 彩度を落として「この先にある」感を出す(押せなくはしない) */
+  .adv-path-node-later .adv-path-node-badge {
+    opacity: 0.6;
+    filter: grayscale(0.35);
+  }
+  /* 現在エンカウント中: 赤く脈打つ縁取りでひと目でわかるようにする */
+  .adv-path-node-current .adv-path-node-badge {
+    border-color: rgb(var(--adv-danger-rgb) / 0.8);
+    animation: adv-node-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes adv-node-pulse {
+    0%,
+    100% {
+      box-shadow: 0 3px 0 0 rgb(var(--adv-danger-rgb) / 0.4), 0 0 0 0 rgb(var(--adv-danger-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: 0 3px 0 0 rgb(var(--adv-danger-rgb) / 0.6), 0 0 22px 6px rgb(var(--adv-danger-rgb) / 0.45);
+    }
+  }
+  /* ボス級: 一回り大きく、常に赤枠(現在/未着手を問わない) */
+  .adv-path-node-boss .adv-path-node-badge {
+    width: 74px;
+    height: 74px;
+    font-size: 30px;
+    border-color: rgb(var(--adv-danger-rgb) / 0.85);
+  }
+  /* ギルド受付・帰還ゲート: 二重線の枠で他の丸ノードと区別する */
+  .adv-path-node-guild .adv-path-node-badge,
+  .adv-path-node-goal .adv-path-node-badge {
+    border-style: double;
+    border-width: 6px;
+  }
+
+  /* バトル画面(map⇄battleの画面遷移先)。奥行きのある光のビネットを背後に敷き、
+     一覧の中の1行ではなく「今この1件と向き合っている」没入感を出す */
+  .adv-battle-screen {
+    position: relative;
+    background-image:
+      radial-gradient(ellipse at 50% 15%, rgb(var(--adv-gold-rgb) / 0.14), transparent 62%),
+      radial-gradient(ellipse at 12% 8%, rgb(var(--adv-gold-rgb) / 0.08), transparent 55%),
+      radial-gradient(ellipse at 88% 92%, rgb(var(--adv-gold-rgb) / 0.07), transparent 55%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
   }
 
   /* --- 探偵モード: 実行中は張り込み中の懐中電灯のような静かな明滅、超過は緊迫した
@@ -2863,7 +2977,8 @@ html[data-high-contrast="true"] :focus-visible {
   .adv-hp-fill.is-danger,
   .adv-boss-frame,
   .adv-levelup-burst,
-  .adv-gold-text {
+  .adv-gold-text,
+  .adv-path-node-current .adv-path-node-badge {
     animation: none !important;
   }
   .crt-scanlines,

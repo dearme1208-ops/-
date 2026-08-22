@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
@@ -17,10 +17,13 @@ const RANK_HOUR_THRESHOLDS = [0, 1, 2, 4, 6, 8];
 // ボス級として扱う最低の討伐目安(30分以上)。これ未満はどれだけ長くてもボス扱いにしない
 const BOSS_MIN_ESTIMATED_SECONDS = 30 * 60;
 
-// 冒険者モード専用の「本日」タブ。Claude/禅の引き算、ターミナルの足し算とはまた違う軸で、
-// 同じdailyTasks/masterTasks/records/todoTasksのデータを「ダンジョン攻略」の
-// バトル画面として見せる。予測時間=モンスターの体力、経過時間=与えたダメージ、
-// 完了=討伐、というメタファーで、タブ構成ではなく操作の手触り自体を作り替える
+type NodeVariant = "guild" | "current" | "next" | "later" | "goal";
+
+// 冒険者モード専用の「本日」タブ。他の演出テーマ(Claude=タブ統合、禅=引き算、
+// ターミナル=足し算のダッシュボード)と同じく、色や文言だけでなく操作の手触りそのものを
+// 作り替える。今回はさらに踏み込み、「一覧をスクロールして選ぶ」という他の全タブと
+// 共通のUI文法そのものを捨て、ダンジョンの道すじを辿って進む地図(map)と、
+// 1件と向き合うバトル画面(battle)を行き来する2画面構成に総入れ替えする
 export default function AdventurerQuestSection() {
   const { themedMode } = useVisualMode();
   const mode = themedMode ?? "adventurer";
@@ -38,18 +41,38 @@ export default function AdventurerQuestSection() {
   const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
   const [showRankList, setShowRankList] = useState(false);
 
+  // 画面遷移: map(道すじを見渡す) ⇄ battle(1件のクエストと向き合う)。
+  // 一覧を丸ごと出す代わりに、選んだ1件だけをフルスクリーン相当のバトル画面に切り替える
+  const [view, setView] = useState<"map" | "battle">("map");
+  const [battleTaskId, setBattleTaskId] = useState<string | null>(null);
+  const [showGuild, setShowGuild] = useState(false);
+
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
+  // 開いた時点で既に計測中のクエストがあれば、一度だけ自動でバトル画面から始める
+  // (「本日の作業」を開く=戦いの続きから、という体験にする)。以後は再判定しない
+  const autoEnteredRef = useRef(false);
+  useEffect(() => {
+    if (autoEnteredRef.current || !dailyTasks) return;
+    autoEnteredRef.current = true;
+    const running = dailyTasks.find((t) => t.status === "running");
+    if (running) {
+      setBattleTaskId(running.id);
+      setView("battle");
+    }
+  }, [dailyTasks]);
+
   const runningTask = (dailyTasks ?? []).find((t) => t.status === "running") ?? null;
-  const pendingTasksSorted = useMemo(
-    () => (dailyTasks ?? []).filter((t) => !t.isProvisional && t.status === "pending").sort((a, b) => a.order - b.order),
-    [dailyTasks]
-  );
-  const pausedTasksSorted = useMemo(
-    () => (dailyTasks ?? []).filter((t) => !t.isProvisional && t.status === "paused").sort((a, b) => a.order - b.order),
+  // 道すじに並べるのは、まだ討伐していないクエスト(未着手+休戦中)。順番(order)どおりに
+  // 蛇行させることで、「次に進むべき道」が視覚的にも一目でわかるようにする
+  const roadTasks = useMemo(
+    () =>
+      (dailyTasks ?? [])
+        .filter((t) => !t.isProvisional && (t.status === "pending" || t.status === "paused"))
+        .sort((a, b) => a.order - b.order),
     [dailyTasks]
   );
   const doneToday = useMemo(
@@ -62,7 +85,7 @@ export default function AdventurerQuestSection() {
   const streakDays = useMemo(() => computeStreakDays(records ?? [], today), [records, today]);
 
   // 本日最大の討伐目安を持つクエストを「ボス」として特別扱いする(30分未満のクエストしか
-  // 無い日はボス無し)。討伐済みのクエストは対象から外す(倒したボスに今さら怯える必要はない)
+  // 無い日はボス無し)。討伐済みのクエストは対象から外す
   const bossTaskId = useMemo(() => {
     const candidates = (dailyTasks ?? []).filter(
       (t) => !t.isProvisional && t.status !== "done" && t.estimatedSeconds >= BOSS_MIN_ESTIMATED_SECONDS
@@ -103,13 +126,22 @@ export default function AdventurerQuestSection() {
     });
   }
 
+  // 道すじのノードをタップした時の共通処理: 計測中でなければ開始/再開し、
+  // そのままバトル画面に切り替える。既に計測中のノードなら開始処理をスキップして画面遷移のみ行う
+  async function enterBattle(task: DailyTask) {
+    if (task.status !== "running") await startExisting(task);
+    setBattleTaskId(task.id);
+    setView("battle");
+  }
+
   async function startMaster(master: MasterTask) {
     if (runningTask && runningTask.masterTaskId !== master.id) await pauseDaily(runningTask);
     const existing = (dailyTasks ?? []).find(
       (d) => d.masterTaskId === master.id && (d.status === "running" || d.status === "paused")
     );
     if (existing) {
-      await startExisting(existing);
+      await enterBattle(existing);
+      setShowGuild(false);
       return;
     }
     const task: DailyTask = {
@@ -128,6 +160,9 @@ export default function AdventurerQuestSection() {
       isSpontaneous: true,
     };
     await db.dailyTasks.add(task);
+    setBattleTaskId(task.id);
+    setView("battle");
+    setShowGuild(false);
   }
 
   async function encounterNewMonster() {
@@ -154,11 +189,21 @@ export default function AdventurerQuestSection() {
     await db.dailyTasks.add(task);
     setNewCategory("");
     setNewName("");
+    setBattleTaskId(task.id);
+    setView("battle");
+    setShowGuild(false);
   }
 
   async function defeatMonster(task: DailyTask) {
     await finishDailyTask(task);
     fireConfetti();
+    setView("map");
+    setBattleTaskId(null);
+  }
+
+  async function retreatToMap(task: DailyTask, alsoPause: boolean) {
+    if (alsoPause) await pauseDaily(task);
+    setView("map");
   }
 
   function rankDetail(): string {
@@ -174,207 +219,154 @@ export default function AdventurerQuestSection() {
     return [`受注中のクエスト ${activeTodos.length}件`, ...lines].join("\n");
   }
 
-  const runningElapsedSec = runningTask ? segmentsAccumulatedMs(runningTask, now) / 1000 : 0;
-  const runningHasEstimate = !!runningTask && runningTask.estimatedSeconds > 0;
-  const runningHpPct = runningHasEstimate
-    ? Math.max(0, Math.min(100, 100 - (runningElapsedSec / runningTask!.estimatedSeconds) * 100))
-    : null;
-  const runningIsOverrun = runningHasEstimate && runningElapsedSec > runningTask!.estimatedSeconds;
-  const runningIsBoss = !!runningTask && runningTask.id === bossTaskId;
+  const battleTask = (dailyTasks ?? []).find((t) => t.id === battleTaskId) ?? null;
 
   return (
     <div className="space-y-4">
-      {/* --- パーティステータス: ランク・けいけんち・ゴールド・れんぞく討伐日数を一望する --- */}
-      <div className="panel space-y-3 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <button type="button" className="group flex items-center gap-3 text-left" onClick={() => setShowRankList((v) => !v)}>
-            <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-alert bg-alert/10">
-              <div className="adv-levelup-burst" aria-hidden="true" />
-              <span className="relative text-2xl">{rank.icon}</span>
+      {/* --- HUD: ランク・けいけんち・ゴールド・れんぞく討伐日数を、常に見える細い帯で --- */}
+      <div className="panel sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+        <button type="button" className="flex items-center gap-2 text-left hover:opacity-80" onClick={() => setShowRankList((v) => !v)}>
+          <span className="text-xl">{rank.icon}</span>
+          <span className="font-display text-sm font-bold text-cream">
+            Lv.{rankIndex + 1} {rank.label}
+          </span>
+          <div className="hidden w-20 sm:block">
+            <div className="adv-stat-bar" style={{ height: 8 }}>
+              <div className="adv-stat-bar-fill adv-exp-fill" style={{ width: `${expPct}%` }} />
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-cream/50">冒険者ランク</div>
-              <div className="font-display text-lg font-bold text-cream">
-                Lv.{rankIndex + 1} {rank.label}
-              </div>
-            </div>
+          </div>
+        </button>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="adv-gold-text tabular-nums font-bold">✦{gold.toLocaleString()}G</span>
+          <span className="tabular-nums text-cream/70">🔥{streakDays}日</span>
+          <button type="button" className="tabular-nums text-cream/70 hover:text-cream" onClick={() => setSelectedDetail(questTradeDetail())}>
+            📜{activeTodos.length}件
           </button>
-          <div className="flex flex-wrap items-center gap-4 text-right">
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-cream/50">ゴールド</div>
-              <div className="adv-gold-text tabular-nums text-lg font-bold">✦ {gold.toLocaleString()}G</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-cream/50">れんぞく討伐日数</div>
-              <div className="tabular-nums text-lg font-bold text-cream">{streakDays}日</div>
-            </div>
-            <button
-              type="button"
-              className="text-right hover:opacity-80"
-              onClick={() => setSelectedDetail(questTradeDetail())}
-            >
-              <div className="text-[10px] uppercase tracking-widest text-cream/50">受注中のクエスト</div>
-              <div className="tabular-nums text-lg font-bold text-cream">{activeTodos.length}件</div>
-            </button>
-          </div>
         </div>
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-cream/60">
-            <span>けいけんち</span>
-            <span className="tabular-nums">
-              {rankNextHour === null ? "MAX" : `${hoursToday.toFixed(1)}h / ${rankNextHour}h`}
-            </span>
-          </div>
-          <div className="adv-stat-bar">
-            <div className="adv-stat-bar-fill adv-exp-fill" style={{ width: `${expPct}%` }} />
-          </div>
-        </div>
-        {showRankList && (
-          <pre className="whitespace-pre-wrap rounded-lg border border-cream/15 bg-ink/30 p-3 font-sans text-xs text-cream/80">
-            {rankDetail()}
-          </pre>
-        )}
       </div>
-
-      {/* --- バトル画面: 計測中のクエストがあれば戦闘中、無ければエンカウント選択 --- */}
-      {runningTask ? (
-        <div className={`panel space-y-3 p-4 ${runningIsBoss ? "adv-boss-frame" : ""}`}>
-          {runningIsBoss && <span className="adv-boss-tag">🐉 BOSS</span>}
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-widest text-cream/50">
-                {runningIsOverrun ? "げきとう中・想定を超過" : "エンカウント中"}
-              </div>
-              <div className="truncate font-display text-xl font-bold text-cream">{runningTask.name}</div>
-              <div className="truncate text-xs text-cream/50">[{runningTask.category}]</div>
-            </div>
-            <div className="shrink-0 text-right">
-              <div className="tabular-nums text-2xl font-bold text-alert">{formatMsClock(runningElapsedSec * 1000)}</div>
-              <div className="text-[10px] text-cream/40">経過時間</div>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-[11px] text-cream/60">
-              <span>{runningHasEstimate ? "てきの体力" : "手ごたえ（討伐目安なし）"}</span>
-              <span className="tabular-nums">
-                {runningHasEstimate
-                  ? runningIsOverrun
-                    ? `力尽きた後 +${formatHms(runningElapsedSec - runningTask.estimatedSeconds)}`
-                    : `残り ${formatHms(runningTask.estimatedSeconds - runningElapsedSec)}`
-                  : formatHms(runningElapsedSec)}
-              </span>
-            </div>
-            <div className="adv-stat-bar">
-              <div
-                className={`adv-stat-bar-fill ${runningHasEstimate ? "adv-hp-fill" : "adv-mp-fill"} ${runningIsOverrun ? "is-danger" : ""}`}
-                style={{
-                  width: `${runningHasEstimate ? runningHpPct : Math.min(100, (runningElapsedSec / 7200) * 100)}%`,
-                }}
-              />
-            </div>
-          </div>
-          <div className="flex gap-2 pt-1">
-            <button className="btn-pill-outline text-xs" onClick={() => pauseDaily(runningTask)}>
-              一時休戦
-            </button>
-            <button className="btn-pill text-xs" onClick={() => defeatMonster(runningTask)}>
-              とどめを刺す！
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="panel space-y-3 p-4">
-          <div className="text-[10px] uppercase tracking-widest text-cream/50">つぎのクエストを選ぼう</div>
-          {favoriteMasters && favoriteMasters.length > 0 && (
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
-              {favoriteMasters.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => startMaster(m)}
-                  className="adv-quest-card p-2.5 text-left text-xs transition-transform hover:-translate-y-0.5"
-                >
-                  <div className="truncate font-bold text-cream">{m.name}</div>
-                  <div className="truncate text-[10px] text-cream/50">[{m.category}]</div>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-wrap gap-1.5">
-            <input
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && encounterNewMonster()}
-              placeholder="大項目（例: 経理）"
-              className="min-w-[7rem] flex-1 rounded-md border border-cream/20 bg-ink/30 px-2.5 py-1.5 text-xs text-cream placeholder:text-cream/30"
-            />
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && encounterNewMonster()}
-              placeholder="モンスター名（作業名）"
-              className="min-w-[9rem] flex-[2] rounded-md border border-cream/20 bg-ink/30 px-2.5 py-1.5 text-xs text-cream placeholder:text-cream/30"
-            />
-            <button
-              type="button"
-              onClick={encounterNewMonster}
-              disabled={!newCategory.trim() || !newName.trim()}
-              className="btn-pill text-xs disabled:opacity-40"
-            >
-              遭遇する！
-            </button>
-          </div>
-        </div>
+      {showRankList && (
+        <pre className="whitespace-pre-wrap rounded-lg border border-cream/15 bg-ink/30 p-3 font-sans text-xs text-cream/80">
+          {rankDetail()}
+        </pre>
       )}
 
-      {/* --- 本日のクエスト帳: まだ挑んでいない/中断中のクエスト一覧 --- */}
-      <div className="panel space-y-2 p-4">
-        <div className="text-[10px] uppercase tracking-widest text-cream/50">本日のクエスト帳</div>
-        {pendingTasksSorted.length === 0 && pausedTasksSorted.length === 0 ? (
-          <p className="text-xs text-cream/40">受けているクエストはすべて挑戦済みです。上のエンカウントから新しい冒険を始めましょう。</p>
-        ) : (
-          <div className="space-y-2">
-            {[...pausedTasksSorted, ...pendingTasksSorted].map((t) => {
-              const isBoss = t.id === bossTaskId;
-              return (
-                <div
-                  key={t.id}
-                  className={`adv-quest-card flex items-center justify-between gap-3 p-3 ${isBoss ? "adv-boss-frame" : ""}`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      {isBoss && <span className="shrink-0 text-[10px] font-bold text-alert">🐉 BOSS</span>}
-                      {t.status === "paused" && <span className="shrink-0 text-[10px] text-cream/40">（休戦中）</span>}
-                    </div>
-                    <div className="truncate text-sm font-bold text-cream">{t.name}</div>
-                    <div className="truncate text-xs text-cream/50">
-                      [{t.category}]{t.estimatedSeconds > 0 ? ` 討伐目安 ${formatHms(t.estimatedSeconds)}` : " 討伐目安 不明"}
-                    </div>
-                  </div>
-                  <button className="btn-pill-outline shrink-0 text-xs" onClick={() => startExisting(t)}>
-                    挑む
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* --- 討伐ログ: 本日倒したモンスター(完了した作業)の一覧 --- */}
-      {doneToday.length > 0 && (
-        <div className="panel space-y-2 p-4">
-          <div className="text-[10px] uppercase tracking-widest text-cream/50">討伐ログ（本日 {doneToday.length}体）</div>
-          <div className="space-y-1.5">
-            {doneToday.map((t) => (
-              <div key={t.id} className="flex items-center justify-between gap-2 text-xs">
-                <span className="min-w-0 truncate text-cream/80">
-                  ⚔ [{t.category}] {t.name}
-                </span>
-                <span className="tabular-nums shrink-0 text-cream/50">{formatHms(t.accumulatedMs / 1000)}</span>
+      {view === "battle" && battleTask ? (
+        <BattleScreen
+          task={battleTask}
+          now={now}
+          isBoss={battleTask.id === bossTaskId}
+          onBack={() => retreatToMap(battleTask, false)}
+          onPause={() => retreatToMap(battleTask, true)}
+          onDefeat={() => defeatMonster(battleTask)}
+        />
+      ) : (
+        <>
+          {/* --- ダンジョンの道すじ: ギルド受付→(戦闘中)→未着手クエスト→帰還、と
+               左右に蛇行しながら金の点線でつながる1本道 --- */}
+          <div className="relative">
+            <div className="adv-path-spine" aria-hidden="true" />
+            <div className="relative flex flex-col items-center gap-5 py-3">
+              <div className="flex w-full justify-center">
+                <PathNode icon="🏰" label="ギルド受付" variant="guild" onClick={() => setShowGuild((v) => !v)} />
               </div>
-            ))}
+
+              {showGuild && (
+                <div className="panel w-full space-y-3 p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-cream/50">クエストを受注する</div>
+                  {favoriteMasters && favoriteMasters.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+                      {favoriteMasters.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => startMaster(m)}
+                          className="adv-quest-card p-2.5 text-left text-xs transition-transform hover:-translate-y-0.5"
+                        >
+                          <div className="truncate font-bold text-cream">{m.name}</div>
+                          <div className="truncate text-[10px] text-cream/50">[{m.category}]</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    <input
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && encounterNewMonster()}
+                      placeholder="大項目（例: 経理）"
+                      className="min-w-[7rem] flex-1 rounded-md border border-cream/20 bg-ink/30 px-2.5 py-1.5 text-xs text-cream placeholder:text-cream/30"
+                    />
+                    <input
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && encounterNewMonster()}
+                      placeholder="モンスター名（作業名）"
+                      className="min-w-[9rem] flex-[2] rounded-md border border-cream/20 bg-ink/30 px-2.5 py-1.5 text-xs text-cream placeholder:text-cream/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={encounterNewMonster}
+                      disabled={!newCategory.trim() || !newName.trim()}
+                      className="btn-pill text-xs disabled:opacity-40"
+                    >
+                      遭遇する！
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {runningTask && (
+                <div className="flex w-full justify-center">
+                  <PathNode
+                    icon={runningTask.id === bossTaskId ? "🐉" : "⚔️"}
+                    label={runningTask.name}
+                    sub="エンカウント中"
+                    variant="current"
+                    boss={runningTask.id === bossTaskId}
+                    onClick={() => enterBattle(runningTask)}
+                  />
+                </div>
+              )}
+
+              {roadTasks.map((t, i) => (
+                <div key={t.id} className={`flex w-full ${i % 2 === 0 ? "justify-start pl-[8%] sm:pl-[18%]" : "justify-end pr-[8%] sm:pr-[18%]"}`}>
+                  <PathNode
+                    icon={t.id === bossTaskId ? "🐉" : t.status === "paused" ? "⏸️" : "🗡️"}
+                    label={t.name}
+                    sub={t.status === "paused" ? "休戦中" : t.estimatedSeconds > 0 ? `討伐目安 ${formatHms(t.estimatedSeconds)}` : undefined}
+                    variant={i === 0 && !runningTask ? "next" : "later"}
+                    boss={t.id === bossTaskId}
+                    onClick={() => enterBattle(t)}
+                  />
+                </div>
+              ))}
+
+              <div className="flex w-full justify-center">
+                <PathNode
+                  icon="🏁"
+                  label={roadTasks.length === 0 && !runningTask ? "本日の冒険、完了！" : "帰還"}
+                  variant="goal"
+                />
+              </div>
+            </div>
           </div>
-        </div>
+
+          {/* --- 討伐ログ: 本日倒したモンスター(完了した作業)の一覧 --- */}
+          {doneToday.length > 0 && (
+            <div className="panel space-y-2 p-4">
+              <div className="text-[10px] uppercase tracking-widest text-cream/50">討伐ログ（本日 {doneToday.length}体）</div>
+              <div className="space-y-1.5">
+                {doneToday.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="min-w-0 truncate text-cream/80">
+                      ⚔ [{t.category}] {t.name}
+                    </span>
+                    <span className="tabular-nums shrink-0 text-cream/50">{formatHms(t.accumulatedMs / 1000)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {selectedDetail && (
@@ -389,6 +381,120 @@ export default function AdventurerQuestSection() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ダンジョンの道すじ上の1ノード(ギルド/戦闘中/未着手クエスト/帰還)を表す丸バッジ。
+// variantで見た目(色・大きさ)を出し分け、boss=trueならさらに大きく赤縁にする
+function PathNode({
+  icon,
+  label,
+  sub,
+  variant,
+  boss,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  sub?: string;
+  variant: NodeVariant;
+  boss?: boolean;
+  onClick?: () => void;
+}) {
+  const variantClass =
+    variant === "current"
+      ? "adv-path-node-current"
+      : variant === "later"
+        ? "adv-path-node-later"
+        : variant === "guild"
+          ? "adv-path-node-guild"
+          : variant === "goal"
+            ? "adv-path-node-goal"
+            : "";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`adv-path-node ${variantClass} ${boss ? "adv-path-node-boss" : ""}`}
+    >
+      <span className="adv-path-node-badge">{icon}</span>
+      <span className="adv-path-node-label">{label}</span>
+      {sub && <span className="adv-path-node-sub">{sub}</span>}
+    </button>
+  );
+}
+
+// 選んだ1件のクエストと向き合うバトル画面。map一覧の1行ではなく、この1件だけに
+// 画面を切り替えることで、「今どれと戦っているか」が常に一目でわかるようにする
+function BattleScreen({
+  task,
+  now,
+  isBoss,
+  onBack,
+  onPause,
+  onDefeat,
+}: {
+  task: DailyTask;
+  now: number;
+  isBoss: boolean;
+  onBack: () => void;
+  onPause: () => void;
+  onDefeat: () => void;
+}) {
+  const elapsedSec = segmentsAccumulatedMs(task, now) / 1000;
+  const hasEstimate = task.estimatedSeconds > 0;
+  const hpPct = hasEstimate ? Math.max(0, Math.min(100, 100 - (elapsedSec / task.estimatedSeconds) * 100)) : null;
+  const isOverrun = hasEstimate && elapsedSec > task.estimatedSeconds;
+
+  return (
+    <div className={`panel adv-battle-screen space-y-4 p-5 ${isBoss ? "adv-boss-frame" : ""}`}>
+      <div className="flex items-center justify-between gap-2">
+        <button type="button" className="text-xs text-cream/50 hover:text-cream" onClick={onBack}>
+          ← 地図にもどる
+        </button>
+        {isBoss && <span className="adv-boss-tag" style={{ position: "static" }}>🐉 BOSS</span>}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-widest text-cream/50">
+            {isOverrun ? "げきとう中・想定を超過" : "エンカウント中"}
+          </div>
+          <div className="truncate font-display text-2xl font-bold text-cream">{task.name}</div>
+          <div className="truncate text-xs text-cream/50">[{task.category}]</div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="tabular-nums text-3xl font-bold text-alert">{formatMsClock(elapsedSec * 1000)}</div>
+          <div className="text-[10px] text-cream/40">経過時間</div>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-[11px] text-cream/60">
+          <span>{hasEstimate ? "てきの体力" : "手ごたえ（討伐目安なし）"}</span>
+          <span className="tabular-nums">
+            {hasEstimate
+              ? isOverrun
+                ? `力尽きた後 +${formatHms(elapsedSec - task.estimatedSeconds)}`
+                : `残り ${formatHms(task.estimatedSeconds - elapsedSec)}`
+              : formatHms(elapsedSec)}
+          </span>
+        </div>
+        <div className="adv-stat-bar" style={{ height: 20 }}>
+          <div
+            className={`adv-stat-bar-fill ${hasEstimate ? "adv-hp-fill" : "adv-mp-fill"} ${isOverrun ? "is-danger" : ""}`}
+            style={{ width: `${hasEstimate ? hpPct : Math.min(100, (elapsedSec / 7200) * 100)}%` }}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <button className="btn-pill-outline text-xs" onClick={onPause}>
+          一時休戦して地図へ
+        </button>
+        <button className="btn-pill text-xs" onClick={onDefeat}>
+          とどめを刺す！
+        </button>
+      </div>
     </div>
   );
 }
