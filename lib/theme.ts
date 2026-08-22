@@ -135,9 +135,29 @@ export function useVisualMode(): {
 // ターミナルモードはClaude/禅とは正反対の方針(引き算ではなく足し算)のため、
 // あえてここには追加しない。全タブをそのまま表示し、その上で「本日」タブの
 // 中身だけを情報密度マシマシの管制室ダッシュボードに差し替える
+// 冒険者モードは全タブを削ぎ落とすほどではないが、集計・ランキング/グラフ/ヒートマップ/
+// 年表/残業分析の5タブは同じ実績データを別角度から見ているだけで役割が重なっており、
+// RPGのキャラクターステータス画面のように1画面へ集約する方が自然と判断。
+// グラフ/ヒートマップ/年表/残業分析の4タブを非表示にし、集計・ランキングタブの中身を
+// AdventurerStatusSectionに丸ごと差し替えることで、実質的にその1画面へ統合する
 export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
   claude: ["today", "report", "settings"],
   zen: ["today", "settings"],
+  adventurer: [
+    "today",
+    "todo",
+    "projects",
+    "master",
+    "template",
+    "gantt",
+    "aggregation",
+    "attention",
+    "mandala",
+    "memo",
+    "report",
+    "records",
+    "settings",
+  ],
 };
 
 export function visibleTabKeys(mode: VisualMode, allKeys: TabKey[]): TabKey[] {
@@ -613,7 +633,10 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     records: "LEDGER",
     settings: "CONFIG",
   },
-  // 冒険者風: RPGの世界に丸ごとなりきったタブ名。危機感より冒険のワクワク感を強調する
+  // 冒険者風: RPGの世界に丸ごとなりきったタブ名。危機感より冒険のワクワク感を強調する。
+  // aggregationは、非表示にしたcharts/heatmap/yearlyChart/overtimeの内容も
+  // まとめて引き受けるステータス画面になるため、ランキングだけでなく通算戦績・
+  // 危険度マップ・年代記まで含む名称にしている
   adventurer: {
     today: "本日のクエスト",
     todo: "クエスト帳",
@@ -621,7 +644,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     master: "モンスター図鑑",
     template: "曜日別しゅぎょう",
     gantt: "冒険の記録",
-    aggregation: "経験値ランキング",
+    aggregation: "冒険者ステータス",
     charts: "強さのグラフ",
     heatmap: "危険度マップ",
     attention: "要注意モンスター",

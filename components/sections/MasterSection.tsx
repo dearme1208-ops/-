@@ -10,6 +10,7 @@ import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/maste
 import { downloadTextFile } from "@/lib/report";
 import { computeStaleMasterTasks } from "@/lib/staleMaster";
 import { useSetting } from "@/lib/settings";
+import { useVisualMode } from "@/lib/theme";
 import type { MasterTask } from "@/lib/types";
 import { showUndoToast } from "@/lib/toast";
 
@@ -22,6 +23,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 ];
 
 export default function MasterSection() {
+  const { adventurerMode } = useVisualMode();
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -292,50 +294,66 @@ export default function MasterSection() {
             </h3>
             <span className="text-cream/60">{collapsed[category] ? "▶" : "▼"}</span>
           </button>
-          {!collapsed[category] && (
-            <div className="mt-3 space-y-2">
-              {items.map((t) => (
-                <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => toggleFavorite(t)} aria-label="お気に入り">
-                      {t.isFavorite ? "★" : "☆"}
-                    </button>
-                    <div>
-                      <div className="text-sm text-cream">{t.name}</div>
-                      <div className="text-xs text-cream/50">実績サンプル数 {t.sampleCount}</div>
+          {!collapsed[category] &&
+            (adventurerMode ? (
+              <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+                {items.map((t) => (
+                  <MonsterCard
+                    key={t.id}
+                    task={t}
+                    onToggleFavorite={() => toggleFavorite(t)}
+                    onUpdateTags={(v) => updateTags(t, v)}
+                    onUpdateEstimate={(v) => updateEstimate(t, v)}
+                    onArchive={() => archiveTask(t)}
+                    onUnarchive={() => unarchiveTask(t)}
+                    onDelete={() => deleteTask(t)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {items.map((t) => (
+                  <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => toggleFavorite(t)} aria-label="お気に入り">
+                        {t.isFavorite ? "★" : "☆"}
+                      </button>
+                      <div>
+                        <div className="text-sm text-cream">{t.name}</div>
+                        <div className="text-xs text-cream/50">実績サンプル数 {t.sampleCount}</div>
+                        <input
+                          key={`tags-${(t.tags ?? []).join(",")}`}
+                          defaultValue={(t.tags ?? []).join(", ")}
+                          placeholder="タグ（カンマ区切り）"
+                          onBlur={(e) => updateTags(t, e.target.value)}
+                          className="mt-1 w-40 rounded-md border border-cream/10 bg-transparent px-2 py-0.5 text-[11px] text-cream/70"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
                       <input
-                        key={`tags-${(t.tags ?? []).join(",")}`}
-                        defaultValue={(t.tags ?? []).join(", ")}
-                        placeholder="タグ（カンマ区切り）"
-                        onBlur={(e) => updateTags(t, e.target.value)}
-                        className="mt-1 w-40 rounded-md border border-cream/10 bg-transparent px-2 py-0.5 text-[11px] text-cream/70"
+                        key={`estimate-${t.estimatedSeconds}`}
+                        defaultValue={formatHms(t.estimatedSeconds)}
+                        onBlur={(e) => updateEstimate(t, e.target.value)}
+                        className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"
                       />
+                      {t.archived ? (
+                        <button className="text-xs text-cream/60 hover:text-cream" onClick={() => unarchiveTask(t)}>
+                          アーカイブ解除
+                        </button>
+                      ) : (
+                        <button className="text-xs text-cream/60 hover:text-cream" onClick={() => archiveTask(t)}>
+                          アーカイブ
+                        </button>
+                      )}
+                      <button className="text-xs text-alert" onClick={() => deleteTask(t)}>
+                        削除
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      key={`estimate-${t.estimatedSeconds}`}
-                      defaultValue={formatHms(t.estimatedSeconds)}
-                      onBlur={(e) => updateEstimate(t, e.target.value)}
-                      className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"
-                    />
-                    {t.archived ? (
-                      <button className="text-xs text-cream/60 hover:text-cream" onClick={() => unarchiveTask(t)}>
-                        アーカイブ解除
-                      </button>
-                    ) : (
-                      <button className="text-xs text-cream/60 hover:text-cream" onClick={() => archiveTask(t)}>
-                        アーカイブ
-                      </button>
-                    )}
-                    <button className="text-xs text-alert" onClick={() => deleteTask(t)}>
-                      削除
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            ))}
         </div>
       ))}
 
@@ -344,6 +362,77 @@ export default function MasterSection() {
           作業マスタはまだ空です。実際の作業を記録すると自動的に登録されます。
         </p>
       )}
+    </div>
+  );
+}
+
+// モンスター図鑑の1体分の図鑑カード。作業マスタ(=遭遇するモンスター)を、行ではなく
+// 図鑑エントリのカードとして見せる。編集操作(タグ・想定時間・アーカイブ・削除)は
+// 通常表示と同じものをそのままカードの中に収めており、機能面での欠落は無い
+const MONSTER_ICONS = ["🐲", "👹", "🦑", "🦂", "🐺", "🦇", "🐍", "🦉", "🕷️", "🐉", "👻", "🦖"];
+function monsterIconFor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return MONSTER_ICONS[hash % MONSTER_ICONS.length];
+}
+
+function MonsterCard({
+  task,
+  onToggleFavorite,
+  onUpdateTags,
+  onUpdateEstimate,
+  onArchive,
+  onUnarchive,
+  onDelete,
+}: {
+  task: MasterTask;
+  onToggleFavorite: () => void;
+  onUpdateTags: (value: string) => void;
+  onUpdateEstimate: (value: string) => void;
+  onArchive: () => void;
+  onUnarchive: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className={`adv-quest-card flex flex-col gap-2 p-3 ${task.archived ? "opacity-50" : ""}`}>
+      <div className="flex items-start justify-between gap-1">
+        <span className="text-2xl">{monsterIconFor(task.id)}</span>
+        <button onClick={onToggleFavorite} aria-label="契約モンスターにする" className="text-lg leading-none">
+          {task.isFavorite ? "★" : "☆"}
+        </button>
+      </div>
+      <div>
+        <div className="truncate text-sm font-bold text-cream">{task.name}</div>
+        <div className="text-[10px] text-cream/50">遭遇回数 {task.sampleCount}回</div>
+      </div>
+      <input
+        key={`estimate-${task.estimatedSeconds}`}
+        defaultValue={formatHms(task.estimatedSeconds)}
+        onBlur={(e) => onUpdateEstimate(e.target.value)}
+        title="討伐目安"
+        className="w-full rounded-md border border-cream/20 bg-ink/30 px-2 py-1 text-center text-xs text-cream tabular-nums"
+      />
+      <input
+        key={`tags-${(task.tags ?? []).join(",")}`}
+        defaultValue={(task.tags ?? []).join(", ")}
+        placeholder="特性（カンマ区切り）"
+        onBlur={(e) => onUpdateTags(e.target.value)}
+        className="w-full rounded-md border border-cream/10 bg-transparent px-2 py-1 text-[11px] text-cream/70"
+      />
+      <div className="mt-auto flex items-center justify-between gap-2 pt-1 text-[11px]">
+        {task.archived ? (
+          <button className="text-cream/60 hover:text-cream" onClick={onUnarchive}>
+            図鑑に戻す
+          </button>
+        ) : (
+          <button className="text-cream/60 hover:text-cream" onClick={onArchive}>
+            封印する
+          </button>
+        )}
+        <button className="text-alert" onClick={onDelete}>
+          削除
+        </button>
+      </div>
     </div>
   );
 }

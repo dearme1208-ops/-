@@ -26,6 +26,7 @@ const ClaudeWorkspaceSection = dynamic(() => import("@/components/sections/Claud
 const ZenSection = dynamic(() => import("@/components/sections/ZenSection"), { ssr: false });
 const TerminalDashboardSection = dynamic(() => import("@/components/sections/TerminalDashboardSection"), { ssr: false });
 const AdventurerQuestSection = dynamic(() => import("@/components/sections/AdventurerQuestSection"), { ssr: false });
+const AdventurerStatusSection = dynamic(() => import("@/components/sections/AdventurerStatusSection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
 const ClaudeReportSection = dynamic(() => import("@/components/sections/ClaudeReportSection"), { ssr: false });
@@ -185,7 +186,8 @@ export default function HomePage() {
       {active === "master" && <MasterSection />}
       {active === "template" && <TemplateSection />}
       {active === "gantt" && <GanttSection />}
-      {active === "aggregation" && <AggregationSection />}
+      {active === "aggregation" && mode === "adventurer" && <AdventurerStatusSection />}
+      {active === "aggregation" && mode !== "adventurer" && <AggregationSection />}
       {active === "charts" && <ChartsSection />}
       {active === "heatmap" && <HeatmapSection />}
       {active === "attention" && <AttentionSection />}
