@@ -659,20 +659,25 @@ export default function TodaySection({
   );
 
   // 直近の「停止」時刻（完了した作業の終了時刻、または一時停止中の作業が
-  // 一時停止した時刻のうち最新のもの）。さかのぼって開始/再開する際の起点にする。
-  // 本日まだ一度も停止していなければ、ページを開いた時刻を仮の起点として扱う
-  // （そうしないと、初回の作業を始める前は未計測の自動開始が永遠に判定できないため）
+  // 一時停止した時刻のうち、リスト上で一番最後(orderが最大)の作業のもの）。
+  // さかのぼって開始/再開する際の起点にする。本日まだ一度も停止していなければ、
+  // ページを開いた時刻を仮の起点として扱う（そうしないと、初回の作業を始める前は
+  // 未計測の自動開始が永遠に判定できないため）。
+  // ※ 単純に全作業中で一番遅い時刻(Math.max)を使うと、完了タブのガントチャート等で
+  // 過去の作業の終了時刻を手動で伸ばした場合に、その作業がリスト上は最後でなくても
+  // 数値上は一番大きくなり、逆に本当に最後にやった作業を編集した結果がここに
+  // 反映されない(別の未編集の作業の時刻が優先され続ける)という分かりづらい挙動になる。
+  // 「一番最後にやった作業(orderが最大)」を基準にすることで、直感的な動作にする
   const lastStopTime = useMemo(() => {
     if (!tasks) return null;
-    const stops: number[] = [];
-    for (const t of tasks) {
-      if (t.status === "done" && t.endedAt) stops.push(t.endedAt);
-      if (t.status === "paused") {
-        const lastSeg = t.segments[t.segments.length - 1];
-        if (lastSeg?.end) stops.push(lastSeg.end);
-      }
-    }
-    return stops.length > 0 ? Math.max(...stops) : sessionAnchorRef.current;
+    const stopCandidates = tasks.filter(
+      (t) =>
+        (t.status === "done" && t.endedAt !== undefined) ||
+        (t.status === "paused" && t.segments[t.segments.length - 1]?.end !== undefined)
+    );
+    if (stopCandidates.length === 0) return sessionAnchorRef.current;
+    const last = stopCandidates.reduce((a, b) => (b.order > a.order ? b : a));
+    return last.status === "done" ? last.endedAt! : last.segments[last.segments.length - 1].end!;
   }, [tasks]);
 
   // 休憩などの除外時間帯を差し引いた「実質的な」直近停止時刻。未計測の自動開始や
