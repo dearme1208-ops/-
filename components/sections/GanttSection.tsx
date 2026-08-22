@@ -12,6 +12,7 @@ import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { ganttOverrunClass, useVisualMode } from "@/lib/theme";
 import { usePinchZoom, useSwipeNavigate } from "@/lib/gestures";
 import GanttWeekView from "./GanttWeekView";
+import GanttMonthView from "./GanttMonthView";
 
 const DEFAULT_PX_PER_MIN = 6;
 const MIN_PX_PER_MIN = 0.05;
@@ -34,6 +35,12 @@ const MIN_CONSIDERED_DURATION_MIN = 0.5;
 const MAX_TIMELINE_WIDTH_PX = 20000;
 
 type RangeMode = "auto" | "24h";
+
+// 月表示の前月/翌月移動用。年またぎ(1月の前月→前年12月など)もDateのオーバーフロー処理に任せる
+function shiftMonthStr(dateStr: string, deltaMonths: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return todayStr(new Date(y, m - 1 + deltaMonths, d));
+}
 
 function baseAtHour(dateStr: string, hour: number): number {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -130,7 +137,8 @@ export default function GanttSection() {
   // 従来の1日横スクロール表示に加え、Googleカレンダーの週表示のように
   // 曜日を列・時刻を縦軸にして実績・カレンダー予定を見渡せる表示に切り替えられる
   const [viewModeStr, setViewModeStr] = useSetting("gantt.viewMode", "day");
-  const viewMode: "day" | "week" = viewModeStr === "week" ? "week" : "day";
+  const viewMode: "day" | "week" | "month" =
+    viewModeStr === "week" ? "week" : viewModeStr === "month" ? "month" : "day";
   const scrollRef = useRef<HTMLDivElement>(null);
   const { themedMode } = useVisualMode();
   // 各バーのCSSホバー(:hover)によるツールチップは、タッチ端末には「ホバー」自体が
@@ -586,8 +594,14 @@ export default function GanttSection() {
         <div className="flex items-center gap-1">
           <button
             className="btn-pill-outline px-2 py-1.5 text-sm"
-            onClick={() => setDate((d) => shiftDateStr(d, viewMode === "week" ? -7 : -1))}
-            aria-label={viewMode === "week" ? "前の週" : "前の日"}
+            onClick={() => {
+              if (viewMode === "month") {
+                setDate((d) => shiftMonthStr(d, -1));
+              } else {
+                setDate((d) => shiftDateStr(d, viewMode === "week" ? -7 : -1));
+              }
+            }}
+            aria-label={viewMode === "week" ? "前の週" : viewMode === "month" ? "前の月" : "前の日"}
           >
             ◀
           </button>
@@ -599,8 +613,14 @@ export default function GanttSection() {
           />
           <button
             className="btn-pill-outline px-2 py-1.5 text-sm"
-            onClick={() => setDate((d) => shiftDateStr(d, viewMode === "week" ? 7 : 1))}
-            aria-label={viewMode === "week" ? "次の週" : "次の日"}
+            onClick={() => {
+              if (viewMode === "month") {
+                setDate((d) => shiftMonthStr(d, 1));
+              } else {
+                setDate((d) => shiftDateStr(d, viewMode === "week" ? 7 : 1));
+              }
+            }}
+            aria-label={viewMode === "week" ? "次の週" : viewMode === "month" ? "次の月" : "次の日"}
           >
             ▶
           </button>
@@ -617,6 +637,12 @@ export default function GanttSection() {
             onClick={() => setViewModeStr("week")}
           >
             週表示（カレンダー風）
+          </button>
+          <button
+            className={viewMode === "month" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setViewModeStr("month")}
+          >
+            月表示（カレンダー風）
           </button>
         </div>
         {viewMode === "day" && (
@@ -737,6 +763,17 @@ export default function GanttSection() {
             setViewModeStr("day");
           }}
           onShiftWeek={(delta) => setDate((d) => shiftDateStr(d, delta))}
+        />
+      )}
+
+      {viewMode === "month" && (
+        <GanttMonthView
+          anchorDate={date}
+          onSelectDate={(ds) => {
+            setDate(ds);
+            setViewModeStr("day");
+          }}
+          onShiftMonth={(delta) => setDate((d) => (delta === 0 ? todayStr() : shiftMonthStr(d, delta)))}
         />
       )}
 
