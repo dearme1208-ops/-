@@ -14,7 +14,7 @@ import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
 import { JOURNAL_KEY_PREFIX, journalEntriesFromSettings, journalEntriesToCsv } from "@/lib/journal";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { mergeRecordSegments } from "@/lib/tasks";
+import { mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
 import { formatClock, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -137,6 +137,7 @@ export default function RecordsSection() {
     const startedAt = withNewTime(r.startedAt, timeStr);
     const seconds = Math.max(0, Math.round((r.endedAt - startedAt) / 1000));
     await updateRecord(r, { startedAt, seconds });
+    await syncDailyTaskBoundaryFromRecord(r, "start", startedAt);
   }
 
   async function updateRecordEndTime(r: WorkRecord, timeStr: string) {
@@ -144,6 +145,7 @@ export default function RecordsSection() {
     const endedAt = withNewTime(r.endedAt, timeStr);
     const seconds = Math.max(0, Math.round((endedAt - r.startedAt) / 1000));
     await updateRecord(r, { endedAt, seconds });
+    await syncDailyTaskBoundaryFromRecord(r, "end", endedAt);
   }
 
   async function deleteRecord(r: WorkRecord) {

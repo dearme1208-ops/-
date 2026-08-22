@@ -165,6 +165,46 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
   await recomputeEstimateFromRecords(masterTaskId);
 }
 
+// 「実績編集」タブでの実績(WorkRecord)の開始/終了時刻の手動編集は、その実績の元になった
+// dailyTasksの側には反映されない独立したデータだった。そのため編集後も「本日の作業」タブの
+// 「前の作業の終了時刻から開始/再開する」といった提案が編集前の古い時刻のまま出てしまう
+// 問題があった。編集した境界(開始/終了)に対応するdailyTasksのインスタンス(同じ日付・
+// masterTaskId・案件/段階の完了済み作業のうち、開始側なら一番早いもの・終了側なら一番遅いもの)
+// を探し、そちらのstartedAt/endedAtも合わせて更新する。対応するインスタンスが見つからない
+// (CSVインポート等、dailyTasks由来ではない実績)場合は何もしない
+export async function syncDailyTaskBoundaryFromRecord(
+  record: Pick<WorkRecord, "date" | "masterTaskId" | "projectId" | "stageId">,
+  edge: "start" | "end",
+  newTime: number
+): Promise<void> {
+  if (!record.masterTaskId) return;
+  const candidates = (await db.dailyTasks.where("date").equals(record.date).toArray())
+    .filter(
+      (t) =>
+        t.status === "done" &&
+        t.masterTaskId === record.masterTaskId &&
+        (t.projectId ?? null) === (record.projectId ?? null) &&
+        (t.stageId ?? null) === (record.stageId ?? null)
+    )
+    .sort((a, b) => a.order - b.order);
+  if (candidates.length === 0) return;
+  const target = edge === "start" ? candidates[0] : candidates[candidates.length - 1];
+
+  const segments =
+    target.segments.length > 0
+      ? target.segments.map((s, i) =>
+          edge === "start" ? (i === 0 ? { ...s, start: newTime } : s) : i === target.segments.length - 1 ? { ...s, end: newTime } : s
+        )
+      : [edge === "start" ? { start: newTime, end: target.endedAt ?? newTime } : { start: target.startedAt ?? newTime, end: newTime }];
+  if (segments.some((s) => s.end !== undefined && s.end <= s.start)) return;
+
+  await db.dailyTasks.update(target.id, {
+    ...(edge === "start" ? { startedAt: newTime } : { endedAt: newTime }),
+    segments,
+    accumulatedMs: segments.reduce((sum, s) => sum + ((s.end ?? newTime) - s.start), 0),
+  });
+}
+
 // 日をまたいで「計測中」「一時停止中」のまま放置されたタスクを探す（statusが running/paused で、
 // dateが本日より前のもの）。本日の作業タブは日付ごとに絞り込んで表示するため、これらは
 // 画面上からは見えなくなる一方、running のものは内部的に経過時間が計測され続けてしまう
