@@ -199,6 +199,9 @@ export default function SettingsSection() {
   const [dailySummaryEnabledStr, setDailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
   const dailySummaryEnabled = dailySummaryEnabledStr === "true";
   const [dailySummaryTime, setDailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
+  const [morningDigestEnabledStr, setMorningDigestEnabledStr] = useSetting("notify.morningDigestEnabled", "false");
+  const morningDigestEnabled = morningDigestEnabledStr === "true";
+  const [morningDigestTime, setMorningDigestTime] = useSetting("notify.morningDigestTime", "08:00");
   const [monthlySummaryEnabledStr, setMonthlySummaryEnabledStr] = useSetting("notify.monthlySummaryEnabled", "false");
   const monthlySummaryEnabled = monthlySummaryEnabledStr === "true";
   const [shortcutsEnabledStr, setShortcutsEnabledStr] = useSetting("today.shortcutsEnabled", "true");
@@ -1392,6 +1395,32 @@ export default function SettingsSection() {
         </div>
         <p className="text-xs text-cream/50">
           日報・週報・月報に達成率を表示します。空欄のままなら目標表示は行いません。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">朝の自動ダイジェスト通知</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={morningDigestEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setMorningDigestEnabledStr(morningDigestEnabled ? "false" : "true")}
+          >
+            朝のダイジェスト通知: {morningDigestEnabled ? "ON" : "OFF"}
+          </button>
+          {morningDigestEnabled && (
+            <>
+              <span className="text-xs text-cream/60">時刻</span>
+              <input
+                type="time"
+                value={morningDigestTime}
+                onChange={(e) => setMorningDigestTime(e.target.value)}
+                className="rounded border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+              />
+            </>
+          )}
+        </div>
+        <p className="text-xs text-cream/50">
+          指定した時刻になったら、本日の予定件数と、ToDo・案件の期限切れ/本日期限の件数をまとめて通知します（1日1回、アプリを開いている時に判定します）。
         </p>
       </div>
 

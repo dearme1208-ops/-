@@ -266,6 +266,10 @@ export default function TodaySection({
   const dailySummaryEnabled = dailySummaryEnabledStr === "true";
   const [dailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
   const [dailySummaryNotifiedDate, setDailySummaryNotifiedDate] = useSetting("notify.dailySummaryNotifiedDate", "");
+  const [morningDigestEnabledStr] = useSetting("notify.morningDigestEnabled", "false");
+  const morningDigestEnabled = morningDigestEnabledStr === "true";
+  const [morningDigestTime] = useSetting("notify.morningDigestTime", "08:00");
+  const [morningDigestNotifiedDate, setMorningDigestNotifiedDate] = useSetting("notify.morningDigestNotifiedDate", "");
   const [monthlySummaryEnabledStr] = useSetting("notify.monthlySummaryEnabled", "false");
   const monthlySummaryEnabled = monthlySummaryEnabledStr === "true";
   const [monthlySummaryNotifiedMonth, setMonthlySummaryNotifiedMonth] = useSetting(
@@ -677,6 +681,41 @@ export default function TodaySection({
     }
     return { todoOverdue, todoDueToday, projectOverdue, projectDueToday };
   }, [linkedTodoTasks, projects, date]);
+
+  // 朝、指定した時刻になったら、本日の予定件数とToDo・案件の期限状況をまとめて通知する(1日1回)。
+  // 「1日の終わりの自動サマリー通知」と同じ「アプリを開いている間に、時刻を過ぎたタイミングで
+  // 判定する」方式。外部のカレンダー連携ルーティン等に頼らず、アプリ単体で確実に動くようにする。
+  // 設定の書き込み(IndexedDB経由)は非同期で反映に一拍かかるため、書き込み完了前にtasks等の
+  // 別の変化でこのeffectが再実行されて二重通知しないよう、月次ダイジェストと同様に同期的な
+  // refで先にラッチしておく
+  const morningDigestFiredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!morningDigestEnabled) return;
+    if (morningDigestNotifiedDate === date) return;
+    if (morningDigestFiredRef.current === date) return;
+    const digestHour = parseHourStr(morningDigestTime, 8);
+    const nowHourNum = new Date(now).getHours() + new Date(now).getMinutes() / 60;
+    if (nowHourNum < digestHour) return;
+    morningDigestFiredRef.current = date;
+    const parts = [`本日の予定 ${taskCountsByTab.pending}件`];
+    if (pendingDueSummary.todoOverdue > 0 || pendingDueSummary.todoDueToday > 0) {
+      parts.push(`ToDo 期限切れ${pendingDueSummary.todoOverdue}件・本日期限${pendingDueSummary.todoDueToday}件`);
+    }
+    if (pendingDueSummary.projectOverdue > 0 || pendingDueSummary.projectDueToday > 0) {
+      parts.push(`案件 期限切れ${pendingDueSummary.projectOverdue}件・本日期限${pendingDueSummary.projectDueToday}件`);
+    }
+    notify("おはようございます", parts.join(" / "), "morning-digest");
+    setMorningDigestNotifiedDate(date);
+  }, [
+    morningDigestEnabled,
+    morningDigestNotifiedDate,
+    morningDigestTime,
+    taskCountsByTab,
+    pendingDueSummary,
+    date,
+    now,
+    setMorningDigestNotifiedDate,
+  ]);
 
   // 直近の「停止」時刻（完了した作業の終了時刻、または一時停止中の作業が
   // 一時停止した時刻のうち、リスト上で一番最後(orderが最大)の作業のもの）。

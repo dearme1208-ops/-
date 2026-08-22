@@ -2223,6 +2223,8 @@ function TaskDetailModal({
   const [customCustomer, setCustomCustomer] = useState(
     task.customer && !customerOptions.includes(task.customer) ? task.customer : ""
   );
+  const [clientId, setClientId] = useState(task.clientId ?? "");
+  const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(!!task.recurrence);
   const [recurrence, setRecurrence] = useState<RecurrenceRule>(
     task.recurrence ?? { type: "weekly", interval: 1, weekdays: [new Date().getDay()] }
@@ -2257,6 +2259,7 @@ function TaskDetailModal({
       tag,
       category: resolveCategory(),
       customer: resolveCustomer(),
+      clientId: clientId || undefined,
       recurrence: recurrenceEnabled ? recurrence : undefined,
     };
     // 設定で指定したタグが選択されていれば自動的に重要にする（タグを外しても重要フラグは自動では解除しない）
@@ -2450,6 +2453,23 @@ function TaskDetailModal({
               className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
             />
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-cream/60">取引先</label>
+          <select
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+          >
+            <option value="">（なし）</option>
+            {(clients ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-[10px] text-cream/40">「案件」タブで登録した取引先マスタと紐付けます（客先とは別）</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

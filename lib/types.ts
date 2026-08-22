@@ -169,12 +169,22 @@ export interface ProjectStage {
   completedCount?: number; // targetCountを設定した場合の、これまでの完了件数
 }
 
+// 取引先（顧客企業）。案件・ToDoに紐付けて、取引先ごとの案件・作業を横断的に見られるようにする
+export interface Client {
+  id: string;
+  name: string;
+  order: number;
+  createdAt: number;
+  notes?: string;
+}
+
 export interface ProjectItem {
   id: string;
   title: string; // 件名
   category: string; // 業務区分（大項目）。本日の作業に反映する際の区分になる
   workName: string; // 詳細作業名（本日の作業に反映する際の作業名）
   dueDate: string; // 期日 YYYY-MM-DD
+  clientId?: string; // 取引先（任意）
   createdAt: number;
   completedAt?: number;
   fromImport?: boolean; // CSVインポートで作成/更新された案件かどうか。次回インポートで
@@ -248,6 +258,7 @@ export interface TodoTask {
   createdAt: number;
   recurrence?: RecurrenceRule;
   projectId?: string; // 案件タブに反映済みの場合、その案件のID
+  clientId?: string; // 取引先（任意）。customer(自由記入の客先名)とは別に、取引先マスタと紐付ける場合に使う
 }
 
 // ---- マンダラチャート ----

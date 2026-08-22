@@ -11,6 +11,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import type { ProjectItem, ProjectStage } from "@/lib/types";
 import { computeProjectProgress } from "@/lib/projectStage";
@@ -141,6 +142,8 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   const [workName, setWorkName] = useState(project.workName);
   const [dueDate, setDueDate] = useState(project.dueDate);
   const [hourlyRateStr, setHourlyRateStr] = useState(project.hourlyRate?.toString() ?? "");
+  const [clientId, setClientId] = useState(project.clientId ?? "");
+  const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
   const [stages, setStages] = useState<ProjectStage[]>(project.stages ?? []);
   const [newStageTitle, setNewStageTitle] = useState("");
   const [newStageTargetCount, setNewStageTargetCount] = useState("");
@@ -212,6 +215,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       workName: workName.trim(),
       dueDate,
       hourlyRate: hourlyRateStr.trim() !== "" && Number.isFinite(rate) && rate >= 0 ? rate : undefined,
+      clientId: clientId || undefined,
       stages,
     });
     onClose();
@@ -247,6 +251,21 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
             onChange={(e) => setDueDate(e.target.value)}
             className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-cream/60">取引先</label>
+          <select
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          >
+            <option value="">（なし）</option>
+            {(clients ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">この案件専用の単価</label>

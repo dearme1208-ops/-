@@ -44,6 +44,7 @@ export default function ProjectsSection({
   const [category, setCategory] = useState("");
   const [workName, setWorkName] = useState("");
   const [dueDate, setDueDate] = useState(todayStr());
+  const [clientId, setClientId] = useState("");
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
   // ガントチャートを開いた際の初期表示位置。「今日」を基準にするか、登録されている
@@ -67,7 +68,35 @@ export default function ProjectsSection({
 
   const projects = useLiveQuery(() => db.projects.orderBy("dueDate").toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
+  const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
+  const linkedTodoTasksForClients = useLiveQuery(() => db.todoTasks.toArray(), []);
+  const clientNameById = useMemo(() => new Map((clients ?? []).map((c) => [c.id, c.name])), [clients]);
   const today = todayStr();
+
+  // 取引先ごとの案件・ToDo・実績時間のまとめ。案件の実績時間は、その取引先に紐づく
+  // 案件ID群のいずれかに属する実績(主案件/兼務どちらでも)を合算する
+  const clientSummaries = useMemo(() => {
+    return (clients ?? []).map((c) => {
+      const clientProjects = (projects ?? []).filter((p) => p.clientId === c.id);
+      const activeProjects = clientProjects.filter((p) => !p.completedAt);
+      const overdueProjectCount = activeProjects.filter((p) => p.dueDate < today).length;
+      const clientTodos = (linkedTodoTasksForClients ?? []).filter((t) => t.clientId === c.id);
+      const activeTodos = clientTodos.filter((t) => !t.completed);
+      const overdueTodoCount = activeTodos.filter((t) => !!t.dueDate && t.dueDate < today).length;
+      const projectIds = clientProjects.map((p) => p.id);
+      const totalSeconds = (records ?? [])
+        .filter((r) => !r.excludedFromStats && projectIds.some((pid) => recordBelongsToProject(r, pid)))
+        .reduce((sum, r) => sum + r.seconds, 0);
+      return {
+        client: c,
+        activeProjectCount: activeProjects.length,
+        overdueProjectCount,
+        activeTodoCount: activeTodos.length,
+        overdueTodoCount,
+        totalSeconds,
+      };
+    });
+  }, [clients, projects, linkedTodoTasksForClients, records, today]);
   const { themedMode } = useVisualMode();
 
   // 本日タブの案件バッジの「編集」から遷移してきた場合、該当案件の編集ダイアログを自動的に開く。
@@ -166,6 +195,7 @@ export default function ProjectsSection({
       category: category.trim(),
       workName: workName.trim(),
       dueDate,
+      clientId: clientId || undefined,
       createdAt: Date.now(),
     };
     await db.projects.add(item);
@@ -173,6 +203,28 @@ export default function ProjectsSection({
     setCategory("");
     setWorkName("");
     setDueDate(todayStr());
+  }
+
+  // 取引先マスタの追加・リネーム・削除。既存の付箋ボード管理(MemoSection)と同じ
+  // prompt()ベースの簡易UIにして、専用の画面を増やさず案件タブ内で完結させる
+  async function addClient() {
+    const name = prompt("取引先名");
+    if (!name || !name.trim()) return;
+    const order = clients?.length ?? 0;
+    await db.clients.add({ id: uid(), name: name.trim(), order, createdAt: Date.now() });
+  }
+  async function renameClient(client: { id: string; name: string }) {
+    const name = prompt("取引先名を変更", client.name);
+    if (!name || !name.trim()) return;
+    await db.clients.update(client.id, { name: name.trim() });
+  }
+  async function deleteClient(client: { id: string; name: string }) {
+    if (!confirm(`取引先「${client.name}」を削除します。この取引先が付いている案件・ToDoからはタグが外れます。よろしいですか?`)) return;
+    await db.transaction("rw", db.clients, db.projects, db.todoTasks, async () => {
+      await db.clients.delete(client.id);
+      await db.projects.filter((p) => p.clientId === client.id).modify({ clientId: undefined });
+      await db.todoTasks.filter((t) => t.clientId === client.id).modify({ clientId: undefined });
+    });
   }
 
   async function deleteProject(item: ProjectItem) {
@@ -495,7 +547,7 @@ export default function ProjectsSection({
               onChange={(e) => setWorkName(e.target.value)}
               className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
             />
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <label className="text-xs text-cream/60">期日</label>
               <input
                 type="date"
@@ -503,6 +555,19 @@ export default function ProjectsSection({
                 onChange={(e) => setDueDate(e.target.value)}
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
+              <label className="text-xs text-cream/60">取引先</label>
+              <select
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              >
+                <option value="">（なし）</option>
+                {(clients ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <button className="btn-pill text-sm" onClick={addProject}>
               追加
@@ -510,6 +575,55 @@ export default function ProjectsSection({
           </div>
         )}
       </div>
+
+      <div className="panel p-4">
+        <h2 className="mb-2 font-display text-lg font-bold">取引先</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          {(clients ?? []).map((c) => (
+            <span key={c.id} className="flex items-center gap-1 rounded-full border border-cream/20 px-3 py-1.5 text-sm">
+              {c.name}
+              <button onClick={() => renameClient(c)} className="text-cream/50 hover:text-cream" aria-label={`${c.name}の名前を変更`}>
+                ✎
+              </button>
+              <button onClick={() => deleteClient(c)} className="text-cream/50 hover:text-alert" aria-label={`${c.name}を削除`}>
+                ✕
+              </button>
+            </span>
+          ))}
+          <button className="btn-pill-outline text-sm" onClick={addClient}>
+            + 取引先を追加
+          </button>
+        </div>
+        {(clients ?? []).length === 0 && (
+          <p className="mt-2 text-xs text-cream/50">
+            取引先を登録すると、案件・ToDoにタグ付けして、取引先ごとの案件数や作業時間をまとめて見られるようになります。
+          </p>
+        )}
+      </div>
+
+      {clientSummaries.length > 0 && (
+        <div className="panel p-4">
+          <h2 className="mb-2 font-display text-lg font-bold">取引先別サマリー</h2>
+          <div className="divide-y divide-cream/10">
+            {clientSummaries.map((s) => (
+              <div key={s.client.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span className="font-bold">{s.client.name}</span>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-cream/70">
+                  <span>
+                    📁 案件 {s.activeProjectCount}件
+                    {s.overdueProjectCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueProjectCount})</span>}
+                  </span>
+                  <span>
+                    ✅ ToDo {s.activeTodoCount}件
+                    {s.overdueTodoCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueTodoCount})</span>}
+                  </span>
+                  <span>⏱ 実績 {formatHms(s.totalSeconds)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
 
       <div className="panel divide-y divide-cream/10">
@@ -524,6 +638,7 @@ export default function ProjectsSection({
             themedMode={themedMode}
             totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
             hourlyRate={resolveProjectRate(project)}
+            clientName={project.clientId ? clientNameById.get(project.clientId) : undefined}
             stageSecondsFor={(stageId) => stageSeconds.get(`${project.id}::${stageId}`) ?? 0}
             onAddToToday={() => setAddToTodayTarget(project)}
             onToggleComplete={() => toggleComplete(project)}
@@ -559,6 +674,7 @@ export default function ProjectsSection({
                   daysLeft={daysLeft}
                   totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
                   hourlyRate={resolveProjectRate(project)}
+                  clientName={project.clientId ? clientNameById.get(project.clientId) : undefined}
                   stageSecondsFor={(stageId) => stageSeconds.get(`${project.id}::${stageId}`) ?? 0}
                   onAddToToday={() => setAddToTodayTarget(project)}
                   onToggleComplete={() => toggleComplete(project)}
@@ -808,6 +924,7 @@ function ProjectRow({
   paceWarning,
   totalSeconds,
   hourlyRate,
+  clientName,
   stageSecondsFor,
   onAddToToday,
   onToggleComplete,
@@ -824,6 +941,7 @@ function ProjectRow({
   paceWarning?: boolean;
   totalSeconds: number;
   hourlyRate: number | null;
+  clientName?: string;
   stageSecondsFor: (stageId: string) => number;
   onAddToToday: () => void;
   onToggleComplete: () => void;
@@ -855,6 +973,9 @@ function ProjectRow({
         <div className="text-xs text-cream/50">
           {project.title}
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
+          {clientName && (
+            <span className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60">🏢 {clientName}</span>
+          )}
         </div>
         <div className="text-sm text-cream">{project.workName}</div>
         <div className={`text-xs ${overdue || dueToday ? "font-bold text-alert" : "text-cream/60"}`}>
