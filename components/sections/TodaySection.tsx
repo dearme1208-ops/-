@@ -658,6 +658,26 @@ export default function TodaySection({
     [nonProvisionalSortedTasks, taskViewTab]
   );
 
+  // 予定タブ用: ToDo・案件の期限切れ/本日期限の件数サマリー。判定ロジックは
+  // ToDoタブの「期限切れ」ビュー(TodoSection)・案件タブ(ProjectsSection)と揃える
+  const pendingDueSummary = useMemo(() => {
+    let todoOverdue = 0;
+    let todoDueToday = 0;
+    for (const t of linkedTodoTasks ?? []) {
+      if (t.completed || !t.dueDate) continue;
+      if (t.dueDate < date) todoOverdue++;
+      else if (t.dueDate === date) todoDueToday++;
+    }
+    let projectOverdue = 0;
+    let projectDueToday = 0;
+    for (const p of projects ?? []) {
+      if (p.completedAt) continue;
+      if (p.dueDate < date) projectOverdue++;
+      else if (p.dueDate === date) projectDueToday++;
+    }
+    return { todoOverdue, todoDueToday, projectOverdue, projectDueToday };
+  }, [linkedTodoTasks, projects, date]);
+
   // 直近の「停止」時刻（完了した作業の終了時刻、または一時停止中の作業が
   // 一時停止した時刻のうち、リスト上で一番最後(orderが最大)の作業のもの）。
   // さかのぼって開始/再開する際の起点にする。本日まだ一度も停止していなければ、
@@ -2593,6 +2613,39 @@ export default function TodaySection({
           onAssignNew={resolveProvisionalAsNew}
           onFinishAsIs={resolveProvisionalFinish}
         />
+      )}
+
+      {taskViewTab === "pending" && (
+        <div className="panel flex flex-wrap gap-x-6 gap-y-2 p-3 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="text-cream/50">✅ ToDo</span>
+            {pendingDueSummary.todoOverdue > 0 && (
+              <span className="rounded-full bg-alert/15 px-2 py-0.5 font-bold text-alert">
+                期限切れ {pendingDueSummary.todoOverdue}件
+              </span>
+            )}
+            {pendingDueSummary.todoDueToday > 0 && (
+              <span className="rounded-full bg-cream/10 px-2 py-0.5 text-cream/80">本日期限 {pendingDueSummary.todoDueToday}件</span>
+            )}
+            {pendingDueSummary.todoOverdue === 0 && pendingDueSummary.todoDueToday === 0 && (
+              <span className="text-cream/40">期限切れ・本日期限なし</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-cream/50">📁 案件</span>
+            {pendingDueSummary.projectOverdue > 0 && (
+              <span className="rounded-full bg-alert/15 px-2 py-0.5 font-bold text-alert">
+                期限切れ {pendingDueSummary.projectOverdue}件
+              </span>
+            )}
+            {pendingDueSummary.projectDueToday > 0 && (
+              <span className="rounded-full bg-cream/10 px-2 py-0.5 text-cream/80">本日期限 {pendingDueSummary.projectDueToday}件</span>
+            )}
+            {pendingDueSummary.projectOverdue === 0 && pendingDueSummary.projectDueToday === 0 && (
+              <span className="text-cream/40">期限切れ・本日期限なし</span>
+            )}
+          </div>
+        </div>
       )}
 
       {taskViewTab === "done" && (
