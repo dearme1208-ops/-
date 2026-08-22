@@ -201,7 +201,14 @@ function CompletedBar({
       newEnd = Math.max(origEnd + deltaMs, origStart + MIN_BAR_MIN * 60000);
     }
     setDeltaMin(0);
-    if (newStart !== origStart || newEnd !== origEnd) onCommit(task, newStart, newEnd);
+    if (newStart === origStart && newEnd === origEnd) return;
+    // ドラッグでの変更は誤操作の可能性もあるため、確定前に一度確認する。
+    // キャンセルした場合はdragがnullに戻っているのでプレビューも自動的に元の位置に戻る
+    const confirmed = confirm(
+      `「${task.name}」の時刻を変更します。\n${formatClock(origStart)}〜${formatClock(origEnd)} → ${formatClock(newStart)}〜${formatClock(newEnd)}\n\nよろしいですか?`
+    );
+    if (!confirmed) return;
+    onCommit(task, newStart, newEnd);
   }
 
   const previewStart = drag && (drag.mode === "move" || drag.mode === "left") ? origStart + deltaMin * 60000 : origStart;
@@ -215,21 +222,28 @@ function CompletedBar({
   const overlapsNext = nextStart != null && clampedEnd > nextStart;
   const overlapping = overlapsPrev || overlapsNext;
 
+  const barTop = (ROW_H - BAR_H) / 2;
+
   return (
     <div className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
+      {/* バーが細いと内側に時刻を書いても見えなくなるため、開始時刻はバーの手前(左)、
+          終了時刻はバーの後ろ(右)に、バーの長さに関わらず常に読める位置で表示する */}
       <div
-        className={`group absolute flex cursor-grab items-center justify-center rounded text-[10px] font-medium text-ink active:cursor-grabbing ${
+        className="pointer-events-none absolute whitespace-nowrap text-[10px] tabular-nums text-cream/70"
+        style={{ left, top: barTop, height: BAR_H, lineHeight: `${BAR_H}px`, transform: "translateX(calc(-100% - 4px))" }}
+      >
+        {formatClock(clampedStart)}
+      </div>
+      <div
+        className={`group absolute cursor-grab rounded active:cursor-grabbing ${
           overlapping ? "bg-alert ring-2 ring-alert" : "bg-cream"
         }`}
-        style={{ left, width, top: (ROW_H - BAR_H) / 2, height: BAR_H }}
+        style={{ left, width, top: barTop, height: BAR_H }}
         onPointerDown={beginDrag("move")}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
       >
-        <span className="pointer-events-none truncate px-2">
-          {formatClock(clampedStart)}〜{formatClock(clampedEnd)}
-        </span>
         <div
           className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-ink/20 hover:bg-ink/40"
           onPointerDown={beginDrag("left")}
@@ -244,6 +258,12 @@ function CompletedBar({
           onPointerUp={onUp}
           onPointerCancel={onUp}
         />
+      </div>
+      <div
+        className="pointer-events-none absolute whitespace-nowrap text-[10px] tabular-nums text-cream/70"
+        style={{ left: left + width + 4, top: barTop, height: BAR_H, lineHeight: `${BAR_H}px` }}
+      >
+        {formatClock(clampedEnd)}
       </div>
       {drag && (
         <div
