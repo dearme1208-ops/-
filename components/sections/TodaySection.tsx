@@ -1364,6 +1364,9 @@ export default function TodaySection({
         isSpontaneous: true,
       };
       await db.dailyTasks.add(task);
+      // お気に入り・クイック起動・音声操作・提案作業など、この関数を通る「すぐ開始」系の
+      // 起動は全て、開始した作業がひと目で見えるよう実行中タブに切り替える
+      setTaskViewTab("running");
     };
     await gateFirstStart(doInsert);
   }
@@ -3222,6 +3225,7 @@ export default function TodaySection({
           provisionalRunning={provisionalActive}
           lastStopTime={effectiveLastStopTime}
           onRequestConflictStart={requestStartNew}
+          onStarted={() => setTaskViewTab("running")}
           onClose={() => setShowAddDialog(false)}
         />
       )}

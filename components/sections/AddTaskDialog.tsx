@@ -15,12 +15,16 @@ export default function AddTaskDialog({
   provisionalRunning,
   lastStopTime,
   onRequestConflictStart,
+  onStarted,
   onClose,
 }: {
   date: string;
   provisionalRunning: boolean;
   lastStopTime?: number | null;
   onRequestConflictStart: (category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) => void;
+  // 「◯時から開始」「追加してすぐ開始」で実際に計測中の状態として追加できた時だけ呼ばれる
+  // (「追加のみ」で未着手のまま追加した場合は呼ばれない)
+  onStarted?: () => void;
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"master" | "free">("master");
@@ -65,6 +69,7 @@ export default function AddTaskDialog({
       isSpontaneous: true,
     };
     await db.dailyTasks.add(task);
+    if (startAt !== undefined) onStarted?.();
     onClose();
   }
 
