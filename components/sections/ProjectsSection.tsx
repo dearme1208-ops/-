@@ -9,6 +9,7 @@ import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
 import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
+import { computeProjectForecast, type ProjectForecast } from "@/lib/projectForecast";
 import { computeProjectProgress, isStageDone } from "@/lib/projectStage";
 import { useSetting } from "@/lib/settings";
 import { cardOverrunClass, useVisualMode, type ThemedMode } from "@/lib/theme";
@@ -163,6 +164,17 @@ export default function ProjectsSection({
     }
     return map;
   }, [records]);
+
+  // 見積もり総所要時間が設定されている案件だけ、直近の消化ペースから期日到達予測を算出する
+  const projectForecasts = useMemo(() => {
+    const map = new Map<string, ProjectForecast>();
+    for (const p of projects ?? []) {
+      if (p.completedAt) continue;
+      const forecast = computeProjectForecast(p, records ?? [], today);
+      if (forecast) map.set(p.id, forecast);
+    }
+    return map;
+  }, [projects, records, today]);
 
   function downloadTemplate() {
     downloadTextFile("projects_template.csv", projectsCsvTemplate());
@@ -327,10 +339,15 @@ export default function ProjectsSection({
       // (残り日数が僅かなのに、これまでほとんど着手できていない場合に注意を促す)
       const daysElapsed = Math.max(1, daysBetweenDateStrs(createdStr, today) + 1);
       const workDays = projectWorkDays.get(p.id)?.size ?? 0;
-      const paceWarning = !p.completedAt && daysLeft <= 3 && daysLeft >= 0 && workDays / daysElapsed < 0.3;
-      return { project: p, createdStr, overdue, dueToday, daysLeft, paceWarning };
+      const forecast = projectForecasts.get(p.id);
+      // 見積もり総所要時間があれば、実際の消化ペースに基づく予測(forecast)を優先する。
+      // 未設定の案件は従来通り「経過日数のうち何割の日に着手できているか」の簡易判定で代用する
+      const paceWarning = forecast
+        ? forecast.status === "at-risk" || forecast.status === "overdue"
+        : !p.completedAt && daysLeft <= 3 && daysLeft >= 0 && workDays / daysElapsed < 0.3;
+      return { project: p, createdStr, overdue, dueToday, daysLeft, paceWarning, forecast };
     });
-  }, [projects, today, projectWorkDays]);
+  }, [projects, today, projectWorkDays, projectForecasts]);
 
   const activeRows = useMemo(() => rows.filter((r) => !r.project.completedAt), [rows]);
   const completedRows = useMemo(() => rows.filter((r) => !!r.project.completedAt), [rows]);
@@ -627,7 +644,7 @@ export default function ProjectsSection({
 
 
       <div className="panel divide-y divide-cream/10">
-        {activeRows.map(({ project, overdue, dueToday, daysLeft, paceWarning }) => (
+        {activeRows.map(({ project, overdue, dueToday, daysLeft, paceWarning, forecast }) => (
           <ProjectRow
             key={project.id}
             project={project}
@@ -635,6 +652,7 @@ export default function ProjectsSection({
             dueToday={dueToday}
             daysLeft={daysLeft}
             paceWarning={paceWarning}
+            forecast={forecast}
             themedMode={themedMode}
             totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
             hourlyRate={resolveProjectRate(project)}
@@ -922,6 +940,7 @@ function ProjectRow({
   dueToday,
   daysLeft,
   paceWarning,
+  forecast,
   totalSeconds,
   hourlyRate,
   clientName,
@@ -939,6 +958,7 @@ function ProjectRow({
   dueToday?: boolean;
   daysLeft: number;
   paceWarning?: boolean;
+  forecast?: ProjectForecast;
   totalSeconds: number;
   hourlyRate: number | null;
   clientName?: string;
@@ -991,10 +1011,34 @@ function ProjectRow({
             <span className="ml-1 rounded-full bg-alert/20 px-1.5 py-0.5 text-[9px] font-bold text-alert">本日</span>
           )}
         </div>
-        {paceWarning && (
-          <div className="text-xs font-bold text-alert" title="残り日数が少ないですが、これまであまり着手できていないようです">
-            ⚠ ペースに遅れの可能性
+        {forecast ? (
+          <div
+            className={`text-xs ${
+              forecast.status === "at-risk" || forecast.status === "overdue" ? "font-bold text-alert" : "text-cream/60"
+            }`}
+            title="見積もり総所要時間と、直近14日間の消化ペースから算出した納期到達予測です"
+          >
+            {forecast.status === "done" && "✅ 見積もり時間分は消化済みです"}
+            {forecast.status === "overdue" && `🔴 期日超過（残り見積もり ${formatHms(forecast.remainingSeconds)}）`}
+            {forecast.status === "no-recent-pace" &&
+              `😴 直近14日間この案件に未着手（残り見積もり ${formatHms(forecast.remainingSeconds)}）`}
+            {forecast.status === "on-track" &&
+              forecast.projectedDaysNeeded !== null &&
+              `🎯 順調（今のペースならあと約${Math.ceil(forecast.projectedDaysNeeded)}日で完了見込み・残り${formatHms(forecast.remainingSeconds)}）`}
+            {forecast.status === "at-risk" &&
+              forecast.projectedDaysNeeded !== null &&
+              `⚠ 遅延の恐れ（今のペースだと完了まで約${Math.ceil(forecast.projectedDaysNeeded)}日かかる見込み。残り${formatHms(forecast.remainingSeconds)}${
+                forecast.requiredPaceSecondsPerDay
+                  ? `・間に合わせるには1日あたり${formatHms(forecast.requiredPaceSecondsPerDay)}必要`
+                  : ""
+              }）`}
           </div>
+        ) : (
+          paceWarning && (
+            <div className="text-xs font-bold text-alert" title="残り日数が少ないですが、これまであまり着手できていないようです">
+              ⚠ ペースに遅れの可能性
+            </div>
+          )
         )}
         {project.stages && project.stages.length > 0 && (
           <div className="mt-1 max-w-[220px]">

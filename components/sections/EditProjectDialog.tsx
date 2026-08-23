@@ -15,6 +15,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import type { ProjectItem, ProjectStage } from "@/lib/types";
 import { computeProjectProgress } from "@/lib/projectStage";
+import { formatHms, parseHmsToSeconds } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 
 // 段階1行分。件名・期日をその場で編集できる入力欄を持つ
@@ -142,6 +143,9 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   const [workName, setWorkName] = useState(project.workName);
   const [dueDate, setDueDate] = useState(project.dueDate);
   const [hourlyRateStr, setHourlyRateStr] = useState(project.hourlyRate?.toString() ?? "");
+  const [estimatedTotalStr, setEstimatedTotalStr] = useState(
+    project.estimatedTotalSeconds ? formatHms(project.estimatedTotalSeconds) : ""
+  );
   const [clientId, setClientId] = useState(project.clientId ?? "");
   const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
   const [stages, setStages] = useState<ProjectStage[]>(project.stages ?? []);
@@ -209,12 +213,15 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   async function save() {
     if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) return;
     const rate = Number(hourlyRateStr);
+    const estimatedTotalSeconds =
+      estimatedTotalStr.trim() !== "" ? parseHmsToSeconds(estimatedTotalStr) : 0;
     await db.projects.update(project.id, {
       title: title.trim(),
       category: category.trim(),
       workName: workName.trim(),
       dueDate,
       hourlyRate: hourlyRateStr.trim() !== "" && Number.isFinite(rate) && rate >= 0 ? rate : undefined,
+      estimatedTotalSeconds: estimatedTotalSeconds > 0 ? estimatedTotalSeconds : undefined,
       clientId: clientId || undefined,
       stages,
     });
@@ -279,6 +286,18 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
             className="w-28 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-right text-sm text-cream"
           />
           <span className="text-xs text-cream/60">円/時間</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-cream/60">見積もり総所要時間</label>
+          <input
+            placeholder="hh:mm:ss（任意）"
+            value={estimatedTotalStr}
+            onChange={(e) => setEstimatedTotalStr(e.target.value)}
+            className="w-32 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+          <span className="text-xs text-cream/40" title="設定すると、直近の消化ペースから期日に間に合いそうかを予測します">
+            設定すると納期到達予測が有効になります
+          </span>
         </div>
         <div className="border-t border-cream/10 pt-2">
           <h4 className="mb-1.5 text-xs font-bold text-cream/70">

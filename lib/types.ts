@@ -195,6 +195,8 @@ export interface ProjectItem {
   // trueにせず、既にtrueだった場合はfalseへ戻す
   hourlyRate?: number; // この案件専用の時給/単価（円）。無ければカテゴリ別/デフォルト単価を使う
   stages?: ProjectStage[]; // 案件を段階（マイルストーン）に分けて進捗管理する場合に使う
+  estimatedTotalSeconds?: number; // 見積もり総所要時間（任意）。設定すると、直近の消化ペースから
+  // 期日に間に合うかを予測する「納期到達予測」の対象になる
 }
 
 // ---- ToDo ----
