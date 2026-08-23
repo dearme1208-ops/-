@@ -25,6 +25,7 @@ import RankingBarChart from "@/components/charts/RankingBarChart";
 import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
 import LineChart from "@/components/charts/LineChart";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
+import PersonalBestPanel from "@/components/PersonalBestPanel";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
 import WeekdayBreakdownDialog from "@/components/sections/WeekdayBreakdownDialog";
 import TotalTrendBreakdownDialog from "@/components/sections/TotalTrendBreakdownDialog";
@@ -190,6 +191,14 @@ export default function AggregationSection() {
           </button>
         ))}
       </div>
+
+      <CollapsiblePanel
+        title="🏆 自己ベスト記録"
+        collapsed={!!collapsed.personalBests}
+        onToggle={() => toggleSection("personalBests")}
+      >
+        <PersonalBestPanel />
+      </CollapsiblePanel>
 
       <CollapsiblePanel
         title="業務区分別の内訳"
