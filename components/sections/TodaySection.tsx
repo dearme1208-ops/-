@@ -26,6 +26,7 @@ import {
   riskBadgeLabel,
   runningLabel,
   useVisualMode,
+  appTitle,
 } from "@/lib/theme";
 import {
   baseAccumulatedMs,
@@ -80,6 +81,8 @@ import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
+import DayCardModal from "@/components/DayCardModal";
+import type { DayCardData } from "@/lib/dayCard";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 
@@ -151,7 +154,7 @@ export default function TodaySection({
   const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
-  const { lobotomyMode, va11hallaMode, themedMode, wordingThemedMode } = useVisualMode();
+  const { lobotomyMode, va11hallaMode, themedMode, wordingThemedMode, wordingMode } = useVisualMode();
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -2107,6 +2110,35 @@ export default function TodaySection({
   const latestConditionLevel =
     conditionLogs && conditionLogs.length > 0 ? conditionLogs[conditionLogs.length - 1].level : null;
 
+  // 「今日の一枚」: 本日の実績(除外分を除く)からカテゴリ別内訳とMVP作業(最長時間)を集計する
+  const [showDayCard, setShowDayCard] = useState(false);
+  const todayRecordsForCard = useMemo(
+    () => (projectRecords ?? []).filter((r) => r.date === date && !r.excludedFromStats),
+    [projectRecords, date]
+  );
+  const dayCardData: DayCardData = useMemo(() => {
+    const byCategory = new Map<string, number>();
+    for (const r of todayRecordsForCard) {
+      byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.seconds);
+    }
+    const categoryTotals = [...byCategory.entries()]
+      .map(([category, seconds]) => ({ category, seconds }))
+      .sort((a, b) => b.seconds - a.seconds);
+    const mvpRecord = [...todayRecordsForCard].sort((a, b) => b.seconds - a.seconds)[0];
+    const { stage } = computeGrowthStage(themedMode, todayTotalSeconds);
+    return {
+      appTitle: appTitle(wordingMode),
+      date,
+      totalSeconds: todayTotalSeconds,
+      doneCount: (tasks ?? []).filter((t) => t.status === "done" && !t.isProvisional).length,
+      streakDays,
+      growthIcon: stage.icon,
+      growthLabel: stage.label,
+      categoryTotals,
+      mvpTask: mvpRecord ? { category: mvpRecord.category, name: mvpRecord.name, seconds: mvpRecord.seconds } : undefined,
+    };
+  }, [todayRecordsForCard, themedMode, todayTotalSeconds, tasks, streakDays, date, wordingMode]);
+
   // 条件付き見積もり警告: 現在の体調・天気から、既存の分析データ(体調別/天気別の生産性)を使い
   // 「今日はいつもよりどのくらいかかりそうか」を一言添える(通知ではなく控えめなインライン表示)。
   // 上のconditionLogsは本日分だけに絞られているため、履歴分析用に全期間を別途取得する
@@ -2605,6 +2637,21 @@ export default function TodaySection({
               </button>
             </>
           )}
+          {todayTotalSeconds > 0 &&
+            (simpleButtons ? (
+              <button
+                className="btn-pill-outline px-3 py-2 text-base"
+                onClick={() => setShowDayCard(true)}
+                title="今日の一枚(画像で保存)"
+                aria-label="今日の一枚"
+              >
+                🖼
+              </button>
+            ) : (
+              <button className="btn-pill-outline text-sm" onClick={() => setShowDayCard(true)}>
+                🖼 今日の一枚
+              </button>
+            ))}
           {voiceEnabled && !voiceUnsupported && (simpleButtons ? (
             <button
               className={voiceListening ? "btn-pill-danger px-3 py-2 text-base" : "btn-pill-outline px-3 py-2 text-base"}
@@ -3233,6 +3280,8 @@ export default function TodaySection({
           onClose={() => setShowAddDialog(false)}
         />
       )}
+
+      {showDayCard && <DayCardModal data={dayCardData} onClose={() => setShowDayCard(false)} />}
 
       {pendingStart && provisionalTask && (
         <Modal title="未計測(仮計測)が計測中です" onClose={() => setPendingStart(null)}>
