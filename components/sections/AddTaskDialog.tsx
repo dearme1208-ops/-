@@ -15,16 +15,17 @@ export default function AddTaskDialog({
   provisionalRunning,
   lastStopTime,
   onRequestConflictStart,
-  onStarted,
+  onAdded,
   onClose,
 }: {
   date: string;
   provisionalRunning: boolean;
   lastStopTime?: number | null;
   onRequestConflictStart: (category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) => void;
-  // 「◯時から開始」「追加してすぐ開始」で実際に計測中の状態として追加できた時だけ呼ばれる
-  // (「追加のみ」で未着手のまま追加した場合は呼ばれない)
-  onStarted?: () => void;
+  // 実際に追加できた時に、その作業が実行中("running")・未着手("pending")のどちらとして
+  // 追加されたかを渡す(未計測との競合で呼び出し元に処理を委ねた場合は呼ばれない。
+  // その場合はrequestStartNew側で別途「実行中」への切り替えが行われる)
+  onAdded?: (status: "running" | "pending") => void;
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"master" | "free">("master");
@@ -69,7 +70,7 @@ export default function AddTaskDialog({
       isSpontaneous: true,
     };
     await db.dailyTasks.add(task);
-    if (startAt !== undefined) onStarted?.();
+    onAdded?.(startAt !== undefined ? "running" : "pending");
     onClose();
   }
 

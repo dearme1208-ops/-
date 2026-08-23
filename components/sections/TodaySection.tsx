@@ -1336,6 +1336,8 @@ export default function TodaySection({
         startedAt: task.startedAt ?? startAt,
         ...(isRetroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
       });
+      // 予定・一時停止中からの開始/再開も、insertRunningTaskと同様に実行中タブへ切り替える
+      setTaskViewTab("running");
     };
     await gateFirstStart(doStart);
   }
@@ -3225,7 +3227,7 @@ export default function TodaySection({
           provisionalRunning={provisionalActive}
           lastStopTime={effectiveLastStopTime}
           onRequestConflictStart={requestStartNew}
-          onStarted={() => setTaskViewTab("running")}
+          onAdded={(status) => setTaskViewTab(status)}
           onClose={() => setShowAddDialog(false)}
         />
       )}

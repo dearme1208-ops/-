@@ -11,8 +11,9 @@ import { downloadTextFile } from "@/lib/report";
 import { computeStaleMasterTasks } from "@/lib/staleMaster";
 import { useSetting } from "@/lib/settings";
 import { useVisualMode } from "@/lib/theme";
-import type { MasterTask } from "@/lib/types";
+import type { MasterTask, WorkRecord } from "@/lib/types";
 import { showUndoToast } from "@/lib/toast";
+import Modal from "@/components/ui/Modal";
 
 type SortKey = "name" | "sampleCount" | "estimatedSeconds";
 
@@ -38,6 +39,10 @@ export default function MasterSection() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [staleDaysStr] = useSetting("master.staleDays", "90");
   const staleDays = Math.max(1, Number(staleDaysStr) || 90);
+  const [orphansCollapsed, setOrphansCollapsed] = useState(false);
+  // クリックした作業マスタ(または宙に浮いた実績のグループ)の実績一覧を表示するモーダル。
+  // 実マスタが無い(宙に浮いた)グループの場合はmasterIdがundefinedになる
+  const [viewingRecords, setViewingRecords] = useState<{ title: string; masterId?: string; records: WorkRecord[] } | null>(null);
 
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
@@ -46,6 +51,51 @@ export default function MasterSection() {
     () => computeStaleMasterTasks(tasks ?? [], records ?? [], staleDays, todayStr()),
     [tasks, records, staleDays]
   );
+
+  // 宙に浮いた実績: masterTaskIdが設定されているのに、そのIDの作業マスタが
+  // (削除等で)もう存在しない実績を、区分/作業名でグループ化する
+  const orphanedGroups = useMemo(() => {
+    if (!tasks || !records) return [];
+    const existingMasterIds = new Set(tasks.map((t) => t.id));
+    const orphaned = records.filter((r) => r.masterTaskId && !existingMasterIds.has(r.masterTaskId) && !r.excludedFromStats);
+    const map = new Map<string, { category: string; name: string; records: WorkRecord[] }>();
+    for (const r of orphaned) {
+      const key = `${r.category}::${r.name}`;
+      if (!map.has(key)) map.set(key, { category: r.category, name: r.name, records: [] });
+      map.get(key)!.records.push(r);
+    }
+    return [...map.values()]
+      .map((g) => ({
+        ...g,
+        totalSeconds: g.records.reduce((sum, r) => sum + r.seconds, 0),
+      }))
+      .sort((a, b) => b.totalSeconds - a.totalSeconds);
+  }, [tasks, records]);
+
+  function openRecordsFor(t: MasterTask) {
+    setViewingRecords({
+      title: `${t.category} / ${t.name}`,
+      masterId: t.id,
+      records: (records ?? []).filter((r) => r.masterTaskId === t.id),
+    });
+  }
+
+  async function recoverOrphanGroup(category: string, name: string) {
+    const id = uid();
+    const recovered = await recoverOrphanedMasterHistory(id, category, name);
+    if (!recovered) return;
+    const now = Date.now();
+    await db.masterTasks.add({
+      id,
+      category,
+      name,
+      estimatedSeconds: recovered.estimatedSeconds,
+      isFavorite: false,
+      sampleCount: recovered.sampleCount,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 
   const grouped = useMemo(() => {
     if (!tasks) return [];
@@ -287,6 +337,46 @@ export default function MasterSection() {
         </div>
       )}
 
+      {orphanedGroups.length > 0 && (
+        <div className="panel space-y-2 border border-alert/30 p-4">
+          <button
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setOrphansCollapsed((v) => !v)}
+          >
+            <h3 className="font-display text-sm font-bold text-alert">
+              宙に浮いた実績（作業マスタが見つからない・{orphanedGroups.length}件）
+            </h3>
+            <span className="shrink-0 text-cream/60">{orphansCollapsed ? "▶" : "▼"}</span>
+          </button>
+          {!orphansCollapsed && (
+            <>
+              <p className="text-xs text-cream/50">
+                作業マスタを削除した後などに、どのマスタにも属さなくなった実績です。実績データ自体は失われていません。「復元する」でこの区分/作業名の作業マスタを作り直し、これらの実績を紐づけ直せます。
+              </p>
+              <div className="space-y-2">
+                {orphanedGroups.map((g) => (
+                  <div key={`${g.category}::${g.name}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                    <div>
+                      <div className="text-xs text-cream/50">{g.category}</div>
+                      <div className="text-sm text-cream">{g.name}</div>
+                      <button
+                        className="text-xs text-cream/40 underline decoration-dotted hover:text-cream/70"
+                        onClick={() => setViewingRecords({ title: `${g.category} / ${g.name}`, records: g.records })}
+                      >
+                        実績 {g.records.length}件・計 {formatHms(g.totalSeconds)}
+                      </button>
+                    </div>
+                    <button className="btn-pill-outline text-xs" onClick={() => recoverOrphanGroup(g.category, g.name)}>
+                      作業マスタとして復元する
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {grouped.map(({ category, items }) => (
         <div key={category} className="panel p-4">
           <button
@@ -311,6 +401,7 @@ export default function MasterSection() {
                     onArchive={() => archiveTask(t)}
                     onUnarchive={() => unarchiveTask(t)}
                     onDelete={() => deleteTask(t)}
+                    onViewRecords={() => openRecordsFor(t)}
                   />
                 ))}
               </div>
@@ -324,7 +415,12 @@ export default function MasterSection() {
                       </button>
                       <div>
                         <div className="text-sm text-cream">{t.name}</div>
-                        <div className="text-xs text-cream/50">実績サンプル数 {t.sampleCount}</div>
+                        <button
+                          className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80"
+                          onClick={() => openRecordsFor(t)}
+                        >
+                          実績サンプル数 {t.sampleCount}
+                        </button>
                         <input
                           key={`tags-${(t.tags ?? []).join(",")}`}
                           defaultValue={(t.tags ?? []).join(", ")}
@@ -366,6 +462,30 @@ export default function MasterSection() {
           作業マスタはまだ空です。実際の作業を記録すると自動的に登録されます。
         </p>
       )}
+
+      {viewingRecords && (
+        <Modal title={viewingRecords.title} onClose={() => setViewingRecords(null)}>
+          {viewingRecords.records.length === 0 ? (
+            <p className="text-sm text-cream/50">実績がありません。</p>
+          ) : (
+            <div className="space-y-1.5">
+              {[...viewingRecords.records]
+                .sort((a, b) => b.date.localeCompare(a.date))
+                .map((r) => (
+                  <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 text-sm">
+                    <span className="text-cream/80">{r.date}</span>
+                    <span className="tabular-nums text-cream">{formatHms(r.seconds)}</span>
+                    {r.isTrouble && <span className="text-xs text-alert">トラブル対応</span>}
+                    {r.excludedFromStats && <span className="text-xs text-cream/40">(集計除外)</span>}
+                  </div>
+                ))}
+              <p className="pt-1 text-xs text-cream/40">
+                合計 {formatHms(viewingRecords.records.reduce((sum, r) => sum + r.seconds, 0))}（{viewingRecords.records.length}件）
+              </p>
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
@@ -388,6 +508,7 @@ function MonsterCard({
   onArchive,
   onUnarchive,
   onDelete,
+  onViewRecords,
 }: {
   task: MasterTask;
   onToggleFavorite: () => void;
@@ -396,6 +517,7 @@ function MonsterCard({
   onArchive: () => void;
   onUnarchive: () => void;
   onDelete: () => void;
+  onViewRecords: () => void;
 }) {
   return (
     <div className={`adv-quest-card flex flex-col gap-2 p-3 ${task.archived ? "opacity-50" : ""}`}>
@@ -407,7 +529,9 @@ function MonsterCard({
       </div>
       <div>
         <div className="truncate text-sm font-bold text-cream">{task.name}</div>
-        <div className="text-[10px] text-cream/50">遭遇回数 {task.sampleCount}回</div>
+        <button className="text-[10px] text-cream/50 underline decoration-dotted hover:text-cream/80" onClick={onViewRecords}>
+          遭遇回数 {task.sampleCount}回
+        </button>
       </div>
       <input
         key={`estimate-${task.estimatedSeconds}`}
