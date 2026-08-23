@@ -23,6 +23,7 @@ import { emphasisTextClass, getRiskTier, riskBadgeClasses, riskBadgeLabel, useVi
 import { computeProductivityByWeather } from "@/lib/weather";
 import { computeProductivityByTimeOfDay, computeTimeOfDayInsight } from "@/lib/timeOfDay";
 import { computeInsights } from "@/lib/insights";
+import { computeBurnoutRisk } from "@/lib/burnoutRisk";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
@@ -65,6 +66,10 @@ export default function AttentionSection() {
     () => (masterTasks && records && weatherForecasts ? computeProductivityByWeather(weatherForecasts, records, masterTasks) : []),
     [masterTasks, records, weatherForecasts]
   );
+  const burnoutRisk = useMemo(
+    () => (masterTasks && records && conditionLogs ? computeBurnoutRisk(records, masterTasks, conditionLogs) : null),
+    [masterTasks, records, conditionLogs]
+  );
   const insights = useMemo(
     () => (masterTasks && records ? computeInsights(records, masterTasks) : []),
     [masterTasks, records]
@@ -88,6 +93,24 @@ export default function AttentionSection() {
 
   return (
     <div className="space-y-4">
+      {burnoutRisk && (
+        <div className="panel border border-alert/50 bg-alert/10 p-4">
+          <h3 className="mb-1 font-display text-sm font-bold text-alert">⚠️ 不調の予兆が見られます</h3>
+          <p className="text-sm text-cream/80">
+            直近3週間は、その前の3週間と比べて稼働時間が
+            <span className="mx-1 font-bold text-alert">+{burnoutRisk.hoursChangePct}%</span>
+            増えている一方、想定時間に対する生産性は
+            <span className="mx-1 font-bold text-alert">{burnoutRisk.productivityChangePt}pt</span>
+            低下、体調の記録も平均
+            <span className="mx-1 font-bold text-alert">{burnoutRisk.conditionChangeLevel}</span>
+            下がっています。無理をしすぎていないか、一度ペースを見直すタイミングかもしれません。
+          </p>
+          <p className="mt-2 text-xs text-cream/40">
+            稼働時間の増加・生産性の低下・体調の悪化の3つが同時に一定以上進んでいる場合にのみ表示します（どれか1つだけでは表示しません）。
+          </p>
+        </div>
+      )}
+
       <div className="panel p-4">
         <h3 className="mb-3 font-display text-sm font-bold text-cream/80">🔍 自動で見つけた気づき</h3>
         {insights.length === 0 ? (
