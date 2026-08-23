@@ -3,6 +3,7 @@ import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
 import { diffHmToSeconds } from "./time";
 import type { DailyTask, MasterTask, TimeSegment, WorkRecord } from "./types";
 import type { ScheduleRow } from "./scheduleCsv";
+import { fireCompletionPopup } from "./completionPopup";
 
 // 同日・同じ作業の実績が既にある場合に、実働区間(segments)を合算する。
 // 既存の実績にsegmentsが無い(この機能追加より前に作られた記録など、区間が不明な記録)場合は、
@@ -122,6 +123,12 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
     endedAt: closeAt,
     isProvisional: false,
   });
+
+  // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
+  // 可視化する対象ではないため、ポップアップは出さない
+  if (!task.isProvisional) {
+    fireCompletionPopup({ category: task.category, name: task.name, seconds, estimatedSeconds: task.estimatedSeconds });
+  }
 
   let masterTaskId = task.masterTaskId;
   if (!masterTaskId) {

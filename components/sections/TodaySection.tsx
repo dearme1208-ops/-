@@ -54,6 +54,7 @@ import {
   type WeatherAlert,
 } from "@/lib/weather";
 import { fireConfetti } from "@/lib/confetti";
+import { fireCompletionPopup } from "@/lib/completionPopup";
 import { computeGrowthStage } from "@/lib/growth";
 import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
@@ -1770,6 +1771,12 @@ export default function TodaySection({
       endedAt: nowMs,
       isProvisional: false,
     });
+
+    // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
+    // 可視化する対象ではないため、ポップアップは出さない(lib/tasks.tsのfinishDailyTaskと同じ判断)
+    if (!task.isProvisional) {
+      fireCompletionPopup({ category: task.category, name: task.name, seconds, estimatedSeconds: task.estimatedSeconds });
+    }
 
     let masterTaskId = task.masterTaskId;
     if (!masterTaskId) {

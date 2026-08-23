@@ -284,6 +284,22 @@ html[data-high-contrast="true"] :focus-visible {
   .overrun-badge {
     animation: overrun-badge-blink 1s steps(1, end) infinite;
   }
+
+  /* 作業完了ポップアップ(CompletionPopupHost)の入場アニメーション。全テーマ共通の
+     控えめなスライド+フェードで、演出テーマごとの個別対応は不要にしている */
+  .completion-popup-card {
+    animation: completion-popup-in 0.28s ease-out;
+  }
+  @keyframes completion-popup-in {
+    from {
+      opacity: 0;
+      transform: translateY(-10px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
   @keyframes overrun-badge-blink {
     0%,
     100% {
@@ -2978,7 +2994,8 @@ html[data-high-contrast="true"] :focus-visible {
   .adv-boss-frame,
   .adv-levelup-burst,
   .adv-gold-text,
-  .adv-path-node-current .adv-path-node-badge {
+  .adv-path-node-current .adv-path-node-badge,
+  .completion-popup-card {
     animation: none !important;
   }
   .crt-scanlines,

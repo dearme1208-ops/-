@@ -15,6 +15,7 @@ import AccessibilityInit from "@/components/AccessibilityInit";
 import LobotomyOverrunWatcher from "@/components/LobotomyOverrunWatcher";
 import ToastHost from "@/components/ui/ToastHost";
 import ConfettiHost from "@/components/ui/ConfettiHost";
+import CompletionPopupHost from "@/components/ui/CompletionPopupHost";
 import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
@@ -133,6 +134,7 @@ export default function HomePage() {
       <LobotomyOverrunWatcher />
       <ToastHost />
       <ConfettiHost />
+      <CompletionPopupHost />
       <OnboardingGuide />
       <CommandPalette
         tabs={tabs}

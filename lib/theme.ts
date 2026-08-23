@@ -435,6 +435,22 @@ export function overrunLabel(mode: ThemedMode | null): string {
   return "⚠ 計測中・予測超過";
 }
 
+// 作業完了ポップアップの見出しに使う、テーマの世界観に合わせた「完了」表示ラベル。
+// modeがnull(文言オフ)の時は通常表記
+export function completionLabel(mode: ThemedMode | null): string {
+  if (mode === "va11halla") return "会計完了";
+  if (mode === "persona5") return "予告どおり、成功";
+  if (mode === "natsuyasumi") return "できた！";
+  if (mode === "powerpro") return "試合終了";
+  if (mode === "lobotomy") return "収容完了";
+  if (mode === "claude") return "完了しました";
+  if (mode === "zen") return "終えた";
+  if (mode === "terminal") return "TASK COMPLETE";
+  if (mode === "adventurer") return "討伐した！";
+  if (mode === "noir") return "事件解決";
+  return "完了しました";
+}
+
 // ===== アプリ名・タブ名の丸ごと差し替え =====
 // 見た目や色だけでなく、アプリそのものの「名乗り」までテーマの世界観に合わせて変える。
 // 「工程表」というアプリ名自体、タブの並びや呼び方も、選んだテーマの中の人物になりきったような
