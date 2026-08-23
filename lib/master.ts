@@ -15,18 +15,45 @@ export async function findOrCreateMasterTask(
   if (existing) return existing;
 
   const now = Date.now();
+  const { estimatedSeconds, sampleCount } = await recoverEstimateFromOrphanedRecords(cat, nm, initialEstimatedSeconds);
   const task: MasterTask = {
     id: uid(),
     category: cat,
     name: nm,
-    estimatedSeconds: initialEstimatedSeconds,
+    estimatedSeconds,
     isFavorite: false,
-    sampleCount: 0,
+    sampleCount,
     createdAt: now,
     updatedAt: now,
   };
   await db.masterTasks.add(task);
   return task;
+}
+
+// 作業マスタを誤って削除した後、同じ区分/作業名で作業を再開すると、この関数が新しいIDで
+// マスタを作り直す。その際、想定時間が0からやり直しになってしまわないよう、削除された
+// マスタのIDを参照したまま宙に浮いている(=どの作業マスタにも紐づかなくなった)過去の実績を
+// 探し、見つかればその平均値・件数を新しいマスタの想定時間・実績サンプル数として引き継ぐ。
+// 呼び出し元が既に何らかの想定時間を明示的に指定している場合(例: 「予定」を手入力した場合)は
+// そちらを優先し、実績からの推測では上書きしない
+async function recoverEstimateFromOrphanedRecords(
+  category: string,
+  name: string,
+  initialEstimatedSeconds: number
+): Promise<{ estimatedSeconds: number; sampleCount: number }> {
+  if (initialEstimatedSeconds > 0) return { estimatedSeconds: initialEstimatedSeconds, sampleCount: 0 };
+
+  const candidates = await db.records
+    .filter((r) => r.category === category && r.name === name && !r.excludedFromStats && !!r.masterTaskId)
+    .toArray();
+  if (candidates.length === 0) return { estimatedSeconds: initialEstimatedSeconds, sampleCount: 0 };
+
+  const existingMasterIds = new Set((await db.masterTasks.toArray()).map((m) => m.id));
+  const orphaned = candidates.filter((r) => r.masterTaskId && !existingMasterIds.has(r.masterTaskId));
+  if (orphaned.length === 0) return { estimatedSeconds: initialEstimatedSeconds, sampleCount: 0 };
+
+  const avg = orphaned.reduce((sum, r) => sum + r.seconds, 0) / orphaned.length;
+  return { estimatedSeconds: Math.round(avg), sampleCount: orphaned.length };
 }
 
 // 実績が貯まったら、その平均値で想定時間を自動更新する
