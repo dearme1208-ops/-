@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import Modal from "@/components/ui/Modal";
-import { useSetting } from "@/lib/settings";
+import { db } from "@/lib/db";
+
+const SETTING_KEY = "onboarding.completed";
 
 interface Step {
   icon: string;
@@ -39,18 +42,29 @@ const STEPS: Step[] = [
 ];
 
 export default function OnboardingGuide() {
-  const [completed, setCompleted] = useSetting("onboarding.completed", "false");
+  // useSettingは読み込み中(IndexedDBからの初回応答が返るまで)も既定値("false")を
+  // 返してしまうため、それをそのまま「未完了」として使うと、2回目以降の起動でも
+  // 読み込みが完了するまでの一瞬だけようこそ画面がちらついて見えてしまう。
+  // useLiveQueryはクエリが未解決の間はundefinedを返す一方、db.settings.get()は
+  // 該当キーが無い(=本当の初回起動)場合もundefinedを返すため、両者を区別できるよう
+  // 「見つからなければ既定値のオブジェクトを返す」形にして、読み込み未完了(undefined)
+  // とだけを「まだ判定できていない」として何も表示しないようにする
+  const completedRow = useLiveQuery(
+    async () => (await db.settings.get(SETTING_KEY)) ?? { key: SETTING_KEY, value: "false" },
+    []
+  );
   const [dismissedThisSession, setDismissedThisSession] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
 
-  if (completed === "true" || dismissedThisSession) return null;
+  if (completedRow === undefined) return null;
+  if (completedRow.value === "true" || dismissedThisSession) return null;
 
   const step = STEPS[stepIndex];
   const isLast = stepIndex === STEPS.length - 1;
 
   function finish() {
     setDismissedThisSession(true);
-    setCompleted("true");
+    db.settings.put({ key: SETTING_KEY, value: "true" });
   }
 
   return (
