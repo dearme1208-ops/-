@@ -43,6 +43,7 @@ import { computeStreakDays } from "@/lib/streak";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
+import { computeNextTaskPick } from "@/lib/nextTaskPick";
 import { CONDITION_LEVELS, dominantConditionLevel, computeProductivityByCondition } from "@/lib/condition";
 import { completeTodoTask } from "@/lib/todo";
 import { computeWeekdayAverages } from "@/lib/weekday";
@@ -346,6 +347,32 @@ export default function TodaySection({
     return alreadyToday ? null : suggestion;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectRecords, nowMinuteBucket, tasks]);
+
+  // 「そろそろこの作業では?」は曜日・時間帯パターンだけを見るため、締切や残り時間までは
+  // 考慮しない。その隙間を埋める「今この一手」: 期限が来ているToDoや、終業までの残り時間に
+  // 収まらない普段の提案の代わりになる短時間の代替を、普段の提案で足りない時だけ出す
+  const nextTaskPick = useMemo(() => {
+    if (!projectRecords || !allMasterTasks || !linkedTodoTasks) return null;
+    const nowDate = new Date(nowMinuteBucket * 60000);
+    const pick = computeNextTaskPick({
+      records: projectRecords,
+      masterTasks: allMasterTasks,
+      todoTasks: linkedTodoTasks,
+      favoriteMasterIds,
+      today: date,
+      now: nowDate,
+      afterHoursCutoff,
+    });
+    if (!pick) return null;
+    const alreadyToday = (tasks ?? []).some((t) => t.category === pick.category && t.name === pick.name);
+    return alreadyToday ? null : pick;
+  }, [projectRecords, allMasterTasks, linkedTodoTasks, favoriteMasterIds, date, nowMinuteBucket, afterHoursCutoff, tasks]);
+
+  async function startNextTaskPick() {
+    if (!nextTaskPick) return;
+    const masterId = nextTaskPick.masterTaskId ?? (await findOrCreateMasterTask(nextTaskPick.category, nextTaskPick.name, 0)).id;
+    requestStartNew(nextTaskPick.category, nextTaskPick.name, nextTaskPick.estimatedSeconds, masterId);
+  }
 
   // パターン学習型の声かけ通知。「そろそろこの作業では?」の提案が出た最初のタイミングで、
   // パネル表示に加えて通知も送る(同じ提案は1日1回まで、設定書き込みの非同期反映による
@@ -2487,6 +2514,21 @@ export default function TodaySection({
           <p className="mt-1 text-[10px] text-cream/40">
             過去の{estimateAdjustment.factors.join("・")}別の生産性データ(要注意リスト)から算出した目安です。
           </p>
+        </div>
+      )}
+
+      {showSuggestedTask && nextTaskPick && (
+        <div className="panel flex flex-wrap items-center justify-between gap-2 border border-alert/40 bg-alert/5 p-4">
+          <div>
+            <h3 className="font-display text-sm font-bold text-alert">🎯 今この一手</h3>
+            <p className="text-xs text-cream/50">{nextTaskPick.reason}</p>
+            <p className="mt-1 text-sm text-cream">
+              {nextTaskPick.category} / {nextTaskPick.name}
+            </p>
+          </div>
+          <button className="btn-pill text-sm" onClick={startNextTaskPick}>
+            ワンタップで開始
+          </button>
         </div>
       )}
 
