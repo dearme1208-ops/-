@@ -15,14 +15,17 @@ export async function findOrCreateMasterTask(
   if (existing) return existing;
 
   const now = Date.now();
-  const { estimatedSeconds, sampleCount } = await recoverEstimateFromOrphanedRecords(cat, nm, initialEstimatedSeconds);
+  const id = uid();
+  const recovered = await recoverOrphanedMasterHistory(id, cat, nm);
   const task: MasterTask = {
-    id: uid(),
+    id,
     category: cat,
     name: nm,
-    estimatedSeconds,
+    // 呼び出し元が既に何らかの想定時間を明示的に指定している場合(例: 「予定」を手入力した場合)は
+    // そちらを優先する。指定が無ければ、復元できた過去実績の平均を使う
+    estimatedSeconds: initialEstimatedSeconds > 0 ? initialEstimatedSeconds : (recovered?.estimatedSeconds ?? 0),
     isFavorite: false,
-    sampleCount,
+    sampleCount: recovered?.sampleCount ?? 0,
     createdAt: now,
     updatedAt: now,
   };
@@ -30,27 +33,32 @@ export async function findOrCreateMasterTask(
   return task;
 }
 
-// 作業マスタを誤って削除した後、同じ区分/作業名で作業を再開すると、この関数が新しいIDで
-// マスタを作り直す。その際、想定時間が0からやり直しになってしまわないよう、削除された
+// 作業マスタを誤って削除した後、同じ区分/作業名で作業マスタを作り直す際に呼ぶ。削除された
 // マスタのIDを参照したまま宙に浮いている(=どの作業マスタにも紐づかなくなった)過去の実績を
-// 探し、見つかればその平均値・件数を新しいマスタの想定時間・実績サンプル数として引き継ぐ。
-// 呼び出し元が既に何らかの想定時間を明示的に指定している場合(例: 「予定」を手入力した場合)は
-// そちらを優先し、実績からの推測では上書きしない
-async function recoverEstimateFromOrphanedRecords(
+// 探し、見つかればnewMasterId(これから作る新しいマスタのID)へ実際に繋ぎ直した上で、
+// その平均値・件数を返す。単に初期値としてコピーするだけだと、後で作業完了時に走る
+// recomputeEstimateFromRecords(masterTaskId)が新IDに紐づく実績だけを見て再計算し、
+// せっかく復元した過去の実績が上書きで消えてしまうため、実績側を新IDへ確実に繋ぎ直す。
+// 見つからなければnullを返す
+export async function recoverOrphanedMasterHistory(
+  newMasterId: string,
   category: string,
-  name: string,
-  initialEstimatedSeconds: number
-): Promise<{ estimatedSeconds: number; sampleCount: number }> {
-  if (initialEstimatedSeconds > 0) return { estimatedSeconds: initialEstimatedSeconds, sampleCount: 0 };
-
+  name: string
+): Promise<{ estimatedSeconds: number; sampleCount: number } | null> {
   const candidates = await db.records
     .filter((r) => r.category === category && r.name === name && !r.excludedFromStats && !!r.masterTaskId)
     .toArray();
-  if (candidates.length === 0) return { estimatedSeconds: initialEstimatedSeconds, sampleCount: 0 };
+  if (candidates.length === 0) return null;
 
   const existingMasterIds = new Set((await db.masterTasks.toArray()).map((m) => m.id));
   const orphaned = candidates.filter((r) => r.masterTaskId && !existingMasterIds.has(r.masterTaskId));
-  if (orphaned.length === 0) return { estimatedSeconds: initialEstimatedSeconds, sampleCount: 0 };
+  if (orphaned.length === 0) return null;
+
+  await db.transaction("rw", db.records, async () => {
+    for (const r of orphaned) {
+      await db.records.update(r.id, { masterTaskId: newMasterId });
+    }
+  });
 
   const avg = orphaned.reduce((sum, r) => sum + r.seconds, 0) / orphaned.length;
   return { estimatedSeconds: Math.round(avg), sampleCount: orphaned.length };

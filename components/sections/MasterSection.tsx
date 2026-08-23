@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { upsertMasterTasksFromCsv, recomputeAllMasterEstimates } from "@/lib/master";
+import { upsertMasterTasksFromCsv, recomputeAllMasterEstimates, recoverOrphanedMasterHistory } from "@/lib/master";
 import { recomputeOutliersForAll } from "@/lib/outliers";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/masterCsv";
@@ -114,13 +114,17 @@ export default function MasterSection() {
   async function createNew() {
     if (!newCategory.trim() || !newName.trim()) return;
     const now = Date.now();
+    const id = uid();
+    // 誤って削除したマスタの実績が同じ区分/作業名で宙に浮いている場合、そちらを新IDへ
+    // 繋ぎ直した上でその平均・件数を優先する(見つからなければ入力欄の想定時間を使う)
+    const recovered = await recoverOrphanedMasterHistory(id, newCategory.trim(), newName.trim());
     await db.masterTasks.add({
-      id: uid(),
+      id,
       category: newCategory.trim(),
       name: newName.trim(),
-      estimatedSeconds: parseHmsToSeconds(newEstimate),
+      estimatedSeconds: recovered ? recovered.estimatedSeconds : parseHmsToSeconds(newEstimate),
       isFavorite: false,
-      sampleCount: 0,
+      sampleCount: recovered ? recovered.sampleCount : 0,
       createdAt: now,
       updatedAt: now,
     });
