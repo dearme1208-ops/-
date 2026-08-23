@@ -21,6 +21,7 @@ import { currentFiscalYear } from "@/lib/period";
 import { formatHms } from "@/lib/time";
 import { emphasisTextClass, getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
 import { computeProductivityByWeather } from "@/lib/weather";
+import { computeProductivityByTimeOfDay, computeTimeOfDayInsight } from "@/lib/timeOfDay";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
@@ -63,6 +64,11 @@ export default function AttentionSection() {
     () => (masterTasks && records && weatherForecasts ? computeProductivityByWeather(weatherForecasts, records, masterTasks) : []),
     [masterTasks, records, weatherForecasts]
   );
+  const timeOfDayRows = useMemo(
+    () => (masterTasks && records ? computeProductivityByTimeOfDay(records, masterTasks) : []),
+    [masterTasks, records]
+  );
+  const timeOfDayInsight = useMemo(() => computeTimeOfDayInsight(timeOfDayRows), [timeOfDayRows]);
   const goodShiftRows = useMemo(() => shiftRows.filter((r) => r.avgDelta > 0), [shiftRows]);
   const badShiftRows = useMemo(
     () => [...shiftRows].filter((r) => r.avgDelta < 0).sort((a, b) => a.avgDelta - b.avgDelta),
@@ -170,6 +176,72 @@ export default function AttentionSection() {
         )}
         <p className="mt-3 text-xs text-cream/40">
           天気変化の通知機能でキャッシュされた日ごとの降水確率予報(平均50%以上を「雨の日」)と、その日に行った作業の想定時間÷実績時間を突き合わせたものです。天気データが無い日の実績は対象外です。
+        </p>
+      </div>
+
+      <div className="panel p-4">
+        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">時間帯別の生産性（想定時間に対する達成度）</h3>
+        {timeOfDayRows.length === 0 ? (
+          <p className="text-sm text-cream/50">
+            想定時間と実績が両方揃っている作業が、まだ各時間帯で3件以上蓄積されていません。
+          </p>
+        ) : (
+          <>
+            {timeOfDayInsight && (
+              <p className="mb-3 text-sm text-cream/80">
+                あなたは
+                <span className="font-bold text-cream">
+                  {timeOfDayInsight.best.bucket.label}（{timeOfDayInsight.best.bucket.startHour}
+                  〜{timeOfDayInsight.best.bucket.endHour}時）
+                </span>
+                が最も生産的な傾向です（想定比{timeOfDayInsight.best.avgProductivityPct}%）。逆に
+                <span className="font-bold text-alert">
+                  {timeOfDayInsight.worst.bucket.label}（{timeOfDayInsight.worst.bucket.startHour}
+                  〜{timeOfDayInsight.worst.bucket.endHour}時）
+                </span>
+                は想定より時間がかかりがちです（想定比{timeOfDayInsight.worst.avgProductivityPct}%）。
+              </p>
+            )}
+            <div className="space-y-2">
+              {timeOfDayRows.map((row) => {
+                const good = row.avgProductivityPct >= 100;
+                const barWidthPct = (Math.min(150, Math.max(0, row.avgProductivityPct)) / 150) * 100;
+                const baselineLeftPct = (100 / 150) * 100;
+                return (
+                  <div key={row.bucket.id} className="flex items-center gap-2">
+                    <div className="w-24 shrink-0 text-sm text-cream/80">
+                      {row.bucket.label}
+                      <span className="ml-1 text-xs text-cream/40">
+                        {row.bucket.startHour}-{row.bucket.endHour}時
+                      </span>
+                    </div>
+                    <div className="relative h-5 min-w-0 flex-1 rounded bg-cream/5">
+                      <div
+                        className={`h-5 rounded-r ${good ? "bg-cream" : "bg-alert"}`}
+                        style={{ width: `${barWidthPct}%` }}
+                      />
+                      <div
+                        className="absolute inset-y-0 w-px bg-cream/40"
+                        style={{ left: `${baselineLeftPct}%` }}
+                        title="想定通り(100%)の位置"
+                      />
+                    </div>
+                    <div
+                      className={`w-40 shrink-0 text-right text-xs tabular-nums ${good ? "text-cream/80" : "font-bold text-alert"}`}
+                    >
+                      {good ? "▲" : "▼"} {row.avgProductivityPct}%
+                      <span className="text-cream/40">
+                        （想定より{Math.abs(row.avgProductivityPct - 100)}pt{good ? "速い" : "遅い"}・{row.sampleCount}件）
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+        <p className="mt-3 text-xs text-cream/40">
+          実績の開始時刻が属する時間帯ごとに、想定時間÷実績時間を平均したものです（3件未満の時間帯は表示しません）。100%が想定通り、100%を超えるほど想定より速く終えられている傾向を表します（バーの縦線が100%の位置。▲=速い/▼=遅い）。
         </p>
       </div>
 
