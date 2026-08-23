@@ -85,6 +85,7 @@ import DailyChallengePanel from "@/components/DailyChallengePanel";
 import DayCardModal from "@/components/DayCardModal";
 import type { DayCardData } from "@/lib/dayCard";
 import TomorrowDraftModal from "@/components/TomorrowDraftModal";
+import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 
@@ -2141,6 +2142,11 @@ export default function TodaySection({
   // 「今日の一枚」: 本日の実績(除外分を除く)からカテゴリ別内訳とMVP作業(最長時間)を集計する
   const [showDayCard, setShowDayCard] = useState(false);
   const [showTomorrowDraft, setShowTomorrowDraft] = useState(false);
+  const [showReflection, setShowReflection] = useState(false);
+  const reflectionAnsweredToday = useLiveQuery(
+    async () => !!(await db.settings.get(`reflection.daily.${date}`)),
+    [date]
+  );
   const todayRecordsForCard = useMemo(
     () => (projectRecords ?? []).filter((r) => r.date === date && !r.excludedFromStats),
     [projectRecords, date]
@@ -2708,6 +2714,20 @@ export default function TodaySection({
           ) : (
             <button className="btn-pill-outline text-sm" onClick={() => setShowTomorrowDraft(true)}>
               🗓 明日の下書き
+            </button>
+          )}
+          {simpleButtons ? (
+            <button
+              className="btn-pill-outline px-3 py-2 text-base"
+              onClick={() => setShowReflection(true)}
+              title={reflectionAnsweredToday ? "終業の振り返り(回答済み)" : "終業の振り返り"}
+              aria-label="終業の振り返り"
+            >
+              {reflectionAnsweredToday ? "🌙✓" : "🌙"}
+            </button>
+          ) : (
+            <button className="btn-pill-outline text-sm" onClick={() => setShowReflection(true)}>
+              🌙 {reflectionAnsweredToday ? "振り返り済み" : "終業の振り返り"}
             </button>
           )}
           {voiceEnabled && !voiceUnsupported && (simpleButtons ? (
@@ -3342,6 +3362,14 @@ export default function TodaySection({
       {showDayCard && <DayCardModal data={dayCardData} onClose={() => setShowDayCard(false)} />}
       {showTomorrowDraft && (
         <TomorrowDraftModal today={date} todayTasks={tasks ?? []} onClose={() => setShowTomorrowDraft(false)} />
+      )}
+      {showReflection && (
+        <EndOfDayReflectionModal
+          date={date}
+          totalSeconds={todayTotalSeconds}
+          doneCount={(tasks ?? []).filter((t) => t.status === "done" && !t.isProvisional).length}
+          onClose={() => setShowReflection(false)}
+        />
       )}
 
       {pendingStart && provisionalTask && (

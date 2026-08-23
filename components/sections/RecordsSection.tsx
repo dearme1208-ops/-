@@ -12,6 +12,8 @@ import {
 import { setManualOverride, clearManualOverride } from "@/lib/outliers";
 import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
 import { JOURNAL_KEY_PREFIX, journalEntriesFromSettings, journalEntriesToCsv } from "@/lib/journal";
+import { REFLECTION_KEY_PREFIX, reflectionEntriesFromSettings } from "@/lib/reflection";
+import { CONDITION_LEVELS } from "@/lib/condition";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
 import { mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
@@ -66,6 +68,16 @@ export default function RecordsSection() {
 
   function exportJournalCsv() {
     downloadTextFile(`journal_${todayStr()}.csv`, journalEntriesToCsv(journalEntries));
+  }
+
+  // 「終業の振り返り」の回答履歴。日記(journal)と同じ設定テーブルから、こちらは
+  // reflection.daily.<date> のキーで取り出す
+  const reflectionEntries = useMemo(() => reflectionEntriesFromSettings(allSettings ?? []), [allSettings]);
+  const [reflectionCollapsedStr, setReflectionCollapsedStr] = useSetting("records.reflectionCollapsed", "true");
+  const reflectionCollapsed = reflectionCollapsedStr === "true";
+
+  async function deleteReflection(date: string) {
+    await db.settings.delete(`${REFLECTION_KEY_PREFIX}${date}`);
   }
 
   const filtered = useMemo(() => {
@@ -335,6 +347,61 @@ export default function RecordsSection() {
                   {filteredJournal.length === 0 && <p className="px-3 py-4 text-sm text-cream/50">該当する記録がありません。</p>}
                 </div>
               </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="panel p-4">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setReflectionCollapsedStr(reflectionCollapsed ? "false" : "true")}
+        >
+          <h3 className="font-display text-sm font-bold text-cream/80">
+            🌙 終業の振り返りの履歴（本日タブの「終業の振り返り」）
+            {reflectionCollapsed && <span className="ml-1 font-normal text-cream/40">（{reflectionEntries.length}件）</span>}
+          </h3>
+          <span className="text-xs text-cream/40">{reflectionCollapsed ? "▶" : "▼"}</span>
+        </button>
+        {!reflectionCollapsed && (
+          <div className="mt-3 space-y-3">
+            {reflectionEntries.length === 0 ? (
+              <p className="text-sm text-cream/50">
+                まだ記録がありません。「本日の作業」タブの「終業の振り返り」に答えると、ここに一覧で表示されます。
+              </p>
+            ) : (
+              <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
+                {reflectionEntries.map((e) => {
+                  const c = CONDITION_LEVELS.find((c) => Number(c.level) === e.reflection.satisfaction);
+                  return (
+                    <div key={e.date} className="space-y-1 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-cream/60 tabular-nums">
+                          {e.date}
+                          {c && (
+                            <span className="font-normal text-cream/50" title={c.label}>
+                              {c.emoji} {c.label}
+                            </span>
+                          )}
+                        </span>
+                        <button
+                          className="text-xs text-alert"
+                          aria-label={`${e.date}の振り返りを削除`}
+                          onClick={() => confirm(`${e.date}の振り返りを削除しますか?`) && deleteReflection(e.date)}
+                        >
+                          削除
+                        </button>
+                      </div>
+                      {e.reflection.bestThing && (
+                        <p className="text-sm text-cream/80">👍 {e.reflection.bestThing}</p>
+                      )}
+                      {e.reflection.carryOver && (
+                        <p className="text-sm text-cream/60">➡️ {e.reflection.carryOver}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
