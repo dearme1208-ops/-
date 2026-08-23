@@ -10,6 +10,7 @@ import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { baseAccumulatedMs } from "@/lib/tasks";
 import { generateReportText, downloadTextFile, computeDailyOverlayComparison } from "@/lib/report";
+import { generateWeeklyNarrative } from "@/lib/weeklyNarrative";
 import { computeTodoPeriodSummary } from "@/lib/todoTrend";
 import { exportElementToPdf } from "@/lib/pdfExport";
 import { recordsToIcs } from "@/lib/ics";
@@ -185,6 +186,26 @@ export default function ReportSection() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, masterTasks, dailyTasks, todoTasks, projects, weatherForecasts, kind, afterHoursCutoff, standardDailySeconds, today]);
+
+  // 数値の表・グラフとは別に、蓄積データから文章形式の振り返りを自動生成する。
+  // 曜日別平均・時間帯別生産性のような「個人のクセ」は期間内のデータだけでは
+  // サンプル不足になりやすいため、全期間の実績(records)から求める
+  const narrative = useMemo(() => {
+    if (!data || !records || !masterTasks) return "";
+    return generateWeeklyNarrative({
+      kind,
+      rangeLabel: data.rangeLabel,
+      allRecords: records,
+      masterTasks,
+      totalSeconds: data.totalSeconds,
+      prevTotalSeconds: data.prevTotalSeconds,
+      attention: data.attention,
+      troubleCount: data.troubleCount,
+      overdueTodoCount: data.overdueTodos.length,
+      projectMvp: data.projectMvp,
+      topGainer: data.topGainer,
+    });
+  }, [data, records, masterTasks, kind]);
 
   const overlayPoints = useMemo(() => {
     if (!records) return [];
@@ -380,6 +401,13 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
               </p>
             )}
           </div>
+
+          {narrative && (
+            <div className="panel p-4">
+              <h3 className="mb-2 font-display text-sm font-bold text-cream/80">📝 振り返り</h3>
+              <p className="text-sm leading-relaxed text-cream/80">{narrative}</p>
+            </div>
+          )}
 
           {goalSeconds && (
             <div className="panel p-4">
