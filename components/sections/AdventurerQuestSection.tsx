@@ -10,6 +10,7 @@ import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage, ADVENTURER_STAGES } from "@/lib/growth";
 import { fireConfetti } from "@/lib/confetti";
 import { useVisualMode } from "@/lib/theme";
+import DailyChallengePanel from "@/components/DailyChallengePanel";
 import type { DailyTask, MasterTask } from "@/lib/types";
 
 // computeGrowthStageの分岐(0h/1h/2h/4h/6h/8h以上)と対応させた、各ランクの開始時間(h)
@@ -261,6 +262,8 @@ export default function AdventurerQuestSection() {
         />
       ) : (
         <>
+          <DailyChallengePanel />
+
           {/* --- ダンジョンの道すじ: ギルド受付→(戦闘中)→未着手クエスト→帰還、と
                左右に蛇行しながら金の点線でつながる1本道 --- */}
           <div className="relative">

@@ -79,6 +79,7 @@ import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTask
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
+import DailyChallengePanel from "@/components/DailyChallengePanel";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 
@@ -2227,6 +2228,7 @@ export default function TodaySection({
           standardWorkEnd={standardWorkEnd}
         />
       )}
+      <DailyChallengePanel />
       {startedForceStopRanges.length > 0 && (
         <div className="panel space-y-2 p-4">
           <h3 className="font-display text-sm font-bold text-cream/80">☕ 本日の休憩</h3>
