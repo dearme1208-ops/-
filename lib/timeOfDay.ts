@@ -18,7 +18,7 @@ export const TIME_OF_DAY_BUCKETS: TimeOfDayBucket[] = [
   { id: "night", label: "夜", startHour: 21, endHour: 24 },
 ];
 
-function bucketOf(hour: number): TimeOfDayBucket | undefined {
+export function bucketOfHour(hour: number): TimeOfDayBucket | undefined {
   return TIME_OF_DAY_BUCKETS.find((b) => hour >= b.startHour && hour < b.endHour);
 }
 
@@ -44,7 +44,7 @@ export function computeProductivityByTimeOfDay(records: WorkRecord[], masterTask
   const byBucket = new Map<string, { sumPct: number; count: number; categorySeconds: Map<string, number>; totalSeconds: number }>();
   for (const r of records) {
     if (r.excludedFromStats || !r.startedAt) continue;
-    const bucket = bucketOf(new Date(r.startedAt).getHours());
+    const bucket = bucketOfHour(new Date(r.startedAt).getHours());
     if (!bucket) continue;
     if (!byBucket.has(bucket.id)) {
       byBucket.set(bucket.id, { sumPct: 0, count: 0, categorySeconds: new Map(), totalSeconds: 0 });

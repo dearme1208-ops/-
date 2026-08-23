@@ -22,6 +22,7 @@ import { formatHms } from "@/lib/time";
 import { emphasisTextClass, getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
 import { computeProductivityByWeather } from "@/lib/weather";
 import { computeProductivityByTimeOfDay, computeTimeOfDayInsight } from "@/lib/timeOfDay";
+import { computeInsights } from "@/lib/insights";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
@@ -64,6 +65,10 @@ export default function AttentionSection() {
     () => (masterTasks && records && weatherForecasts ? computeProductivityByWeather(weatherForecasts, records, masterTasks) : []),
     [masterTasks, records, weatherForecasts]
   );
+  const insights = useMemo(
+    () => (masterTasks && records ? computeInsights(records, masterTasks) : []),
+    [masterTasks, records]
+  );
   const timeOfDayRows = useMemo(
     () => (masterTasks && records ? computeProductivityByTimeOfDay(records, masterTasks) : []),
     [masterTasks, records]
@@ -83,6 +88,37 @@ export default function AttentionSection() {
 
   return (
     <div className="space-y-4">
+      <div className="panel p-4">
+        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">🔍 自動で見つけた気づき</h3>
+        {insights.length === 0 ? (
+          <p className="text-sm text-cream/50">
+            体調別・時間帯別など複数の軸を横断して、単独の集計だけでは気づきにくいパターンを自動で探します。まだ十分なサンプル数が無いため、該当する気づきはありません。
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {insights.map((insight) => (
+              <div
+                key={insight.id}
+                className={`rounded-lg border px-3 py-2 ${
+                  insight.tone === "caution" ? "border-alert/40 bg-alert/10" : "border-cream/15 bg-cream/5"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span>{insight.icon}</span>
+                  <span className={`font-bold ${insight.tone === "caution" ? "text-alert" : "text-cream"}`}>
+                    {insight.title}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-cream/70">{insight.body}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-cream/40">
+          体調・時間帯・曜日・作業の前後関係など複数の軸を組み合わせて、想定時間に対する達成度の差が一定以上あるパターンだけを表示します（サンプル数・差の大きさが小さいものは誤検出を避けるため表示しません）。
+        </p>
+      </div>
+
       <div className="panel p-4">
         <h3 className="mb-3 font-display text-sm font-bold text-cream/80">体調別の生産性（想定時間に対する達成度）</h3>
         {productivityRows.length === 0 ? (
