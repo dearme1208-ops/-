@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { upsertMasterTasksFromCsv, recomputeAllMasterEstimates, recoverOrphanedMasterHistory } from "@/lib/master";
-import { recomputeOutliersForAll } from "@/lib/outliers";
+import { recomputeOutliersForAll, clearManualOverride } from "@/lib/outliers";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/masterCsv";
 import { downloadTextFile } from "@/lib/report";
@@ -41,8 +41,11 @@ export default function MasterSection() {
   const staleDays = Math.max(1, Number(staleDaysStr) || 90);
   const [orphansCollapsed, setOrphansCollapsed] = useState(false);
   // クリックした作業マスタ(または宙に浮いた実績のグループ)の実績一覧を表示するモーダル。
-  // 実マスタが無い(宙に浮いた)グループの場合はmasterIdがundefinedになる
-  const [viewingRecords, setViewingRecords] = useState<{ title: string; masterId?: string; records: WorkRecord[] } | null>(null);
+  // recordsをその場でコピーせず参照条件だけ持たせることで、モーダルを開いたまま
+  // 集計への復活操作をしても一覧がリアルタイムに更新される
+  const [viewingRecords, setViewingRecords] = useState<
+    { title: string; masterId: string } | { title: string; category: string; name: string } | null
+  >(null);
 
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
@@ -51,6 +54,17 @@ export default function MasterSection() {
     () => computeStaleMasterTasks(tasks ?? [], records ?? [], staleDays, todayStr()),
     [tasks, records, staleDays]
   );
+
+  const viewingRecordsList = useMemo(() => {
+    if (!viewingRecords || !records) return [];
+    if ("masterId" in viewingRecords) {
+      return records.filter((r) => r.masterTaskId === viewingRecords.masterId);
+    }
+    const existingMasterIds = new Set((tasks ?? []).map((t) => t.id));
+    return records.filter(
+      (r) => r.category === viewingRecords.category && r.name === viewingRecords.name && r.masterTaskId && !existingMasterIds.has(r.masterTaskId)
+    );
+  }, [viewingRecords, records, tasks]);
 
   // 宙に浮いた実績: masterTaskIdが設定されているのに、そのIDの作業マスタが
   // (削除等で)もう存在しない実績を、区分/作業名でグループ化する
@@ -73,11 +87,7 @@ export default function MasterSection() {
   }, [tasks, records]);
 
   function openRecordsFor(t: MasterTask) {
-    setViewingRecords({
-      title: `${t.category} / ${t.name}`,
-      masterId: t.id,
-      records: (records ?? []).filter((r) => r.masterTaskId === t.id),
-    });
+    setViewingRecords({ title: `${t.category} / ${t.name}`, masterId: t.id });
   }
 
   async function recoverOrphanGroup(category: string, name: string) {
@@ -361,7 +371,7 @@ export default function MasterSection() {
                       <div className="text-sm text-cream">{g.name}</div>
                       <button
                         className="text-xs text-cream/40 underline decoration-dotted hover:text-cream/70"
-                        onClick={() => setViewingRecords({ title: `${g.category} / ${g.name}`, records: g.records })}
+                        onClick={() => setViewingRecords({ title: `${g.category} / ${g.name}`, category: g.category, name: g.name })}
                       >
                         実績 {g.records.length}件・計 {formatHms(g.totalSeconds)}
                       </button>
@@ -465,22 +475,39 @@ export default function MasterSection() {
 
       {viewingRecords && (
         <Modal title={viewingRecords.title} onClose={() => setViewingRecords(null)}>
-          {viewingRecords.records.length === 0 ? (
+          {viewingRecordsList.length === 0 ? (
             <p className="text-sm text-cream/50">実績がありません。</p>
           ) : (
             <div className="space-y-1.5">
-              {[...viewingRecords.records]
+              {[...viewingRecordsList]
                 .sort((a, b) => b.date.localeCompare(a.date))
                 .map((r) => (
-                  <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 text-sm">
-                    <span className="text-cream/80">{r.date}</span>
-                    <span className="tabular-nums text-cream">{formatHms(r.seconds)}</span>
-                    {r.isTrouble && <span className="text-xs text-alert">トラブル対応</span>}
-                    {r.excludedFromStats && <span className="text-xs text-cream/40">(集計除外)</span>}
+                  <div key={r.id} className="rounded-lg bg-ink/50 px-3 py-2 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-cream/80">{r.date}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="tabular-nums text-cream">{formatHms(r.seconds)}</span>
+                        {r.isTrouble && <span className="text-xs text-alert">トラブル対応</span>}
+                      </div>
+                    </div>
+                    {r.note && <p className="mt-1 whitespace-pre-line text-xs text-cream/60">💬 {r.note}</p>}
+                    {r.excludedFromStats && (
+                      <div className="mt-1 flex items-center justify-between gap-2">
+                        <span className="text-xs text-cream/40">
+                          集計から除外中{r.excludeReason === "manual" ? "(手動)" : "(外れ値)"}
+                        </span>
+                        <button
+                          className="text-xs text-cream/60 underline hover:text-cream"
+                          onClick={() => clearManualOverride(r.id)}
+                        >
+                          集計に復活させる
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               <p className="pt-1 text-xs text-cream/40">
-                合計 {formatHms(viewingRecords.records.reduce((sum, r) => sum + r.seconds, 0))}（{viewingRecords.records.length}件）
+                合計 {formatHms(viewingRecordsList.reduce((sum, r) => sum + r.seconds, 0))}（{viewingRecordsList.length}件）
               </p>
             </div>
           )}
