@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
@@ -17,6 +19,21 @@ export default function DeleteCompletedTaskDialog({
 }) {
   const [deleteRecord, setDeleteRecord] = useState(true);
   const [deleteMaster, setDeleteMaster] = useState(true);
+
+  // このマスタが、今日以外の日にも実績を持っているか。持っている場合、ここでマスタごと
+  // 削除すると他の日から見た想定時間の平均・お気に入り登録などの情報も一緒に失われてしまうため、
+  // この画面からのマスタ削除は不可にする(他の日の実績自体を消すわけではないが、
+  // 「今日のこの1件を消すつもりが他の日にも影響する」誤操作を防ぐ)
+  const otherDayRecordCount = useLiveQuery(async () => {
+    if (!task.masterTaskId) return 0;
+    return db.records
+      .where("masterTaskId")
+      .equals(task.masterTaskId)
+      .filter((r) => r.date !== task.date)
+      .count();
+  }, [task.masterTaskId, task.date]);
+  const canDeleteMaster = !task.masterTaskId || otherDayRecordCount === 0;
+  const effectiveDeleteMaster = canDeleteMaster && deleteMaster;
 
   return (
     <Modal title="完了した作業を削除" onClose={onClose}>
@@ -38,17 +55,20 @@ export default function DeleteCompletedTaskDialog({
             </span>
           </span>
         </label>
-        <label className="flex items-start gap-2 text-sm text-cream/80">
+        <label className={`flex items-start gap-2 text-sm ${canDeleteMaster ? "text-cream/80" : "text-cream/40"}`}>
           <input
             type="checkbox"
-            checked={deleteMaster}
+            checked={effectiveDeleteMaster}
+            disabled={!canDeleteMaster}
             onChange={(e) => setDeleteMaster(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+            className="mt-0.5 h-4 w-4 rounded border-cream/30 bg-ink accent-cream disabled:opacity-40"
           />
           <span>
             作業マスタも削除する
             <span className="block text-xs text-cream/50">
-              想定時間の平均・お気に入り登録など、このマスタが持つ情報が失われます。他の日の実績データ自体は消えません。
+              {canDeleteMaster
+                ? "想定時間の平均・お気に入り登録など、このマスタが持つ情報が失われます。他の日の実績データ自体は消えません。"
+                : "他の日にもこの作業名の実績があるため、この画面からは削除できません（「作業マスタ」タブから削除してください）。"}
             </span>
           </span>
         </label>
@@ -58,7 +78,7 @@ export default function DeleteCompletedTaskDialog({
         <button className="btn-pill-outline text-sm" onClick={onClose}>
           キャンセル
         </button>
-        <button className="btn-pill text-sm bg-alert text-cream" onClick={() => onDelete(deleteRecord, deleteMaster)}>
+        <button className="btn-pill text-sm bg-alert text-cream" onClick={() => onDelete(deleteRecord, effectiveDeleteMaster)}>
           削除する
         </button>
       </div>
