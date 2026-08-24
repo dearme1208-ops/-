@@ -22,12 +22,14 @@ import { computeCategoryChain } from "@/lib/categoryChain";
 import { computeTimeByTag } from "@/lib/tags";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { useSetting } from "@/lib/settings";
+import { appTitle, useVisualMode } from "@/lib/theme";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
 import LineChart from "@/components/charts/LineChart";
 import CategoryChainGraph from "@/components/charts/CategoryChainGraph";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 import PersonalBestPanel from "@/components/PersonalBestPanel";
+import LifeArtModal from "@/components/LifeArtModal";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
 import WeekdayBreakdownDialog from "@/components/sections/WeekdayBreakdownDialog";
 import TotalTrendBreakdownDialog from "@/components/sections/TotalTrendBreakdownDialog";
@@ -95,6 +97,8 @@ export default function AggregationSection() {
   const weekdayDetail = weekdayChartData.find((w) => w.dow === weekdayDetailDow) ?? null;
   const switchCost = useMemo(() => computeSwitchCostAnalysis(records ?? []), [records]);
   const categoryChain = useMemo(() => computeCategoryChain(records ?? []), [records]);
+  const { wordingMode } = useVisualMode();
+  const [showLifeArt, setShowLifeArt] = useState(false);
   const tagRows = useMemo(() => computeTimeByTag(records ?? [], masterTasks ?? []), [records, masterTasks]);
   const totalTrendPoints = useMemo(
     () => computeTotalTimeTrend(records ?? [], totalTrendGranularity),
@@ -202,6 +206,16 @@ export default function AggregationSection() {
       >
         <PersonalBestPanel />
       </CollapsiblePanel>
+
+      <div className="panel flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <h3 className="font-display text-sm font-bold text-cream/80">✨ 全期間の軌跡</h3>
+          <p className="text-xs text-cream/50">これまでの全実績を1枚の生成アートにします。</p>
+        </div>
+        <button className="btn-pill-outline text-sm" onClick={() => setShowLifeArt(true)}>
+          見る
+        </button>
+      </div>
 
       <CollapsiblePanel
         title="業務区分別の内訳"
@@ -576,6 +590,10 @@ export default function AggregationSection() {
           records={records ?? []}
           onClose={() => setTrendRow(null)}
         />
+      )}
+
+      {showLifeArt && (
+        <LifeArtModal data={{ appTitle: appTitle(wordingMode), records: records ?? [] }} onClose={() => setShowLifeArt(false)} />
       )}
     </div>
   );
