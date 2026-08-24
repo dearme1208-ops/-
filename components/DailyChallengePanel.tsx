@@ -5,18 +5,27 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { todayStr, formatHms } from "@/lib/time";
-import { computeDailyChallenges, type ChallengeResult } from "@/lib/dailyChallenges";
+import { computeDailyChallenges, trendWindowRange, type ChallengeResult } from "@/lib/dailyChallenges";
 import { fireConfetti } from "@/lib/confetti";
 import { showUndoToast } from "@/lib/toast";
 
 // 毎朝(日付が変わるたびに)8種類のチャレンジテンプレートから3件を決定的に選び、
-// その日の作業データから進捗を計算して表示する。どの演出テーマの「本日」画面にも
-// 同じ見た目のまま置けるよう、必要なデータは自前でクエリする自己完結コンポーネントにしている
+// その日の作業データから進捗を計算して表示する。目標値は、直近の実績が十分に
+// 溜まっていれば過去の傾向(平均)をもとに調整され、足りない間は固定値のままになる。
+// どの演出テーマの「本日」画面にも同じ見た目のまま置けるよう、必要なデータは
+// 自前でクエリする自己完結コンポーネントにしている
 export default function DailyChallengePanel() {
   const date = todayStr();
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
+  // 過去の傾向をもとに目標値を調整するための直近の実績(当日は含まない)。
+  // 傾向データが揃うまでは固定の目標値にフォールバックする(lib/dailyChallenges.ts参照)
+  const trendRange = useMemo(() => trendWindowRange(date), [date]);
+  const trendRecords = useLiveQuery(
+    () => db.records.where("date").between(trendRange.start, trendRange.end, true, false).toArray(),
+    [trendRange.start, trendRange.end]
+  );
   const [journal] = useSetting(`journal.daily.${date}`, "");
   const [collapsed, setCollapsed] = useState(false);
 
@@ -31,13 +40,17 @@ export default function DailyChallengePanel() {
 
   const challenges: ChallengeResult[] = useMemo(() => {
     if (!tasks) return [];
-    return computeDailyChallenges(date, {
-      tasks,
-      todoCompletedToday,
-      projectCompletedToday,
-      journalNonEmpty: journal.trim().length > 0,
-    });
-  }, [tasks, todoCompletedToday, projectCompletedToday, journal, date]);
+    return computeDailyChallenges(
+      date,
+      {
+        tasks,
+        todoCompletedToday,
+        projectCompletedToday,
+        journalNonEmpty: journal.trim().length > 0,
+      },
+      trendRecords
+    );
+  }, [tasks, todoCompletedToday, projectCompletedToday, journal, date, trendRecords]);
 
   // マウント時点で既に達成済みだったものは「たった今達成した」扱いにしない
   // (タブを開き直すたびに紙吹雪が出るのを防ぐ)。以後、未達成→達成に切り替わった
