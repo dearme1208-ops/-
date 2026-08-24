@@ -7,6 +7,7 @@ import {
   discardOrphanedDailyTask,
   findOrphanedDailyTasks,
   finishOrphanedDailyTask,
+  finishOrphanedDailyTaskAsIs,
   finishOrphanedDailyTaskNow,
   moveDailyTaskToToday,
   segmentsAccumulatedMs,
@@ -79,16 +80,28 @@ export default function OrphanTaskModal() {
               </div>
               <div className="text-xs tabular-nums text-cream/60">経過 {formatHms(Math.round(elapsedMs / 1000))}</div>
               <div className="mt-2 flex flex-wrap justify-end gap-2">
-                <button className="btn-pill-outline text-xs" onClick={() => finishOrphanedDailyTask(task)}>
-                  終了する（{formatDateJp(task.date)} 24:00で打ち切り）
-                </button>
-                <button
-                  className="btn-pill-outline text-xs"
-                  onClick={() => finishOrphanedDailyTaskNow(task)}
-                  title="睡眠など日をまたいで続いていた作業を、今の時刻まで計測して前日の実績にします"
-                >
-                  今の時刻で完了（{formatDateJp(task.date)}実績として計測）
-                </button>
+                {task.status === "paused" ? (
+                  <button
+                    className="btn-pill-outline text-xs"
+                    onClick={() => finishOrphanedDailyTaskAsIs(task)}
+                    title="一時停止した時点の実測時間のまま、追加の計測なしで完了にします"
+                  >
+                    そのまま完了する（{formatDateJp(task.date)}実績として）
+                  </button>
+                ) : (
+                  <>
+                    <button className="btn-pill-outline text-xs" onClick={() => finishOrphanedDailyTask(task)}>
+                      終了する（{formatDateJp(task.date)} 24:00で打ち切り）
+                    </button>
+                    <button
+                      className="btn-pill-outline text-xs"
+                      onClick={() => finishOrphanedDailyTaskNow(task)}
+                      title="睡眠など日をまたいで続いていた作業を、今の時刻まで計測して前日の実績にします"
+                    >
+                      今の時刻で完了（{formatDateJp(task.date)}実績として計測）
+                    </button>
+                  </>
+                )}
                 <button
                   className="btn-pill-outline text-xs text-alert"
                   onClick={() => {

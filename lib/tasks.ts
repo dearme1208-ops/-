@@ -114,13 +114,20 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
   const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
   const seconds = Math.round(accumulatedMs / 1000);
   const startedAt = task.startedAt ?? closeAt;
+  // 既に一時停止済み(=区間がすべて閉じている)の作業を完了する場合は、endedAtも
+  // closeAtではなく実際の最後の区間の終了時刻を使う。closeAtをそのまま使うと、
+  // 日をまたいで放置された一時停止中の作業を後から完了させた際に、実際には前日のうちに
+  // 止まっていたのにendedAtだけ完了操作をした時刻になってしまい、定時以降の業務集計などが
+  // 本来関係のない時間帯を参照してしまう不具合があった(closeAtが必要なのは、区間を
+  // 閉じる必要がある「計測中」だった作業のみ)
+  const endedAt = segments.length > 0 ? (segments[segments.length - 1].end ?? closeAt) : closeAt;
 
   await db.dailyTasks.update(task.id, {
     segments,
     status: "done",
     accumulatedMs,
     startedAt,
-    endedAt: closeAt,
+    endedAt,
     stoppedAt: nowMs,
     isProvisional: false,
   });
@@ -148,7 +155,7 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
     // 既存の実績の終了時刻をそれより後退させてしまわないようにする
     await db.records.update(existing.id, {
       seconds: existing.seconds + seconds,
-      endedAt: Math.max(existing.endedAt, closeAt),
+      endedAt: Math.max(existing.endedAt, endedAt),
       isTrouble: existing.isTrouble || task.isTrouble,
       segments: mergeRecordSegments(existing, segments),
     });
@@ -161,7 +168,7 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
       masterTaskId,
       seconds,
       startedAt,
-      endedAt: closeAt,
+      endedAt,
       excludedFromStats: false,
       projectId: task.projectId,
       stageId: task.stageId,
@@ -224,16 +231,29 @@ export async function findOrphanedDailyTasks(todayDateStr: string): Promise<Dail
     .toArray();
 }
 
-// 放置されていた作業を、実際の停止時刻が分からないため元の日の24:00(23:59:59)で打ち切って完了にする
+// 放置されていた「計測中」の作業を、実際の停止時刻が分からないため元の日の24:00(23:59:59)で
+// 打ち切って完了にする。一時停止中の作業(=既に区間が閉じている)に対しては、closeAtは
+// 使われず実際の最後の一時停止時刻がそのままendedAtになる(finishDailyTask参照)
 export async function finishOrphanedDailyTask(task: DailyTask): Promise<void> {
   const dayEndMs = new Date(task.date + "T23:59:59").getTime();
   await finishDailyTask(task, dayEndMs);
 }
 
-// 放置されていた作業を、確認している「今この瞬間」まで計測して元の日(task.date)の実績として完了する。
-// 睡眠など日をまたいで実際に継続していた作業を、24:00で打ち切らず起きた時点までまとめて
-// 前日実績にしたい場合に使う(finishDailyTaskはendAtMs省略時に現在時刻を使う点を利用している)
+// 放置されていた「計測中」の作業を、確認している「今この瞬間」まで計測して元の日(task.date)の
+// 実績として完了する。睡眠など日をまたいで実際に継続していた作業を、24:00で打ち切らず
+// 起きた時点までまとめて前日実績にしたい場合に使う
+// (finishDailyTaskはendAtMs省略時に現在時刻を使う点を利用している)
 export async function finishOrphanedDailyTaskNow(task: DailyTask): Promise<void> {
+  await finishDailyTask(task);
+}
+
+// 放置されていた「一時停止中」の作業を、そのまま(=一時停止した時点の区間そのまま)完了にする。
+// 一時停止中の作業は既に全区間が閉じており実際の停止時刻が判明しているため、24:00打ち切りや
+// 「今の時刻」といった時刻の選択自体が不要かつ紛らわしい(誤って選ぶと、実際には前日のうちに
+// 止まっていたのにendedAtだけ操作した時刻になってしまいかねない)。実装上はfinishDailyTaskが
+// 一時停止中の作業に対してはendAtMsを無視して実際の最後の区間終了時刻を使うため、
+// finishOrphanedDailyTaskNowと同じ呼び出しで良い(呼び出し側の意図を明確にするための別名)
+export async function finishOrphanedDailyTaskAsIs(task: DailyTask): Promise<void> {
   await finishDailyTask(task);
 }
 
