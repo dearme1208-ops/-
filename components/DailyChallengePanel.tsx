@@ -43,10 +43,18 @@ export default function DailyChallengePanel() {
   // (タブを開き直すたびに紙吹雪が出るのを防ぐ)。以後、未達成→達成に切り替わった
   // ものだけを祝う。日付が変わったらリセットする
   const celebratedRef = useRef<{ date: string; ids: Set<string> } | null>(null);
+  // 達成したチャレンジは自動的に一覧から消す。マウント時点で既に達成済みのものは
+  // 最初から表示せず、その場で達成したものだけ、少し見せてから消す(消える瞬間が
+  // 分からないと「急に消えた」ように見えてしまうため)
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => new Set());
+  const dismissTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const DISMISS_DELAY_MS = 1800;
+
   useEffect(() => {
     if (challenges.length === 0) return;
     if (!celebratedRef.current || celebratedRef.current.date !== date) {
       celebratedRef.current = { date, ids: new Set(challenges.filter((c) => c.done).map((c) => c.id)) };
+      setDismissedIds(new Set(challenges.filter((c) => c.done).map((c) => c.id)));
       return;
     }
     for (const c of challenges) {
@@ -54,13 +62,24 @@ export default function DailyChallengePanel() {
         celebratedRef.current.ids.add(c.id);
         fireConfetti();
         showUndoToast(`🎉 デイリーチャレンジ達成「${c.title}」`);
+        const id = c.id;
+        dismissTimersRef.current.push(
+          setTimeout(() => setDismissedIds((prev) => new Set(prev).add(id)), DISMISS_DELAY_MS)
+        );
       }
     }
   }, [challenges, date]);
 
+  useEffect(() => {
+    return () => {
+      for (const timer of dismissTimersRef.current) clearTimeout(timer);
+    };
+  }, []);
+
   if (challenges.length === 0) return null;
 
   const clearedCount = challenges.filter((c) => c.done).length;
+  const visibleChallenges = challenges.filter((c) => !dismissedIds.has(c.id));
 
   function progressLabel(c: ChallengeResult): string {
     if (c.unit === "seconds") return `${formatHms(c.progress)} / ${formatHms(c.target)}`;
@@ -75,29 +94,32 @@ export default function DailyChallengePanel() {
         </h3>
         <span className="text-cream/60">{collapsed ? "▶" : "▼"}</span>
       </button>
-      {!collapsed && (
-        <div className="grid gap-2 sm:grid-cols-3">
-          {challenges.map((c) => (
-            <div
-              key={c.id}
-              className={`rounded-lg border px-3 py-2 ${c.done ? "border-alert/40 bg-alert/10" : "border-cream/10 bg-ink/40"}`}
-            >
-              <div className="flex items-center gap-1.5 text-sm">
-                <span>{c.done ? "✅" : c.icon}</span>
-                <span className={`font-bold ${c.done ? "text-alert" : "text-cream"}`}>{c.title}</span>
+      {!collapsed &&
+        (visibleChallenges.length === 0 ? (
+          <p className="text-sm text-cream/60">🎉 今日のデイリーチャレンジをすべて達成しました！</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-3">
+            {visibleChallenges.map((c) => (
+              <div
+                key={c.id}
+                className={`rounded-lg border px-3 py-2 ${c.done ? "border-alert/40 bg-alert/10" : "border-cream/10 bg-ink/40"}`}
+              >
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span>{c.done ? "✅" : c.icon}</span>
+                  <span className={`font-bold ${c.done ? "text-alert" : "text-cream"}`}>{c.title}</span>
+                </div>
+                <p className="mt-0.5 text-xs text-cream/50">{c.description}</p>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-cream/10">
+                  <div
+                    className={`h-full rounded-full ${c.done ? "bg-alert" : "bg-cream/50"}`}
+                    style={{ width: `${Math.min(100, (c.progress / c.target) * 100)}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-right text-[10px] tabular-nums text-cream/40">{progressLabel(c)}</p>
               </div>
-              <p className="mt-0.5 text-xs text-cream/50">{c.description}</p>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-cream/10">
-                <div
-                  className={`h-full rounded-full ${c.done ? "bg-alert" : "bg-cream/50"}`}
-                  style={{ width: `${Math.min(100, (c.progress / c.target) * 100)}%` }}
-                />
-              </div>
-              <p className="mt-1 text-right text-[10px] tabular-nums text-cream/40">{progressLabel(c)}</p>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        ))}
     </div>
   );
 }
