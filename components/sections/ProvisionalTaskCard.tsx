@@ -7,12 +7,13 @@ import { formatClock, formatMsClock, parseHmsToSeconds } from "@/lib/time";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 
-type Mode = "today" | "master" | "free";
+type Mode = "today" | "favorite" | "master" | "free";
 
 export default function ProvisionalTaskCard({
   task,
   now,
   candidateTasks,
+  favorites,
   onAssignExisting,
   onAssignNew,
   onFinishAsIs,
@@ -20,6 +21,7 @@ export default function ProvisionalTaskCard({
   task: DailyTask;
   now: number;
   candidateTasks: DailyTask[];
+  favorites: MasterTask[];
   onAssignExisting: (targetId: string) => void | Promise<void>;
   onAssignNew: (
     category: string,
@@ -30,7 +32,7 @@ export default function ProvisionalTaskCard({
   ) => void | Promise<void>;
   onFinishAsIs: () => void | Promise<void>;
 }) {
-  const [mode, setMode] = useState<Mode>(candidateTasks.length > 0 ? "today" : "master");
+  const [mode, setMode] = useState<Mode>(candidateTasks.length > 0 ? "today" : favorites.length > 0 ? "favorite" : "master");
   const [selectedMaster, setSelectedMaster] = useState<MasterTask | null>(null);
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
@@ -85,6 +87,14 @@ export default function ProvisionalTaskCard({
               本日の作業から選択
             </button>
           )}
+          {favorites.length > 0 && (
+            <button
+              className={mode === "favorite" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setMode("favorite")}
+            >
+              ★ お気に入りから選択
+            </button>
+          )}
           <button
             className={mode === "master" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setMode("master")}
@@ -128,6 +138,21 @@ export default function ProvisionalTaskCard({
             この作業の「予定」を設定する
             <span className="text-cream/40">（未計測分の割り当てのためオフが既定です）</span>
           </label>
+        )}
+
+        {mode === "favorite" && (
+          <div className="flex flex-wrap gap-2">
+            {favorites.length === 0 && <p className="text-xs text-cream/50">お気に入りに登録された作業がありません。</p>}
+            {favorites.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => onAssignNew(f.category, f.name, f.estimatedSeconds, f.id, false)}
+                className="rounded-full border border-cream/30 bg-ink px-3 py-1.5 text-sm text-cream hover:bg-cream/10"
+              >
+                ★ {f.category} / {f.name}
+              </button>
+            ))}
+          </div>
         )}
 
         {mode === "master" && (

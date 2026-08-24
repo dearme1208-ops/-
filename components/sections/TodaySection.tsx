@@ -2794,6 +2794,7 @@ export default function TodaySection({
           task={provisionalTask}
           now={now}
           candidateTasks={candidateTasks}
+          favorites={favorites ?? []}
           onAssignExisting={resolveProvisionalToExisting}
           onAssignNew={resolveProvisionalAsNew}
           onFinishAsIs={resolveProvisionalFinish}
