@@ -127,6 +127,8 @@ export default function SettingsSection() {
   const [todoReminderDaysBefore, setTodoReminderDaysBefore] = useSetting("todo.reminderDaysBefore", "1");
   const [voiceEnabledStr, setVoiceEnabledStr] = useSetting("today.voiceEnabled", "false");
   const voiceEnabled = voiceEnabledStr === "true";
+  const [handsFreeEnabledStr, setHandsFreeEnabledStr] = useSetting("today.handsFreeEnabled", "false");
+  const handsFreeEnabled = handsFreeEnabledStr === "true";
   const [defaultHourlyRateStr, setDefaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
   const [categoryRatesJson, setCategoryRatesJson] = useSetting("cost.categoryRates", "{}");
   const categoryRates = useMemo(() => parseCategoryRates(categoryRatesJson), [categoryRatesJson]);
@@ -895,6 +897,21 @@ export default function SettingsSection() {
         <p className="text-[10px] text-cream/40">
           ONにすると「本日の作業」画面に🎤ボタンが出ます。タップして「掃除を開始」「終了」のように話しかけると、その内容に応じて作業を開始/終了/一時停止します。お気に入りやマスタに近い名前の作業があればそれを、無ければその場で新規の作業として開始します。ONにするとブラウザからマイクの利用許可を求められます。対応はブラウザによって異なり(主にChrome/Edge/Safari系)、Firefoxなどでは利用できません。
         </p>
+        {voiceEnabled && (
+          <>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <button
+                className={handsFreeEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setHandsFreeEnabledStr(handsFreeEnabled ? "false" : "true")}
+              >
+                ハンズフリーモード: {handsFreeEnabled ? "ON" : "OFF"}
+              </button>
+            </div>
+            <p className="text-[10px] text-cream/40">
+              ONにすると🎧ボタンでの聞き取りが一度きりで終わらず、話しかけるたびに連続で操作できます。操作結果は画面に加えて音声でも読み上げるので、画面を見なくても「今何してる？」と聞けば状況を教えてくれます。読み上げ中はマイクを一時的に止めるので、自分の声を誤って拾うことはありません。
+            </p>
+          </>
+        )}
       </div>
 
       <div className="panel space-y-3 p-4">

@@ -58,7 +58,7 @@ import {
 import { fireConfetti } from "@/lib/confetti";
 import { fireCompletionPopup } from "@/lib/completionPopup";
 import { computeGrowthStage } from "@/lib/growth";
-import { createSpeechRecognition, parseVoiceCommand } from "@/lib/voice";
+import { createSpeechRecognition, parseVoiceCommand, speak } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
 import { formatClock, formatDateJp, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
@@ -135,9 +135,14 @@ export default function TodaySection({
   const [scheduleConflict, setScheduleConflict] = useState<{ task: DailyTask; runningTasks: DailyTask[] } | null>(null);
   const [voiceEnabledStr] = useSetting("today.voiceEnabled", "false");
   const voiceEnabled = voiceEnabledStr === "true";
+  const [handsFreeModeStr] = useSetting("today.handsFreeEnabled", "false");
+  const handsFreeMode = handsFreeModeStr === "true";
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceUnsupported, setVoiceUnsupported] = useState(false);
   const voiceRecognitionRef = useRef<ReturnType<typeof createSpeechRecognition>>(null);
+  // ハンズフリーモード中かどうか。stateではなくrefで持つのは、onend/リトライのコールバック
+  // からタイミングよく最新値を読みたいため(stateだとクロージャが古い値を掴む恐れがある)
+  const handsFreeActiveRef = useRef(false);
   const [pendingQuickSlot, setPendingQuickSlot] = useState<number | null>(null);
   const [quickActionMessage, setQuickActionMessage] = useState<string | null>(null);
   const [quickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
@@ -1256,22 +1261,46 @@ export default function TodaySection({
         : undefined;
       const running = target ?? (tasks ?? []).find((t) => t.status === "running" && !t.isProvisional);
       if (!running) {
-        setQuickActionMessage(`🎤「${transcript}」→ 対象の計測中の作業が見つかりませんでした`);
+        const message = "対象の計測中の作業が見つかりませんでした";
+        setQuickActionMessage(`🎤「${transcript}」→ ${message}`);
+        if (handsFreeMode) speak(message);
         return;
       }
       await finishTask(running);
-      setQuickActionMessage(`🎤「${transcript}」→ 🛑「${running.category} / ${running.name}」を終了しました`);
+      const message = `「${running.category} / ${running.name}」を終了しました`;
+      setQuickActionMessage(`🎤「${transcript}」→ 🛑${message}`);
+      if (handsFreeMode) speak(message);
       return;
     }
 
     if (command.action === "pause") {
       const running = (tasks ?? []).find((t) => t.status === "running" && !t.isProvisional);
       if (!running) {
-        setQuickActionMessage(`🎤「${transcript}」→ 計測中の作業が見つかりませんでした`);
+        const message = "計測中の作業が見つかりませんでした";
+        setQuickActionMessage(`🎤「${transcript}」→ ${message}`);
+        if (handsFreeMode) speak(message);
         return;
       }
       await pauseTask(running);
-      setQuickActionMessage(`🎤「${transcript}」→ ‖「${running.category} / ${running.name}」を一時停止しました`);
+      const message = `「${running.category} / ${running.name}」を一時停止しました`;
+      setQuickActionMessage(`🎤「${transcript}」→ ‖${message}`);
+      if (handsFreeMode) speak(message);
+      return;
+    }
+
+    if (command.action === "status") {
+      const running = (tasks ?? []).find((t) => t.status === "running" && !t.isProvisional);
+      const pendingCount = (tasks ?? []).filter((t) => t.status === "pending").length;
+      let message: string;
+      if (running) {
+        const elapsedMs = segmentsAccumulatedMs(running, now);
+        message = `現在「${running.category} ${running.name}」を計測中です。経過時間は${formatMsClock(elapsedMs)}です。`;
+      } else {
+        message = "現在計測中の作業はありません。";
+      }
+      if (pendingCount > 0) message += `予定が${pendingCount}件残っています。`;
+      setQuickActionMessage(`🎤「${transcript}」→ ${message}`);
+      if (handsFreeMode) speak(message);
       return;
     }
 
@@ -1281,20 +1310,25 @@ export default function TodaySection({
     if (master) {
       const estimatedSeconds = await computeRemainingEstimatedSeconds(date, master.category, master.name, master.estimatedSeconds);
       requestStartNew(master.category, master.name, estimatedSeconds, master.id);
-      setQuickActionMessage(`🎤「${transcript}」→ ▶「${master.category} / ${master.name}」を開始しました`);
+      const message = `「${master.category} / ${master.name}」を開始しました`;
+      setQuickActionMessage(`🎤「${transcript}」→ ▶${message}`);
+      if (handsFreeMode) speak(message);
       return;
     }
     requestStartNew("音声", target, 0, undefined);
-    setQuickActionMessage(`🎤「${transcript}」→ ▶「音声 / ${target}」を新規作業として開始しました`);
+    const message = `「音声 / ${target}」を新規作業として開始しました`;
+    setQuickActionMessage(`🎤「${transcript}」→ ▶${message}`);
+    if (handsFreeMode) speak(message);
   }
 
-  function startVoiceListening() {
-    if (voiceListening) return;
+  // 1回分の音声認識セッションを開始する。ハンズフリーモードでは認識が終わる(onend)たびに
+  // 呼び直して連続的な聞き取りを実現する
+  function beginListeningSession(): boolean {
     const recognition = createSpeechRecognition();
     if (!recognition) {
       setVoiceUnsupported(true);
       setQuickActionMessage("この端末・ブラウザは音声入力に対応していません");
-      return;
+      return false;
     }
     voiceRecognitionRef.current = recognition;
     recognition.onresult = (e) => {
@@ -1302,14 +1336,43 @@ export default function TodaySection({
       if (transcript) handleVoiceResult(transcript);
     };
     recognition.onerror = () => {
-      setQuickActionMessage("音声を認識できませんでした。もう一度お試しください");
+      if (!handsFreeActiveRef.current) {
+        setQuickActionMessage("音声を認識できませんでした。もう一度お試しください");
+      }
     };
-    recognition.onend = () => setVoiceListening(false);
-    setVoiceListening(true);
+    recognition.onend = () => {
+      if (handsFreeActiveRef.current) {
+        restartListeningIfHandsFree();
+      } else {
+        setVoiceListening(false);
+      }
+    };
     recognition.start();
+    return true;
+  }
+
+  // 読み上げ(speak)中はマイクが自分の声を拾ってしまうため、speechSynthesisが
+  // 話し終わるのを待ってから聞き取りを再開する
+  function restartListeningIfHandsFree(attempt = 0) {
+    if (!handsFreeActiveRef.current) return;
+    if (typeof window !== "undefined" && window.speechSynthesis?.speaking && attempt < 30) {
+      setTimeout(() => restartListeningIfHandsFree(attempt + 1), 300);
+      return;
+    }
+    setTimeout(() => {
+      if (handsFreeActiveRef.current) beginListeningSession();
+    }, 400);
+  }
+
+  function startVoiceListening() {
+    if (voiceListening) return;
+    handsFreeActiveRef.current = handsFreeMode;
+    const ok = beginListeningSession();
+    if (ok) setVoiceListening(true);
   }
 
   function stopVoiceListening() {
+    handsFreeActiveRef.current = false;
     voiceRecognitionRef.current?.stop();
     setVoiceListening(false);
   }
@@ -2741,18 +2804,30 @@ export default function TodaySection({
             <button
               className={voiceListening ? "btn-pill-danger px-3 py-2 text-base" : "btn-pill-outline px-3 py-2 text-base"}
               onClick={voiceListening ? stopVoiceListening : startVoiceListening}
-              title={voiceListening ? "聞き取り中..." : "音声で操作(「〇〇を開始」「終了」のように話しかけて操作できます)"}
+              title={
+                voiceListening
+                  ? handsFreeMode
+                    ? "ハンズフリーで聞き取り中..."
+                    : "聞き取り中..."
+                  : `音声で操作(「〇〇を開始」「終了」のように話しかけて操作できます)${handsFreeMode ? " / ハンズフリーモードON" : ""}`
+              }
               aria-label={voiceListening ? "聞き取り中" : "音声で操作"}
             >
-              🎤
+              {handsFreeMode ? "🎧" : "🎤"}
             </button>
           ) : (
             <button
               className={voiceListening ? "btn-pill-danger text-sm" : "btn-pill-outline text-sm"}
               onClick={voiceListening ? stopVoiceListening : startVoiceListening}
-              title="「〇〇を開始」「終了」のように話しかけて操作できます"
+              title={`「〇〇を開始」「終了」のように話しかけて操作できます${handsFreeMode ? " / ハンズフリーモードON(連続で聞き取り、結果を読み上げます)" : ""}`}
             >
-              {voiceListening ? "🎤 聞き取り中..." : "🎤 音声で操作"}
+              {voiceListening
+                ? handsFreeMode
+                  ? "🎧 ハンズフリー中..."
+                  : "🎤 聞き取り中..."
+                : handsFreeMode
+                  ? "🎧 音声で操作(ハンズフリー)"
+                  : "🎤 音声で操作"}
             </button>
           ))}
           <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
