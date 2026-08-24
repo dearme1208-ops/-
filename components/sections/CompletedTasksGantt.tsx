@@ -224,6 +224,11 @@ function CompletedBar({
 
   const barTop = (ROW_H - BAR_H) / 2;
 
+  // 一時停止を挟んだ作業は複数のsegmentsを持つ。ドラッグ中でなければ、全体を覆う1本の
+  // バーではなく実働区間(segments)ごとに個別のバーを描き、一時停止していた間は
+  // バーが途切れて見えるようにする(区間が無い/不明な古いデータは従来通り1本にフォールバック)
+  const rawSegments = task.segments.length > 0 ? task.segments : [{ start: origStart, end: origEnd }];
+
   return (
     <div className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
       {/* バーが細いと内側に時刻を書いても見えなくなるため、開始時刻はバーの手前(左)、
@@ -235,8 +240,8 @@ function CompletedBar({
         {formatClock(clampedStart)}
       </div>
       <div
-        className={`group absolute cursor-grab rounded active:cursor-grabbing ${
-          overlapping ? "bg-alert ring-2 ring-alert" : "bg-cream"
+        className={`group absolute cursor-grab rounded active:cursor-grabbing ${overlapping ? "ring-2 ring-alert" : ""} ${
+          drag ? (overlapping ? "bg-alert" : "bg-cream") : ""
         }`}
         style={{ left, width, top: barTop, height: BAR_H }}
         onPointerDown={beginDrag("move")}
@@ -244,6 +249,19 @@ function CompletedBar({
         onPointerUp={onUp}
         onPointerCancel={onUp}
       >
+        {!drag &&
+          rawSegments.map((seg, i) => {
+            const segEnd = seg.end ?? origEnd;
+            const segLeft = ((seg.start - timelineBase) / 60000) * pxPerMin;
+            const segWidth = Math.max(((segEnd - seg.start) / 60000) * pxPerMin, 2);
+            return (
+              <div
+                key={i}
+                className={`pointer-events-none absolute rounded ${overlapping ? "bg-alert" : "bg-cream"}`}
+                style={{ left: segLeft - left, width: segWidth, top: 0, height: BAR_H }}
+              />
+            );
+          })}
         <div
           className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-ink/20 hover:bg-ink/40"
           onPointerDown={beginDrag("left")}

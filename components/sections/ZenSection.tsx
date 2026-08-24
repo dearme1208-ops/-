@@ -122,7 +122,7 @@ export default function ZenSection() {
       i === runningDaily.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
     );
     const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(runningDaily.id, { segments, status: "paused", accumulatedMs });
+    await db.dailyTasks.update(runningDaily.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
   }
 
   async function complete() {

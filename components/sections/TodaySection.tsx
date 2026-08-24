@@ -756,11 +756,12 @@ export default function TodaySection({
   // さかのぼって開始/再開する際の起点にする。本日まだ一度も停止していなければ、
   // ページを開いた時刻を仮の起点として扱う（そうしないと、初回の作業を始める前は
   // 未計測の自動開始が永遠に判定できないため）。
-  // ※ 単純に全作業中で一番遅い時刻(Math.max)を使うと、完了タブのガントチャート等で
-  // 過去の作業の終了時刻を手動で伸ばした場合に、その作業がリスト上は最後でなくても
-  // 数値上は一番大きくなり、逆に本当に最後にやった作業を編集した結果がここに
-  // 反映されない(別の未編集の作業の時刻が優先され続ける)という分かりづらい挙動になる。
-  // 「一番最後にやった作業(orderが最大)」を基準にすることで、直感的な動作にする
+  // ※ 単純に全作業中で一番遅い時刻(endedAt/segmentsの終了時刻)を使うと、完了タブの
+  // ガントチャート等で過去の作業の終了時刻を手動で伸ばした場合に、その作業が数値上
+  // 一番大きくなってしまい、逆に本当に最後に一時停止/完了した作業がここに反映されない
+  // という分かりづらい挙動になる。そのため「実際にその場で一時停止/完了の操作をした時刻」
+  // (stoppedAt。手動編集では変わらない)を優先して使う。stoppedAtが無い(古いデータ)場合のみ、
+  // 従来通り「一番最後にやった作業(orderが最大)」にフォールバックする
   const lastStopTime = useMemo(() => {
     if (!tasks) return null;
     const stopCandidates = tasks.filter(
@@ -769,6 +770,10 @@ export default function TodaySection({
         (t.status === "paused" && t.segments[t.segments.length - 1]?.end !== undefined)
     );
     if (stopCandidates.length === 0) return sessionAnchorRef.current;
+    const withStoppedAt = stopCandidates.filter((t) => t.stoppedAt !== undefined);
+    if (withStoppedAt.length > 0) {
+      return withStoppedAt.reduce((a, b) => (b.stoppedAt! > a.stoppedAt! ? b : a)).stoppedAt!;
+    }
     const last = stopCandidates.reduce((a, b) => (b.order > a.order ? b : a));
     return last.status === "done" ? last.endedAt! : last.segments[last.segments.length - 1].end!;
   }, [tasks]);
@@ -1737,11 +1742,12 @@ export default function TodaySection({
   }
 
   async function pauseTask(task: DailyTask) {
+    const nowMs = Date.now();
     const segments = task.segments.map((s, i) =>
-      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
+      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: nowMs } : s
     );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
-    await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs });
+    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? nowMs) - s.start), 0);
+    await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs, stoppedAt: nowMs });
   }
 
   // 強制ストップされた休憩帯を、「実は移動やミーティングで作業していた」として後から
@@ -1807,6 +1813,7 @@ export default function TodaySection({
       manualAdjustmentMs: 0,
       startedAt,
       endedAt: nowMs,
+      stoppedAt: nowMs,
       isProvisional: false,
     });
 

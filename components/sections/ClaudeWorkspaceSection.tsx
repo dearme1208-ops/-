@@ -196,7 +196,7 @@ export default function ClaudeWorkspaceSection() {
       i === daily.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
     );
     const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(daily.id, { segments, status: "paused", accumulatedMs });
+    await db.dailyTasks.update(daily.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
   }
 
   async function startTodo(t: TodoTask) {

@@ -121,6 +121,7 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
     accumulatedMs,
     startedAt,
     endedAt: closeAt,
+    stoppedAt: nowMs,
     isProvisional: false,
   });
 
