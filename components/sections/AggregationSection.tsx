@@ -18,12 +18,14 @@ import { currentFiscalYear, fiscalPeriodRange, isDateStrInRange, PERIOD_LABELS, 
 import { formatHms } from "@/lib/time";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeSwitchCostAnalysis } from "@/lib/switchcost";
+import { computeCategoryChain } from "@/lib/categoryChain";
 import { computeTimeByTag } from "@/lib/tags";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { useSetting } from "@/lib/settings";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
 import LineChart from "@/components/charts/LineChart";
+import CategoryChainGraph from "@/components/charts/CategoryChainGraph";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 import PersonalBestPanel from "@/components/PersonalBestPanel";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
@@ -92,6 +94,7 @@ export default function AggregationSection() {
   const [totalTrendDetailKey, setTotalTrendDetailKey] = useState<string | null>(null);
   const weekdayDetail = weekdayChartData.find((w) => w.dow === weekdayDetailDow) ?? null;
   const switchCost = useMemo(() => computeSwitchCostAnalysis(records ?? []), [records]);
+  const categoryChain = useMemo(() => computeCategoryChain(records ?? []), [records]);
   const tagRows = useMemo(() => computeTimeByTag(records ?? [], masterTasks ?? []), [records, masterTasks]);
   const totalTrendPoints = useMemo(
     () => computeTotalTimeTrend(records ?? [], totalTrendGranularity),
@@ -471,6 +474,19 @@ export default function AggregationSection() {
           </div>
           <p className="mt-3 text-xs text-cream/40">
             1日に取り組んだ作業の種類数を目安に、切り替えが少ない日と多い日を比較しています。1件あたりの平均時間が短いほど、細切れになっている可能性があります。
+          </p>
+        </CollapsiblePanel>
+      )}
+
+      {categoryChain.nodes.length > 0 && (
+        <CollapsiblePanel
+          title="作業の連鎖ネットワーク"
+          collapsed={!!collapsed.categoryChain}
+          onToggle={() => toggleSection("categoryChain")}
+        >
+          <CategoryChainGraph nodes={categoryChain.nodes} edges={categoryChain.edges} formatValue={formatHms} />
+          <p className="mt-3 text-xs text-cream/40">
+            日ごとに開始時刻順で並べたとき、大項目が切り替わったタイミングを「前→次」の矢印として数えています。丸の大きさは合計時間、矢印の太さは切り替わった回数です。
           </p>
         </CollapsiblePanel>
       )}
