@@ -116,6 +116,20 @@ export default function TerminalDashboardSection() {
   const runningDaily = (dailyTasks ?? []).find((d) => d.status === "running") ?? null;
   const totalMsToday = (dailyTasks ?? []).reduce((sum, d) => sum + segmentsAccumulatedMs(d, now), 0);
   const doneToday = (dailyTasks ?? []).filter((d) => d.status === "done");
+  // クイックスタートの「完了した業務」欄用: 同じ作業を今日中に何度も完了していても
+  // 1つにまとめる(再開ボタンとして意味があるのは「その作業を再度始める」ことだけなので)
+  const doneTodayUnique = useMemo(() => {
+    const seen = new Set<string>();
+    const result: DailyTask[] = [];
+    for (const d of doneToday) {
+      const key = d.masterTaskId ?? `${d.category}::${d.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(d);
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyTasks]);
   const activeTodos = (todoTasks ?? []).filter((t) => !t.completed);
   const activeProjects = (projects ?? []).filter((p) => !p.completedAt);
   const streakDays = useMemo(() => computeStreakDays(records ?? [], today), [records, today]);
@@ -162,27 +176,31 @@ export default function TerminalDashboardSection() {
     await db.dailyTasks.update(daily.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
   }
 
-  async function startMaster(master: MasterTask) {
-    if (runningDaily && runningDaily.masterTaskId !== master.id) await pauseDaily(runningDaily);
-    const existing = (dailyTasks ?? []).find(
-      (d) => d.masterTaskId === master.id && (d.status === "running" || d.status === "paused")
-    );
-    if (existing) {
-      if (existing.status === "paused") {
-        const segments = [...existing.segments, { start: Date.now() }];
-        await db.dailyTasks.update(existing.id, { segments, status: "running" });
+  // お気に入り・完了した業務の再開、いずれも「同じマスタ作業が既に実行中/一時停止中なら
+  // そちらを優先し、無ければ新しいインスタンスとして開始する」という同じ挙動なので共通化する
+  async function startTaskLike(source: { masterTaskId?: string; category: string; name: string; estimatedSeconds: number }) {
+    if (runningDaily && runningDaily.masterTaskId !== source.masterTaskId) await pauseDaily(runningDaily);
+    if (source.masterTaskId) {
+      const existing = (dailyTasks ?? []).find(
+        (d) => d.masterTaskId === source.masterTaskId && (d.status === "running" || d.status === "paused")
+      );
+      if (existing) {
+        if (existing.status === "paused") {
+          const segments = [...existing.segments, { start: Date.now() }];
+          await db.dailyTasks.update(existing.id, { segments, status: "running" });
+        }
+        return;
       }
-      return;
     }
     const task: DailyTask = {
       id: uid(),
       date: today,
       order: (dailyTasks ?? []).length,
-      masterTaskId: master.id,
-      category: master.category,
-      name: master.name,
-      estimatedSeconds: master.estimatedSeconds,
-      hasPlan: master.estimatedSeconds > 0,
+      masterTaskId: source.masterTaskId,
+      category: source.category,
+      name: source.name,
+      estimatedSeconds: source.estimatedSeconds,
+      hasPlan: source.estimatedSeconds > 0,
       status: "running",
       segments: [{ start: Date.now() }],
       accumulatedMs: 0,
@@ -190,6 +208,20 @@ export default function TerminalDashboardSection() {
       isSpontaneous: true,
     };
     await db.dailyTasks.add(task);
+  }
+
+  async function startMaster(master: MasterTask) {
+    await startTaskLike({ masterTaskId: master.id, category: master.category, name: master.name, estimatedSeconds: master.estimatedSeconds });
+  }
+
+  // 本日すでに完了した作業を、もう一度(新しいインスタンスとして)開始し直す
+  async function startAgain(source: DailyTask) {
+    await startTaskLike({
+      masterTaskId: source.masterTaskId,
+      category: source.category,
+      name: source.name,
+      estimatedSeconds: source.estimatedSeconds,
+    });
   }
 
   // クイックスタート(お気に入り)に無い作業も、大項目・詳細作業名を直接打ち込んで
@@ -521,31 +553,64 @@ export default function TerminalDashboardSection() {
         </div>
       </div>
 
-      {/* --- クイックスタート: お気に入り登録済みのマスタ作業を1タップで開始する --- */}
-      {favoriteMasters && favoriteMasters.length > 0 && (
-        <div className="panel space-y-2 p-4">
+      {/* --- クイックスタート: お気に入り登録済みのマスタ作業・本日完了済みの作業を1タップで開始/再開する --- */}
+      {((favoriteMasters && favoriteMasters.length > 0) || doneTodayUnique.length > 0) && (
+        <div className="panel space-y-3 p-4">
           <div className="text-[10px] uppercase tracking-widest text-cream/40">QUICK START</div>
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
-            {favoriteMasters.map((m) => {
-              const daily = (dailyTasks ?? []).find((d) => d.masterTaskId === m.id);
-              const isRunning = daily?.status === "running";
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => startMaster(m)}
-                  disabled={isRunning}
-                  className={`rounded-sm border px-2 py-1.5 text-left text-xs transition-colors ${
-                    isRunning
-                      ? "border-alert bg-alert/10 text-alert"
-                      : "border-cream/15 bg-ink/40 text-cream/70 hover:border-[rgb(var(--term-up-rgb))] hover:text-cream"
-                  }`}
-                >
-                  <div className="truncate font-bold">{m.name}</div>
-                  <div className="truncate text-[10px] opacity-60">[{m.category}]{isRunning ? " ● LIVE" : ""}</div>
-                </button>
-              );
-            })}
-          </div>
+          {favoriteMasters && favoriteMasters.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[10px] tracking-widest text-cream/30">★ FAVORITES</div>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+                {favoriteMasters.map((m) => {
+                  const daily = (dailyTasks ?? []).find((d) => d.masterTaskId === m.id);
+                  const isRunning = daily?.status === "running";
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => startMaster(m)}
+                      disabled={isRunning}
+                      className={`rounded-sm border px-2 py-1.5 text-left text-xs transition-colors ${
+                        isRunning
+                          ? "border-alert bg-alert/10 text-alert"
+                          : "border-cream/15 bg-ink/40 text-cream/70 hover:border-[rgb(var(--term-up-rgb))] hover:text-cream"
+                      }`}
+                    >
+                      <div className="truncate font-bold">{m.name}</div>
+                      <div className="truncate text-[10px] opacity-60">[{m.category}]{isRunning ? " ● LIVE" : ""}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {doneTodayUnique.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[10px] tracking-widest text-cream/30">✓ COMPLETED (再開)</div>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+                {doneTodayUnique.map((d) => {
+                  const key = d.masterTaskId ?? d.id;
+                  const activeInstance = (dailyTasks ?? []).find(
+                    (t) => (d.masterTaskId ? t.masterTaskId === d.masterTaskId : t.id === d.id) && t.status === "running"
+                  );
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => startAgain(d)}
+                      disabled={!!activeInstance}
+                      className={`rounded-sm border px-2 py-1.5 text-left text-xs transition-colors ${
+                        activeInstance
+                          ? "border-alert bg-alert/10 text-alert"
+                          : "border-cream/15 bg-ink/40 text-cream/70 hover:border-[rgb(var(--term-up-rgb))] hover:text-cream"
+                      }`}
+                    >
+                      <div className="truncate font-bold">{d.name}</div>
+                      <div className="truncate text-[10px] opacity-60">[{d.category}]{activeInstance ? " ● LIVE" : ""}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
