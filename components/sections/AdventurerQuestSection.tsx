@@ -80,6 +80,19 @@ export default function AdventurerQuestSection() {
     () => (dailyTasks ?? []).filter((t) => t.status === "done").sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0)),
     [dailyTasks]
   );
+  // ギルド受付の「討伐済みモンスターに再挑戦」欄用: 同じモンスターを本日中に何度討伐していても
+  // 1つにまとめる(再挑戦ボタンとして意味があるのは「もう一度戦う」ことだけなので)
+  const doneTodayUnique = useMemo(() => {
+    const seen = new Set<string>();
+    const result: DailyTask[] = [];
+    for (const t of doneToday) {
+      const key = t.masterTaskId ?? `${t.category}::${t.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(t);
+    }
+    return result;
+  }, [doneToday]);
   const totalMs = (dailyTasks ?? []).reduce((sum, t) => sum + segmentsAccumulatedMs(t, now), 0);
   const totalSeconds = totalMs / 1000;
   const activeTodos = (todoTasks ?? []).filter((t) => !t.completed);
@@ -135,25 +148,30 @@ export default function AdventurerQuestSection() {
     setView("battle");
   }
 
-  async function startMaster(master: MasterTask) {
-    if (runningTask && runningTask.masterTaskId !== master.id) await pauseDaily(runningTask);
-    const existing = (dailyTasks ?? []).find(
-      (d) => d.masterTaskId === master.id && (d.status === "running" || d.status === "paused")
-    );
-    if (existing) {
-      await enterBattle(existing);
-      setShowGuild(false);
-      return;
+  // お気に入り・討伐済みモンスターへの再挑戦、いずれも「同じマスタ作業が既に
+  // エンカウント中/休戦中ならそちらに合流し、無ければ新しいクエストとして遭遇する」という
+  // 同じ挙動なので共通化する
+  async function startTaskLike(source: { masterTaskId?: string; category: string; name: string; estimatedSeconds: number }) {
+    if (runningTask && runningTask.masterTaskId !== source.masterTaskId) await pauseDaily(runningTask);
+    if (source.masterTaskId) {
+      const existing = (dailyTasks ?? []).find(
+        (d) => d.masterTaskId === source.masterTaskId && (d.status === "running" || d.status === "paused")
+      );
+      if (existing) {
+        await enterBattle(existing);
+        setShowGuild(false);
+        return;
+      }
     }
     const task: DailyTask = {
       id: uid(),
       date: today,
       order: (dailyTasks ?? []).length,
-      masterTaskId: master.id,
-      category: master.category,
-      name: master.name,
-      estimatedSeconds: master.estimatedSeconds,
-      hasPlan: master.estimatedSeconds > 0,
+      masterTaskId: source.masterTaskId,
+      category: source.category,
+      name: source.name,
+      estimatedSeconds: source.estimatedSeconds,
+      hasPlan: source.estimatedSeconds > 0,
       status: "running",
       segments: [{ start: Date.now() }],
       accumulatedMs: 0,
@@ -164,6 +182,20 @@ export default function AdventurerQuestSection() {
     setBattleTaskId(task.id);
     setView("battle");
     setShowGuild(false);
+  }
+
+  async function startMaster(master: MasterTask) {
+    await startTaskLike({ masterTaskId: master.id, category: master.category, name: master.name, estimatedSeconds: master.estimatedSeconds });
+  }
+
+  // 本日すでに討伐(完了)したモンスターに、もう一度(新しいクエストとして)挑む
+  async function rechallenge(source: DailyTask) {
+    await startTaskLike({
+      masterTaskId: source.masterTaskId,
+      category: source.category,
+      name: source.name,
+      estimatedSeconds: source.estimatedSeconds,
+    });
   }
 
   async function encounterNewMonster() {
@@ -288,6 +320,23 @@ export default function AdventurerQuestSection() {
                           <div className="truncate text-[10px] text-cream/50">[{m.category}]</div>
                         </button>
                       ))}
+                    </div>
+                  )}
+                  {doneTodayUnique.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="text-[10px] uppercase tracking-widest text-cream/40">討伐済みに再挑戦</div>
+                      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+                        {doneTodayUnique.map((t) => (
+                          <button
+                            key={t.id}
+                            onClick={() => rechallenge(t)}
+                            className="adv-quest-card p-2.5 text-left text-xs transition-transform hover:-translate-y-0.5"
+                          >
+                            <div className="truncate font-bold text-cream">👻 {t.name}</div>
+                            <div className="truncate text-[10px] text-cream/50">[{t.category}]</div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
                   <div className="flex flex-wrap gap-1.5">
