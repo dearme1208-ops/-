@@ -266,6 +266,9 @@ export default function TodoSection({
 
   const lists = useLiveQuery(() => db.todoLists.orderBy("order").toArray(), []);
   const allTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
+  const projects = useLiveQuery(() => db.projects.toArray(), []);
+  // 「本日の作業に追加」ダイアログの初期値(大項目)に、紐づく案件があればその件名を出すための参照
+  const projectTitleById = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.title])), [projects]);
 
   // 本日すでに「本日の作業」へ追加済みのTodoタスクID一覧。詳細ダイアログの
   // 「本日の作業に追加」ボタンの二重追加防止・状態表示に使う
@@ -1630,6 +1633,7 @@ export default function TodoSection({
           categoryOptions={categoryOptions}
           customerOptions={customerOptions}
           today={today}
+          linkedProjectTitle={detailTask.projectId ? projectTitleById.get(detailTask.projectId) : undefined}
           onClose={() => setDetailTaskId(null)}
           onToggleMyDay={() => toggleMyDay(detailTask)}
           onDelete={() => deleteTask(detailTask)}
@@ -2176,6 +2180,7 @@ function TaskDetailModal({
   categoryOptions,
   customerOptions,
   today,
+  linkedProjectTitle,
   onClose,
   onToggleMyDay,
   onDelete,
@@ -2191,6 +2196,7 @@ function TaskDetailModal({
   categoryOptions: string[];
   customerOptions: string[];
   today: string;
+  linkedProjectTitle?: string;
   onClose: () => void;
   onToggleMyDay: () => void;
   onDelete: () => void;
@@ -2546,8 +2552,8 @@ function TaskDetailModal({
           <CategoryWorkNameDialog
             title="本日の作業に追加"
             confirmLabel="追加する"
-            defaultCategory={task.title}
-            defaultWorkName={task.action || task.title}
+            defaultCategory={linkedProjectTitle ?? task.tag ?? ""}
+            defaultWorkName={task.title}
             onConfirm={(category, workName) => {
               onAddToToday(category, workName);
               setShowAddToTodayDialog(false);
