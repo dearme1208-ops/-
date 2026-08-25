@@ -308,6 +308,20 @@ export default function TodaySection({
     () => db.masterTasks.filter((t) => t.isFavorite && !t.archived).toArray(),
     []
   );
+  // お気に入りパネルの「完了した業務から再開」欄用: 本日中に同じ作業を何度も完了していても
+  // 1つにまとめる(再開ボタンとして意味があるのは「その作業をもう一度始める」ことだけなので)
+  const doneTodayUnique = useMemo(() => {
+    const seen = new Set<string>();
+    const result: DailyTask[] = [];
+    for (const t of tasks ?? []) {
+      if (t.status !== "done" || t.isProvisional) continue;
+      const key = t.masterTaskId ?? `${t.category}::${t.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(t);
+    }
+    return result;
+  }, [tasks]);
   const allMasterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const favoriteMasterIds = useMemo(
     () => new Set((allMasterTasks ?? []).filter((m) => m.isFavorite).map((m) => m.id)),
@@ -2090,6 +2104,12 @@ export default function TodaySection({
     requestStartNew(master.category, master.name, estimatedSeconds, master.id);
   }
 
+  // 本日すでに完了した作業を、もう一度(新しいインスタンスとして)開始し直す
+  async function restartCompletedTask(daily: DailyTask) {
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(date, daily.category, daily.name, daily.estimatedSeconds);
+    requestStartNew(daily.category, daily.name, estimatedSeconds, daily.masterTaskId);
+  }
+
   async function startSuggested() {
     if (!suggestedTask) return;
     const master = await findOrCreateMasterTask(suggestedTask.category, suggestedTask.name, 0);
@@ -2689,6 +2709,23 @@ export default function TodaySection({
               )}
             </>
           )}
+        </div>
+      )}
+
+      {doneTodayUnique.length > 0 && (
+        <div className="panel p-4">
+          <h3 className="font-display text-sm font-bold text-cream/80">✅ 完了した業務から再開</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {doneTodayUnique.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => restartCompletedTask(d)}
+                className="rounded-full border border-cream/30 bg-ink px-3 py-1.5 text-sm text-cream hover:bg-cream/10"
+              >
+                ✅ {d.category} / {d.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
