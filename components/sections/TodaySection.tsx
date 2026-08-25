@@ -682,13 +682,32 @@ export default function TodaySection({
     return map;
   }, [tasks, now, predictedSecondsByTaskId]);
 
-  // 計測中の作業を一番上に、完了済みを一番下に沈める。それ以外（一時停止中/未着手）はもとの順番のまま
+  // 一時停止・完了した時刻(実際にその操作をした瞬間)を返す。無ければ(古いデータ等)
+  // 並び替えの基準にできないので、orderへのフォールバックが分かるようnullを返す
+  function pauseOrFinishTime(t: DailyTask): number | null {
+    if (t.stoppedAt !== undefined) return t.stoppedAt;
+    if (t.status === "done") return t.endedAt ?? null;
+    if (t.status === "paused") return t.segments[t.segments.length - 1]?.end ?? null;
+    return null;
+  }
+
+  // 計測中の作業を一番上に、完了済みを一番下に沈める。未着手はもとの順番(order)のまま。
+  // 一時停止中どうし・完了どうしは、追加した順(order)ではなく実際に一時停止/完了した順に
+  // 並べる(一時停止/完了は、追加した順とは無関係にどれからでも操作されうるため、
+  // orderのままだと「後から追加したのに先に一時停止した作業」が下に埋もれるなど
+  // 直感に反する並びになっていた)
   const sortedTasks = useMemo(() => {
     if (!tasks) return [];
     const statusRank = (t: DailyTask) => (t.status === "running" ? 0 : t.status === "done" ? 2 : 1);
     return [...tasks].sort((a, b) => {
       const rankDiff = statusRank(a) - statusRank(b);
-      return rankDiff || a.order - b.order;
+      if (rankDiff) return rankDiff;
+      if (a.status === b.status && (a.status === "paused" || a.status === "done")) {
+        const aTime = pauseOrFinishTime(a);
+        const bTime = pauseOrFinishTime(b);
+        if (aTime !== null && bTime !== null) return aTime - bTime;
+      }
+      return a.order - b.order;
     });
   }, [tasks]);
 
