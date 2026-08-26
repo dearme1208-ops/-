@@ -1914,9 +1914,13 @@ export default function TodaySection({
     });
 
     // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
-    // 可視化する対象ではないため、ポップアップは出さない(lib/tasks.tsのfinishDailyTaskと同じ判断)
+    // 可視化する対象ではないため、ポップアップは出さない(lib/tasks.tsのfinishDailyTaskと同じ判断)。
+    // 放置検知・位置情報による無人での自動打ち切りもここを通るが、それらはユーザーが
+    // 今まさに完了操作をしたわけではないので、ポップアップと同様タブ切り替えの対象からも外す
     if (!task.isProvisional) {
       fireCompletionPopup({ category: task.category, name: task.name, seconds, estimatedSeconds: task.estimatedSeconds });
+      // 完了させたら、次に何をするか選びやすいよう「予定」タブに切り替える
+      setTaskViewTab("pending");
     }
 
     let masterTaskId = task.masterTaskId;
