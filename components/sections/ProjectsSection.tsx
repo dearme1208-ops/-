@@ -53,6 +53,8 @@ export default function ProjectsSection({
   const [ganttAnchor, setGanttAnchor] = useSetting("projects.ganttAnchor", "today");
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
+  const [stageAddTarget, setStageAddTarget] = useState<{ project: ProjectItem; stage: ProjectStage } | null>(null);
+  const [stageAddStartNow, setStageAddStartNow] = useState(false);
   const [completionReport, setCompletionReport] = useState<{
     project: ProjectItem;
     totalSeconds: number;
@@ -266,7 +268,7 @@ export default function ProjectsSection({
     }
   }
 
-  async function addToToday(item: ProjectItem, category: string, workName: string, stageId?: string) {
+  async function addToToday(item: ProjectItem, category: string, workName: string, stageId?: string, startNow = false) {
     const master = await findOrCreateMasterTask(category, workName, 0);
     const estimatedSeconds = await computeRemainingEstimatedSeconds(
       today,
@@ -274,18 +276,31 @@ export default function ProjectsSection({
       workName,
       master.estimatedSeconds
     );
-    const count = (await db.dailyTasks.where("date").equals(today).toArray()).length;
+    const todayTasks = await db.dailyTasks.where("date").equals(today).toArray();
+    const nowMs = Date.now();
+    if (startNow) {
+      // 既に計測中の作業があれば、他のテーマ画面の「すぐ開始」系操作と同じく先に一時停止してから始める
+      const running = todayTasks.find((t) => t.status === "running");
+      if (running) {
+        const segments = running.segments.map((s, i) =>
+          i === running.segments.length - 1 && s.end === undefined ? { ...s, end: nowMs } : s
+        );
+        const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? nowMs) - s.start), 0);
+        await db.dailyTasks.update(running.id, { segments, status: "paused", accumulatedMs, stoppedAt: nowMs });
+      }
+    }
     const task: DailyTask = {
       id: uid(),
       date: today,
-      order: count,
+      order: todayTasks.length,
       masterTaskId: master.id,
       category,
       name: workName,
       estimatedSeconds,
-      status: "pending",
-      segments: [],
+      status: startNow ? "running" : "pending",
+      segments: startNow ? [{ start: nowMs }] : [],
       accumulatedMs: 0,
+      startedAt: startNow ? nowMs : undefined,
       isSpontaneous: true,
       projectId: item.id,
       stageId,
@@ -317,15 +332,18 @@ export default function ProjectsSection({
   }
 
   // 段階を本日の作業に追加する前に、案件の業務区分(大項目)を引き継ぎ、
-  // 詳細作業名にはこの段階名がそのまま入ることを明示してから確認する
-  async function addStageToTodayWithConfirm(project: ProjectItem, stage: ProjectStage) {
-    const countNote =
-      stage.targetCount != null ? `\n件数: ${stage.completedCount ?? 0}/${stage.targetCount}件（完了時に1件進みます）` : "";
-    const ok = confirm(
-      `本日の作業に追加します。\n\n業務区分（大項目）: ${project.category || project.title}\n詳細作業名: ${stage.title}${countNote}\n\nよろしいですか?`
-    );
-    if (!ok) return;
-    await addToToday(project, project.category, stage.title, stage.id);
+  // 詳細作業名にはこの段階名がそのまま入ることを明示してから確認する。すぐに開始するかは
+  // ダイアログのチェックボックスで選べる
+  function addStageToTodayWithConfirm(project: ProjectItem, stage: ProjectStage) {
+    setStageAddStartNow(false);
+    setStageAddTarget({ project, stage });
+  }
+
+  async function confirmStageAddToToday() {
+    if (!stageAddTarget) return;
+    const { project, stage } = stageAddTarget;
+    await addToToday(project, project.category, stage.title, stage.id, stageAddStartNow);
+    setStageAddTarget(null);
   }
 
   const rows = useMemo(() => {
@@ -876,12 +894,43 @@ export default function ProjectsSection({
           confirmLabel="追加する"
           defaultCategory={addToTodayTarget.category || addToTodayTarget.title}
           defaultWorkName={addToTodayTarget.workName}
-          onConfirm={(category, workName) => {
-            addToToday(addToTodayTarget, category, workName);
+          toggleLabel="追加してすぐ開始する"
+          onConfirm={(category, workName, startNow) => {
+            addToToday(addToTodayTarget, category, workName, undefined, startNow);
             setAddToTodayTarget(null);
           }}
           onClose={() => setAddToTodayTarget(null)}
         />
+      )}
+
+      {stageAddTarget && (
+        <Modal title="本日の作業に追加" onClose={() => setStageAddTarget(null)}>
+          <div className="space-y-3 text-sm">
+            <p className="text-cream/70">
+              業務区分（大項目）: <span className="font-bold text-cream">{stageAddTarget.project.category || stageAddTarget.project.title}</span>
+              <br />
+              詳細作業名: <span className="font-bold text-cream">{stageAddTarget.stage.title}</span>
+              {stageAddTarget.stage.targetCount != null && (
+                <>
+                  <br />
+                  件数: {stageAddTarget.stage.completedCount ?? 0}/{stageAddTarget.stage.targetCount}件（完了時に1件進みます）
+                </>
+              )}
+            </p>
+            <label className="flex items-center gap-1.5 text-xs text-cream/70">
+              <input
+                type="checkbox"
+                checked={stageAddStartNow}
+                onChange={(e) => setStageAddStartNow(e.target.checked)}
+                className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+              />
+              追加してすぐ開始する
+            </label>
+            <button className="btn-pill w-full text-sm" onClick={confirmStageAddToToday}>
+              追加する
+            </button>
+          </div>
+        </Modal>
       )}
 
       {completionReport && (

@@ -11,6 +11,8 @@ export default function CategoryWorkNameDialog({
   confirmLabel,
   defaultCategory,
   defaultWorkName,
+  toggleLabel,
+  defaultToggle = false,
   onConfirm,
   onClose,
 }: {
@@ -18,20 +20,25 @@ export default function CategoryWorkNameDialog({
   confirmLabel: string;
   defaultCategory?: string;
   defaultWorkName?: string;
-  onConfirm: (category: string, workName: string) => void;
+  // 指定すると、追加のチェックボックスを表示する(例: 「追加してすぐ開始する」)。
+  // 省略時はチェックボックス自体を出さない
+  toggleLabel?: string;
+  defaultToggle?: boolean;
+  onConfirm: (category: string, workName: string, toggle: boolean) => void;
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"free" | "master">("free");
   const [category, setCategory] = useState(defaultCategory ?? "");
   const [workName, setWorkName] = useState(defaultWorkName ?? "");
+  const [toggle, setToggle] = useState(defaultToggle);
 
   function confirmFree() {
     if (!category.trim() || !workName.trim()) return;
-    onConfirm(category.trim(), workName.trim());
+    onConfirm(category.trim(), workName.trim(), toggle);
   }
 
   function confirmMaster(t: MasterTask) {
-    onConfirm(t.category, t.name);
+    onConfirm(t.category, t.name, toggle);
   }
 
   return (
@@ -50,6 +57,17 @@ export default function CategoryWorkNameDialog({
           マスタから選択
         </button>
       </div>
+      {toggleLabel && (
+        <label className="mb-3 flex items-center gap-1.5 text-xs text-cream/70">
+          <input
+            type="checkbox"
+            checked={toggle}
+            onChange={(e) => setToggle(e.target.checked)}
+            className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+          />
+          {toggleLabel}
+        </label>
+      )}
       {mode === "free" ? (
         <div className="space-y-2">
           <input
