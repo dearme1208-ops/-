@@ -19,6 +19,7 @@ import CompletionPopupHost from "@/components/ui/CompletionPopupHost";
 import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
+import TodoReminderPopup from "@/components/TodoReminderPopup";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
 
@@ -150,6 +151,12 @@ export default function HomePage() {
       />
       <OrphanTaskModal />
       <TodoReminderModal
+        onViewDetail={(taskId) => {
+          setPendingTodoDetailId(taskId);
+          setActive("todo");
+        }}
+      />
+      <TodoReminderPopup
         onViewDetail={(taskId) => {
           setPendingTodoDetailId(taskId);
           setActive("todo");

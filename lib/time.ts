@@ -71,3 +71,24 @@ export function formatDateJp(dateStr: string): string {
   const [, m, d] = dateStr.split("-");
   return `${Number(m)}/${Number(d)}`;
 }
+
+// epoch msを<input type="datetime-local">用の"YYYY-MM-DDTHH:mm"文字列に変換する(ローカル時刻基準)
+export function toDatetimeLocalValue(epochMs: number): string {
+  const d = new Date(epochMs);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// <input type="datetime-local">の"YYYY-MM-DDTHH:mm"文字列をepoch ms(ローカル時刻として解釈)に変換する
+export function fromDatetimeLocalValue(value: string): number | undefined {
+  if (!value) return undefined;
+  const t = new Date(value).getTime();
+  return Number.isFinite(t) ? t : undefined;
+}
+
+// 通知時刻の表示用(例: 8/27 14:30)
+export function formatDateTimeJp(epochMs: number): string {
+  const d = new Date(epochMs);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

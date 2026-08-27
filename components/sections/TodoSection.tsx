@@ -27,7 +27,14 @@ import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
 import { cardOverrunClass, emphasisTextClass, useVisualMode } from "@/lib/theme";
-import { daysBetweenDateStrs, todayStr, formatDateJp } from "@/lib/time";
+import {
+  daysBetweenDateStrs,
+  todayStr,
+  formatDateJp,
+  formatDateTimeJp,
+  fromDatetimeLocalValue,
+  toDatetimeLocalValue,
+} from "@/lib/time";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import type { DailyTask, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
@@ -2127,6 +2134,11 @@ function TaskRow({
               📁
             </span>
           )}
+          {task.reminderAt && !task.reminderFiredAt && (
+            <span className="text-xs text-cream/40" title={`${formatDateTimeJp(task.reminderAt)}に通知`}>
+              🔔 {formatDateTimeJp(task.reminderAt)}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           {dueDate && (
@@ -2215,6 +2227,7 @@ function TaskDetailModal({
   const [notes, setNotes] = useState(task.notes ?? "");
   const [startDate, setStartDate] = useState(task.startDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
+  const [reminderInput, setReminderInput] = useState(task.reminderAt ? toDatetimeLocalValue(task.reminderAt) : "");
   const [tagMode, setTagMode] = useState(task.tag && !tagOptions.includes(task.tag) ? CUSTOM_TAG_VALUE : (task.tag ?? NO_TAG_VALUE));
   const [customTag, setCustomTag] = useState(task.tag && !tagOptions.includes(task.tag) ? task.tag : "");
   const [categoryMode, setCategoryMode] = useState(
@@ -2299,6 +2312,20 @@ function TaskDetailModal({
       });
     }
     onClose();
+  }
+
+  // 通知(リマインダー)は他のフィールドと違い「保存」ボタンを待たず即座に反映する
+  // (お気に入りやマイデイ追加などの即時アクションと同じ扱い)。再設定した場合は
+  // reminderFiredAtをクリアし、その新しい時刻でまた通知できるようにする
+  async function setReminder() {
+    const ms = fromDatetimeLocalValue(reminderInput);
+    if (!ms) return;
+    await db.todoTasks.update(task.id, { reminderAt: ms, reminderFiredAt: undefined });
+  }
+
+  async function clearReminder() {
+    setReminderInput("");
+    await db.todoTasks.update(task.id, { reminderAt: undefined, reminderFiredAt: undefined });
   }
 
   async function addSubtask() {
@@ -2510,6 +2537,29 @@ function TaskDetailModal({
         <p className="text-[10px] text-cream/40">
           開始日を設定した場合、リスト内の並び順は期日ではなく開始日が優先されます。
         </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-cream/60">🔔 通知</label>
+          <input
+            type="datetime-local"
+            value={reminderInput}
+            onChange={(e) => setReminderInput(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+          />
+          <button className="btn-pill-outline text-xs" onClick={setReminder} disabled={!reminderInput}>
+            設定
+          </button>
+          {task.reminderAt && (
+            <button className="text-xs text-cream/50 hover:text-alert" onClick={clearReminder}>
+              クリア
+            </button>
+          )}
+        </div>
+        {task.reminderAt && (
+          <p className="text-[10px] text-cream/40">
+            {formatDateTimeJp(task.reminderAt)}に通知{task.reminderFiredAt ? "（通知済み）" : ""}
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <button

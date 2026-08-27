@@ -264,6 +264,8 @@ export interface TodoTask {
   recurrence?: RecurrenceRule;
   projectId?: string; // 案件タブに反映済みの場合、その案件のID
   clientId?: string; // 取引先（任意）。customer(自由記入の客先名)とは別に、取引先マスタと紐付ける場合に使う
+  reminderAt?: number; // 通知したい日時(epoch ms)。設定すると、その時刻になった際にタブに関わらず画面へポップアップで知らせる
+  reminderFiredAt?: number; // 上記の通知を実際に表示した時刻。二重に通知しないためのフラグ(reminderAtを再設定するとクリアされる)
 }
 
 // ---- マンダラチャート ----
