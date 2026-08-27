@@ -83,6 +83,7 @@ import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
 import DayCardModal from "@/components/DayCardModal";
+import TodayMemoPanel from "@/components/TodayMemoPanel";
 import type { DayCardData } from "@/lib/dayCard";
 import TomorrowDraftModal from "@/components/TomorrowDraftModal";
 import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
@@ -104,9 +105,11 @@ function formatCrossingDateTime(atIso: string): string {
 export default function TodaySection({
   onOpenTodoDetail,
   onOpenProjectEdit,
+  onOpenMemo,
 }: {
   onOpenTodoDetail: (taskId: string) => void;
   onOpenProjectEdit: (projectId: string) => void;
+  onOpenMemo?: () => void;
 }) {
   const date = todayStr();
   // 構造化されたタスクとは別の、自由記述の日次ジャーナル。日付ごとに保存する
@@ -2411,6 +2414,7 @@ export default function TodaySection({
         />
       )}
       <DailyChallengePanel />
+      <TodayMemoPanel onOpenMemo={onOpenMemo} />
       {startedForceStopRanges.length > 0 && (
         <div className="panel space-y-2 p-4">
           <h3 className="font-display text-sm font-bold text-cream/80">☕ 本日の休憩</h3>

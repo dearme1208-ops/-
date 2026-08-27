@@ -170,6 +170,7 @@ export default function HomePage() {
             setPendingProjectEditId(projectId);
             setActive("projects");
           }}
+          onOpenMemo={() => setActive("memo")}
         />
       )}
       {active === "todo" && (
