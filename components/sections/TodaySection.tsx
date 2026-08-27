@@ -2012,6 +2012,7 @@ export default function TodaySection({
       await startTask(target, startAt);
       await db.dailyTasks.delete(provisionalId);
     });
+    setTaskViewTab("running");
   }
 
   // 仮計測タスクを、新しい作業（マスタ選択 or 自由入力）として確定する。
@@ -2032,6 +2033,7 @@ export default function TodaySection({
       masterTaskId,
       isProvisional: false,
     });
+    setTaskViewTab("running");
   }
 
   // 割り当てずに「未分類」の実績としてそのまま終了する
