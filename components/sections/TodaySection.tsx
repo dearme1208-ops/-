@@ -2177,6 +2177,7 @@ export default function TodaySection({
       for (const r of runningTasks) await pauseTask(r);
       await db.dailyTasks.add(task);
     });
+    setTaskViewTab("running");
   }
 
   // 予定インポートで登録した作業(scheduledTime)がその時刻になったら、計測中の作業を
