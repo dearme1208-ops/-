@@ -37,8 +37,9 @@ import {
 } from "@/lib/time";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
-import type { DailyTask, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
+import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
+import { DEFAULT_MEMO_NOTE_COLOR } from "@/lib/memo";
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
@@ -863,6 +864,46 @@ export default function TodoSection({
   }
 
   // タスクの内容を案件タブに反映する（1度反映すると同じタスクからは再反映しない）
+  // Todoタスクをメモの付箋に変換する(メモタブ側のconvertNoteToTodoの逆方向)。元のTodoは
+  // 残したまま、内容をコピーした付箋を追加するだけの非破壊的な操作にする。サブタスクが
+  // あればチェックリスト付箋(親タスク+各サブタスクの完了状態をそのまま反映)、無ければ
+  // タイトル・次の行動・メモをまとめたテキスト付箋にする
+  async function convertTodoToMemo(task: TodoTask, taskSubtasks: TodoTask[]) {
+    let board = await db.memoBoards.orderBy("order").first();
+    if (!board) {
+      board = { id: uid(), title: "メモ", order: 0, createdAt: Date.now() };
+      await db.memoBoards.add(board);
+    }
+    const existingCount = await db.memoNotes.where("boardId").equals(board.id).count();
+    const offset = (existingCount * 24) % 220;
+    const now = Date.now();
+    const hasSubtasks = taskSubtasks.length > 0;
+    const note: MemoNote = {
+      id: uid(),
+      boardId: board.id,
+      x: 40 + offset,
+      y: 40 + offset,
+      width: 220,
+      height: 160,
+      color: DEFAULT_MEMO_NOTE_COLOR,
+      text: hasSubtasks ? "" : [task.title, task.action, task.notes].filter(Boolean).join("\n\n"),
+      order: existingCount + 1,
+      createdAt: now,
+      updatedAt: now,
+      isChecklist: hasSubtasks,
+      checklistItems: hasSubtasks
+        ? [
+            { id: uid(), text: task.title, done: task.completed },
+            ...taskSubtasks.map((s) => ({ id: uid(), text: s.title, done: s.completed })),
+          ]
+        : undefined,
+    };
+    await db.memoNotes.add(note);
+    showUndoToast(`「${task.title}」をメモに変換しました`, async () => {
+      await db.memoNotes.delete(note.id);
+    });
+  }
+
   async function reflectToProject(task: TodoTask, category: string, workName: string) {
     if (task.projectId) return;
     const item: ProjectItem = {
@@ -1647,6 +1688,7 @@ export default function TodoSection({
           onCopy={() => copyTask(detailTask)}
           onReflectToProject={(category, workName) => reflectToProject(detailTask, category, workName)}
           onAddToToday={(category, workName) => addTaskToToday(detailTask, category, workName)}
+          onConvertToMemo={() => convertTodoToMemo(detailTask, subtasksByParent.get(detailTask.id) ?? [])}
           alreadyAddedToToday={addedTodoTaskIdsToday.has(detailTask.id)}
         />
       )}
@@ -2199,6 +2241,7 @@ function TaskDetailModal({
   onCopy,
   onReflectToProject,
   onAddToToday,
+  onConvertToMemo,
   alreadyAddedToToday,
 }: {
   task: TodoTask;
@@ -2215,6 +2258,7 @@ function TaskDetailModal({
   onCopy: () => void;
   onReflectToProject: (category: string, workName: string) => void;
   onAddToToday: (category: string, workName: string) => void;
+  onConvertToMemo: () => void;
   alreadyAddedToToday: boolean;
 }) {
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
@@ -2581,6 +2625,13 @@ function TaskDetailModal({
             disabled={alreadyAddedToToday}
           >
             📌 {alreadyAddedToToday ? "本日の作業に追加済み" : "本日の作業に追加"}
+          </button>
+          <button
+            className="btn-pill-outline text-xs"
+            onClick={onConvertToMemo}
+            title={subtasks.length > 0 ? "サブタスクを含めてチェックリスト付箋にします" : "タイトル・次の行動・メモをまとめた付箋にします"}
+          >
+            📝 メモに変換
           </button>
         </div>
 
