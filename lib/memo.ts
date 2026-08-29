@@ -28,6 +28,32 @@ export function clampMemoZoom(z: number): number {
   return Math.max(MEMO_MIN_ZOOM, Math.min(MEMO_MAX_ZOOM, z));
 }
 
+// 付箋の高さを内容量から見積もる。ヘッダー(掴み手・削除)と色/操作ボタンの行は
+// 内容に関わらず常に必要な分(目安70px)として、そこにテキストの行数/チェックリストの
+// 項目数に応じた分を積み上げる。幅は既存の付箋と揃えたいので固定のままにする
+const MEMO_NOTE_CHROME_HEIGHT = 70;
+const MEMO_NOTE_TEXT_LINE_HEIGHT = 20;
+const MEMO_NOTE_CHECKLIST_ITEM_HEIGHT = 22;
+const MEMO_NOTE_MAX_AUTO_HEIGHT = 480;
+// 幅220pxの付箋に日本語がだいたい収まる目安の全角文字数(折り返し行数の見積もり用)
+const MEMO_NOTE_CHARS_PER_LINE = 16;
+
+function clampNoteHeight(h: number): number {
+  return Math.max(MEMO_NOTE_MIN_HEIGHT, Math.min(MEMO_NOTE_MAX_AUTO_HEIGHT, Math.round(h)));
+}
+
+export function estimateTextNoteHeight(text: string): number {
+  const lines = text
+    .split("\n")
+    .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / MEMO_NOTE_CHARS_PER_LINE)), 0);
+  return clampNoteHeight(MEMO_NOTE_CHROME_HEIGHT + Math.max(1, lines) * MEMO_NOTE_TEXT_LINE_HEIGHT);
+}
+
+export function estimateChecklistNoteHeight(itemCount: number): number {
+  // 「+ 項目を追加」の行の分を少し余分に見込む
+  return clampNoteHeight(MEMO_NOTE_CHROME_HEIGHT + Math.max(1, itemCount) * MEMO_NOTE_CHECKLIST_ITEM_HEIGHT + 20);
+}
+
 // 消しゴムでなぞった位置から、この半径(ボード論理px)以内に点を持つ手書きストロークを消す対象とする
 export const MEMO_ERASER_RADIUS = 14;
 

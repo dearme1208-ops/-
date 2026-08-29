@@ -39,7 +39,7 @@ import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
-import { DEFAULT_MEMO_NOTE_COLOR } from "@/lib/memo";
+import { DEFAULT_MEMO_NOTE_COLOR, estimateChecklistNoteHeight, estimateTextNoteHeight } from "@/lib/memo";
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
@@ -878,15 +878,19 @@ export default function TodoSection({
     const offset = (existingCount * 24) % 220;
     const now = Date.now();
     const hasSubtasks = taskSubtasks.length > 0;
+    const text = hasSubtasks ? "" : [task.title, task.action, task.notes].filter(Boolean).join("\n\n");
+    // 内容量(テキストの行数・チェックリストの項目数)に応じて、あとから手を加えずに
+    // ちょうど収まる高さを見積もる
+    const height = hasSubtasks ? estimateChecklistNoteHeight(taskSubtasks.length + 1) : estimateTextNoteHeight(text);
     const note: MemoNote = {
       id: uid(),
       boardId: board.id,
       x: 40 + offset,
       y: 40 + offset,
       width: 220,
-      height: 160,
+      height,
       color: DEFAULT_MEMO_NOTE_COLOR,
-      text: hasSubtasks ? "" : [task.title, task.action, task.notes].filter(Boolean).join("\n\n"),
+      text,
       order: existingCount + 1,
       createdAt: now,
       updatedAt: now,

@@ -7,6 +7,7 @@ import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { downloadTextFile } from "@/lib/report";
 import { createSpeechRecognition } from "@/lib/voice";
+import { showUndoToast } from "@/lib/toast";
 import {
   clampMemoZoom,
   DEFAULT_MEMO_NOTE_COLOR,
@@ -548,8 +549,9 @@ export default function MemoSection() {
       await db.todoLists.add(list);
     }
     const count = await db.todoTasks.where("listId").equals(list.id).count();
+    const id = uid();
     await db.todoTasks.add({
-      id: uid(),
+      id,
       listId: list.id,
       title,
       important: false,
@@ -557,7 +559,9 @@ export default function MemoSection() {
       order: count,
       createdAt: Date.now(),
     });
-    setStatusMessage(`ToDo「${title}」を追加しました`);
+    showUndoToast(`ToDo「${title}」を追加しました`, async () => {
+      await db.todoTasks.delete(id);
+    });
   }
 
   // 付箋のテキストを、そのまま案件の新規項目として追加する。期日は未定のため
@@ -565,15 +569,18 @@ export default function MemoSection() {
   async function convertNoteToProject(note: MemoNote) {
     const title = noteTextForConvert(note);
     if (!title) return;
+    const id = uid();
     await db.projects.add({
-      id: uid(),
+      id,
       title,
       category: "メモ",
       workName: title,
       dueDate: todayStr(),
       createdAt: Date.now(),
     });
-    setStatusMessage(`案件「${title}」を追加しました`);
+    showUndoToast(`案件「${title}」を追加しました`, async () => {
+      await db.projects.delete(id);
+    });
   }
 
   function startVoiceListening() {
