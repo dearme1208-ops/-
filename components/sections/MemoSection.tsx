@@ -511,6 +511,7 @@ export default function MemoSection() {
     await db.memoNotes.update(id, { color });
   }
   async function duplicateNote(note: MemoNote) {
+    if (!confirm("この付箋を複製しますか?")) return;
     maxOrderRef.current += 1;
     const copy: MemoNote = {
       ...note,
@@ -526,6 +527,15 @@ export default function MemoSection() {
   }
   async function toggleChecklistMode(note: MemoNote) {
     const next = !note.isChecklist;
+    // 表示モードを切り替えると、切り替え前の内容(テキスト⇔チェックリスト)は
+    // データとしては残るものの画面上は見えなくなる。中身がある場合だけ確認する
+    const hasContentToHide = next ? !!note.text.trim() : (note.checklistItems ?? []).some((i) => i.text.trim());
+    if (hasContentToHide) {
+      const message = next
+        ? "チェックリスト表示に切り替えますか?(今のテキストは非表示になります)"
+        : "テキスト表示に切り替えますか?(チェックリストの項目は非表示になります)";
+      if (!confirm(message)) return;
+    }
     const items = next && (!note.checklistItems || note.checklistItems.length === 0) ? [{ id: uid(), text: "", done: false }] : note.checklistItems;
     await db.memoNotes.update(note.id, { isChecklist: next, checklistItems: items });
   }
@@ -548,6 +558,7 @@ export default function MemoSection() {
   async function convertNoteToTodo(note: MemoNote) {
     const title = noteTextForConvert(note);
     if (!title) return;
+    if (!confirm(`「${title}」をToDoとして追加しますか?`)) return;
     let list = await db.todoLists.orderBy("order").first();
     if (!list) {
       list = { id: uid(), title: "タスク", order: 0, createdAt: Date.now() };
@@ -574,6 +585,7 @@ export default function MemoSection() {
   async function convertNoteToProject(note: MemoNote) {
     const title = noteTextForConvert(note);
     if (!title) return;
+    if (!confirm(`「${title}」を案件として追加しますか?`)) return;
     const id = uid();
     await db.projects.add({
       id,
