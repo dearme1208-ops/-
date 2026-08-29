@@ -494,6 +494,11 @@ export default function MemoSection() {
   }
   async function deleteNote(id: string) {
     const note = notesById.get(id);
+    // 空の付箋(書きかけで放置されただけのもの)は確認なしで消せるようにする。
+    // 中身があるものは誤タップでの消失を防ぐため確認する(元に戻すトーストはあるが、
+    // 消してから気づくより消す前に止められる方が安心なため)
+    const hasContent = note && (note.isChecklist ? (note.checklistItems ?? []).some((i) => i.text.trim()) : note.text.trim());
+    if (hasContent && !confirm("この付箋を削除しますか?")) return;
     const relatedConnectors = (connectors ?? []).filter((c) => c.fromNoteId === id || c.toNoteId === id);
     await db.transaction("rw", db.memoNotes, db.memoConnectors, async () => {
       await db.memoNotes.delete(id);
@@ -1358,6 +1363,9 @@ function ChecklistBody({
     onUpdate(items.map((i) => (i.id === id ? { ...i, text } : i)));
   }
   function deleteItem(id: string) {
+    // 空の項目(まだ何も書いていない行)は確認なしで消せるようにする
+    const item = items.find((i) => i.id === id);
+    if (item?.text.trim() && !confirm(`「${item.text}」を削除しますか?`)) return;
     onUpdate(items.filter((i) => i.id !== id));
   }
   function addItem() {
