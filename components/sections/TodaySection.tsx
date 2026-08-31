@@ -2931,7 +2931,7 @@ export default function TodaySection({
         </div>
       )}
 
-      {provisionalTask && (
+      {provisionalTask && taskViewTab === "running" && (
         <ProvisionalTaskCard
           task={provisionalTask}
           now={now}
