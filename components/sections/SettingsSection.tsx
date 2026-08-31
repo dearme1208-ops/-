@@ -1915,6 +1915,8 @@ const HEADER_IMAGE_POSITIONS: { key: string; label: string }[] = [
 function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: string }) {
   const [image, setImage] = useSetting(`theme.headerImage.${mode}`, "");
   const [position, setPosition] = useSetting(`theme.headerImagePosition.${mode}`, "50% 50%");
+  const [zoomStr, setZoomStr] = useSetting(`theme.headerImageZoom.${mode}`, "100");
+  const zoom = Number(zoomStr) || 100;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1937,10 +1939,23 @@ function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: st
 
   return (
     <div className="space-y-2 rounded-lg bg-ink/40 px-3 py-2">
+      {image && (
+        // 実際のヘッダーの帯(h-24/h-28・幅いっぱい)と同じ比率のプレビュー。
+        // 端末幅によって帯の縦横比が変わるため、固定サイズのサムネイルだと
+        // 「設定画面では良く見えたのに実機だと切れ方が違う」というズレが起きる。
+        // ここを実物と同じクラスにすることで、この設定パネルの表示幅なりに
+        // 実際の見え方に近い形で確認できるようにする
+        <div className="w-full overflow-hidden rounded">
+          <img
+            src={image}
+            alt=""
+            style={{ objectPosition: position, transform: `scale(${zoom / 100})`, transformOrigin: position }}
+            className="h-24 w-full object-cover sm:h-28"
+          />
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
-        {image ? (
-          <img src={image} alt="" style={{ objectPosition: position }} className="h-10 w-20 shrink-0 rounded object-cover" />
-        ) : (
+        {!image && (
           <div className="flex h-10 w-20 shrink-0 items-center justify-center rounded border border-dashed border-cream/25 text-[10px] text-cream/40">
             オリジナル
           </div>
@@ -1960,6 +1975,7 @@ function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: st
               onClick={() => {
                 setImage("");
                 setPosition("50% 50%");
+                setZoomStr("100");
               }}
             >
               オリジナルに戻す
@@ -1969,18 +1985,38 @@ function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: st
         <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
       </div>
       {image && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-cream/10 pt-2">
-          <span className="text-[11px] text-cream/50">帯に収まらない分をどこで切り取るか:</span>
-          <div className="grid grid-cols-3 gap-1">
-            {HEADER_IMAGE_POSITIONS.map((p) => (
-              <button
-                key={p.key}
-                className={position === p.key ? "btn-pill px-2 py-1 text-[10px]" : "btn-pill-outline px-2 py-1 text-[10px]"}
-                onClick={() => setPosition(p.key)}
-              >
-                {p.label}
+        <div className="space-y-2 border-t border-cream/10 pt-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] text-cream/50">帯に収まらない分をどこで切り取るか:</span>
+            <div className="grid grid-cols-3 gap-1">
+              {HEADER_IMAGE_POSITIONS.map((p) => (
+                <button
+                  key={p.key}
+                  className={position === p.key ? "btn-pill px-2 py-1 text-[10px]" : "btn-pill-outline px-2 py-1 text-[10px]"}
+                  onClick={() => setPosition(p.key)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-[11px] text-cream/50">拡大率: {zoom}%</span>
+            <input
+              type="range"
+              min={100}
+              max={300}
+              step={5}
+              value={zoom}
+              onChange={(e) => setZoomStr(e.target.value)}
+              className="h-1 flex-1 accent-highlight"
+              aria-label={`${themeLabel}のヘッダー画像の拡大率`}
+            />
+            {zoom !== 100 && (
+              <button className="btn-pill-outline shrink-0 px-2 py-1 text-[10px]" onClick={() => setZoomStr("100")}>
+                リセット
               </button>
-            ))}
+            )}
           </div>
         </div>
       )}

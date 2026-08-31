@@ -712,16 +712,20 @@ export default function HeaderArt() {
   const customizable = persona5Mode || lobotomyMode || va11hallaMode || natsuyasumiMode || powerproMode;
   const [customImage] = useSetting(`theme.headerImage.${mode}`, "");
   const [customPosition] = useSetting(`theme.headerImagePosition.${mode}`, "50% 50%");
+  const [customZoom] = useSetting(`theme.headerImageZoom.${mode}`, "100");
   const natsuyasumiWeather = useNatsuyasumiWeather(natsuyasumiMode && !(customizable && customImage));
   const natsuyasumiTimeBand = useNatsuyasumiTimeBand(natsuyasumiMode && !(customizable && customImage));
   if (customizable && customImage) {
+    const zoom = Number(customZoom) || 100;
     return (
-      <img
-        src={customImage}
-        alt=""
-        style={{ objectPosition: customPosition }}
-        className="h-24 w-full object-cover sm:h-28"
-      />
+      <div className="h-24 w-full overflow-hidden sm:h-28">
+        <img
+          src={customImage}
+          alt=""
+          style={{ objectPosition: customPosition, transform: `scale(${zoom / 100})`, transformOrigin: customPosition }}
+          className="h-24 w-full object-cover sm:h-28"
+        />
+      </div>
     );
   }
   if (claudeMode) return <ClaudeArt />;
