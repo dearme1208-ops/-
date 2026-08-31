@@ -162,6 +162,10 @@ export default function TodaySection({
   const showAutoAllocate = showAutoAllocateStr === "true";
   const [showSuggestedTaskStr] = useSetting("today.showSuggestedTask", "true");
   const showSuggestedTask = showSuggestedTaskStr === "true";
+  const [showNextMovePickStr] = useSetting("today.showNextMovePick", "true");
+  const showNextMovePick = showNextMovePickStr === "true";
+  const [showDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
+  const showDailyChallenge = showDailyChallengeStr === "true";
   const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
@@ -2414,7 +2418,7 @@ export default function TodaySection({
           standardWorkEnd={standardWorkEnd}
         />
       )}
-      <DailyChallengePanel />
+      {showDailyChallenge && <DailyChallengePanel />}
       <TodayMemoPanel onOpenMemo={onOpenMemo} />
       {startedForceStopRanges.length > 0 && (
         <div className="panel space-y-2 p-4">
@@ -2643,7 +2647,7 @@ export default function TodaySection({
         </div>
       )}
 
-      {showSuggestedTask && nextTaskPick && (
+      {showNextMovePick && nextTaskPick && (
         <div className="panel flex flex-wrap items-center justify-between gap-2 border border-alert/40 bg-alert/5 p-4">
           <div>
             <h3 className="font-display text-sm font-bold text-alert">🎯 今この一手</h3>

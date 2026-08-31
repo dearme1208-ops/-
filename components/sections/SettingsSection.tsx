@@ -98,6 +98,10 @@ export default function SettingsSection() {
   const showAutoAllocate = showAutoAllocateStr === "true";
   const [showSuggestedTaskStr, setShowSuggestedTaskStr] = useSetting("today.showSuggestedTask", "true");
   const showSuggestedTask = showSuggestedTaskStr === "true";
+  const [showNextMovePickStr, setShowNextMovePickStr] = useSetting("today.showNextMovePick", "true");
+  const showNextMovePick = showNextMovePickStr === "true";
+  const [showDailyChallengeStr, setShowDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
+  const showDailyChallenge = showDailyChallengeStr === "true";
   const [patternSuggestNotifyEnabledStr, setPatternSuggestNotifyEnabledStr] = useSetting(
     "notify.patternSuggestEnabled",
     "false"
@@ -1014,6 +1018,18 @@ export default function SettingsSection() {
             onClick={() => setShowSuggestedTaskStr(showSuggestedTask ? "false" : "true")}
           >
             そろそろこの作業では?: {showSuggestedTask ? "ON" : "OFF"}
+          </button>
+          <button
+            className={showNextMovePick ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowNextMovePickStr(showNextMovePick ? "false" : "true")}
+          >
+            今この一手: {showNextMovePick ? "ON" : "OFF"}
+          </button>
+          <button
+            className={showDailyChallenge ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowDailyChallengeStr(showDailyChallenge ? "false" : "true")}
+          >
+            デイリーチャレンジ: {showDailyChallenge ? "ON" : "OFF"}
           </button>
         </div>
         <p className="text-xs text-cream/50">

@@ -10,6 +10,7 @@ import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage, ADVENTURER_STAGES } from "@/lib/growth";
 import { fireConfetti } from "@/lib/confetti";
 import { useVisualMode } from "@/lib/theme";
+import { useSetting } from "@/lib/settings";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
 import type { DailyTask, MasterTask } from "@/lib/types";
 
@@ -28,6 +29,8 @@ type NodeVariant = "guild" | "current" | "next" | "later" | "goal";
 export default function AdventurerQuestSection() {
   const { themedMode } = useVisualMode();
   const mode = themedMode ?? "adventurer";
+  const [showDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
+  const showDailyChallenge = showDailyChallengeStr === "true";
   const today = todayStr();
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
@@ -294,7 +297,7 @@ export default function AdventurerQuestSection() {
         />
       ) : (
         <>
-          <DailyChallengePanel />
+          {showDailyChallenge && <DailyChallengePanel />}
 
           {/* --- ダンジョンの道すじ: ギルド受付→(戦闘中)→未着手クエスト→帰還、と
                左右に蛇行しながら金の点線でつながる1本道 --- */}
