@@ -729,10 +729,37 @@ export default function TodoSection({
 
   async function toggleComplete(task: TodoTask) {
     if (!task.completed) {
+      const openSubtasks = (subtasksByParent.get(task.id) ?? []).filter((s) => !s.completed);
+      if (openSubtasks.length > 0) {
+        setPendingCompleteTask(task);
+        return;
+      }
       await completeTodoTask(task, today);
       return;
     }
     await db.todoTasks.update(task.id, { completed: false, completedAt: undefined });
+  }
+
+  // 未完了のサブタスクが残っている状態でタスクを完了しようとした際、サブタスクも
+  // まとめて完了にするか・タスクだけ完了にするか選んでもらうための確認
+  const [pendingCompleteTask, setPendingCompleteTask] = useState<TodoTask | null>(null);
+
+  async function resolveCompleteWithSubtasks() {
+    if (!pendingCompleteTask) return;
+    const task = pendingCompleteTask;
+    const openSubtasks = (subtasksByParent.get(task.id) ?? []).filter((s) => !s.completed);
+    setPendingCompleteTask(null);
+    await db.transaction("rw", db.todoTasks, async () => {
+      for (const s of openSubtasks) await db.todoTasks.update(s.id, { completed: true, completedAt: Date.now() });
+    });
+    await completeTodoTask(task, today);
+  }
+
+  async function resolveCompleteTaskOnly() {
+    if (!pendingCompleteTask) return;
+    const task = pendingCompleteTask;
+    setPendingCompleteTask(null);
+    await completeTodoTask(task, today);
   }
 
   async function toggleImportant(task: TodoTask) {
@@ -1695,6 +1722,27 @@ export default function TodoSection({
           onConvertToMemo={() => convertTodoToMemo(detailTask, subtasksByParent.get(detailTask.id) ?? [])}
           alreadyAddedToToday={addedTodoTaskIdsToday.has(detailTask.id)}
         />
+      )}
+
+      {pendingCompleteTask && (
+        <Modal title="サブタスクが未完了です" onClose={() => setPendingCompleteTask(null)}>
+          <p className="mb-4 text-sm text-cream/80">
+            「{pendingCompleteTask.title}」には未完了のサブタスクが
+            {(subtasksByParent.get(pendingCompleteTask.id) ?? []).filter((s) => !s.completed).length}件残っています。
+            どうしますか？
+          </p>
+          <div className="flex flex-col gap-2">
+            <button className="btn-pill text-sm" onClick={resolveCompleteWithSubtasks}>
+              サブタスクもまとめて完了にする
+            </button>
+            <button className="btn-pill-outline text-sm" onClick={resolveCompleteTaskOnly}>
+              タスクだけ完了にする（サブタスクはそのまま）
+            </button>
+            <button className="text-xs text-cream/50" onClick={() => setPendingCompleteTask(null)}>
+              キャンセル
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
