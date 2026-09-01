@@ -53,7 +53,8 @@ export type VisualMode =
   | "claude"
   | "zen"
   | "terminal"
-  | "adventurer";
+  | "adventurer"
+  | "hub";
 export type ThemedMode =
   | "lobotomy"
   | "va11halla"
@@ -62,7 +63,8 @@ export type ThemedMode =
   | "claude"
   | "zen"
   | "terminal"
-  | "adventurer";
+  | "adventurer"
+  | "hub";
 
 const THEMED_MODES: ThemedMode[] = [
   "lobotomy",
@@ -73,6 +75,7 @@ const THEMED_MODES: ThemedMode[] = [
   "zen",
   "terminal",
   "adventurer",
+  "hub",
 ];
 
 export function useVisualMode(): {
@@ -85,6 +88,7 @@ export function useVisualMode(): {
   zenMode: boolean;
   terminalMode: boolean;
   adventurerMode: boolean;
+  hubMode: boolean;
   themedMode: ThemedMode | null;
   // 色・形・アニメーションは常にthemedMode通りに適用される一方、
   // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
@@ -108,6 +112,7 @@ export function useVisualMode(): {
     zenMode: mode === "zen",
     terminalMode: mode === "terminal",
     adventurerMode: mode === "adventurer",
+    hubMode: mode === "hub",
     themedMode,
     wordingEnabled,
     wordingMode: wordingEnabled ? mode : "off",
@@ -130,9 +135,14 @@ export function useVisualMode(): {
 // RPGのキャラクターステータス画面のように1画面へ集約する方が自然と判断。
 // グラフ/ヒートマップ/年表/残業分析の4タブを非表示にし、集計・ランキングタブの中身を
 // AdventurerStatusSectionに丸ごと差し替えることで、実質的にその1画面へ統合する
+// ハブモード: メモ・ToDo(マイデイ)・本日の作業を1つの自由配置キャンバスにまとめた
+// 統合ボード(UnifiedBoardSection)を「本日の作業」タブの中身そのものにする。
+// 全部の情報がこの1画面に集まる考え方のため、Claudeモードと同じくタブ構成も絞り込む。
+// 個別編集(手書き・連結・チェックリスト等)が必要な時のためにメモタブだけは残す
 export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
   claude: ["today", "report", "settings"],
   zen: ["today", "settings"],
+  hub: ["today", "memo", "report", "settings"],
   adventurer: [
     "today",
     "todo",
@@ -226,6 +236,15 @@ export const RISK_TIERS_ADVENTURER = [
   { threshold: 1, name: "平和", level: 0 },
 ] as const;
 
+// ハブモード: 危機感を煽らず、盤面全体を見渡した際の状況把握そのものを言葉にした階級
+export const RISK_TIERS_HUB = [
+  { threshold: 4, name: "要再編成", level: 4 },
+  { threshold: 2.5, name: "押され気味", level: 3 },
+  { threshold: 1.8, name: "やや遅れ", level: 2 },
+  { threshold: 1.3, name: "注意", level: 1 },
+  { threshold: 1, name: "順調", level: 0 },
+] as const;
+
 export type RiskTier =
   | (typeof RISK_TIERS_LOBOTOMY)[number]
   | (typeof RISK_TIERS_VA11HALLA)[number]
@@ -234,7 +253,8 @@ export type RiskTier =
   | (typeof RISK_TIERS_CLAUDE)[number]
   | (typeof RISK_TIERS_ZEN)[number]
   | (typeof RISK_TIERS_TERMINAL)[number]
-  | (typeof RISK_TIERS_ADVENTURER)[number];
+  | (typeof RISK_TIERS_ADVENTURER)[number]
+  | (typeof RISK_TIERS_HUB)[number];
 
 const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name: string; level: number }[]> = {
   lobotomy: RISK_TIERS_LOBOTOMY,
@@ -245,6 +265,7 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   zen: RISK_TIERS_ZEN,
   terminal: RISK_TIERS_TERMINAL,
   adventurer: RISK_TIERS_ADVENTURER,
+  hub: RISK_TIERS_HUB,
 };
 
 export function getRiskTier(ratio: number, mode: ThemedMode): RiskTier {
@@ -305,6 +326,7 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   zen: "card-running-zen",
   terminal: "card-running-terminal",
   adventurer: "card-running-adv",
+  hub: "card-running-claude",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -319,6 +341,7 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   zen: "card-overrun-zen",
   terminal: "card-overrun-terminal",
   adventurer: "card-overrun-adv",
+  hub: "card-overrun-claude",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -333,6 +356,7 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   zen: "hazard-bar-zen",
   terminal: "hazard-bar-terminal",
   adventurer: "hazard-bar-adv",
+  hub: "hazard-bar-claude",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -347,6 +371,7 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   zen: "gantt-bar-overrun-zen",
   terminal: "gantt-bar-overrun-terminal",
   adventurer: "gantt-bar-overrun-adv",
+  hub: "gantt-bar-overrun-claude",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
@@ -412,6 +437,7 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   zen: "今",
   terminal: "CTRL_ROOM",
   adventurer: "ぼうけんの書",
+  hub: "統合ボード",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -606,6 +632,29 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     report: "日々・週間・月間の冒険記",
     records: "記録の書き換え",
     settings: "冒険の設定",
+  },
+  // ハブモード: 「本日の作業」タブの中身そのものが統合ボード(メモ・ToDo・本日の作業を
+  // 1画面にまとめた自由配置キャンバス)になるため、他のタブは絞り込んで表示しない
+  // (実際に出るのはtoday/memo/report/settingsのみ。それ以外は静かな言い回しで埋めておく)
+  hub: {
+    today: "統合ボード",
+    todo: "ToDo",
+    projects: "案件",
+    master: "作業マスタ",
+    template: "曜日別テンプレート",
+    gantt: "ガントチャート",
+    aggregation: "集計・ランキング",
+    charts: "グラフ",
+    heatmap: "ヒートマップ",
+    attention: "要注意リスト",
+    overtime: "残業分析",
+    yearlyChart: "年表",
+    mandala: "マンダラチャート",
+    memo: "メモ",
+    board: "統合ボード",
+    report: "レポート",
+    records: "実績編集",
+    settings: "設定",
   },
 };
 

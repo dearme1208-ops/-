@@ -390,6 +390,16 @@ html[data-high-contrast="true"] :focus-visible {
     --panel-rgb: 252 246 226;
   }
 
+  /* ハブモード: 「本日の作業」タブが統合ボードそのものになるモード。派手な演出は避け、
+     盤面(付箋・カード)の視認性を邪魔しない落ち着いたスレートブルーのダークパレットにする */
+  html[data-visual-mode="hub"] {
+    color-scheme: dark;
+    --accent-rgb: 90 140 205;
+    --ink-rgb: 14 17 22;
+    --cream-rgb: 222 227 235;
+    --panel-rgb: 21 25 32;
+  }
+
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
      vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
      日本語には効かず数字・記号にしか効かない。そこで時刻・パーセンテージ等の

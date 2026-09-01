@@ -1228,6 +1228,12 @@ export default function SettingsSection() {
             🗡️ 冒険者モード
           </button>
           <button
+            className={visualMode === "hub" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("hub")}
+          >
+            🗂️ ハブモード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1305,6 +1311,11 @@ export default function SettingsSection() {
         {visualMode === "adventurer" && (
           <p className="text-xs text-cream/50">
             画面全体がRPGの羊皮紙の書物のような、金の装飾が効いた明るいライトテーマに丸ごと変わります。作業は「クエスト」、作業マスタは「モンスター図鑑」、想定超過は「ぜんめつの危機」など、アプリ名(「ぼうけんの書」)からタブの呼び名まで冒険の世界観に総入れ替えされます。危機感を煽るというより、クエストを攻略していくワクワク感を出す方向の言い回しです。
+          </p>
+        )}
+        {visualMode === "hub" && (
+          <p className="text-xs text-cream/50">
+            落ち着いたスレートブルーの配色に変わり、「本日の作業」タブの中身が、メモ・ToDo(マイデイ)・本日の作業を1つの自由配置キャンバスにまとめた「統合ボード」そのものに差し替わります。タブを行き来せず、この1画面を見ながら付箋を動かしたり作業を開始したりできるモードです。個別の手書き・連結・チェックリスト編集をしたい時のためにメモタブだけは残しています。
           </p>
         )}
         {visualMode === "off" && (

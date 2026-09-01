@@ -169,7 +169,13 @@ export default function HomePage() {
       {active === "today" && mode === "zen" && <ZenSection />}
       {active === "today" && mode === "terminal" && <TerminalDashboardSection />}
       {active === "today" && mode === "adventurer" && <AdventurerQuestSection />}
-      {active === "today" && mode !== "claude" && mode !== "zen" && mode !== "terminal" && mode !== "adventurer" && (
+      {active === "today" && mode === "hub" && <UnifiedBoardSection />}
+      {active === "today" &&
+        mode !== "claude" &&
+        mode !== "zen" &&
+        mode !== "terminal" &&
+        mode !== "adventurer" &&
+        mode !== "hub" && (
         <TodaySection
           onOpenTodoDetail={(taskId) => {
             setPendingTodoDetailId(taskId);

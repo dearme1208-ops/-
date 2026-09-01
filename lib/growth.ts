@@ -94,6 +94,16 @@ export const ADVENTURER_STAGES: GrowthStage[] = [
   { icon: "✨", label: "伝説" },
 ];
 
+// ハブモード: 盤面がだんだん整い、見渡しやすくなっていく過程になぞらえた段階
+const HUB_STAGES: GrowthStage[] = [
+  { icon: "📍", label: "配置中" },
+  { icon: "🗂️", label: "整理中" },
+  { icon: "🧭", label: "見通し良好" },
+  { icon: "📊", label: "把握できている" },
+  { icon: "🎯", label: "掌握" },
+  { icon: "✨", label: "完全掌握" },
+];
+
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
   lobotomy: LOBOTOMY_STAGES,
@@ -103,6 +113,7 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   zen: ZEN_STAGES,
   terminal: TERMINAL_STAGES,
   adventurer: ADVENTURER_STAGES,
+  hub: HUB_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り
