@@ -103,16 +103,6 @@ export const ADVENTURER_STAGES: GrowthStage[] = [
   { icon: "✨", label: "伝説" },
 ];
 
-// 探偵風: 手がかりのない状態から真相解明へと迫っていく捜査の進展になぞらえた段階
-const NOIR_STAGES: GrowthStage[] = [
-  { icon: "🔦", label: "新米刑事" },
-  { icon: "📓", label: "聞き込み中" },
-  { icon: "🔎", label: "手がかり発見" },
-  { icon: "🕵️", label: "核心に迫る" },
-  { icon: "💡", label: "真相解明" },
-  { icon: "🎩", label: "伝説の探偵" },
-];
-
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
   powerpro: POWERPRO_STAGES,
@@ -123,7 +113,6 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   zen: ZEN_STAGES,
   terminal: TERMINAL_STAGES,
   adventurer: ADVENTURER_STAGES,
-  noir: NOIR_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り

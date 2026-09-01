@@ -13,7 +13,6 @@ const THEMED_MODES = [
   "zen",
   "terminal",
   "adventurer",
-  "noir",
 ];
 
 // 演出テーマ(オフ / ロボトミーコーポレーション風 / VA-11 HALL-A風 / ペルソナ5風 / ぼくのなつやすみ風 / パワプロ風 / Claudeモード / 禅モード / ターミナルモード)を

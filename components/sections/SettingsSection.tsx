@@ -1234,12 +1234,6 @@ export default function SettingsSection() {
             🗡️ 冒険者モード
           </button>
           <button
-            className={visualMode === "noir" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setVisualMode("noir")}
-          >
-            🕵️ 探偵モード
-          </button>
-          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1325,11 +1319,6 @@ export default function SettingsSection() {
         {visualMode === "adventurer" && (
           <p className="text-xs text-cream/50">
             画面全体がRPGの羊皮紙の書物のような、金の装飾が効いた明るいライトテーマに丸ごと変わります。作業は「クエスト」、作業マスタは「モンスター図鑑」、想定超過は「ぜんめつの危機」など、アプリ名(「ぼうけんの書」)からタブの呼び名まで冒険の世界観に総入れ替えされます。危機感を煽るというより、クエストを攻略していくワクワク感を出す方向の言い回しです。
-          </p>
-        )}
-        {visualMode === "noir" && (
-          <p className="text-xs text-cream/50">
-            画面全体が雨の降る夜の街を思わせる、藍がかった暗闇にスチールブルーの灯りだけが効いたダークテーマに丸ごと変わります。他の演出テーマの赤系アクセントとは意図的に色相をずらし、ハードボイルドな探偵モノの雰囲気にしています。ToDoは「捜査メモ」、作業マスタは「被疑者リスト」、想定超過は「指名手配」など、アプリ名(「捜査ファイル」)からタブの呼び名まで捜査の世界観に総入れ替えされます。
           </p>
         )}
         {visualMode === "off" && (

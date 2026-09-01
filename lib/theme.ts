@@ -54,8 +54,7 @@ export type VisualMode =
   | "claude"
   | "zen"
   | "terminal"
-  | "adventurer"
-  | "noir";
+  | "adventurer";
 export type ThemedMode =
   | "lobotomy"
   | "va11halla"
@@ -65,8 +64,7 @@ export type ThemedMode =
   | "claude"
   | "zen"
   | "terminal"
-  | "adventurer"
-  | "noir";
+  | "adventurer";
 
 const THEMED_MODES: ThemedMode[] = [
   "lobotomy",
@@ -78,7 +76,6 @@ const THEMED_MODES: ThemedMode[] = [
   "zen",
   "terminal",
   "adventurer",
-  "noir",
 ];
 
 export function useVisualMode(): {
@@ -92,7 +89,6 @@ export function useVisualMode(): {
   zenMode: boolean;
   terminalMode: boolean;
   adventurerMode: boolean;
-  noirMode: boolean;
   themedMode: ThemedMode | null;
   // 色・形・アニメーションは常にthemedMode通りに適用される一方、
   // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
@@ -117,7 +113,6 @@ export function useVisualMode(): {
     zenMode: mode === "zen",
     terminalMode: mode === "terminal",
     adventurerMode: mode === "adventurer",
-    noirMode: mode === "noir",
     themedMode,
     wordingEnabled,
     wordingMode: wordingEnabled ? mode : "off",
@@ -244,15 +239,6 @@ export const RISK_TIERS_ADVENTURER = [
   { threshold: 1, name: "平和", level: 0 },
 ] as const;
 
-// 探偵風: 事件の緊迫度が高まっていく捜査状況になぞらえた階級
-export const RISK_TIERS_NOIR = [
-  { threshold: 4, name: "指名手配", level: 4 },
-  { threshold: 2.5, name: "重要参考人", level: 3 },
-  { threshold: 1.8, name: "尾行を撒かれる", level: 2 },
-  { threshold: 1.3, name: "不審な影", level: 1 },
-  { threshold: 1, name: "平常任務", level: 0 },
-] as const;
-
 export type RiskTier =
   | (typeof RISK_TIERS_LOBOTOMY)[number]
   | (typeof RISK_TIERS_VA11HALLA)[number]
@@ -262,8 +248,7 @@ export type RiskTier =
   | (typeof RISK_TIERS_CLAUDE)[number]
   | (typeof RISK_TIERS_ZEN)[number]
   | (typeof RISK_TIERS_TERMINAL)[number]
-  | (typeof RISK_TIERS_ADVENTURER)[number]
-  | (typeof RISK_TIERS_NOIR)[number];
+  | (typeof RISK_TIERS_ADVENTURER)[number];
 
 const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name: string; level: number }[]> = {
   lobotomy: RISK_TIERS_LOBOTOMY,
@@ -275,7 +260,6 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   zen: RISK_TIERS_ZEN,
   terminal: RISK_TIERS_TERMINAL,
   adventurer: RISK_TIERS_ADVENTURER,
-  noir: RISK_TIERS_NOIR,
 };
 
 export function getRiskTier(ratio: number, mode: ThemedMode): RiskTier {
@@ -304,11 +288,9 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
                   ? "risk-badge-terminal border-alert bg-black/80 text-alert font-bold uppercase tracking-wider"
                   : mode === "adventurer"
                     ? "border-2 border-alert bg-alert/15 text-alert font-bold"
-                    : mode === "noir"
-                      ? "border-2 border-alert bg-black/60 text-alert font-bold uppercase tracking-wide"
-                      : "border-alert/70 bg-alert/20 text-alert";
+                    : "border-alert/70 bg-alert/20 text-alert";
   const roundness =
-    mode === "powerpro" || mode === "noir"
+    mode === "powerpro"
       ? "px-2.5"
       : mode === "claude" || mode === "zen" || mode === "adventurer"
         ? "rounded-full px-2.5"
@@ -329,7 +311,6 @@ export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode | null): string 
   if (mode === "zen") return tier.name;
   if (mode === "terminal") return `[${tier.name}]`;
   if (mode === "adventurer") return tier.name;
-  if (mode === "noir") return tier.name;
   return `危険度 ${tier.name}`;
 }
 
@@ -345,7 +326,6 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   zen: "card-running-zen",
   terminal: "card-running-terminal",
   adventurer: "card-running-adv",
-  noir: "card-running-noir",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -361,7 +341,6 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   zen: "card-overrun-zen",
   terminal: "card-overrun-terminal",
   adventurer: "card-overrun-adv",
-  noir: "card-overrun-noir",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -377,7 +356,6 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   zen: "hazard-bar-zen",
   terminal: "hazard-bar-terminal",
   adventurer: "hazard-bar-adv",
-  noir: "hazard-bar-noir",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -393,7 +371,6 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   zen: "gantt-bar-overrun-zen",
   terminal: "gantt-bar-overrun-terminal",
   adventurer: "gantt-bar-overrun-adv",
-  noir: "gantt-bar-overrun-noir",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
@@ -417,7 +394,6 @@ export function runningLabel(mode: ThemedMode | null): string {
   if (mode === "zen") return "今、ここ";
   if (mode === "terminal") return "● LIVE";
   if (mode === "adventurer") return "ぼうけん中";
-  if (mode === "noir") return "内偵中";
   return "計測中";
 }
 
@@ -431,7 +407,6 @@ export function overrunLabel(mode: ThemedMode | null): string {
   if (mode === "zen") return "まだ、そこに在ります";
   if (mode === "terminal") return "▲ THRESHOLD BREACH";
   if (mode === "adventurer") return "⚔️ 激闘中・想定を超過";
-  if (mode === "noir") return "🔍 深追い中・想定超過";
   return "⚠ 計測中・予測超過";
 }
 
@@ -447,7 +422,6 @@ export function completionLabel(mode: ThemedMode | null): string {
   if (mode === "zen") return "終えた";
   if (mode === "terminal") return "TASK COMPLETE";
   if (mode === "adventurer") return "討伐した！";
-  if (mode === "noir") return "事件解決";
   return "完了しました";
 }
 
@@ -466,7 +440,6 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   zen: "今",
   terminal: "CTRL_ROOM",
   adventurer: "ぼうけんの書",
-  noir: "捜査ファイル",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -671,26 +644,6 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     report: "日々・週間・月間の冒険記",
     records: "記録の書き換え",
     settings: "冒険の設定",
-  },
-  // 探偵風: 雨の降る夜の街を舞台にした、事件を追うハードボイルド探偵になりきったタブ名
-  noir: {
-    today: "本日の捜査",
-    todo: "捜査メモ",
-    projects: "担当事件",
-    master: "被疑者リスト",
-    template: "曜日別捜査ルーティン",
-    gantt: "尾行記録",
-    aggregation: "解決率ランキング",
-    charts: "分析チャート",
-    heatmap: "発生現場マップ",
-    attention: "重要参考人",
-    overtime: "深夜の張り込みチェック",
-    yearlyChart: "捜査年表",
-    mandala: "推理ボード",
-    memo: "手帳",
-    report: "日次・週次・月次 捜査報告書",
-    records: "調書の訂正",
-    settings: "捜査本部設定",
   },
 };
 
