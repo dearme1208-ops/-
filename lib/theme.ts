@@ -138,11 +138,12 @@ export function useVisualMode(): {
 // ハブモード: メモ・ToDo(マイデイ)・本日の作業を1つの自由配置キャンバスにまとめた
 // 統合ボード(UnifiedBoardSection)を「本日の作業」タブの中身そのものにする。
 // 全部の情報がこの1画面に集まる考え方のため、Claudeモードと同じくタブ構成も絞り込む。
-// 個別編集(手書き・連結・チェックリスト等)が必要な時のためにメモタブだけは残す
+// 統合ボードにはマイデイのToDoしか出ないため、全件一覧やサブタスク編集等をしたい時の
+// ためにToDoタブ、個別編集(手書き・連結・チェックリスト等)のためにメモタブは残す
 export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
   claude: ["today", "report", "settings"],
   zen: ["today", "settings"],
-  hub: ["today", "memo", "report", "settings"],
+  hub: ["today", "todo", "memo", "report", "settings"],
   adventurer: [
     "today",
     "todo",
