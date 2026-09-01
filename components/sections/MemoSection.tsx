@@ -13,6 +13,7 @@ import {
   DEFAULT_MEMO_NOTE_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
   DEFAULT_MEMO_PEN_WIDTH,
+  estimateTextNoteHeight,
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
   MEMO_ERASER_RADIUS,
@@ -23,6 +24,7 @@ import {
   parseMemoBoardImport,
   serializeMemoBoard,
 } from "@/lib/memo";
+import { formatMailNoteText, parseMsgFile } from "@/lib/mailImport";
 import type { MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
 
@@ -312,6 +314,7 @@ export default function MemoSection() {
   // 走らないようにする(タッチペンでの手書きが重くならないようにするための要)
   const drawingRef = useRef<{ x: number; y: number }[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mailFileInputRef = useRef<HTMLInputElement>(null);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceUnsupported, setVoiceUnsupported] = useState(false);
   const voiceRecognitionRef = useRef<ReturnType<typeof createSpeechRecognition>>(null);
@@ -478,6 +481,41 @@ export default function MemoSection() {
       updatedAt: Date.now(),
     };
     await db.memoNotes.add(note);
+  }
+
+  // Outlookの.msgファイル(メールをファイルとして保存した際の既定形式)を1件、
+  // 件名を先頭行にした付箋として取り込む。AIによる要約はできないため、
+  // 「件名だけでどのメールか分かる」形にすることで概要把握の代わりにする
+  const [mailImportBusy, setMailImportBusy] = useState(false);
+  const [mailImportError, setMailImportError] = useState("");
+  async function addMailNote(file: File) {
+    if (!selectedBoardId) return;
+    setMailImportBusy(true);
+    setMailImportError("");
+    try {
+      const mail = await parseMsgFile(file);
+      const text = formatMailNoteText(mail);
+      maxOrderRef.current += 1;
+      const offset = (maxOrderRef.current * 24) % 220;
+      const note: MemoNote = {
+        id: uid(),
+        boardId: selectedBoardId,
+        x: 40 + offset,
+        y: 40 + offset,
+        width: 220,
+        height: estimateTextNoteHeight(text),
+        color: "blue",
+        text,
+        order: maxOrderRef.current,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      await db.memoNotes.add(note);
+    } catch {
+      setMailImportError("メールファイルの読み込みに失敗しました。Outlookの.msg形式のファイルか確認してください。");
+    } finally {
+      setMailImportBusy(false);
+    }
   }
   async function bringToFront(id: string) {
     maxOrderRef.current += 1;
@@ -808,6 +846,13 @@ export default function MemoSection() {
         <button className="btn-pill-outline text-sm" onClick={() => addNote()}>
           + 付箋を追加
         </button>
+        <button
+          className="btn-pill-outline text-sm"
+          onClick={() => mailFileInputRef.current?.click()}
+          disabled={mailImportBusy}
+        >
+          📧 {mailImportBusy ? "読み込み中…" : "メールを追加 (.msg)"}
+        </button>
         <button className={penMode ? "btn-pill text-sm" : "btn-pill-outline text-sm"} onClick={togglePenMode}>
           ✏️ 手書き: {penMode ? "ON" : "OFF"}
         </button>
@@ -875,7 +920,19 @@ export default function MemoSection() {
             e.target.value = "";
           }}
         />
+        <input
+          ref={mailFileInputRef}
+          type="file"
+          accept=".msg"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) addMailNote(file);
+            e.target.value = "";
+          }}
+        />
       </div>
+      {mailImportError && <p className="px-1 text-xs text-alert">{mailImportError}</p>}
 
       {connectMode && (
         <p className="text-xs text-cream/50">
