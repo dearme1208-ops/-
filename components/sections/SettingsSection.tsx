@@ -1204,12 +1204,6 @@ export default function SettingsSection() {
             🌻 ぼくのなつやすみ風
           </button>
           <button
-            className={visualMode === "powerpro" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setVisualMode("powerpro")}
-          >
-            ⚾ パワプロ風
-          </button>
-          <button
             className={visualMode === "claude" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("claude")}
           >
@@ -1291,14 +1285,6 @@ export default function SettingsSection() {
             <HeaderImageSetting mode="natsuyasumi" themeLabel="ぼくのなつやすみ風" />
             <NatsuyasumiWeatherSetting />
             <NatsuyasumiTimeSetting />
-          </>
-        )}
-        {visualMode === "powerpro" && (
-          <>
-            <p className="text-xs text-cream/50">
-              画面全体が白地に緑・紺・金を効かせたスコアボード風ライトテーマに丸ごと反転します。パネルには球場グリーンの太枠、査定ランクのようなメダル型バッジ（G〜S）、球場の芝目模様が入ります。アプリ名は「球団ノート」、ToDoは「伝令メモ」、ガントチャートは「スタメン表」など、タブの呼び名も野球用語に総入れ替えされます。
-            </p>
-            <HeaderImageSetting mode="powerpro" themeLabel="パワプロ風" />
           </>
         )}
         {visualMode === "claude" && (

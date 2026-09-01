@@ -75,9 +75,7 @@ export default function TodoReminderModal({ onViewDetail }: { onViewDetail: (tas
         ? "予告状を出す時間です"
         : wordingThemedMode === "natsuyasumi"
           ? "宿題の締め切りが近づいています"
-          : wordingThemedMode === "powerpro"
-            ? "選手交代のタイミングです"
-            : wordingThemedMode === "lobotomy"
+          : wordingThemedMode === "lobotomy"
               ? "警告：期限監視対象があります"
               : "期日が近いTodoがあります";
   const bodyText =
@@ -87,9 +85,7 @@ export default function TodoReminderModal({ onViewDetail }: { onViewDetail: (tas
         ? `決行（期日）まであと${daysBefore}日以内、またはすでに期限を過ぎている未完了のターゲットです。`
         : wordingThemedMode === "natsuyasumi"
           ? `夏休みの終わり（期日）まであと${daysBefore}日以内、またはもう終わってしまっている宿題です。`
-          : wordingThemedMode === "powerpro"
-            ? `試合終了（期日）まであと${daysBefore}日以内、またはすでに登板期限を過ぎている未完了の案件です。`
-            : wordingThemedMode === "lobotomy"
+          : wordingThemedMode === "lobotomy"
               ? `管理限界まであと${daysBefore}日以内、または既に管理限界を超過している未処理案件です。`
               : `期日まであと${daysBefore}日以内、または既に期日を過ぎている未完了のタスクです。`;
 

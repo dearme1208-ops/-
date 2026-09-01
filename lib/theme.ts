@@ -37,7 +37,7 @@ export function hexToRgbSpace(hex: string): string {
 }
 
 // ===== 演出テーマ(オフ / ロボトミーコーポレーション風 / VA-11 HALL-A風 / ペルソナ5風 /
-//       ぼくのなつやすみ風 / パワプロ風) =====
+//       ぼくのなつやすみ風) =====
 // 各タブから同じ判定・階級ロジックを使い回すための共通定義。
 // CSS側の有効/無効はhtml[data-visual-mode]属性(VisualModeInit.tsxが反映)で切り替わる。
 // lobotomy以外は基調色(ink/cream/panel/accent)自体をCSS変数レベルで丸ごと差し替えるため、
@@ -50,7 +50,6 @@ export type VisualMode =
   | "va11halla"
   | "persona5"
   | "natsuyasumi"
-  | "powerpro"
   | "claude"
   | "zen"
   | "terminal"
@@ -60,7 +59,6 @@ export type ThemedMode =
   | "va11halla"
   | "persona5"
   | "natsuyasumi"
-  | "powerpro"
   | "claude"
   | "zen"
   | "terminal"
@@ -71,7 +69,6 @@ const THEMED_MODES: ThemedMode[] = [
   "va11halla",
   "persona5",
   "natsuyasumi",
-  "powerpro",
   "claude",
   "zen",
   "terminal",
@@ -84,7 +81,6 @@ export function useVisualMode(): {
   va11hallaMode: boolean;
   persona5Mode: boolean;
   natsuyasumiMode: boolean;
-  powerproMode: boolean;
   claudeMode: boolean;
   zenMode: boolean;
   terminalMode: boolean;
@@ -108,7 +104,6 @@ export function useVisualMode(): {
     va11hallaMode: mode === "va11halla",
     persona5Mode: mode === "persona5",
     natsuyasumiMode: mode === "natsuyasumi",
-    powerproMode: mode === "powerpro",
     claudeMode: mode === "claude",
     zenMode: mode === "zen",
     terminalMode: mode === "terminal",
@@ -194,14 +189,6 @@ export const RISK_TIERS_NATSUYASUMI = [
   { threshold: 1.3, name: "汗ばむ陽気", level: 1 },
   { threshold: 1, name: "そよ風", level: 0 },
 ] as const;
-// パワプロ風: 選手査定ランクになぞらえた階級。Sが最悪(査定ダウン警報)
-export const RISK_TIERS_POWERPRO = [
-  { threshold: 4, name: "S", level: 4 },
-  { threshold: 2.5, name: "A", level: 3 },
-  { threshold: 1.8, name: "B", level: 2 },
-  { threshold: 1.3, name: "D", level: 1 },
-  { threshold: 1, name: "G", level: 0 },
-] as const;
 // Claudeモード: Claude自身の思考プロセスになぞらえた階級。予測を超えるほど
 // 「考える時間」が伸びていく、というポジティブな言い回しにしている(危機感を煽らない)
 export const RISK_TIERS_CLAUDE = [
@@ -244,7 +231,6 @@ export type RiskTier =
   | (typeof RISK_TIERS_VA11HALLA)[number]
   | (typeof RISK_TIERS_PERSONA5)[number]
   | (typeof RISK_TIERS_NATSUYASUMI)[number]
-  | (typeof RISK_TIERS_POWERPRO)[number]
   | (typeof RISK_TIERS_CLAUDE)[number]
   | (typeof RISK_TIERS_ZEN)[number]
   | (typeof RISK_TIERS_TERMINAL)[number]
@@ -255,7 +241,6 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   va11halla: RISK_TIERS_VA11HALLA,
   persona5: RISK_TIERS_PERSONA5,
   natsuyasumi: RISK_TIERS_NATSUYASUMI,
-  powerpro: RISK_TIERS_POWERPRO,
   claude: RISK_TIERS_CLAUDE,
   zen: RISK_TIERS_ZEN,
   terminal: RISK_TIERS_TERMINAL,
@@ -278,23 +263,19 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
         ? "border-2 border-alert bg-black/70 text-alert font-black uppercase"
         : mode === "natsuyasumi"
           ? "border-2 border-dashed border-alert/70 bg-alert/10 text-alert"
-          : mode === "powerpro"
-            ? "risk-badge-pp-medal border-2 border-pp-gold bg-pp-gold/15 text-pp-gold font-black"
-            : mode === "claude"
-              ? "border-alert/40 bg-alert/10 text-alert font-bold"
-              : mode === "zen"
-                ? "border-transparent bg-transparent text-cream/50 font-normal"
-                : mode === "terminal"
-                  ? "risk-badge-terminal border-alert bg-black/80 text-alert font-bold uppercase tracking-wider"
-                  : mode === "adventurer"
-                    ? "border-2 border-alert bg-alert/15 text-alert font-bold"
-                    : "border-alert/70 bg-alert/20 text-alert";
+          : mode === "claude"
+            ? "border-alert/40 bg-alert/10 text-alert font-bold"
+            : mode === "zen"
+              ? "border-transparent bg-transparent text-cream/50 font-normal"
+              : mode === "terminal"
+                ? "risk-badge-terminal border-alert bg-black/80 text-alert font-bold uppercase tracking-wider"
+                : mode === "adventurer"
+                  ? "border-2 border-alert bg-alert/15 text-alert font-bold"
+                  : "border-alert/70 bg-alert/20 text-alert";
   const roundness =
-    mode === "powerpro"
-      ? "px-2.5"
-      : mode === "claude" || mode === "zen" || mode === "adventurer"
-        ? "rounded-full px-2.5"
-        : "rounded px-1.5";
+    mode === "claude" || mode === "zen" || mode === "adventurer"
+      ? "rounded-full px-2.5"
+      : "rounded px-1.5";
   return `risk-badge risk-badge-${level} border ${roundness} py-0.5 text-[10px] font-bold ${shape}`;
 }
 
@@ -306,7 +287,6 @@ export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode | null): string 
   if (mode === "va11halla") return tier.name;
   if (mode === "persona5") return tier.name;
   if (mode === "natsuyasumi") return tier.name;
-  if (mode === "powerpro") return `査定 ${tier.name}`;
   if (mode === "claude") return tier.name;
   if (mode === "zen") return tier.name;
   if (mode === "terminal") return `[${tier.name}]`;
@@ -321,7 +301,6 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   va11halla: "card-running-v11",
   persona5: "card-running-p5",
   natsuyasumi: "card-running-nat",
-  powerpro: "card-running-pp",
   claude: "card-running-claude",
   zen: "card-running-zen",
   terminal: "card-running-terminal",
@@ -336,7 +315,6 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   va11halla: "card-overrun-v11",
   persona5: "card-overrun-p5",
   natsuyasumi: "card-overrun-nat",
-  powerpro: "card-overrun-pp",
   claude: "card-overrun-claude",
   zen: "card-overrun-zen",
   terminal: "card-overrun-terminal",
@@ -351,7 +329,6 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   va11halla: "hazard-bar-v11",
   persona5: "hazard-bar-p5",
   natsuyasumi: "hazard-bar-nat",
-  powerpro: "hazard-bar-pp",
   claude: "hazard-bar-claude",
   zen: "hazard-bar-zen",
   terminal: "hazard-bar-terminal",
@@ -366,7 +343,6 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   va11halla: "gantt-bar-overrun-v11",
   persona5: "gantt-bar-overrun-p5",
   natsuyasumi: "gantt-bar-overrun-nat",
-  powerpro: "gantt-bar-overrun-pp",
   claude: "gantt-bar-overrun-claude",
   zen: "gantt-bar-overrun-zen",
   terminal: "gantt-bar-overrun-terminal",
@@ -388,7 +364,6 @@ export function runningLabel(mode: ThemedMode | null): string {
   if (mode === "va11halla") return "営業中";
   if (mode === "persona5") return "潜入中";
   if (mode === "natsuyasumi") return "観察中";
-  if (mode === "powerpro") return "出場中";
   if (mode === "lobotomy") return "計測中";
   if (mode === "claude") return "実行中";
   if (mode === "zen") return "今、ここ";
@@ -402,7 +377,6 @@ export function overrunLabel(mode: ThemedMode | null): string {
   if (mode === "va11halla") return "⚡ 稼働中・時間超過";
   if (mode === "persona5") return "🔴 潜入時間・超過警告";
   if (mode === "natsuyasumi") return "🌻 予定より長引き中";
-  if (mode === "powerpro") return "⚾ 延長戦・大幅超過";
   if (mode === "claude") return "🧠 拡張思考中・想定超過";
   if (mode === "zen") return "まだ、そこに在ります";
   if (mode === "terminal") return "▲ THRESHOLD BREACH";
@@ -416,7 +390,6 @@ export function completionLabel(mode: ThemedMode | null): string {
   if (mode === "va11halla") return "会計完了";
   if (mode === "persona5") return "予告どおり、成功";
   if (mode === "natsuyasumi") return "できた！";
-  if (mode === "powerpro") return "試合終了";
   if (mode === "lobotomy") return "収容完了";
   if (mode === "claude") return "完了しました";
   if (mode === "zen") return "終えた";
@@ -435,7 +408,6 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   va11halla: "営業日誌",
   persona5: "予告状ノート",
   natsuyasumi: "なつやすみの しゅくだい",
-  powerpro: "球団ノート",
   claude: "Claude",
   zen: "今",
   terminal: "CTRL_ROOM",
@@ -541,25 +513,6 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     report: "今日・週・月のふりかえり",
     records: "日記の書き直し",
     settings: "ふでばこ",
-  },
-  powerpro: {
-    today: "本日の試合",
-    todo: "伝令メモ",
-    projects: "契約更改",
-    master: "選手名鑑",
-    template: "曜日別ローテーション",
-    gantt: "スタメン表",
-    aggregation: "成績スタッツ",
-    charts: "査定グラフ",
-    heatmap: "守備位置ヒートマップ",
-    attention: "戦力外通告候補",
-    overtime: "登板過多チェック",
-    yearlyChart: "球歴年表",
-    mandala: "目標達成シート",
-    memo: "監督メモ",
-    report: "日間・週間・月間MVP",
-    records: "スコアブック修正",
-    settings: "球団運営設定",
   },
   claude: {
     today: "ワークスペース",

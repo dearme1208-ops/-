@@ -25,15 +25,6 @@ const NATSUYASUMI_STAGES: GrowthStage[] = [
   { icon: "🌻✨", label: "大輪" },
 ];
 
-const POWERPRO_STAGES: GrowthStage[] = [
-  { icon: "🥎", label: "新人" },
-  { icon: "⚾", label: "育成中" },
-  { icon: "🎽", label: "レギュラー入り" },
-  { icon: "🏅", label: "主力" },
-  { icon: "🏆", label: "エース" },
-  { icon: "🌟", label: "伝説" },
-];
-
 const LOBOTOMY_STAGES: GrowthStage[] = [
   { icon: "🌀", label: "不安定" },
   { icon: "🌀", label: "やや不安定" },
@@ -105,7 +96,6 @@ export const ADVENTURER_STAGES: GrowthStage[] = [
 
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
-  powerpro: POWERPRO_STAGES,
   lobotomy: LOBOTOMY_STAGES,
   va11halla: VA11HALLA_STAGES,
   persona5: PERSONA5_STAGES,

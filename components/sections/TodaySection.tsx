@@ -2378,11 +2378,7 @@ export default function TodaySection({
                       ? `☀ 夏休みの日記帳より ☀ 予定より長引いている作業が${runningOverrunTasks.length}件あります${
                           tierName ? `（今日のお天気: ${tierName}）` : ""
                         }： ${names}`
-                      : wordingThemedMode === "powerpro"
-                        ? `⚾ 延長戦のお知らせ ⚾ 予測時間を超過している試合が${runningOverrunTasks.length}件${
-                            tierName ? `（最大査定: ${tierName}）` : ""
-                          }： ${names}`
-                        : wordingThemedMode === "lobotomy"
+                      : wordingThemedMode === "lobotomy"
                           ? `⚠ 収容の不安定化を検知 ⚠ 予測を超過して計測中の作業が${runningOverrunTasks.length}件あります${
                               tierName ? `（最大警戒階級: ${tierName}）` : ""
                             }： ${names}`
@@ -3104,9 +3100,7 @@ export default function TodaySection({
                                 ? "ペルソナ5風モード: 予告状に至るまでの盛り上がり階級"
                                 : wordingThemedMode === "natsuyasumi"
                                   ? "ぼくのなつやすみ風モード: 夏の天気になぞらえた進み具合"
-                                  : wordingThemedMode === "powerpro"
-                                    ? "パワプロ風モード: 予測超過の度合いに応じた査定ランク"
-                                    : wordingThemedMode === "lobotomy"
+                                  : wordingThemedMode === "lobotomy"
                                       ? "ロボトミーコーポレーション風モード: 予測超過の度合いに応じた警戒階級"
                                       : "予測超過の度合いに応じた危険度バッジです"
                           }

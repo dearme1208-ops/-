@@ -1872,9 +1872,7 @@ function OverdueBulkList({
                         ? `${daysOverdue}日 未接触の標的`
                         : wordingThemedMode === "natsuyasumi"
                           ? `日記が${daysOverdue}日分たまってます`
-                          : wordingThemedMode === "powerpro"
-                            ? `${daysOverdue}日 戦力外候補`
-                            : wordingThemedMode === "lobotomy"
+                          : wordingThemedMode === "lobotomy"
                               ? `${daysOverdue}日 業務逸脱`
                               : `${daysOverdue}日超過`}
                   </div>

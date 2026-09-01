@@ -8,14 +8,13 @@ const THEMED_MODES = [
   "va11halla",
   "persona5",
   "natsuyasumi",
-  "powerpro",
   "claude",
   "zen",
   "terminal",
   "adventurer",
 ];
 
-// 演出テーマ(オフ / ロボトミーコーポレーション風 / VA-11 HALL-A風 / ペルソナ5風 / ぼくのなつやすみ風 / パワプロ風 / Claudeモード / 禅モード / ターミナルモード)を
+// 演出テーマ(オフ / ロボトミーコーポレーション風 / VA-11 HALL-A風 / ペルソナ5風 / ぼくのなつやすみ風 / Claudeモード / 禅モード / ターミナルモード)を
 // <html>のdata属性に反映する。globals.cssのhtml[data-visual-mode="..."]
 // セレクタでまとめて有効/無効・配色を切り替えられるようにするため
 export default function VisualModeInit() {

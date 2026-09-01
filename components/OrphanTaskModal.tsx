@@ -41,9 +41,7 @@ export default function OrphanTaskModal() {
         ? "予告状：未回収の獲物がいます"
         : wordingThemedMode === "natsuyasumi"
           ? "夏休みの絵日記が途中で止まっています"
-          : wordingThemedMode === "powerpro"
-            ? "交代し忘れの選手がいます"
-            : wordingThemedMode === "lobotomy"
+          : wordingThemedMode === "lobotomy"
               ? "収容失敗：放置された個体があります"
               : "日をまたいで放置された作業があります";
   const body =
@@ -53,9 +51,7 @@ export default function OrphanTaskModal() {
         ? "前回の潜入から連れ帰れていないターゲットがいます。ここで回収を終えるか、本日の作戦として続行するか選んでください。"
         : wordingThemedMode === "natsuyasumi"
           ? "前の日から書きかけのまま止まっているページがあります。ここで区切りをつけるか、今日のページとして続きを書くか選んでください。"
-          : wordingThemedMode === "powerpro"
-            ? "前の試合から交代させ忘れている選手がいます。ここで退場させるか、本日の試合として続投させるか選んでください。"
-            : wordingThemedMode === "lobotomy"
+          : wordingThemedMode === "lobotomy"
               ? "前日以前より管理番号未確定のまま放置されている個体を検知しました。収容を終了するか、本日の観測対象として引き継ぐか選択してください。"
               : "前日以前から「計測中」または「一時停止中」のまま残っている作業が見つかりました。本日の作業タブは日付ごとの表示のため画面には出てきませんが、計測中のものは内部的に時間が計測され続けています。それぞれ終了するか、今日の作業として引き継ぐか選んでください。";
 

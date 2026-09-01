@@ -20,9 +20,6 @@
   --nat-sea-rgb: 90 175 205;
   --nat-sun-rgb: 235 170 60;
   --nat-leaf-rgb: 95 150 70;
-  /* パワプロ風演出テーマ専用の球場グリーン・査定ランクゴールド(固定色) */
-  --pp-green-rgb: 34 140 74;
-  --pp-gold-rgb: 224 168 38;
   /* Claudeモード専用の、ヘッダーの光彩に使う淡いエンバー色(固定色) */
   --claude-glow-rgb: 232 168 130;
   /* ロボトミーコーポレーション風タイトル画面の背景仕様で指定された、
@@ -332,14 +329,6 @@ html[data-high-contrast="true"] :focus-visible {
     --cream-rgb: 63 45 26;
     --panel-rgb: 255 249 232;
   }
-  /* パワプロ風: 白地に緑・紺・金を効かせた、スコアボードのような明るいライトテーマに丸ごと反転する */
-  html[data-visual-mode="powerpro"] {
-    color-scheme: light;
-    --accent-rgb: 224 72 40;
-    --ink-rgb: 246 248 244;
-    --cream-rgb: 22 38 58;
-    --panel-rgb: 255 255 255;
-  }
   /* Claudeモード: 他の演出テーマとは対照的に、走査線・ネオン・パロディ色調を一切使わず、
      Claude自身の製品デザインを思わせる温かい紙のようなライトテーマ+テラコッタのアクセントにする。
      他のテーマは固定の1パレットだが、Claudeモードだけは本家同様にシステムのライト/ダーク設定
@@ -419,8 +408,7 @@ html[data-high-contrast="true"] :focus-visible {
     font-family: var(--font-yomogi), var(--font-noto-sans-jp), sans-serif;
     letter-spacing: 0.02em;
   }
-  html[data-visual-mode="va11halla"] .tabular-nums,
-  html[data-visual-mode="powerpro"] .tabular-nums {
+  html[data-visual-mode="va11halla"] .tabular-nums {
     font-family: var(--font-vt323), var(--font-noto-sans-jp), monospace;
     letter-spacing: 0.03em;
   }
@@ -790,19 +778,6 @@ html[data-high-contrast="true"] :focus-visible {
       opacity: 1;
     }
   }
-  /* パワプロ風: 同じ器を流用し、球場の芝刈り模様(斜めストライプ)を画面下に敷く */
-  html[data-visual-mode="powerpro"] .synthwave-grid {
-    opacity: 0.5;
-    background-image: repeating-linear-gradient(
-      65deg,
-      rgb(var(--pp-green-rgb) / 0.16) 0px,
-      rgb(var(--pp-green-rgb) / 0.16) 28px,
-      transparent 28px,
-      transparent 56px
-    );
-    -webkit-mask-image: linear-gradient(to top, black, transparent 45%);
-    mask-image: linear-gradient(to top, black, transparent 45%);
-  }
   /* Claudeモード: 同じ器を流用し、他テーマのグリッド/ストライプの代わりに、
      Claudeが考え込んでいるかのような、ゆっくり呼吸する柔らかい光暈に差し替える */
   html[data-visual-mode="claude"] .synthwave-grid {
@@ -1023,51 +998,6 @@ html[data-high-contrast="true"] :focus-visible {
     border-radius: 999px;
   }
 
-  /* パワプロ風: 画面全体の背景に「全力」の巨大な透かし文字を置く。試合の熱気を感じさせる
-     太字の輪郭で、他テーマの透かしと同じ「広い画面幅で効くボーナス演出」の位置づけ */
-  .pp-watermark {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    opacity: 0;
-    overflow: hidden;
-  }
-  html[data-visual-mode="powerpro"] .pp-watermark {
-    opacity: 1;
-  }
-  html[data-visual-mode="powerpro"] .pp-watermark::before {
-    content: "全力";
-    position: absolute;
-    right: -6vw;
-    top: -14vh;
-    font-family: var(--font-noto-sans-jp), sans-serif;
-    font-size: 30vw;
-    line-height: 0.8;
-    font-weight: 900;
-    color: transparent;
-    -webkit-text-stroke: 1.5px rgb(var(--pp-green-rgb) / 0.12);
-    transform: rotate(5deg);
-    white-space: nowrap;
-  }
-  html[data-visual-mode="powerpro"] ::selection {
-    background: rgb(var(--pp-green-rgb) / 0.4);
-    color: #fff;
-  }
-  html[data-visual-mode="powerpro"] {
-    scrollbar-color: rgb(var(--pp-green-rgb)) #fff;
-  }
-  html[data-visual-mode="powerpro"] ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  html[data-visual-mode="powerpro"] ::-webkit-scrollbar-track {
-    background: #fff;
-  }
-  html[data-visual-mode="powerpro"] ::-webkit-scrollbar-thumb {
-    background: rgb(var(--pp-green-rgb) / 0.75);
-    border: 2px solid #fff;
-  }
   /* VA-11 HALL-A風: ドット感のある多重ステップ枠で、ピクセルアートのウィンドウ風に寄せる */
   html[data-visual-mode="va11halla"] .panel {
     position: relative;
@@ -1152,25 +1082,6 @@ html[data-high-contrast="true"] :focus-visible {
     transform: rotate(-14deg);
     pointer-events: none;
   }
-  /* パワプロ風: スコアボード風の太い緑枠+左上に小さなダイヤモンド(球場)のアイコンを添える。
-     パネル内側の上辺には、バッターボックスの白線を思わせる破線を重ねる */
-  html[data-visual-mode="powerpro"] .panel {
-    position: relative;
-    border: 3px solid rgb(var(--pp-green-rgb) / 0.55);
-    border-radius: 0.75rem;
-    box-shadow: 0 3px 0 0 rgb(var(--pp-green-rgb) / 0.3);
-  }
-  html[data-visual-mode="powerpro"] .panel::before {
-    content: "◆";
-    position: absolute;
-    top: -11px;
-    left: 14px;
-    background: rgb(var(--ink-rgb));
-    color: rgb(var(--pp-green-rgb));
-    padding: 0 6px;
-    font-size: 14px;
-    line-height: 1;
-  }
   /* Claudeモード: 他テーマの装飾(質感・アイコン・太枠)を一切足さず、枠線をほぼ消して
      柔らかい影だけで浮かせる、最も削ぎ落としたシンプルな紙のカードにする */
   html[data-visual-mode="claude"] .panel {
@@ -1195,8 +1106,6 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="persona5"] h3.font-display,
   html[data-visual-mode="natsuyasumi"] h2.font-display,
   html[data-visual-mode="natsuyasumi"] h3.font-display,
-  html[data-visual-mode="powerpro"] h2.font-display,
-  html[data-visual-mode="powerpro"] h3.font-display,
   html[data-visual-mode="claude"] h2.font-display,
   html[data-visual-mode="claude"] h3.font-display,
   html[data-visual-mode="zen"] h2.font-display,
@@ -1282,12 +1191,6 @@ html[data-high-contrast="true"] :focus-visible {
     content: "☀ ";
     color: rgb(var(--nat-sun-rgb));
   }
-  html[data-visual-mode="powerpro"] h2.font-display::before,
-  html[data-visual-mode="powerpro"] h3.font-display::before {
-    content: "⚾ ";
-    color: rgb(var(--pp-green-rgb));
-  }
-
   /* ペルソナ5風の見出しバナー・パネルのリボンタグはPCの横幅を前提にした装飾のため、
      スマホ幅では長い見出しが折り返して不格好な縦長ブロックになったり、
      リボンだけパネルから浮いて見えたりする。sm未満ではバナー化を解除して
@@ -1395,18 +1298,6 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="zen"] .btn-pill-outline:hover {
     border-color: rgb(var(--accent-rgb) / 0.5);
   }
-  html[data-visual-mode="powerpro"] .btn-pill,
-  html[data-visual-mode="powerpro"] .btn-pill-outline {
-    border-width: 2px;
-    border-color: rgb(var(--pp-green-rgb) / 0.6);
-    font-weight: 700;
-  }
-  html[data-visual-mode="powerpro"] .btn-pill-outline:hover {
-    background-color: rgb(var(--pp-gold-rgb) / 0.18);
-    border-color: rgb(var(--pp-gold-rgb));
-    box-shadow: 0 2px 0 0 rgb(var(--pp-gold-rgb) / 0.7);
-    transform: translateY(-1px);
-  }
   @keyframes button-jitter {
     0% {
       transform: translate(0, 0);
@@ -1448,13 +1339,6 @@ html[data-high-contrast="true"] :focus-visible {
     border-color: rgb(var(--nat-leaf-rgb) / 0.6);
     border-style: dashed;
     animation: corner-sway 4s ease-in-out infinite;
-  }
-  html[data-visual-mode="powerpro"] .frame-corners::before,
-  html[data-visual-mode="powerpro"] .frame-corners::after,
-  html[data-visual-mode="powerpro"] .frame-corners .corner-tr,
-  html[data-visual-mode="powerpro"] .frame-corners .corner-br {
-    border-color: rgb(var(--pp-green-rgb) / 0.7);
-    border-width: 3px;
   }
   /* Claudeモード: 他テーマのHUD風の四隅飾りは世界観に合わないため非表示にする */
   html[data-visual-mode="claude"] .frame-corners {
@@ -1547,9 +1431,6 @@ html[data-high-contrast="true"] :focus-visible {
   }
   html[data-visual-mode="natsuyasumi"] .app-title {
     text-shadow: 2px 2px 0 rgb(var(--nat-sun-rgb) / 0.5);
-  }
-  html[data-visual-mode="powerpro"] .app-title {
-    text-shadow: 3px 3px 0 rgb(var(--pp-green-rgb) / 0.4);
   }
   @keyframes title-glitch-1 {
     0%,
@@ -1721,42 +1602,6 @@ html[data-high-contrast="true"] :focus-visible {
     animation: hazard-bar-v11-scroll 2.6s linear infinite;
   }
 
-  /* --- パワプロ風: 出場中/延長戦カードを、スコアボードの電光掲示板のような点滅で表す --- */
-  .card-running-pp {
-    animation: card-running-pp-glow 2s ease-in-out infinite;
-  }
-  @keyframes card-running-pp-glow {
-    0%,
-    100% {
-      box-shadow: 0 0 0 2px rgb(var(--pp-green-rgb) / 0.4);
-    }
-    50% {
-      box-shadow: 0 0 0 3px rgb(var(--pp-green-rgb) / 0.75), 0 0 14px 2px rgb(var(--pp-green-rgb) / 0.3);
-    }
-  }
-  .card-overrun-pp {
-    animation: card-overrun-pp-buzzer 0.7s steps(2, end) infinite;
-  }
-  @keyframes card-overrun-pp-buzzer {
-    0%,
-    100% {
-      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.5);
-    }
-    50% {
-      box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.9), 0 0 18px 3px rgb(var(--pp-gold-rgb) / 0.4);
-    }
-  }
-  .hazard-bar-pp {
-    height: 6px;
-    background-image: repeating-linear-gradient(
-      65deg,
-      rgb(var(--pp-green-rgb)) 0 10px,
-      rgb(var(--pp-gold-rgb)) 10px 20px
-    );
-    background-size: 200% 100%;
-    animation: hazard-bar-scroll 1.2s linear infinite;
-  }
-
   /* --- Claudeモード: 他テーマの点滅・ブザー・警戒色とは対照的に、実行中は柔らかく
      呼吸するような光暈、想定超過はそれよりやや強く・速く脈動する光暈で伝える --- */
   .card-running-claude {
@@ -1907,7 +1752,7 @@ html[data-high-contrast="true"] :focus-visible {
      .panel自体に重ねる。右下には冒険者ギルドの紋章、左上には巻物の角金具を刻む。
      --accent-rgbはユーザーが選んだアクセント色で常にインライン上書きされ、テーマ固有の
      パレット定義より優先されてしまうため(ThemeInit.tsx参照)、他テーマの.panel装飾
-     (--p5-red-rgb/--nat-leaf-rgb/--pp-green-rgb等)と同じく専用色--adv-gold-rgbを使う */
+     (--p5-red-rgb/--nat-leaf-rgb等)と同じく専用色--adv-gold-rgbを使う */
   html[data-visual-mode="adventurer"] .panel {
     position: relative;
     border: 3px solid rgb(var(--adv-gold-rgb) / 0.55);
@@ -2316,15 +2161,6 @@ html[data-high-contrast="true"] :focus-visible {
     background-size: 200% 100%;
     animation: hazard-bar-v11-scroll 2.6s linear infinite;
   }
-  .gantt-bar-overrun-pp {
-    background-image: repeating-linear-gradient(
-      65deg,
-      rgb(var(--pp-green-rgb)) 0 8px,
-      rgb(var(--pp-gold-rgb)) 8px 16px
-    );
-    background-size: 200% 100%;
-    animation: hazard-bar-scroll 1s linear infinite;
-  }
   .gantt-bar-overrun-claude {
     border-radius: 999px;
     background-image: linear-gradient(
@@ -2407,9 +2243,6 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="natsuyasumi"] .overrun-flicker-intense {
     animation: overrun-shimmer-nat 2.6s ease-in-out infinite;
   }
-  html[data-visual-mode="powerpro"] .overrun-flicker-intense {
-    animation: overrun-buzzer-pp 0.6s steps(2, end) infinite;
-  }
   html[data-visual-mode="claude"] .overrun-flicker-intense {
     animation: overrun-shimmer-claude 2.2s ease-in-out infinite;
   }
@@ -2420,15 +2253,6 @@ html[data-high-contrast="true"] :focus-visible {
     }
     50% {
       text-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.5);
-    }
-  }
-  @keyframes overrun-buzzer-pp {
-    0%,
-    100% {
-      color: rgb(var(--accent-rgb));
-    }
-    50% {
-      color: rgb(var(--pp-gold-rgb));
     }
   }
   @keyframes overrun-chroma {
@@ -2556,37 +2380,6 @@ html[data-high-contrast="true"] :focus-visible {
       transform: translateY(-2px);
     }
   }
-  /* パワプロ風: 査定メダルらしく、六角形の実績アイコン+光沢が横切るシャインアニメーションにする */
-  html[data-visual-mode="powerpro"] .risk-badge {
-    position: relative;
-    overflow: hidden;
-    animation: none;
-  }
-  html[data-visual-mode="powerpro"] .risk-badge-pp-medal {
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-  html[data-visual-mode="powerpro"] .risk-badge-pp-medal::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / 0.55) 50%, transparent 70%);
-    background-size: 250% 100%;
-    animation: risk-badge-shine-pp 1.8s ease-in-out infinite;
-  }
-  html[data-visual-mode="powerpro"] .risk-badge-3.risk-badge-pp-medal::after,
-  html[data-visual-mode="powerpro"] .risk-badge-4.risk-badge-pp-medal::after {
-    animation-duration: 1s;
-  }
-  @keyframes risk-badge-shine-pp {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -50% 0;
-    }
-  }
   /* ターミナルモード: 他テーマの柔らかい点滅とは逆に、CRTのステータスランプそのものの
      ハードな点灯/消灯(steps)にする。階級が上がるほど点滅を速くするのは共通の器のまま */
   html[data-visual-mode="terminal"] .risk-badge {
@@ -2663,10 +2456,6 @@ html[data-high-contrast="true"] :focus-visible {
     opacity: 1;
     animation: containment-vignette-nat-pulse 3.4s ease-in-out infinite;
   }
-  html[data-visual-mode="powerpro"] .containment-vignette.is-active {
-    opacity: 1;
-    animation: containment-vignette-pp-pulse 0.8s ease-in-out infinite;
-  }
   @keyframes containment-vignette-pulse {
     0%,
     100% {
@@ -2703,15 +2492,6 @@ html[data-high-contrast="true"] :focus-visible {
       box-shadow: inset 0 0 120px 10px rgb(var(--nat-sun-rgb) / 0.4);
     }
   }
-  @keyframes containment-vignette-pp-pulse {
-    0%,
-    100% {
-      box-shadow: inset 0 0 0 5px rgb(var(--accent-rgb) / 0.6);
-    }
-    50% {
-      box-shadow: inset 0 0 0 8px rgb(var(--pp-gold-rgb) / 0.8);
-    }
-  }
 
   /* 警告ティッカー(横スクロールする警戒テキスト) */
   .warning-ticker {
@@ -2732,10 +2512,6 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="natsuyasumi"] .warning-ticker-track {
     font-weight: 600;
     animation-duration: 22s;
-  }
-  html[data-visual-mode="powerpro"] .warning-ticker-track {
-    font-weight: 800;
-    animation-duration: 11s;
   }
   @keyframes warning-ticker-scroll {
     from {
@@ -2881,8 +2657,6 @@ html[data-high-contrast="true"] :focus-visible {
   .card-overrun-p5,
   .card-running-nat,
   .card-overrun-nat,
-  .card-running-pp,
-  .card-overrun-pp,
   .card-running-claude,
   .card-overrun-claude,
   .card-running-zen,
@@ -2895,7 +2669,6 @@ html[data-high-contrast="true"] :focus-visible {
   .hazard-bar-v11,
   .hazard-bar-p5,
   .hazard-bar-nat,
-  .hazard-bar-pp,
   .hazard-bar-claude,
   .hazard-bar-terminal,
   .hazard-bar-adv,
@@ -2903,7 +2676,6 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,
   .gantt-bar-overrun-nat,
-  .gantt-bar-overrun-pp,
   .gantt-bar-overrun-claude,
   .gantt-bar-overrun-terminal,
   .gantt-bar-overrun-adv,
@@ -2915,7 +2687,6 @@ html[data-high-contrast="true"] :focus-visible {
   .app-title::before,
   .app-title::after,
   .risk-badge,
-  .risk-badge-pp-medal::after,
   .containment-vignette.is-active,
   .warning-ticker-track,
   .frame-corners::before,

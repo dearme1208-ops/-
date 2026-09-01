@@ -122,7 +122,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="lobo-watermark" aria-hidden="true" />
         <div className="v11-watermark" aria-hidden="true" />
         <div className="nat-watermark" aria-hidden="true" />
-        <div className="pp-watermark" aria-hidden="true" />
         <div className="adv-watermark" aria-hidden="true" />
         <div className="frame-corners">
           <span className="corner-tr" />

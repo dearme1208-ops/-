@@ -21,9 +21,6 @@ const config: Config = {
         "nat-sea": "rgb(var(--nat-sea-rgb) / <alpha-value>)",
         "nat-sun": "rgb(var(--nat-sun-rgb) / <alpha-value>)",
         "nat-leaf": "rgb(var(--nat-leaf-rgb) / <alpha-value>)",
-        // パワプロ風演出テーマ専用の球場グリーン・査定ランクゴールド(固定色)
-        "pp-green": "rgb(var(--pp-green-rgb) / <alpha-value>)",
-        "pp-gold": "rgb(var(--pp-gold-rgb) / <alpha-value>)",
         // Claudeモード演出テーマ専用の、ヘッダーの光彩に使う淡いエンバー色(固定色)
         "claude-glow": "rgb(var(--claude-glow-rgb) / <alpha-value>)",
       },

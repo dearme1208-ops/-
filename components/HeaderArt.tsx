@@ -320,69 +320,6 @@ function NatsuyasumiArt({ weather = "clear", timeBand = "day" }: { weather?: Wea
   );
 }
 
-// パワプロ風: ナイター照明に照らされた球場のダイヤモンド・外野フェンス・照明塔のシルエットに、
-// 観客席のシルエットとスコアボードの電光、弧を描いて飛ぶ打球を足して球場の熱気を強める
-function PowerproArt() {
-  const crowd = Array.from({ length: 24 }, (_, i) => i);
-  const scoreLamps = Array.from({ length: 6 }, (_, i) => i);
-  return (
-    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="ナイター球場と観客席、飛球のイラスト">
-      <defs>
-        <linearGradient id="ppSky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgb(var(--pp-green-rgb))" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="rgb(var(--ink-rgb))" />
-        </linearGradient>
-      </defs>
-      <rect x="0" y="0" width="1200" height="220" fill="url(#ppSky)" />
-      {/* 照明塔 */}
-      <g fill="rgb(var(--cream-rgb))" opacity="0.35">
-        <rect x="60" y="30" width="8" height="150" />
-        <rect x="30" y="20" width="76" height="16" />
-        <rect x="1080" y="30" width="8" height="150" />
-        <rect x="1050" y="20" width="76" height="16" />
-      </g>
-      {/* スコアボードの電光(装飾。実際の数値とは連動しない) */}
-      <g transform="translate(150 24)">
-        {scoreLamps.map((i) => (
-          <rect
-            key={i}
-            x={i * 14}
-            y="0"
-            width="9"
-            height="9"
-            fill={i % 2 === 0 ? "rgb(var(--pp-gold-rgb))" : "rgb(var(--pp-green-rgb))"}
-            opacity="0.6"
-          />
-        ))}
-      </g>
-      {/* 査定ランクバッジ(装飾。シリーズを象徴する能力の格付け表示を模したもの。
-          実際の評価データとは連動しない) */}
-      <g transform="translate(1140 44)">
-        <circle r="20" fill="rgb(var(--ink-rgb))" stroke="rgb(var(--pp-gold-rgb))" strokeWidth="3" />
-        <circle r="14" fill="none" stroke="rgb(var(--pp-gold-rgb))" strokeOpacity="0.5" strokeWidth="1" />
-        <text x="0" y="7" fontSize="18" fontWeight="900" textAnchor="middle" fill="rgb(var(--pp-gold-rgb))">
-          A
-        </text>
-      </g>
-      {/* 観客席のシルエット */}
-      <g fill="rgb(var(--cream-rgb))" opacity="0.14">
-        {crowd.map((i) => (
-          <circle key={i} cx={860 + (i % 12) * 24} cy={38 + Math.floor(i / 12) * 16} r="6" />
-        ))}
-      </g>
-      {/* 外野フェンス */}
-      <path d="M0,220 L0,175 Q600,140 1200,175 L1200,220 Z" fill="rgb(var(--pp-green-rgb))" opacity="0.7" />
-      {/* 内野(ダイヤモンド)の一部 */}
-      <polygon points="600,220 500,150 600,90 700,150" fill="rgb(var(--panel-rgb))" opacity="0.9" />
-      <polygon points="600,220 500,150 600,90 700,150" fill="none" stroke="rgb(var(--pp-green-rgb))" strokeWidth="3" />
-      <circle cx="600" cy="150" r="10" fill="rgb(var(--pp-green-rgb))" />
-      {/* 弧を描いて飛ぶ打球 */}
-      <path d="M 630,140 Q 760,40 920,70" fill="none" stroke="rgb(var(--pp-gold-rgb))" strokeOpacity="0.5" strokeWidth="2" strokeDasharray="4 6" />
-      <circle cx="920" cy="70" r="6" fill="rgb(var(--pp-gold-rgb))" opacity="0.85" />
-    </svg>
-  );
-}
-
 // VA-11 HALL-A風: 雨に濡れたネオン街のビル群と、カウンターに置かれたカクテルグラスのシルエット。
 // 他テーマ共通のDefaultArt(岩肌と高層ビル)をそのまま使っていたが、ここも専用の情景に描き替える
 function Va11Art() {
@@ -705,11 +642,11 @@ function TerminalArt() {
 }
 
 export default function HeaderArt() {
-  const { mode, natsuyasumiMode, powerproMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode, terminalMode } = useVisualMode();
-  // ロボトミー/VA-11 HALL-A/ペルソナ5/ぼくのなつやすみ/パワプロの5テーマは、設定画面から
+  const { mode, natsuyasumiMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode, terminalMode } = useVisualMode();
+  // ロボトミー/VA-11 HALL-A/ペルソナ5/ぼくのなつやすみの4テーマは、設定画面から
   // 自分の画像にヘッダーを差し替えられる。未設定(空文字)なら従来どおりテーマ専用の
   // イラストを描画する(=「オリジナル」)。Claude/禅/オフには画像差し替えの仕組みは無い
-  const customizable = persona5Mode || lobotomyMode || va11hallaMode || natsuyasumiMode || powerproMode;
+  const customizable = persona5Mode || lobotomyMode || va11hallaMode || natsuyasumiMode;
   const [customImage] = useSetting(`theme.headerImage.${mode}`, "");
   const [customPosition] = useSetting(`theme.headerImagePosition.${mode}`, "50% 50%");
   const [customZoom] = useSetting(`theme.headerImageZoom.${mode}`, "100");
@@ -735,6 +672,5 @@ export default function HeaderArt() {
   if (lobotomyMode) return <LobotomyArt />;
   if (va11hallaMode) return <Va11Art />;
   if (natsuyasumiMode) return <NatsuyasumiArt weather={natsuyasumiWeather} timeBand={natsuyasumiTimeBand} />;
-  if (powerproMode) return <PowerproArt />;
   return <DefaultArt />;
 }
