@@ -891,6 +891,7 @@ export default function TodaySection({
         isProvisional: true,
       };
       await db.dailyTasks.add(task);
+      setTaskViewTab("running");
     })();
   }, [provisionalEnabled, tasks, now, lastStopTime, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
 
@@ -1182,6 +1183,7 @@ export default function TodaySection({
       };
       await db.dailyTasks.add(task);
       geoTaskIdRef.current = task.id;
+      setTaskViewTab("running");
       notify("移動を検知しました", `${task.category} / ${task.name} の自動計測を開始しました`, "geo-tracking-start");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
