@@ -2020,7 +2020,7 @@ function HeaderImageSetting({ mode, themeLabel }: { mode: string; themeLabel: st
             <span className="shrink-0 text-[11px] text-cream/50">拡大率: {zoom}%</span>
             <input
               type="range"
-              min={100}
+              min={50}
               max={300}
               step={5}
               value={zoom}
