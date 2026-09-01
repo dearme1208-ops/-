@@ -848,8 +848,13 @@ html[data-high-contrast="true"] :focus-visible {
       radial-gradient(circle 2.5px at calc(100% - 11px) calc(100% - 11px), rgb(var(--accent-rgb) / 0.55), transparent 100%);
     background-repeat: no-repeat;
   }
-  html[data-visual-mode="lobotomy"] .panel:hover {
-    animation: panel-signal-glitch 0.35s steps(4, end) 1;
+  /* タッチ端末は:hoverがタップのたびに発火してしまい、この歪みアニメーション中は
+     transform/clip-pathでパネルの見た目の位置がずれるため、連続タップの反応が
+     悪く感じられる原因になる。実際にマウス等でホバーできる環境だけに限定する */
+  @media (hover: hover) and (pointer: fine) {
+    html[data-visual-mode="lobotomy"] .panel:hover {
+      animation: panel-signal-glitch 0.35s steps(4, end) 1;
+    }
   }
   @keyframes panel-signal-glitch {
     0%,
