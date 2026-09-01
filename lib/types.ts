@@ -112,6 +112,8 @@ export interface DailyTask {
   stoppedAt?: number; // 一時停止・完了などの状態遷移が実際に(その場のユーザー操作で)発生した時刻。
   // endedAt/segmentsの終了時刻は後から手動編集で変わりうるが、こちらは実際に操作した瞬間のみを
   // 記録するため、「直近に何かを止めた時刻」の判定(未計測の自動仮計測の起点など)に使う
+  boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。日付が変わればタスク自体が
+  boardY?: number; // 入れ替わるため、位置も自然にリセットされる(付箋のようにずっと保持はしない)
 }
 
 export interface WorkRecord {
@@ -266,6 +268,8 @@ export interface TodoTask {
   clientId?: string; // 取引先（任意）。customer(自由記入の客先名)とは別に、取引先マスタと紐付ける場合に使う
   reminderAt?: number; // 通知したい日時(epoch ms)。設定すると、その時刻になった際にタブに関わらず画面へポップアップで知らせる
   reminderFiredAt?: number; // 上記の通知を実際に表示した時刻。二重に通知しないためのフラグ(reminderAtを再設定するとクリアされる)
+  boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。付箋と違いこちらは
+  boardY?: number; // ToDo自体が残り続ける限り保持する(マイデイから外れると自然に表示対象から外れる)
 }
 
 // ---- マンダラチャート ----

@@ -433,6 +433,7 @@ export type TabKey =
   | "yearlyChart"
   | "mandala"
   | "memo"
+  | "board"
   | "report"
   | "records"
   | "settings";
@@ -453,6 +454,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "年次記録",
     mandala: "目標統制盤",
     memo: "職員日誌",
+    board: "統合作戦盤",
     report: "日次・週次・月次報告書",
     records: "記録の改竄",
     settings: "管理局設定",
@@ -472,6 +474,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "年間営業記録",
     mandala: "夢のメニュー構想",
     memo: "バーのメモ帳",
+    board: "カウンター全景",
     report: "日次・週次・月次売上報告",
     records: "伝票の修正",
     settings: "バーの設定",
@@ -491,6 +494,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "年間活動記録",
     mandala: "野望達成マンダラ",
     memo: "作戦ノート",
+    board: "アジトの作戦盤",
     report: "怪盗団 日報・週報・月報",
     records: "記録の書き換え",
     settings: "アジト設定",
@@ -510,6 +514,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "夏の思い出年表",
     mandala: "めあてシート",
     memo: "らくがき帳",
+    board: "自由帳",
     report: "今日・週・月のふりかえり",
     records: "日記の書き直し",
     settings: "ふでばこ",
@@ -529,6 +534,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "年間ふりかえり",
     mandala: "ゴールマップ",
     memo: "メモ",
+    board: "ボード",
     report: "レポート",
     records: "ログ編集",
     settings: "設定",
@@ -550,6 +556,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "一年",
     mandala: "願い",
     memo: "書きつけ",
+    board: "見渡す場",
     report: "ふりかえり",
     records: "記録",
     settings: "設定",
@@ -571,6 +578,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "ARCHIVE",
     mandala: "OBJECTIVES",
     memo: "NOTES",
+    board: "OVERVIEW",
     report: "DIGEST",
     records: "LEDGER",
     settings: "CONFIG",
@@ -594,6 +602,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     yearlyChart: "冒険の年代記",
     mandala: "目標の魔法陣",
     memo: "冒険メモ",
+    board: "冒険の作戦盤",
     report: "日々・週間・月間の冒険記",
     records: "記録の書き換え",
     settings: "冒険の設定",

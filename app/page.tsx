@@ -46,6 +46,7 @@ const OvertimeSection = dynamic(() => import("@/components/sections/OvertimeSect
 const YearlyChartSection = dynamic(() => import("@/components/sections/YearlyChartSection"), { ssr: false });
 const MandalaSection = dynamic(() => import("@/components/sections/MandalaSection"), { ssr: false });
 const MemoSection = dynamic(() => import("@/components/sections/MemoSection"), { ssr: false });
+const UnifiedBoardSection = dynamic(() => import("@/components/sections/UnifiedBoardSection"), { ssr: false });
 
 const TABS: TabDef[] = [
   { key: "today", label: "本日の作業" },
@@ -62,6 +63,7 @@ const TABS: TabDef[] = [
   { key: "yearlyChart", label: "年表" },
   { key: "mandala", label: "マンダラチャート" },
   { key: "memo", label: "メモ" },
+  { key: "board", label: "統合ボード" },
   { key: "report", label: "日報・週報・月報" },
   { key: "records", label: "実績編集" },
   { key: "settings", label: "設定" },
@@ -212,6 +214,7 @@ export default function HomePage() {
         />
       )}
       {active === "memo" && <MemoSection />}
+      {active === "board" && <UnifiedBoardSection />}
       {active === "report" && mode === "claude" && <ClaudeReportSection />}
       {active === "report" && mode !== "claude" && <ReportSection />}
       {active === "records" && <RecordsSection />}
