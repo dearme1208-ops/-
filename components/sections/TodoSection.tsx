@@ -1625,7 +1625,7 @@ export default function TodoSection({
                 </button>
               </div>
             )}
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {reorderEnabled && !bulkSelectionMode ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={incompleteTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
@@ -1680,7 +1680,7 @@ export default function TodoSection({
                   {showCompleted ? "▼" : "▶"} 完了済み（{completedTasks.length}）
                 </button>
                 {showCompleted && (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {completedTasks.map((task) => (
                       <TaskBlock
                         key={task.id}
@@ -1906,7 +1906,7 @@ function SubtaskRow({
   const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
   return (
     <div
-      className={`rounded-lg bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
+      className={`rounded-lg border border-cream/10 bg-ink/30 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
         subDueToday ? "ring-1 ring-alert/40" : ""
       }`}
     >
@@ -2179,7 +2179,7 @@ function TaskRow({
   return (
     <div
       title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
-      className={`flex items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 transition-[opacity,filter] ${
+      className={`flex items-center gap-2 rounded-lg border border-cream/10 bg-ink/50 px-3 py-2 transition-[opacity,filter] ${
         task.completed ? "opacity-50" : agingClass
       } ${overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""}`}
     >
@@ -3068,7 +3068,7 @@ function KanbanCard({ task, onOpenDetail }: { task: TodoTask; onOpenDetail: () =
       {...attributes}
       {...listeners}
       onClick={onOpenDetail}
-      className={`w-full cursor-grab rounded-lg bg-ink/50 px-2 py-1.5 text-left active:cursor-grabbing ${
+      className={`w-full cursor-grab rounded-lg border border-cream/10 bg-ink/50 px-2 py-1.5 text-left active:cursor-grabbing ${
         task.completed ? "opacity-50" : ""
       }`}
     >
