@@ -6,7 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { formatMsClock, todayStr } from "@/lib/time";
-import { segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
+import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
 import { completeTodoTask } from "@/lib/todo";
 import {
   clampMemoZoom,
@@ -15,7 +15,9 @@ import {
   MEMO_BOARD_WIDTH,
   MEMO_NOTE_COLORS,
 } from "@/lib/memo";
-import type { DailyTask, MemoNote, TodoTask } from "@/lib/types";
+import Modal from "@/components/ui/Modal";
+import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
+import type { DailyTask, MasterTask, MemoNote, TodoTask } from "@/lib/types";
 
 // 「メモ・ToDo(マイデイ)・本日の作業」を1つの自由配置キャンバスにまとめて表示し、
 // その場で作業の開始/一時停止/完了やToDoの完了ができるようにしたビュー。
@@ -54,6 +56,7 @@ export default function UnifiedBoardSection() {
   );
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const todoTasks = useLiveQuery(() => db.todoTasks.where("myDayDate").equals(today).toArray(), [today]);
+  const favorites = useLiveQuery(() => db.masterTasks.filter((m) => m.isFavorite && !m.archived).toArray(), []);
 
   const tasks = (dailyTasks ?? []).filter((t) => !t.isProvisional && t.status !== "done");
   const todos = (todoTasks ?? []).filter((t) => !t.completed);
@@ -99,6 +102,33 @@ export default function UnifiedBoardSection() {
     await finishDailyTask(task);
   }
 
+  // お気に入り/マスタから、その場で新しい作業を開始する。既に計測中の作業があれば
+  // 一時停止してから開始する(startTaskの「既存タスクを再開」と同じ考え方)
+  async function startFromMaster(master: MasterTask) {
+    const running = tasks.find((t) => t.status === "running");
+    if (running) await pauseTask(running);
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(today, master.category, master.name, master.estimatedSeconds);
+    const count = (dailyTasks ?? []).length;
+    const task: DailyTask = {
+      id: uid(),
+      date: today,
+      order: count,
+      masterTaskId: master.id,
+      category: master.category,
+      name: master.name,
+      estimatedSeconds,
+      status: "running",
+      segments: [{ start: Date.now() }],
+      accumulatedMs: 0,
+      startedAt: Date.now(),
+      isSpontaneous: true,
+    };
+    await db.dailyTasks.add(task);
+  }
+
+  const [showMasterPicker, setShowMasterPicker] = useState(false);
+  const [pickedMaster, setPickedMaster] = useState<MasterTask | null>(null);
+
   async function moveTodo(id: string, x: number, y: number) {
     await db.todoTasks.update(id, { boardX: x, boardY: y });
   }
@@ -133,6 +163,18 @@ export default function UnifiedBoardSection() {
         付箋はメモタブと同じものが表示されます。ToDoは「マイデイ」に入れたものだけをカード化しています。
       </p>
 
+      <div className="panel flex flex-wrap items-center gap-2 p-3">
+        <span className="text-xs text-cream/50">作業を開始:</span>
+        {(favorites ?? []).map((f) => (
+          <button key={f.id} className="btn-pill-outline text-xs" onClick={() => startFromMaster(f)}>
+            ★ {f.category} / {f.name}
+          </button>
+        ))}
+        <button className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
+          ＋ マスタから選択
+        </button>
+      </div>
+
       <div className="panel overflow-auto p-0" style={{ height: "70vh" }}>
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
           <div
@@ -161,6 +203,34 @@ export default function UnifiedBoardSection() {
           </div>
         </div>
       </div>
+
+      {showMasterPicker && (
+        <Modal
+          title="マスタから作業を開始"
+          onClose={() => {
+            setShowMasterPicker(false);
+            setPickedMaster(null);
+          }}
+        >
+          <div className="space-y-3">
+            <MasterTaskPicker selectedId={pickedMaster?.id} onSelect={setPickedMaster} />
+            <div className="flex justify-end">
+              <button
+                className="btn-pill text-sm"
+                disabled={!pickedMaster}
+                onClick={async () => {
+                  if (!pickedMaster) return;
+                  await startFromMaster(pickedMaster);
+                  setPickedMaster(null);
+                  setShowMasterPicker(false);
+                }}
+              >
+                この作業を開始する
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -198,6 +268,39 @@ function useBoardDrag(x: number, y: number, width: number, height: number, zoom:
   return { left, top, onPointerDown, onPointerMove, onPointerUp };
 }
 
+// カード上部の「掴む場所」。暗い背景でも見失わないよう、カード本体より一段
+// 明るい/暗いバンドを敷いた上でグリップ用の点を並べる(色付きの付箋には濃色、
+// 暗いカードには淡色のバンド+ドットを使い、どちらの背景でも視認できるようにする)
+function DragHandle({
+  tone,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+}: {
+  tone: "light" | "dark";
+  onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      className={`flex h-5 shrink-0 cursor-grab items-center justify-center rounded-t active:cursor-grabbing ${
+        tone === "light" ? "bg-black/10" : "bg-cream/10"
+      }`}
+      style={{ touchAction: "none" }}
+      title="ドラッグで移動できます"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
+      <span className={`text-[11px] leading-none tracking-widest ${tone === "light" ? "text-ink/50" : "text-cream/50"}`}>
+        ⠿ ⠿ ⠿
+      </span>
+    </div>
+  );
+}
+
 function NoteCard({
   note,
   zoom,
@@ -232,14 +335,7 @@ function NoteCard({
       className="absolute flex flex-col rounded-md border-2 shadow-md"
       style={{ left, top, width: note.width, height: note.height, backgroundColor: colors.bg, borderColor: colors.border }}
     >
-      <div
-        className="h-2 shrink-0 cursor-grab rounded-t active:cursor-grabbing"
-        style={{ touchAction: "none" }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-      />
+      <DragHandle tone="light" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -285,15 +381,17 @@ function TaskCard({
       style={{ left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT }}
     >
       <div
-        className="flex shrink-0 cursor-grab items-center justify-between active:cursor-grabbing"
+        className="-mx-2 -mt-2 mb-1 flex shrink-0 cursor-grab items-center justify-between rounded-t bg-cream/10 px-2 py-1 active:cursor-grabbing"
         style={{ touchAction: "none" }}
+        title="ドラッグで移動できます"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        <span className="text-[10px] text-cream/40">{running ? "🔴 計測中" : task.status === "paused" ? "一時停止中" : "未着手"}</span>
+        <span className="text-[10px] text-cream/50">{running ? "🔴 計測中" : task.status === "paused" ? "一時停止中" : "未着手"}</span>
         <span className="font-display text-xs font-bold tabular-nums text-cream/80">{formatMsClock(elapsedMs)}</span>
+        <span className="text-[10px] leading-none tracking-widest text-cream/30">⠿</span>
       </div>
       <p className="min-w-0 flex-1 truncate text-sm text-cream" title={`${task.category} / ${task.name}`}>
         <span className="text-cream/50">{task.category}</span> {task.name}
@@ -341,14 +439,7 @@ function TodoCard({
       className="absolute flex flex-col gap-1 rounded-md border-2 border-cream/20 bg-ink/90 p-2 shadow-md"
       style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT }}
     >
-      <div
-        className="h-2 shrink-0 cursor-grab active:cursor-grabbing"
-        style={{ touchAction: "none" }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-      />
+      <DragHandle tone="dark" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
       <div className="flex flex-1 items-start gap-2">
         <button
           onClick={onComplete}
