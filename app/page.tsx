@@ -169,7 +169,7 @@ export default function HomePage() {
       {active === "today" && mode === "zen" && <ZenSection />}
       {active === "today" && mode === "terminal" && <TerminalDashboardSection />}
       {active === "today" && mode === "adventurer" && <AdventurerQuestSection />}
-      {active === "today" && mode === "hub" && <UnifiedBoardSection />}
+      {active === "today" && mode === "hub" && <UnifiedBoardSection onOpenTodo={() => setActive("todo")} />}
       {active === "today" &&
         mode !== "claude" &&
         mode !== "zen" &&
@@ -186,6 +186,7 @@ export default function HomePage() {
             setActive("projects");
           }}
           onOpenMemo={() => setActive("memo")}
+          onOpenTodoTab={() => setActive("todo")}
         />
       )}
       {active === "todo" && (
@@ -220,7 +221,7 @@ export default function HomePage() {
         />
       )}
       {active === "memo" && <MemoSection />}
-      {active === "board" && <UnifiedBoardSection />}
+      {active === "board" && <UnifiedBoardSection onOpenTodo={() => setActive("todo")} />}
       {active === "report" && mode === "claude" && <ClaudeReportSection />}
       {active === "report" && mode !== "claude" && <ReportSection />}
       {active === "records" && <RecordsSection />}

@@ -34,7 +34,7 @@ function cascadePosition(index: number, originX: number, originY: number): { x: 
   return { x: originX + offset, y: originY + offset };
 }
 
-export default function UnifiedBoardSection() {
+export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () => void }) {
   const today = todayStr();
   const boards = useLiveQuery(() => db.memoBoards.orderBy("order").toArray(), []);
   const [selectedBoardId, setSelectedBoardId] = useSetting("memo.selectedBoardId", "");
@@ -172,8 +172,13 @@ export default function UnifiedBoardSection() {
           </button>
         </div>
       </div>
-      <p className="px-1 text-xs text-cream/50">
+      <p className="flex flex-wrap items-center gap-2 px-1 text-xs text-cream/50">
         付箋はメモタブと同じものが表示されます。ToDoは「マイデイ」に入れたものだけをカード化しています。
+        {onOpenTodo && (
+          <button className="text-cream underline decoration-dotted underline-offset-2 hover:text-cream/70" onClick={onOpenTodo}>
+            ToDoタブへ →
+          </button>
+        )}
       </p>
 
       <div className="panel flex flex-wrap items-center gap-2 p-3">

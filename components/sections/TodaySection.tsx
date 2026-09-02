@@ -107,10 +107,12 @@ export default function TodaySection({
   onOpenTodoDetail,
   onOpenProjectEdit,
   onOpenMemo,
+  onOpenTodoTab,
 }: {
   onOpenTodoDetail: (taskId: string) => void;
   onOpenProjectEdit: (projectId: string) => void;
   onOpenMemo?: () => void;
+  onOpenTodoTab?: () => void;
 }) {
   const date = todayStr();
   // 構造化されたタスクとは別の、自由記述の日次ジャーナル。日付ごとに保存する
@@ -2957,7 +2959,7 @@ export default function TodaySection({
         </div>
       )}
 
-      {taskViewTab === "board" && <UnifiedBoardSection />}
+      {taskViewTab === "board" && <UnifiedBoardSection onOpenTodo={onOpenTodoTab} />}
 
       {taskViewTab !== "board" && (
         <>
@@ -3521,8 +3523,15 @@ export default function TodaySection({
             <button
               key={t.key}
               onClick={() => setTaskViewTab(t.key)}
-              className={`flex-1 ${taskViewTab === t.key ? "btn-pill" : "btn-pill-outline"} px-2 py-2 text-xs sm:text-sm`}
+              className={`relative flex-1 ${taskViewTab === t.key ? "btn-pill" : "btn-pill-outline"} px-2 py-2 text-xs sm:text-sm`}
             >
+              {t.key === "running" && provisionalActive && (
+                <span
+                  className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-alert ring-2 ring-ink"
+                  title="仮計測(未割り当て)が計測中です"
+                  aria-label="仮計測が計測中です"
+                />
+              )}
               {t.label}
               {t.count !== undefined && (
                 <span className={`tabular-nums ${taskViewTab === t.key ? "opacity-70" : "opacity-50"}`}>({t.count})</span>
