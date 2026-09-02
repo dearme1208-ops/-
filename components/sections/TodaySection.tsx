@@ -1494,6 +1494,11 @@ export default function TodaySection({
   ) {
     const doInsert = async () => {
       const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
+      // 未計測(仮計測)分をさかのぼって合算した場合など、startAtが過去の時刻だと
+      // 作成直後から既に「予測時間を大幅に超過」扱いになり得る。startTaskの
+      // さかのぼって開始/再開と同様、この場合は超過確認ダイアログを抑制しておく
+      // (超過が続けば通常どおり後で再表示される)
+      const isRetroactive = startAt < Date.now() - 5000;
       const task: DailyTask = {
         id: uid(),
         date,
@@ -1507,6 +1512,7 @@ export default function TodaySection({
         accumulatedMs: 0,
         startedAt: startAt,
         isSpontaneous: true,
+        ...(isRetroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
       };
       await db.dailyTasks.add(task);
       // お気に入り・クイック起動・音声操作・提案作業など、この関数を通る「すぐ開始」系の
