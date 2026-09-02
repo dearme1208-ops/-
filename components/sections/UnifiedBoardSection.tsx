@@ -67,6 +67,16 @@ export default function UnifiedBoardSection() {
     return () => clearInterval(id);
   }, []);
 
+  // 付箋/本日の作業/ToDoカードを掴んだ際、他のカードの下に隠れたままにならないよう
+  // 最前面に持ってくる。付箋・タスク・ToDoを1つの重なり順で扱うため、種類を問わず
+  // 共通のカウンタで管理する(このボード上だけの見た目上の重なり順で、保存はしない)
+  const zCounterRef = useRef(1);
+  const [zIndexById, setZIndexById] = useState<Record<string, number>>({});
+  function bringToFront(id: string) {
+    zCounterRef.current += 1;
+    setZIndexById((prev) => ({ ...prev, [id]: zCounterRef.current }));
+  }
+
   const [zoomStr, setZoomStr] = useSetting("board.zoom", "1");
   const zoom = clampMemoZoom(Number(zoomStr) || 1);
   function setZoom(z: number) {
@@ -182,7 +192,15 @@ export default function UnifiedBoardSection() {
             style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
           >
             {(notes ?? []).map((note) => (
-              <NoteCard key={note.id} note={note} zoom={zoom} onDragEnd={moveNote} onCommitText={commitNoteText} />
+              <NoteCard
+                key={note.id}
+                note={note}
+                zoom={zoom}
+                zIndex={zIndexById[note.id] ?? 1}
+                onDragEnd={moveNote}
+                onCommitText={commitNoteText}
+                onFocus={() => bringToFront(note.id)}
+              />
             ))}
             {tasks.map((task, i) => (
               <TaskCard
@@ -191,14 +209,25 @@ export default function UnifiedBoardSection() {
                 index={i}
                 now={now}
                 zoom={zoom}
+                zIndex={zIndexById[task.id] ?? 1}
                 onDragEnd={moveTask}
                 onStart={() => startTask(task)}
                 onPause={() => pauseTask(task)}
                 onComplete={() => completeTask(task)}
+                onFocus={() => bringToFront(task.id)}
               />
             ))}
             {todos.map((todo, i) => (
-              <TodoCard key={todo.id} todo={todo} index={i} zoom={zoom} onDragEnd={moveTodo} onComplete={() => completeTodo(todo)} />
+              <TodoCard
+                key={todo.id}
+                todo={todo}
+                index={i}
+                zoom={zoom}
+                zIndex={zIndexById[todo.id] ?? 1}
+                onDragEnd={moveTodo}
+                onComplete={() => completeTodo(todo)}
+                onFocus={() => bringToFront(todo.id)}
+              />
             ))}
           </div>
         </div>
@@ -304,13 +333,17 @@ function DragHandle({
 function NoteCard({
   note,
   zoom,
+  zIndex,
   onDragEnd,
   onCommitText,
+  onFocus,
 }: {
   note: MemoNote;
   zoom: number;
+  zIndex: number;
   onDragEnd: (id: string, x: number, y: number) => void;
   onCommitText: (note: MemoNote, text: string) => void;
+  onFocus: () => void;
 }) {
   const [text, setText] = useState(note.text);
   const idRef = useRef(note.id);
@@ -333,7 +366,8 @@ function NoteCard({
   return (
     <div
       className="absolute flex flex-col rounded-md border-2 shadow-md"
-      style={{ left, top, width: note.width, height: note.height, backgroundColor: colors.bg, borderColor: colors.border }}
+      style={{ left, top, width: note.width, height: note.height, backgroundColor: colors.bg, borderColor: colors.border, zIndex }}
+      onPointerDownCapture={onFocus}
     >
       <DragHandle tone="light" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
       <textarea
@@ -343,6 +377,18 @@ function NoteCard({
         className="min-h-0 flex-1 resize-none bg-transparent px-2 pb-2 text-sm text-ink outline-none"
         placeholder="付箋のメモ..."
       />
+      {note.mailFileDataUrl && (
+        <a
+          href={note.mailFileDataUrl}
+          download={note.mailFileName || "mail.msg"}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="ダウンロードして元のメールを開きます(既定のメールアプリに渡されます)"
+          className="mx-2 mb-1.5 flex shrink-0 items-center gap-1 rounded bg-black/10 px-2 py-1 text-[11px] text-ink/70 hover:bg-black/20"
+        >
+          📧 元のメールを開く
+        </a>
+      )}
     </div>
   );
 }
@@ -352,19 +398,23 @@ function TaskCard({
   index,
   now,
   zoom,
+  zIndex,
   onDragEnd,
   onStart,
   onPause,
   onComplete,
+  onFocus,
 }: {
   task: DailyTask;
   index: number;
   now: number;
   zoom: number;
+  zIndex: number;
   onDragEnd: (id: string, x: number, y: number) => void;
   onStart: () => void;
   onPause: () => void;
   onComplete: () => void;
+  onFocus: () => void;
 }) {
   const defaultPos = cascadePosition(index, MEMO_BOARD_WIDTH - CARD_WIDTH - 480, 40);
   const x = task.boardX ?? defaultPos.x;
@@ -378,7 +428,8 @@ function TaskCard({
   return (
     <div
       className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${running ? "border-alert" : "border-cream/20"}`}
-      style={{ left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT }}
+      style={{ left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT, zIndex }}
+      onPointerDownCapture={onFocus}
     >
       <div
         className="-mx-2 -mt-2 mb-1 flex shrink-0 cursor-grab items-center justify-between rounded-t bg-cream/10 px-2 py-1 active:cursor-grabbing"
@@ -418,14 +469,18 @@ function TodoCard({
   todo,
   index,
   zoom,
+  zIndex,
   onDragEnd,
   onComplete,
+  onFocus,
 }: {
   todo: TodoTask;
   index: number;
   zoom: number;
+  zIndex: number;
   onDragEnd: (id: string, x: number, y: number) => void;
   onComplete: () => void;
+  onFocus: () => void;
 }) {
   const defaultPos = cascadePosition(index, MEMO_BOARD_WIDTH - CARD_WIDTH - 240, 40);
   const x = todo.boardX ?? defaultPos.x;
@@ -437,7 +492,8 @@ function TodoCard({
   return (
     <div
       className="absolute flex flex-col gap-1 rounded-md border-2 border-cream/20 bg-ink/90 p-2 shadow-md"
-      style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT }}
+      style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, zIndex }}
+      onPointerDownCapture={onFocus}
     >
       <DragHandle tone="dark" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
       <div className="flex flex-1 items-start gap-2">
