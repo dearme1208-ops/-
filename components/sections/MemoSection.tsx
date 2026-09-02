@@ -24,7 +24,7 @@ import {
   parseMemoBoardImport,
   serializeMemoBoard,
 } from "@/lib/memo";
-import { formatMailNoteText, parseMsgFile } from "@/lib/mailImport";
+import { formatMailNoteText, parseMsgFile, readFileAsDataUrl } from "@/lib/mailImport";
 import type { MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
 
@@ -495,6 +495,7 @@ export default function MemoSection() {
     try {
       const mail = await parseMsgFile(file);
       const text = formatMailNoteText(mail);
+      const mailFileDataUrl = await readFileAsDataUrl(file);
       maxOrderRef.current += 1;
       const offset = (maxOrderRef.current * 24) % 220;
       const note: MemoNote = {
@@ -503,12 +504,14 @@ export default function MemoSection() {
         x: 40 + offset,
         y: 40 + offset,
         width: 220,
-        height: estimateTextNoteHeight(text),
+        height: estimateTextNoteHeight(text) + 24,
         color: "blue",
         text,
         order: maxOrderRef.current,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        mailFileDataUrl,
+        mailFileName: file.name,
       };
       await db.memoNotes.add(note);
     } catch {
@@ -1392,6 +1395,18 @@ function StickyNoteCard({
           readOnly={connectMode}
           className="min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-black/80 outline-none"
         />
+      )}
+      {note.mailFileDataUrl && (
+        <a
+          href={note.mailFileDataUrl}
+          download={note.mailFileName || "mail.msg"}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="ダウンロードして元のメールを開きます(既定のメールアプリに渡されます)"
+          className="mx-2 mb-1.5 flex shrink-0 items-center gap-1 rounded bg-black/10 px-2 py-1 text-[11px] text-black/70 hover:bg-black/20"
+        >
+          📧 元のメールを開く
+        </a>
       )}
       {!penMode && !connectMode && (
         <div

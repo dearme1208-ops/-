@@ -314,6 +314,8 @@ export interface MemoNote {
   updatedAt: number;
   isChecklist?: boolean; // trueの場合、textではなくchecklistItemsを表示する
   checklistItems?: MemoChecklistItem[];
+  mailFileDataUrl?: string; // Outlookの.msgファイルを取り込んだ付箋の場合、元のファイル本体(data URL)。
+  mailFileName?: string; // 付箋から「元のメールを開く」でダウンロード/OS側のOutlook等に渡すために保持する
 }
 
 export interface MemoChecklistItem {

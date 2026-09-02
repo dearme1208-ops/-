@@ -38,3 +38,15 @@ export function formatMailNoteText(mail: ParsedMailFile): string {
   const headerLines = [mail.subject, [mail.from, mail.date].filter(Boolean).join("　")].filter(Boolean);
   return [...headerLines, "", mail.body].join("\n").trim();
 }
+
+// 元の.msgファイル本体をdata URLとして読み込む。付箋に「元のメールを開く」リンクを
+// 添えるために保持しておく(このアプリ内でメールを解釈して開くことはできないため、
+// クリックでファイルをダウンロード/OS側の既定アプリ(Outlook等)に渡す形になる)
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("ファイルの読み込みに失敗しました"));
+    reader.readAsDataURL(file);
+  });
+}
