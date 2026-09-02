@@ -80,6 +80,7 @@ import CompletedTasksGantt from "@/components/sections/CompletedTasksGantt";
 import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
+import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
 import DayCardModal from "@/components/DayCardModal";
@@ -271,8 +272,8 @@ export default function TodaySection({
   const simpleButtons = simpleButtonsStr === "true";
   // 実行中/予定/完了でタブ分けして表示するモード。選んだタブは端末に保存し、次回も同じ表示にする
   const [taskViewTabRaw, setTaskViewTab] = useSetting("today.taskViewTab", "running");
-  const taskViewTab: "running" | "pending" | "done" =
-    taskViewTabRaw === "pending" || taskViewTabRaw === "done" ? taskViewTabRaw : "running";
+  const taskViewTab: "running" | "pending" | "done" | "board" =
+    taskViewTabRaw === "pending" || taskViewTabRaw === "done" || taskViewTabRaw === "board" ? taskViewTabRaw : "running";
   const [growthStageEnabledStr] = useSetting("today.growthStageEnabled", "true");
   const growthStageEnabled = growthStageEnabledStr === "true";
   const [weeklyAfterHoursNotifyEnabledStr] = useSetting("notify.afterHoursWeeklyEnabled", "false");
@@ -736,6 +737,7 @@ export default function TodaySection({
       nonProvisionalSortedTasks.filter((t) => {
         if (taskViewTab === "running") return t.status === "running" || t.status === "paused";
         if (taskViewTab === "pending") return t.status === "pending";
+        if (taskViewTab === "board") return false;
         return t.status === "done";
       }),
     [nonProvisionalSortedTasks, taskViewTab]
@@ -2955,6 +2957,10 @@ export default function TodaySection({
         </div>
       )}
 
+      {taskViewTab === "board" && <UnifiedBoardSection />}
+
+      {taskViewTab !== "board" && (
+        <>
       {provisionalTask && taskViewTab === "running" && (
         <ProvisionalTaskCard
           task={provisionalTask}
@@ -3499,6 +3505,8 @@ export default function TodaySection({
           );
         })}
       </div>
+        </>
+      )}
 
       <div className="sticky bottom-2 z-10 pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="panel flex items-center gap-1 p-1.5 shadow-lg backdrop-blur">
@@ -3507,6 +3515,7 @@ export default function TodaySection({
               { key: "running", label: "▶ 実行中", count: taskCountsByTab.running },
               { key: "pending", label: "📋 予定", count: taskCountsByTab.pending },
               { key: "done", label: "✅ 完了", count: taskCountsByTab.done },
+              { key: "board", label: "🗂️ ボード", count: undefined },
             ] as const
           ).map((t) => (
             <button
@@ -3515,7 +3524,9 @@ export default function TodaySection({
               className={`flex-1 ${taskViewTab === t.key ? "btn-pill" : "btn-pill-outline"} px-2 py-2 text-xs sm:text-sm`}
             >
               {t.label}
-              <span className={`tabular-nums ${taskViewTab === t.key ? "opacity-70" : "opacity-50"}`}>({t.count})</span>
+              {t.count !== undefined && (
+                <span className={`tabular-nums ${taskViewTab === t.key ? "opacity-70" : "opacity-50"}`}>({t.count})</span>
+              )}
             </button>
           ))}
         </div>
