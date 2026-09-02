@@ -841,6 +841,11 @@ export default function TodaySection({
     () => (tasks ?? []).filter((t) => !t.isProvisional && (t.status === "pending" || t.status === "paused")),
     [tasks]
   );
+  // 仮計測タスクの割り当て先として、完了済みの作業も「もう一度開始」する形で選べるようにする
+  const completedTasksForProvisional = useMemo(
+    () => (tasks ?? []).filter((t) => !t.isProvisional && t.status === "done"),
+    [tasks]
+  );
 
   // 同じ大項目・詳細作業名の組み合わせが同時に計測されないようにするため、
   // 現在計測中の（大項目, 作業名）の組み合わせを把握しておく
@@ -2021,6 +2026,17 @@ export default function TodaySection({
     if (!target) return;
     const provisionalId = provisionalTask.id;
     const startAt = provisionalTask.startedAt ?? Date.now();
+    if (target.status === "done") {
+      // 完了済みの作業を選んだ場合は、restartCompletedTaskと同様に完了記録は
+      // そのまま残し、新しいインスタンスを追加してそちらへ仮計測分を合算する
+      const estimatedSeconds = await computeRemainingEstimatedSeconds(date, target.category, target.name, target.estimatedSeconds);
+      await db.transaction("rw", db.dailyTasks, async () => {
+        await insertRunningTask(target.category, target.name, estimatedSeconds, target.masterTaskId, startAt);
+        await db.dailyTasks.delete(provisionalId);
+      });
+      setTaskViewTab("running");
+      return;
+    }
     // 対象作業を再開してから仮計測タスクを消すまでの間、両方が「計測中」に
     // 見える瞬間ができないよう、ひとつのトランザクションでまとめて処理する
     await db.transaction("rw", db.dailyTasks, async () => {
@@ -2944,6 +2960,7 @@ export default function TodaySection({
           task={provisionalTask}
           now={now}
           candidateTasks={candidateTasks}
+          completedTasks={completedTasksForProvisional}
           favorites={favorites ?? []}
           onAssignExisting={resolveProvisionalToExisting}
           onAssignNew={resolveProvisionalAsNew}

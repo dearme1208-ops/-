@@ -13,6 +13,7 @@ export default function ProvisionalTaskCard({
   task,
   now,
   candidateTasks,
+  completedTasks,
   favorites,
   onAssignExisting,
   onAssignNew,
@@ -21,6 +22,7 @@ export default function ProvisionalTaskCard({
   task: DailyTask;
   now: number;
   candidateTasks: DailyTask[];
+  completedTasks: DailyTask[];
   favorites: MasterTask[];
   onAssignExisting: (targetId: string) => void | Promise<void>;
   onAssignNew: (
@@ -32,7 +34,9 @@ export default function ProvisionalTaskCard({
   ) => void | Promise<void>;
   onFinishAsIs: () => void | Promise<void>;
 }) {
-  const [mode, setMode] = useState<Mode>(candidateTasks.length > 0 ? "today" : favorites.length > 0 ? "favorite" : "master");
+  const [mode, setMode] = useState<Mode>(
+    candidateTasks.length > 0 ? "today" : favorites.length > 0 ? "favorite" : completedTasks.length > 0 ? "today" : "master"
+  );
   const [selectedMaster, setSelectedMaster] = useState<MasterTask | null>(null);
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
@@ -79,7 +83,7 @@ export default function ProvisionalTaskCard({
       <div className="mt-3 border-t border-cream/10 pt-3">
         <p className="mb-2 text-xs text-cream/60">この時間をどの作業に割り当てますか？</p>
         <div className="mb-2 flex flex-wrap gap-2">
-          {candidateTasks.length > 0 && (
+          {(candidateTasks.length > 0 || completedTasks.length > 0) && (
             <button
               className={mode === "today" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
               onClick={() => setMode("today")}
@@ -111,7 +115,7 @@ export default function ProvisionalTaskCard({
 
         {mode === "today" && (
           <div className="space-y-1.5">
-            {candidateTasks.length === 0 && (
+            {candidateTasks.length === 0 && completedTasks.length === 0 && (
               <p className="text-xs text-cream/50">本日の作業に選択できる作業がありません。</p>
             )}
             {candidateTasks.map((t) => (
@@ -124,6 +128,21 @@ export default function ProvisionalTaskCard({
                 <span className="ml-2 text-xs text-cream/40">{t.status === "paused" ? "（一時停止中）" : "（未着手）"}</span>
               </button>
             ))}
+            {completedTasks.length > 0 && (
+              <>
+                <p className="pt-1 text-[10px] text-cream/40">完了済み（もう一度開始）</p>
+                {completedTasks.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => onAssignExisting(t.id)}
+                    className="block w-full rounded-lg bg-ink/60 px-3 py-2 text-left text-sm text-cream opacity-70 hover:bg-ink hover:opacity-100"
+                  >
+                    <span className="text-cream/50">{t.category}</span> {t.name}
+                    <span className="ml-2 text-xs text-cream/40">（完了済み）</span>
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         )}
 
