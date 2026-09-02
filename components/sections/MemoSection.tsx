@@ -1388,7 +1388,18 @@ function StickyNoteCard({
       ) : (
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            // 入力中の文章がこの付箋の高さに収まらなくなったら、はみ出した分だけ
+            // 自動で高さを広げる(手動で縮めたサイズより小さくはしない。縮めたい場合は
+            // 右下のハンドルで手動リサイズする)
+            const ta = e.target;
+            const overflow = ta.scrollHeight - ta.clientHeight;
+            if (overflow > 2) {
+              const newHeight = Math.min(MEMO_BOARD_HEIGHT - note.y, note.height + overflow);
+              onResizeEnd(note.id, note.width, newHeight);
+            }
+          }}
           onFocus={onFocusNote}
           onBlur={() => onCommitText(note.id, text)}
           placeholder="メモ..."

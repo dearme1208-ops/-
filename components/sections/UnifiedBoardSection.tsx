@@ -86,6 +86,9 @@ export default function UnifiedBoardSection() {
   async function moveNote(id: string, x: number, y: number) {
     await db.memoNotes.update(id, { x, y, updatedAt: Date.now() });
   }
+  async function growNote(id: string, height: number) {
+    await db.memoNotes.update(id, { height, updatedAt: Date.now() });
+  }
   async function commitNoteText(note: MemoNote, text: string) {
     if (text === note.text) return;
     await db.memoNotes.update(note.id, { text, updatedAt: Date.now() });
@@ -199,6 +202,7 @@ export default function UnifiedBoardSection() {
                 zIndex={zIndexById[note.id] ?? 1}
                 onDragEnd={moveNote}
                 onCommitText={commitNoteText}
+                onGrow={growNote}
                 onFocus={() => bringToFront(note.id)}
               />
             ))}
@@ -337,6 +341,7 @@ function NoteCard({
   onDragEnd,
   onCommitText,
   onFocus,
+  onGrow,
 }: {
   note: MemoNote;
   zoom: number;
@@ -344,6 +349,7 @@ function NoteCard({
   onDragEnd: (id: string, x: number, y: number) => void;
   onCommitText: (note: MemoNote, text: string) => void;
   onFocus: () => void;
+  onGrow: (id: string, height: number) => void;
 }) {
   const [text, setText] = useState(note.text);
   const idRef = useRef(note.id);
@@ -372,7 +378,15 @@ function NoteCard({
       <DragHandle tone="light" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          // 入力中の文章がこの付箋の高さに収まらなくなったら、はみ出した分だけ自動で広げる
+          const ta = e.target;
+          const overflow = ta.scrollHeight - ta.clientHeight;
+          if (overflow > 2) {
+            onGrow(note.id, Math.min(MEMO_BOARD_HEIGHT - note.y, note.height + overflow));
+          }
+        }}
         onBlur={() => onCommitText(note, text)}
         className="min-h-0 flex-1 resize-none bg-transparent px-2 pb-2 text-sm text-ink outline-none"
         placeholder="付箋のメモ..."
