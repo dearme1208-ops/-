@@ -28,10 +28,37 @@ import type { DailyTask, MasterTask, MemoNote, TodoTask } from "@/lib/types";
 const CARD_WIDTH = 220;
 const TASK_CARD_HEIGHT = 110;
 const TODO_CARD_HEIGHT = 90;
+const PLACEMENT_GRID = 30;
+const PLACEMENT_MARGIN = 10;
 
-function cascadePosition(index: number, originX: number, originY: number): { x: number; y: number } {
-  const offset = (index * 28) % 260;
-  return { x: originX + offset, y: originY + offset };
+interface BoardRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function rectsOverlap(a: BoardRect, b: BoardRect): boolean {
+  return !(
+    a.x + a.width + PLACEMENT_MARGIN <= b.x ||
+    b.x + b.width + PLACEMENT_MARGIN <= a.x ||
+    a.y + a.height + PLACEMENT_MARGIN <= b.y ||
+    b.y + b.height + PLACEMENT_MARGIN <= a.y
+  );
+}
+
+// 既存のカード(付箋・本日の作業・ToDo)と重ならない置き場所を、盤面を左上から
+// 走査して探す。手動でドラッグして重ねるのは自由なままにしたいので、この関数は
+// 「まだ位置が決まっていない新規カード」の初期配置にだけ使う
+function findFreeSlot(occupied: BoardRect[], width: number, height: number): { x: number; y: number } {
+  for (let y = 20; y <= MEMO_BOARD_HEIGHT - height; y += PLACEMENT_GRID) {
+    for (let x = 20; x <= MEMO_BOARD_WIDTH - width; x += PLACEMENT_GRID) {
+      const candidate: BoardRect = { x, y, width, height };
+      if (!occupied.some((r) => rectsOverlap(candidate, r))) return { x, y };
+    }
+  }
+  // 盤面が埋まりきっている場合(通常はまず起きない)は右下に寄せて返す
+  return { x: MEMO_BOARD_WIDTH - width, y: MEMO_BOARD_HEIGHT - height };
 }
 
 export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () => void }) {
@@ -60,6 +87,45 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
 
   const tasks = (dailyTasks ?? []).filter((t) => !t.isProvisional && t.status !== "done");
   const todos = (todoTasks ?? []).filter((t) => !t.completed);
+
+  // 新しく現れた(まだboardX/boardYを持たない)作業・ToDoカードに、既存の付箋/カードと
+  // 重ならない位置を1回だけ自動で割り当てる。手動でドラッグして重ねるのはユーザーの
+  // 意図なので、ここでは「位置が未確定の新規カード」だけを対象にする
+  useEffect(() => {
+    // notes/dailyTasks/todoTasksがまだuseLiveQueryから読み込み中(undefined)の間や、
+    // selectedBoardIdがまだ実際のメモ帳に確定していない(初期値の""のままなど)間に
+    // 実行すると、後から届く付箋を避けられずに重なって配置されてしまうため、
+    // すべて確定してから行う
+    if (notes === undefined || dailyTasks === undefined || todoTasks === undefined) return;
+    if (!selectedBoardId || !boards || !boards.some((b) => b.id === selectedBoardId)) return;
+    const unpositionedTasks = tasks.filter((t) => t.boardX === undefined || t.boardY === undefined);
+    const unpositionedTodos = todos.filter((t) => t.boardX === undefined || t.boardY === undefined);
+    if (unpositionedTasks.length === 0 && unpositionedTodos.length === 0) return;
+
+    const occupied: BoardRect[] = [
+      ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
+      ...tasks
+        .filter((t) => t.boardX !== undefined && t.boardY !== undefined)
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
+      ...todos
+        .filter((t) => t.boardX !== undefined && t.boardY !== undefined)
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TODO_CARD_HEIGHT })),
+    ];
+
+    (async () => {
+      for (const t of unpositionedTasks) {
+        const pos = findFreeSlot(occupied, CARD_WIDTH, TASK_CARD_HEIGHT);
+        occupied.push({ ...pos, width: CARD_WIDTH, height: TASK_CARD_HEIGHT });
+        await db.dailyTasks.update(t.id, { boardX: pos.x, boardY: pos.y });
+      }
+      for (const t of unpositionedTodos) {
+        const pos = findFreeSlot(occupied, CARD_WIDTH, TODO_CARD_HEIGHT);
+        occupied.push({ ...pos, width: CARD_WIDTH, height: TODO_CARD_HEIGHT });
+        await db.todoTasks.update(t.id, { boardX: pos.x, boardY: pos.y });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, todos, notes, selectedBoardId, boards]);
 
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -211,11 +277,10 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
                 onFocus={() => bringToFront(note.id)}
               />
             ))}
-            {tasks.map((task, i) => (
+            {tasks.map((task) => (
               <TaskCard
                 key={task.id}
                 task={task}
-                index={i}
                 now={now}
                 zoom={zoom}
                 zIndex={zIndexById[task.id] ?? 1}
@@ -226,11 +291,10 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
                 onFocus={() => bringToFront(task.id)}
               />
             ))}
-            {todos.map((todo, i) => (
+            {todos.map((todo) => (
               <TodoCard
                 key={todo.id}
                 todo={todo}
-                index={i}
                 zoom={zoom}
                 zIndex={zIndexById[todo.id] ?? 1}
                 onDragEnd={moveTodo}
@@ -414,7 +478,6 @@ function NoteCard({
 
 function TaskCard({
   task,
-  index,
   now,
   zoom,
   zIndex,
@@ -425,7 +488,6 @@ function TaskCard({
   onFocus,
 }: {
   task: DailyTask;
-  index: number;
   now: number;
   zoom: number;
   zIndex: number;
@@ -435,9 +497,10 @@ function TaskCard({
   onComplete: () => void;
   onFocus: () => void;
 }) {
-  const defaultPos = cascadePosition(index, MEMO_BOARD_WIDTH - CARD_WIDTH - 480, 40);
-  const x = task.boardX ?? defaultPos.x;
-  const y = task.boardY ?? defaultPos.y;
+  // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
+  // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
+  const x = task.boardX ?? 40;
+  const y = task.boardY ?? 40;
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(x, y, CARD_WIDTH, TASK_CARD_HEIGHT, zoom, (nx, ny) =>
     onDragEnd(task.id, nx, ny)
   );
@@ -486,7 +549,6 @@ function TaskCard({
 
 function TodoCard({
   todo,
-  index,
   zoom,
   zIndex,
   onDragEnd,
@@ -494,16 +556,16 @@ function TodoCard({
   onFocus,
 }: {
   todo: TodoTask;
-  index: number;
   zoom: number;
   zIndex: number;
   onDragEnd: (id: string, x: number, y: number) => void;
   onComplete: () => void;
   onFocus: () => void;
 }) {
-  const defaultPos = cascadePosition(index, MEMO_BOARD_WIDTH - CARD_WIDTH - 240, 40);
-  const x = todo.boardX ?? defaultPos.x;
-  const y = todo.boardY ?? defaultPos.y;
+  // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
+  // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
+  const x = todo.boardX ?? 40;
+  const y = todo.boardY ?? 40;
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(x, y, CARD_WIDTH, TODO_CARD_HEIGHT, zoom, (nx, ny) =>
     onDragEnd(todo.id, nx, ny)
   );
