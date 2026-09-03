@@ -2114,6 +2114,15 @@ function SubtaskRow({
             subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
           }`}
         />
+        {sub.dueDate && (
+          <button
+            className="shrink-0 text-[10px] text-cream/40 hover:text-alert"
+            onClick={() => onUpdateSubtaskDueDate(sub, "")}
+            aria-label="期日をクリア"
+          >
+            ✕
+          </button>
+        )}
       </div>
       {subImageExpanded && sub.imageDataUrl && (
         <div
@@ -3159,11 +3168,21 @@ function TaskDetailModal({
                   }`}
                 />
                 <input
+                  key={sub.id + (sub.dueDate ?? "")}
                   type="date"
                   defaultValue={sub.dueDate ?? ""}
                   onBlur={(e) => updateSubtaskDueDate(sub, e.target.value)}
                   className="w-32 shrink-0 rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
                 />
+                {sub.dueDate && (
+                  <button
+                    className="shrink-0 text-[11px] text-cream/40 hover:text-alert"
+                    onClick={() => updateSubtaskDueDate(sub, "")}
+                    aria-label="期日をクリア"
+                  >
+                    ✕
+                  </button>
+                )}
                 <button className="text-cream/40 hover:text-alert" onClick={() => deleteSubtask(sub)} aria-label="削除">
                   ✕
                 </button>
