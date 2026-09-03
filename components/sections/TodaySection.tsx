@@ -90,17 +90,9 @@ import TomorrowDraftModal from "@/components/TomorrowDraftModal";
 import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
-import dynamic from "next/dynamic";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import LibraryCardStack from "@/components/sections/LibraryCardStack";
-
-// 実際にWebGL(three.js)でレンダリングする本気の書架。図書館モードで「完了」タブを
-// 開いた時だけ読み込まれる(ssr:falseかつ動的import)ため、選ばなければバンドルにも
-// 実行コストにも一切乗らない
-const LibraryBookshelf3D = dynamic(() => import("@/components/sections/LibraryBookshelf3D"), {
-  ssr: false,
-  loading: () => <p className="panel p-4 text-center text-sm text-cream/50">書架を準備中…</p>,
-});
+import LibraryBookshelf from "@/components/sections/LibraryBookshelf";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
@@ -3562,7 +3554,7 @@ export default function TodaySection({
         />
       )}
 
-      {libraryMode && taskViewTab === "done" && <LibraryBookshelf3D tasks={visibleTasks} />}
+      {libraryMode && taskViewTab === "done" && <LibraryBookshelf tasks={visibleTasks} />}
 
       {libraryMode && (taskViewTab === "running" || taskViewTab === "pending") ? (
         <>
