@@ -411,6 +411,17 @@ html[data-high-contrast="true"] :focus-visible {
     --panel-rgb: 250 244 228;
   }
 
+  /* パワプロ風モード: 育成ゲームの選手育成画面を思わせる、白背景に鮮やかなブルーを
+     効かせたスポーツゲームUI風のライトテーマ。他の演出テーマの多くが暗い背景基調な中、
+     このモードだけ画面全体が真っ白に近い明るい配色になる */
+  html[data-visual-mode="powerpro"] {
+    color-scheme: light;
+    --accent-rgb: 32 108 214;
+    --ink-rgb: 246 248 252;
+    --cream-rgb: 26 32 46;
+    --panel-rgb: 255 255 255;
+  }
+
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
      vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
      日本語には効かず数字・記号にしか効かない。そこで時刻・パーセンテージ等の
@@ -1700,6 +1711,44 @@ html[data-high-contrast="true"] :focus-visible {
     );
   }
 
+  /* --- パワプロ風モード: スポーツゲームのステータス画面らしく、実行中は元気よく
+     弾む光彩、疲労蓄積(超過)は激しく明滅させて「無理をしている」感を出す --- */
+  .card-running-pp {
+    animation: card-running-pp-glow 1.6s ease-in-out infinite;
+  }
+  @keyframes card-running-pp-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.9), 0 0 18px 3px rgb(var(--accent-rgb) / 0.35);
+    }
+  }
+  .card-overrun-pp {
+    animation: card-overrun-pp-glow 0.7s ease-in-out infinite;
+  }
+  @keyframes card-overrun-pp-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.55);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.95), 0 0 22px 6px rgb(var(--accent-rgb) / 0.5);
+    }
+  }
+  .hazard-bar-pp {
+    height: 4px;
+    border-radius: 999px;
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgb(var(--accent-rgb)) 0 6px,
+      rgb(var(--accent-rgb) / 0.35) 6px 12px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 0.8s linear infinite;
+  }
+
   /* --- 禅モード: 他テーマの点滅・警戒色を一切使わず、実行中/超過中とも同じ極めて緩やかな
      呼吸だけで伝える(超過してもテンポは変えない。急かさない) --- */
   .card-running-zen {
@@ -2238,6 +2287,16 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-lib {
     border-radius: 3px;
     background-color: rgb(var(--accent-rgb) / 0.55);
+  }
+  .gantt-bar-overrun-pp {
+    border-radius: 999px;
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgb(var(--accent-rgb)) 0 6px,
+      rgb(var(--accent-rgb) / 0.35) 6px 12px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 1s linear infinite;
   }
   .gantt-bar-overrun-terminal {
     background-image: repeating-linear-gradient(
@@ -2790,6 +2849,8 @@ html[data-high-contrast="true"] :focus-visible {
   .card-overrun-adv,
   .card-running-lib,
   .card-overrun-lib,
+  .card-running-pp,
+  .card-overrun-pp,
   .hazard-bar,
   .hazard-bar-v11,
   .hazard-bar-p5,
@@ -2798,6 +2859,7 @@ html[data-high-contrast="true"] :focus-visible {
   .hazard-bar-terminal,
   .hazard-bar-adv,
   .hazard-bar-lib,
+  .hazard-bar-pp,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,
@@ -2806,6 +2868,7 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-terminal,
   .gantt-bar-overrun-adv,
   .gantt-bar-overrun-lib,
+  .gantt-bar-overrun-pp,
   .zen-enso,
   .overrun-flicker,
   .overrun-flicker-intense,

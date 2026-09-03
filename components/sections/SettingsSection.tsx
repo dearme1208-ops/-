@@ -1249,6 +1249,12 @@ export default function SettingsSection() {
             📚 図書館モード
           </button>
           <button
+            className={visualMode === "powerpro" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("powerpro")}
+          >
+            ⚾ 育成選手モード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1336,6 +1342,11 @@ export default function SettingsSection() {
         {visualMode === "library" && (
           <p className="text-xs text-cream/50">
             画面全体が古い紙・革表紙を思わせるセピア/羊皮紙のライトテーマに変わるだけでなく、「本日の作業」タブの操作感そのものが変わります。実行中/予定タブは1枚ずつめくれるインデックスカードの束になり、右にスワイプで開始/完了（返却スタンプ演出つき）、左にスワイプで次のカードへ。完了タブは通常の一覧の代わりに、読了(完了)した作業が本の背表紙として並ぶ「書架」になります。作業は「貸出」、想定超過は「延滞」など、呼び名も図書館の用語に総入れ替えされます。
+          </p>
+        )}
+        {visualMode === "powerpro" && (
+          <p className="text-xs text-cream/50">
+            画面全体が白背景に鮮やかなブルーを効かせた、育成ゲームの選手育成画面のようなライトテーマに変わります。「本日の作業」タブが練習メニュー選択画面そのものに総入れ替えされ、球速・コントロール・スタミナなどの能力値カードで今日の調子を、体力ゲージ・やる気で今日の残り具合を確認しながら練習(作業)を進められます。作業は「練習」、完了は「練習完了！」など、呼び名も育成ゲームの用語に総入れ替えされます。
           </p>
         )}
         {visualMode === "off" && (

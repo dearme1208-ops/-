@@ -104,6 +104,16 @@ const HUB_STAGES: GrowthStage[] = [
   { icon: "✨", label: "完全掌握" },
 ];
 
+// パワプロ風モード: 育成選手がランクアップしていく過程になぞらえた段階
+const POWERPRO_STAGES: GrowthStage[] = [
+  { icon: "⚪", label: "育成初日" },
+  { icon: "🟢", label: "戦力外候補" },
+  { icon: "🔵", label: "一軍半" },
+  { icon: "🟡", label: "レギュラー" },
+  { icon: "🟠", label: "エース級" },
+  { icon: "⭐", label: "球界の顔" },
+];
+
 // 図書館モード: バラバラの本が少しずつ分類・配架されていく過程になぞらえた段階
 const LIBRARY_STAGES: GrowthStage[] = [
   { icon: "📇", label: "未整理" },
@@ -125,6 +135,7 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   adventurer: ADVENTURER_STAGES,
   hub: HUB_STAGES,
   library: LIBRARY_STAGES,
+  powerpro: POWERPRO_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り
