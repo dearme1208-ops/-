@@ -37,6 +37,8 @@ import {
 } from "@/lib/time";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
+import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
+import { readFileAsDataUrl } from "@/lib/mailImport";
 import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import { DEFAULT_MEMO_NOTE_COLOR, estimateChecklistNoteHeight, estimateTextNoteHeight } from "@/lib/memo";
@@ -63,7 +65,7 @@ const MAX_PX_PER_DAY = 80;
 const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
-type ViewKey = "myday" | "important" | "planned" | "overdue" | `list:${string}`;
+type ViewKey = "myday" | "important" | "planned" | "overdue" | "projects" | `list:${string}`;
 type DisplayMode = "list" | "gantt" | "calendar" | "kanban" | "tree";
 
 // リスト内の並び替え。「手動」はドラッグ&ドロップで決めたorder順、それ以外は
@@ -161,6 +163,8 @@ export default function TodoSection({
   const [view, setView] = useState<ViewKey>("myday");
   const [bottomViewBarStr] = useSetting("todo.bottomViewBar", "false");
   const bottomViewBar = bottomViewBarStr === "true";
+  const [showProjectsViewStr] = useSetting("todo.showProjectsView", "false");
+  const showProjectsView = showProjectsViewStr === "true";
   const [tabBarStyle] = useSetting("ui.bottomTabBarStyle", "pill");
   const [tabBarAdaptiveEmphasisStr] = useSetting("ui.bottomTabBarAdaptiveEmphasis", "false");
   const tabBarAdaptiveEmphasis = tabBarAdaptiveEmphasisStr === "true";
@@ -887,6 +891,10 @@ export default function TodoSection({
     await db.todoTasks.update(sub.id, { dueDate: dueDate || undefined });
   }
 
+  async function updateSubtaskImageInline(sub: TodoTask, imageDataUrl: string | undefined) {
+    await db.todoTasks.update(sub.id, { imageDataUrl });
+  }
+
   async function reorderSubtasks(subtasks: TodoTask[], oldIndex: number, newIndex: number) {
     const reordered = arrayMove(subtasks, oldIndex, newIndex);
     await db.transaction("rw", db.todoTasks, async () => {
@@ -1083,6 +1091,14 @@ export default function TodoSection({
             ⚠ 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
           </button>
         )}
+        {showProjectsView && (
+          <button
+            onClick={() => setView("projects")}
+            className={view === "projects" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+          >
+            📁 案件
+          </button>
+        )}
         {(lists ?? []).map((l) => (
           <div key={l.id} className="flex items-center">
             <button
@@ -1240,6 +1256,9 @@ export default function TodoSection({
         </div>
       )}
 
+      {view === "projects" ? (
+        <TodoProjectsView today={today} />
+      ) : (
       <div className="panel p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-bold">{panelTitle}</h2>
@@ -1650,6 +1669,7 @@ export default function TodoSection({
                         onToggleSubtask={toggleSubtaskComplete}
                         onUpdateSubtaskTitle={updateSubtaskTitleInline}
                         onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                        onUpdateSubtaskImage={updateSubtaskImageInline}
                         onReorderSubtasks={reorderSubtasks}
                       />
                     ))}
@@ -1668,6 +1688,7 @@ export default function TodoSection({
                     onToggleSubtask={toggleSubtaskComplete}
                     onUpdateSubtaskTitle={updateSubtaskTitleInline}
                     onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                    onUpdateSubtaskImage={updateSubtaskImageInline}
                     onReorderSubtasks={reorderSubtasks}
                     selectionMode={bulkSelectionMode}
                     selected={selectedTaskIds.has(task.id)}
@@ -1702,6 +1723,7 @@ export default function TodoSection({
                         onToggleSubtask={toggleSubtaskComplete}
                         onUpdateSubtaskTitle={updateSubtaskTitleInline}
                         onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                        onUpdateSubtaskImage={updateSubtaskImageInline}
                       />
                     ))}
                   </div>
@@ -1711,6 +1733,7 @@ export default function TodoSection({
           </>
         )}
       </div>
+      )}
 
       {bottomViewBar && (
         <BottomTabBar
@@ -1767,6 +1790,78 @@ export default function TodoSection({
             </button>
           </div>
         </Modal>
+      )}
+    </div>
+  );
+}
+
+// ToDoタブから案件タブに移動せずに、進行中の案件を確認・段階のチェックができる
+// 軽量ビュー(設定でON/OFFできる)。案件そのものの編集(期日・単価・段階の追加等)は
+// 引き続き案件タブで行う前提のため、ここでは進捗確認とチェックだけに絞っている
+function TodoProjectsView({ today }: { today: string }) {
+  const projects = useLiveQuery(() => db.projects.toArray(), []);
+  const activeProjects = useMemo(
+    () => (projects ?? []).filter((p) => !p.completedAt).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+    [projects]
+  );
+
+  return (
+    <div className="panel space-y-3 p-4">
+      <h2 className="font-display text-lg font-bold">📁 案件（{activeProjects.length}）</h2>
+      <p className="text-xs text-cream/50">
+        進行中の案件をここから確認・段階のチェックができます。期日や単価などの編集は「案件」タブで行ってください。
+      </p>
+      {activeProjects.length === 0 ? (
+        <p className="text-sm text-cream/50">進行中の案件はありません。</p>
+      ) : (
+        <div className="space-y-2">
+          {activeProjects.map((project) => {
+            const overdue = project.dueDate < today;
+            const progress = computeProjectProgress(project.stages);
+            return (
+              <div key={project.id} className="rounded-lg bg-ink/50 px-3 py-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs text-cream/50">
+                      {project.title}
+                      {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
+                    </div>
+                    <div className="text-sm text-cream">{project.workName}</div>
+                  </div>
+                  <span className={`text-xs font-bold ${overdue ? "text-alert" : "text-cream/60"}`}>
+                    期日 {project.dueDate}
+                    {overdue && "（超過）"}
+                  </span>
+                </div>
+                {progress !== null && (
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink">
+                    <div className="h-full rounded-full bg-cream/70" style={{ width: `${Math.round(progress * 100)}%` }} />
+                  </div>
+                )}
+                {project.stages && project.stages.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {project.stages.map((stage) => (
+                      <button
+                        key={stage.id}
+                        onClick={() => toggleProjectStage(project, stage.id)}
+                        className="flex w-full items-center gap-2 text-left text-xs text-cream/70 hover:text-cream"
+                      >
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+                            isStageDone(stage) ? "border-cream bg-cream text-ink" : "border-cream/40"
+                          }`}
+                        >
+                          {isStageDone(stage) ? "✓" : ""}
+                        </span>
+                        <span className={isStageDone(stage) ? "text-cream/40 line-through" : ""}>{stage.title || "（段階名未入力）"}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -1917,6 +2012,7 @@ function SubtaskRow({
   onToggleSubtask,
   onUpdateSubtaskTitle,
   onUpdateSubtaskDueDate,
+  onUpdateSubtaskImage,
   dragHandleProps,
 }: {
   sub: TodoTask;
@@ -1924,10 +2020,13 @@ function SubtaskRow({
   onToggleSubtask: (sub: TodoTask) => void;
   onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
 }) {
   const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
   const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
+  const subImageInputRef = useRef<HTMLInputElement>(null);
+  const [subImageExpanded, setSubImageExpanded] = useState(false);
   return (
     <div
       className={`rounded-lg border border-cream/20 bg-ink/50 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
@@ -1968,6 +2067,26 @@ function SubtaskRow({
         {subDueToday && (
           <span className="shrink-0 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
         )}
+        <button
+          onClick={() => (sub.imageDataUrl ? setSubImageExpanded(true) : subImageInputRef.current?.click())}
+          className="shrink-0 text-[11px] text-cream/40 hover:text-cream/70"
+          title={sub.imageDataUrl ? "画像を表示" : "画像を追加"}
+        >
+          {sub.imageDataUrl ? "🖼️" : "📷"}
+        </button>
+        <input
+          ref={subImageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const dataUrl = await readFileAsDataUrl(file);
+            onUpdateSubtaskImage(sub, dataUrl);
+            e.target.value = "";
+          }}
+        />
         <input
           key={sub.id + (sub.dueDate ?? "")}
           type="date"
@@ -1978,6 +2097,30 @@ function SubtaskRow({
           }`}
         />
       </div>
+      {subImageExpanded && sub.imageDataUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setSubImageExpanded(false)}
+        >
+          <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
+            <img src={sub.imageDataUrl} alt={sub.title} className="max-h-[75vh] max-w-full rounded-lg object-contain" />
+            <div className="mt-2 flex justify-center gap-2">
+              <button
+                className="btn-pill-outline text-xs"
+                onClick={() => {
+                  onUpdateSubtaskImage(sub, undefined);
+                  setSubImageExpanded(false);
+                }}
+              >
+                画像を削除
+              </button>
+              <button className="btn-pill text-xs" onClick={() => setSubImageExpanded(false)}>
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1988,6 +2131,7 @@ function SortableSubtaskRow(props: {
   onToggleSubtask: (sub: TodoTask) => void;
   onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.sub.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -2009,6 +2153,7 @@ function TaskBlock({
   onToggleSubtask,
   onUpdateSubtaskTitle,
   onUpdateSubtaskDueDate,
+  onUpdateSubtaskImage,
   onReorderSubtasks,
   selectionMode,
   selected,
@@ -2023,6 +2168,7 @@ function TaskBlock({
   onToggleSubtask: (sub: TodoTask) => void;
   onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
   selectionMode?: boolean;
   selected?: boolean;
@@ -2113,6 +2259,7 @@ function TaskBlock({
                         onToggleSubtask={onToggleSubtask}
                         onUpdateSubtaskTitle={onUpdateSubtaskTitle}
                         onUpdateSubtaskDueDate={onUpdateSubtaskDueDate}
+                        onUpdateSubtaskImage={onUpdateSubtaskImage}
                       />
                     ))}
                   </SortableContext>
@@ -2126,6 +2273,7 @@ function TaskBlock({
                     onToggleSubtask={onToggleSubtask}
                     onUpdateSubtaskTitle={onUpdateSubtaskTitle}
                     onUpdateSubtaskDueDate={onUpdateSubtaskDueDate}
+                    onUpdateSubtaskImage={onUpdateSubtaskImage}
                   />
                 ))
               )}
@@ -2147,6 +2295,7 @@ function SortableTaskBlock(props: {
   onToggleSubtask: (sub: TodoTask) => void;
   onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -2296,6 +2445,73 @@ function TaskRow({
       <button onClick={onToggleImportant} aria-label="重要" className="shrink-0 text-lg">
         {task.important ? <span className="text-alert">★</span> : <span className="text-cream/30">☆</span>}
       </button>
+    </div>
+  );
+}
+
+// タスク詳細の画像添付欄。他の入力欄と違い「保存」ボタンを待たず、選択/削除した
+// 時点で即座にDBへ反映する(画像は一覧の他編集操作から独立した添付物のため)
+function TaskImageField({ task }: { task: TodoTask }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [imageDataUrl, setImageDataUrl] = useState(task.imageDataUrl);
+  const [expanded, setExpanded] = useState(false);
+
+  async function handleFile(file: File) {
+    const dataUrl = await readFileAsDataUrl(file);
+    setImageDataUrl(dataUrl);
+    await db.todoTasks.update(task.id, { imageDataUrl: dataUrl });
+  }
+  async function removeImage() {
+    setImageDataUrl(undefined);
+    setExpanded(false);
+    await db.todoTasks.update(task.id, { imageDataUrl: undefined });
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = "";
+        }}
+      />
+      {imageDataUrl ? (
+        <>
+          <img
+            src={imageDataUrl}
+            alt=""
+            onClick={() => setExpanded(true)}
+            className="h-14 w-14 shrink-0 cursor-pointer rounded-lg border border-cream/20 object-cover"
+          />
+          <button className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80" onClick={() => inputRef.current?.click()}>
+            画像を差し替え
+          </button>
+          <button className="text-xs text-alert" onClick={removeImage}>
+            削除
+          </button>
+        </>
+      ) : (
+        <button className="btn-pill-outline text-xs" onClick={() => inputRef.current?.click()}>
+          📷 画像を追加
+        </button>
+      )}
+      {expanded && imageDataUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setExpanded(false)}>
+          <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
+            <img src={imageDataUrl} alt="" className="max-h-[75vh] max-w-full rounded-lg object-contain" />
+            <div className="mt-2 flex justify-center">
+              <button className="btn-pill text-xs" onClick={() => setExpanded(false)}>
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2530,6 +2746,8 @@ function TaskDetailModal({
             </button>
           )}
         </div>
+
+        <TaskImageField task={task} />
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-cream/60">対応状況</label>

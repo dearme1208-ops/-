@@ -125,6 +125,8 @@ export default function SettingsSection() {
   const growthStageEnabled = growthStageEnabledStr === "true";
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
+  const [showProjectsViewStr, setShowProjectsViewStr] = useSetting("todo.showProjectsView", "false");
+  const showProjectsView = showProjectsViewStr === "true";
   const [tagPresetsJson, setTagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
   const tagPresets = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
   const [categoryPresetsJson, setCategoryPresetsJson] = useSetting("todo.categoryPresets", "[]");
@@ -1671,6 +1673,19 @@ export default function SettingsSection() {
           {masterEditModeStr === "rename"
             ? "この実績が紐づく作業マスタの名称・区分もそのまま書き換えます。同じマスタに紐づく他の日の実績の表示も一緒に変わります。"
             : "新しい名称・区分の作業マスタが既にあればそこに繋ぎ変え、なければ新規作成して繋ぎ変えます。元のマスタや、それに紐づく他の実績には影響しません。"}
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">ToDoタブの案件ビュー</h3>
+        <button
+          className={showProjectsView ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => setShowProjectsViewStr(showProjectsView ? "false" : "true")}
+        >
+          ToDoタブに「📁 案件」ビューを表示: {showProjectsView ? "ON" : "OFF"}
+        </button>
+        <p className="text-xs text-cream/50">
+          ONにすると、ToDoタブの一覧切替に「📁 案件」が増え、案件タブに切り替えなくても進行中の案件の進捗確認・段階のチェックができます（期日や単価などの編集は引き続き案件タブで行います）。
         </p>
       </div>
 

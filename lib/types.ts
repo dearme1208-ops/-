@@ -281,6 +281,7 @@ export interface TodoTask {
   reminderFiredAt?: number; // 上記の通知を実際に表示した時刻。二重に通知しないためのフラグ(reminderAtを再設定するとクリアされる)
   boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。付箋と違いこちらは
   boardY?: number; // ToDo自体が残り続ける限り保持する(マイデイから外れると自然に表示対象から外れる)
+  imageDataUrl?: string; // タスク(サブタスクを含む)に添付した画像。1枚のみ、data URLとしてそのまま保存する
 }
 
 // ---- マンダラチャート ----

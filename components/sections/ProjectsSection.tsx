@@ -10,7 +10,7 @@ import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/proj
 import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { computeProjectForecast, type ProjectForecast } from "@/lib/projectForecast";
-import { computeProjectProgress, isStageDone } from "@/lib/projectStage";
+import { computeProjectProgress, isStageDone, toggleProjectStage as toggleProjectStageShared } from "@/lib/projectStage";
 import { useSetting } from "@/lib/settings";
 import { cardOverrunClass, useVisualMode, type ThemedMode } from "@/lib/theme";
 import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/time";
@@ -343,24 +343,7 @@ export default function ProjectsSection({
   }
 
   async function toggleProjectStage(project: ProjectItem, stageId: string) {
-    const allStages = project.stages ?? [];
-    const idx = allStages.findIndex((s) => s.id === stageId);
-    const stage = allStages[idx];
-    // 完了にする方向だけ確認する（未完了に戻す操作は誤操作でも実害が小さいため確認しない）。
-    // チェックボックスが小さく、段階が多い案件では誤タップしやすいための保険。
-    // 前の段階が未完了の場合は、その旨も確認メッセージに含める（依存関係の警告）
-    if (stage && !stage.completed) {
-      const incompletePrevious = allStages.slice(0, idx).filter((s) => !s.completed);
-      const warning =
-        incompletePrevious.length > 0
-          ? `\n\n⚠ 前の段階「${incompletePrevious.map((s) => s.title).join("」「")}」がまだ完了していません。`
-          : "";
-      if (!confirm(`「${stage.title}」を完了にしますか?${warning}`)) return;
-    }
-    const stages = allStages.map((s) =>
-      s.id === stageId ? { ...s, completed: !s.completed, completedAt: !s.completed ? Date.now() : undefined } : s
-    );
-    await db.projects.update(project.id, { stages });
+    await toggleProjectStageShared(project, stageId);
   }
 
   // 段階を本日の作業に追加する前に、案件の業務区分(大項目)を引き継ぎ、

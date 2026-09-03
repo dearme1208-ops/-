@@ -74,7 +74,8 @@ function StageRow({
       <input
         value={stage.title}
         onChange={(e) => onSetTitle(stage.id, e.target.value)}
-        className={`min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-1 text-xs text-cream focus:border-cream/20 focus:outline-none ${
+        placeholder="段階名（未入力）"
+        className={`min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-1 text-xs text-cream placeholder:text-cream/30 focus:border-cream/20 focus:outline-none ${
           isDone ? "text-cream/40 line-through" : ""
         }`}
       />
