@@ -202,6 +202,12 @@ export interface ProjectItem {
   stages?: ProjectStage[]; // 案件を段階（マイルストーン）に分けて進捗管理する場合に使う
   estimatedTotalSeconds?: number; // 見積もり総所要時間（任意）。設定すると、直近の消化ペースから
   // 期日に間に合うかを予測する「納期到達予測」の対象になる
+  // ---- 経営分析フレームワーク(任意)。案件を1つの「事業」に見立てて、
+  // ITパスポート試験にも出るような定番の戦略分析を書き留められるようにしたもの。
+  // すべて空欄可(未入力の案件では分析タブを開いても何も表示されない) ----
+  swot?: { strengths: string; weaknesses: string; opportunities: string; threats: string };
+  bsc?: { financial: string; customer: string; process: string; growth: string };
+  threeC?: { customer: string; competitor: string; company: string };
 }
 
 // ---- ToDo ----

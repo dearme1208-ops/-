@@ -18,12 +18,14 @@ import type { DailyTask, ProjectItem, ProjectStage } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
+import ProjectAnalysisDialog from "@/components/sections/ProjectAnalysisDialog";
+import ProjectPPMChart from "@/components/sections/ProjectPPMChart";
 import Modal from "@/components/ui/Modal";
 import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
 import { showUndoToast } from "@/lib/toast";
 import { fireConfetti } from "@/lib/confetti";
 
-type ViewMode = "gantt" | "calendar" | "tree";
+type ViewMode = "gantt" | "calendar" | "tree" | "ppm";
 const TREE_LEAF_LIMIT = 15;
 
 const DEFAULT_PX_PER_DAY = 28;
@@ -52,6 +54,7 @@ export default function ProjectsSection({
   // 一番古い期日（案件の中で最も早いcreatedAt/dueDate）を基準にするかを選べるようにする
   const [ganttAnchor, setGanttAnchor] = useSetting("projects.ganttAnchor", "today");
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
+  const [analysisProject, setAnalysisProject] = useState<ProjectItem | null>(null);
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
   const [stageAddTarget, setStageAddTarget] = useState<{ project: ProjectItem; stage: ProjectStage } | null>(null);
   const [stageAddStartNow, setStageAddStartNow] = useState(false);
@@ -679,6 +682,7 @@ export default function ProjectsSection({
             onAddToToday={() => setAddToTodayTarget(project)}
             onToggleComplete={() => toggleComplete(project)}
             onEdit={() => setEditingProject(project)}
+            onAnalysis={() => setAnalysisProject(project)}
             onDelete={() => deleteProject(project)}
             onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
             onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
@@ -715,6 +719,7 @@ export default function ProjectsSection({
                   onAddToToday={() => setAddToTodayTarget(project)}
                   onToggleComplete={() => toggleComplete(project)}
                   onEdit={() => setEditingProject(project)}
+                  onAnalysis={() => setAnalysisProject(project)}
                   onDelete={() => deleteProject(project)}
                   onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
                   onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
@@ -746,6 +751,12 @@ export default function ProjectsSection({
             >
               系統図
             </button>
+            <button
+              className={viewMode === "ppm" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setViewMode("ppm")}
+            >
+              PPM分析
+            </button>
             <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
               <input
                 type="checkbox"
@@ -765,6 +776,15 @@ export default function ProjectsSection({
             <ProjectsCalendarView projects={timelineRows.map((r) => r.project)} today={today} />
           ) : viewMode === "tree" ? (
             <TreeView nodes={projectTree} />
+          ) : viewMode === "ppm" ? (
+            <ProjectPPMChart
+              items={timelineRows.map((r) => ({
+                project: r.project,
+                totalSeconds: projectTotalSeconds.get(r.project.id) ?? 0,
+                hourlyRate: resolveProjectRate(r.project),
+                today,
+              }))}
+            />
           ) : (
             <>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -887,6 +907,7 @@ export default function ProjectsSection({
       )}
 
       {editingProject && <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
+      {analysisProject && <ProjectAnalysisDialog project={analysisProject} onClose={() => setAnalysisProject(null)} />}
 
       {addToTodayTarget && (
         <CategoryWorkNameDialog
@@ -997,6 +1018,7 @@ function ProjectRow({
   onAddToToday,
   onToggleComplete,
   onEdit,
+  onAnalysis,
   onDelete,
   onToggleStage,
   onAddStageToToday,
@@ -1015,6 +1037,7 @@ function ProjectRow({
   onAddToToday: () => void;
   onToggleComplete: () => void;
   onEdit: () => void;
+  onAnalysis: () => void;
   onDelete: () => void;
   onToggleStage: (stageId: string) => void;
   onAddStageToToday: (stage: ProjectStage) => void;
@@ -1224,6 +1247,9 @@ function ProjectRow({
         </button>
         <button className="text-xs text-cream/60 hover:text-cream" onClick={onEdit}>
           編集
+        </button>
+        <button className="text-xs text-cream/60 hover:text-cream" onClick={onAnalysis} title="SWOT・BSC・3C分析">
+          分析
         </button>
         <button className="text-xs text-alert" onClick={onDelete}>
           削除
