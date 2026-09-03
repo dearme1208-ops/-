@@ -52,6 +52,7 @@ function StageRow({
         <button
           {...dragHandleProps.attributes}
           {...dragHandleProps.listeners}
+          style={{ touchAction: "none" }}
           className="shrink-0 cursor-grab px-0.5 text-cream/30 active:cursor-grabbing"
           aria-label="段階を並び替え"
         >

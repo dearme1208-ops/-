@@ -2055,6 +2055,7 @@ function SubtaskRow({
           <button
             {...dragHandleProps.attributes}
             {...dragHandleProps.listeners}
+            style={{ touchAction: "none" }}
             className="shrink-0 cursor-grab px-0.5 text-cream/30 active:cursor-grabbing"
             aria-label="サブタスクを並び替え"
           >
@@ -2328,6 +2329,7 @@ function SortableTaskBlock(props: {
       <button
         {...attributes}
         {...listeners}
+        style={{ touchAction: "none" }}
         className="mt-2 cursor-grab px-1 text-cream/30 active:cursor-grabbing"
         aria-label="並び替え"
       >
@@ -3319,6 +3321,7 @@ function KanbanCard({ task, onOpenDetail }: { task: TodoTask; onOpenDetail: () =
   const style = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.4 : 1,
+    touchAction: "none" as const,
   };
   return (
     <button

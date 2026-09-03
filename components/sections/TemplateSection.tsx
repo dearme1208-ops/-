@@ -47,6 +47,7 @@ function SortableRow({ item, onDelete }: { item: TemplateItem; onDelete: () => v
         <button
           {...attributes}
           {...listeners}
+          style={{ touchAction: "none" }}
           className="cursor-grab text-cream/40 active:cursor-grabbing"
           aria-label="並び替え"
         >
