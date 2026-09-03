@@ -174,6 +174,7 @@ export interface ProjectStage {
   dueDate?: string; // YYYY-MM-DD（任意）
   targetCount?: number; // 目標件数（見積り10件・チーム移籍20件など、件数で進捗管理したい場合に設定）
   completedCount?: number; // targetCountを設定した場合の、これまでの完了件数
+  imageDataUrl?: string; // この段階に添付した画像。1枚のみ、data URLとしてそのまま保存する
 }
 
 // 取引先（顧客企業）。案件・ToDoに紐付けて、取引先ごとの案件・作業を横断的に見られるようにする

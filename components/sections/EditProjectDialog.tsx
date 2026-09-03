@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { readFileAsDataUrl } from "@/lib/mailImport";
 import {
   DndContext,
   closestCenter,
@@ -26,6 +27,7 @@ function StageRow({
   onSetDueDate,
   onSetCompletedCount,
   onSetTargetCount,
+  onSetImage,
   onRemove,
   dragHandleProps,
 }: {
@@ -35,11 +37,15 @@ function StageRow({
   onSetDueDate: (id: string, value: string) => void;
   onSetCompletedCount: (id: string, value: string) => void;
   onSetTargetCount: (id: string, value: string) => void;
+  onSetImage: (id: string, imageDataUrl: string | undefined) => void;
   onRemove: (id: string) => void;
   dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
 }) {
   const isCountBased = stage.targetCount != null;
   const isDone = isCountBased ? (stage.completedCount ?? 0) >= (stage.targetCount ?? 0) : stage.completed;
+  const isTitleBlank = !stage.title.trim();
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [imageExpanded, setImageExpanded] = useState(false);
   return (
     <div className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
       {dragHandleProps && (
@@ -74,11 +80,31 @@ function StageRow({
       <input
         value={stage.title}
         onChange={(e) => onSetTitle(stage.id, e.target.value)}
-        placeholder="段階名（未入力）"
-        className={`min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-1 text-xs text-cream placeholder:text-cream/30 focus:border-cream/20 focus:outline-none ${
-          isDone ? "text-cream/40 line-through" : ""
-        }`}
+        placeholder="段階名（未入力・タップして入力）"
+        className={`min-w-0 flex-1 rounded-md border px-1.5 py-1 text-xs text-cream placeholder:text-alert/70 focus:border-cream/40 focus:outline-none ${
+          isTitleBlank ? "border-dashed border-alert/60 bg-alert/5" : "border-transparent"
+        } ${isDone ? "text-cream/40 line-through" : ""}`}
       />
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const dataUrl = await readFileAsDataUrl(file);
+          onSetImage(stage.id, dataUrl);
+          e.target.value = "";
+        }}
+      />
+      <button
+        onClick={() => (stage.imageDataUrl ? setImageExpanded(true) : imageInputRef.current?.click())}
+        className="shrink-0 text-xs text-cream/40 hover:text-cream/70"
+        title={stage.imageDataUrl ? "画像を表示" : "画像を追加"}
+      >
+        {stage.imageDataUrl ? "🖼️" : "📷"}
+      </button>
       {isCountBased ? (
         <div className="flex shrink-0 items-center gap-1 text-[11px] text-cream/70">
           <input
@@ -116,6 +142,30 @@ function StageRow({
       <button className="text-cream/40 hover:text-alert" onClick={() => onRemove(stage.id)} aria-label="削除">
         ✕
       </button>
+      {imageExpanded && stage.imageDataUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setImageExpanded(false)}
+        >
+          <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
+            <img src={stage.imageDataUrl} alt={stage.title} className="max-h-[75vh] max-w-full rounded-lg object-contain" />
+            <div className="mt-2 flex justify-center gap-2">
+              <button
+                className="btn-pill-outline text-xs"
+                onClick={() => {
+                  onSetImage(stage.id, undefined);
+                  setImageExpanded(false);
+                }}
+              >
+                画像を削除
+              </button>
+              <button className="btn-pill text-xs" onClick={() => setImageExpanded(false)}>
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -127,6 +177,7 @@ function SortableStageRow(props: {
   onSetDueDate: (id: string, value: string) => void;
   onSetCompletedCount: (id: string, value: string) => void;
   onSetTargetCount: (id: string, value: string) => void;
+  onSetImage: (id: string, imageDataUrl: string | undefined) => void;
   onRemove: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.stage.id });
@@ -183,6 +234,9 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   function setStageDueDate(id: string, value: string) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, dueDate: value || undefined } : s)));
   }
+  function setStageImage(id: string, imageDataUrl: string | undefined) {
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, imageDataUrl } : s)));
+  }
   const stageSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   function handleStageDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -224,7 +278,9 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       hourlyRate: hourlyRateStr.trim() !== "" && Number.isFinite(rate) && rate >= 0 ? rate : undefined,
       estimatedTotalSeconds: estimatedTotalSeconds > 0 ? estimatedTotalSeconds : undefined,
       clientId: clientId || undefined,
-      stages,
+      // 段階名は前後の空白を除いて保存する(空白だけの入力だと、一見「入力済み」に
+      // 見えてしまいプレースホルダーも出ないまま空欄が残ってしまうため)
+      stages: stages.map((s) => ({ ...s, title: s.title.trim() })),
     });
     onClose();
   }
@@ -321,6 +377,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
                     onSetDueDate={setStageDueDate}
                     onSetCompletedCount={setStageCompletedCount}
                     onSetTargetCount={setStageTargetCount}
+                    onSetImage={setStageImage}
                     onRemove={removeStage}
                   />
                 ))}
