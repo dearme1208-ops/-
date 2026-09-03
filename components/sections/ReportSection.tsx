@@ -11,7 +11,7 @@ import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/perio
 import { baseAccumulatedMs } from "@/lib/tasks";
 import { generateReportText, downloadTextFile, computeDailyOverlayComparison } from "@/lib/report";
 import { generateWeeklyNarrative } from "@/lib/weeklyNarrative";
-import { computeTodoPeriodSummary } from "@/lib/todoTrend";
+import { computeTodoPeriodSummary, openTasksAsOf } from "@/lib/todoTrend";
 import { exportElementToPdf } from "@/lib/pdfExport";
 import { recordsToIcs } from "@/lib/ics";
 import { dailyAvgPrecipProbability } from "@/lib/weather";
@@ -20,7 +20,7 @@ import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from 
 import { useDraftSetting, useSetting } from "@/lib/settings";
 import { effectiveDueDate } from "@/lib/todo";
 import { daysBetweenDateStrs, formatHms, todayStr } from "@/lib/time";
-import type { TodoTask, WorkRecord } from "@/lib/types";
+import type { DailyTask, TodoTask, WorkRecord } from "@/lib/types";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import OverlayLineChart from "@/components/charts/OverlayLineChart";
 import Modal from "@/components/ui/Modal";
@@ -53,8 +53,13 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
 
   const title = kind === "week" ? "週報" : kind === "month" ? "月報" : "日報";
   const periodLabel = kind === "week" ? "週" : kind === "month" ? "月" : "日";
-  // ランキングの棒をクリックした際、その期間内でその作業に該当する実績の内訳を見せるためのモーダル
-  const [viewingRanking, setViewingRanking] = useState<{ label: string; sublabel?: string; records: WorkRecord[] } | null>(null);
+  // ランキングの棒をクリックした際、その期間内でその作業に該当する実績の内訳を見せるためのモーダル。
+  // ランキング以外(トップ3カード・定時以降・要注意項目・案件MVP)でも同じ形で使い回す
+  const [viewingRanking, setViewingRanking] = useState<{ label: string; sublabel?: string; records: WorkRecord[]; note?: string } | null>(null);
+  // トラブル対応の内訳(個々のDailyTask)を見せるためのモーダル
+  const [viewingTrouble, setViewingTrouble] = useState<DailyTask[] | null>(null);
+  // ToDoの推移(新規作成/完了/未完了)の内訳一覧を見せるためのモーダル。各行はさらにonOpenTodoDetailで詳細を開ける
+  const [viewingTodoList, setViewingTodoList] = useState<{ title: string; tasks: TodoTask[] } | null>(null);
   const filter: PeriodFilter = { type: kind };
   const today = todayStr();
 
@@ -130,7 +135,7 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
 
     // この期間、最も作業時間を投じた案件(案件MVP)。主案件(projectId)だけでなく
     // 兼務向けの追加の案件タグ(secondaryProjectIds)がこの案件を含む実績も合算する
-    let projectMvp: { title: string; totalSeconds: number } | null = null;
+    let projectMvp: { title: string; totalSeconds: number; records: WorkRecord[] } | null = null;
     if (projects && projects.length > 0) {
       const byProject = new Map<string, number>();
       for (const r of periodRecords) {
@@ -146,7 +151,12 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
         }
       }
       const topProject = topId ? projects.find((p) => p.id === topId) : undefined;
-      if (topProject) projectMvp = { title: topProject.title, totalSeconds: topSeconds };
+      if (topProject && topId) {
+        const mvpRecords = periodRecords.filter(
+          (r) => r.projectId === topId || (r.secondaryProjectIds ?? []).includes(topId!)
+        );
+        projectMvp = { title: topProject.title, totalSeconds: topSeconds, records: mvpRecords };
+      }
     }
 
     // この期間中、天気変化の通知機能でキャッシュが残っている日ごとの平均降水確率
@@ -164,10 +174,28 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
       }
     }
 
-    // ToDoの推移（この期間の期首→期末の未完了件数、新規作成・完了件数）
+    // ToDoの推移（この期間の期首→期末の未完了件数、新規作成・完了件数）。
+    // 数値だけでなく、クリックしたときに内訳の一覧を見せられるよう対象タスク自体も保持しておく
     const todoSummary = range
       ? computeTodoPeriodSummary(todoTasks ?? [], range.start.getTime(), range.end.getTime())
       : null;
+    const todoCreatedList = range
+      ? (todoTasks ?? []).filter(
+          (t) => !t.parentTaskId && t.createdAt >= range.start.getTime() && t.createdAt < range.end.getTime()
+        )
+      : [];
+    const todoCompletedList = range
+      ? (todoTasks ?? []).filter(
+          (t) =>
+            !t.parentTaskId &&
+            t.completed &&
+            t.completedAt !== undefined &&
+            t.completedAt >= range.start.getTime() &&
+            t.completedAt < range.end.getTime()
+        )
+      : [];
+    const todoOpenAtEndList = range ? openTasksAsOf(todoTasks ?? [], range.end.getTime()) : [];
+    const todoOpenAtStartList = range ? openTasksAsOf(todoTasks ?? [], range.start.getTime()) : [];
 
     return {
       rangeLabel,
@@ -180,12 +208,17 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
       topGainer,
       troubleCount: troubleTasks.length,
       troubleTotalSeconds,
+      troubleTasks,
       overdueTodos,
       paceWarning,
       periodRecords,
       projectMvp,
       dailyWeather,
       todoSummary,
+      todoCreatedList,
+      todoCompletedList,
+      todoOpenAtEndList,
+      todoOpenAtStartList,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, masterTasks, dailyTasks, todoTasks, projects, weatherForecasts, kind, afterHoursCutoff, standardDailySeconds, today]);
@@ -467,7 +500,14 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           {data.ranking.length > 0 && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {data.ranking.slice(0, 3).map((r, i) => (
-                <div key={r.key} className="panel flex items-center gap-3 p-4">
+                <button
+                  key={r.key}
+                  className="panel flex items-center gap-3 p-4 text-left hover:bg-cream/5"
+                  onClick={() => {
+                    const matched = data.periodRecords.filter((rec) => aggregateKey(rec) === r.key);
+                    setViewingRanking({ label: r.name, sublabel: r.category, records: matched });
+                  }}
+                >
                   <span className="text-3xl">{MEDALS[i]}</span>
                   <div className="min-w-0">
                     <div className="truncate text-xs text-cream/50">{r.category}</div>
@@ -476,13 +516,19 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                       {formatHms(r.totalSeconds)}
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
 
           {data.projectMvp && (
-            <div className="panel flex items-center gap-3 p-4">
+            <button
+              className="panel flex w-full items-center gap-3 p-4 text-left hover:bg-cream/5"
+              onClick={() => {
+                const mvp = data.projectMvp!;
+                setViewingRanking({ label: mvp.title, sublabel: "案件MVP", records: mvp.records });
+              }}
+            >
               <span className="text-3xl">🏆</span>
               <div className="min-w-0">
                 <div className="text-xs text-cream/50">今{periodLabel}の案件MVP（最も時間を投じた案件）</div>
@@ -491,7 +537,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                   {formatHms(data.projectMvp.totalSeconds)}
                 </div>
               </div>
-            </div>
+            </button>
           )}
 
           {overlayPoints.length > 1 && (
@@ -581,10 +627,24 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                     value: r.seconds,
                   }))}
                   formatValue={formatHms}
+                  onBarClick={(i) => {
+                    const row = data.afterHours.byTask[i];
+                    if (!row) return;
+                    const matched = data.periodRecords.filter(
+                      (r) => r.category === row.sublabel && r.name === row.label
+                    );
+                    setViewingRanking({
+                      label: row.label,
+                      sublabel: row.sublabel,
+                      records: matched,
+                      note: "各実績の時間は日全体の実働時間です（定時以降にかかった分だけではありません）。",
+                    });
+                  }}
                 />
                 {data.afterHours.byTask.length > TOP_N && (
                   <p className="mt-3 text-[10px] text-cream/40">他{data.afterHours.byTask.length - TOP_N}件</p>
                 )}
+                <p className="mt-2 text-[10px] text-cream/40">項目をタップすると、その内訳(実績一覧)を確認できます。</p>
               </>
             )}
           </div>
@@ -598,7 +658,14 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             ) : (
               <div className="space-y-2">
                 {data.attention.map((a) => (
-                  <AttentionRowCard key={a.masterTaskId} row={a} />
+                  <AttentionRowCard
+                    key={a.masterTaskId}
+                    row={a}
+                    onClick={() => {
+                      const matched = data.periodRecords.filter((r) => r.masterTaskId === a.masterTaskId);
+                      setViewingRanking({ label: a.name, sublabel: a.category, records: matched });
+                    }}
+                  />
                 ))}
               </div>
             )}
@@ -609,12 +676,20 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             {data.troubleCount === 0 ? (
               <p className="text-sm text-cream/50">この期間、トラブル対応の発生はありませんでした。</p>
             ) : (
-              <p className="text-sm text-cream/70">
-                発生 <span className="font-display text-lg font-bold text-alert">{data.troubleCount}件</span>
-                　合計対応時間 <span className="font-bold text-cream">{formatHms(data.troubleTotalSeconds)}</span>
-                　平均 <span className="font-bold text-cream">{formatHms(data.troubleTotalSeconds / data.troubleCount)}</span>
-                /件
-              </p>
+              <button
+                type="button"
+                className="w-full text-left"
+                onClick={() => setViewingTrouble(data.troubleTasks)}
+              >
+                <p className="text-sm text-cream/70 hover:text-cream">
+                  発生 <span className="font-display text-lg font-bold text-alert">{data.troubleCount}件</span>
+                  　合計対応時間 <span className="font-bold text-cream">{formatHms(data.troubleTotalSeconds)}</span>
+                  　平均{" "}
+                  <span className="font-bold text-cream">{formatHms(data.troubleTotalSeconds / data.troubleCount)}</span>
+                  /件
+                </p>
+                <p className="mt-1 text-[10px] text-cream/40">タップすると内訳一覧を確認できます。</p>
+              </button>
             )}
           </div>
 
@@ -651,9 +726,21 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
               <h3 className="mb-3 font-display text-sm font-bold text-cream/80">📋 ToDoの推移</h3>
               <p className="text-sm text-cream/70">
                 未完了{" "}
-                <span className="font-display text-lg font-bold text-cream">{data.todoSummary.openAtStart}件</span>
+                <button
+                  type="button"
+                  className="font-bold underline decoration-dotted underline-offset-2 hover:text-alert"
+                  onClick={() => setViewingTodoList({ title: "期首時点で未完了", tasks: data.todoOpenAtStartList })}
+                >
+                  {data.todoSummary.openAtStart}件
+                </button>
                 {" → "}
-                <span className="font-display text-lg font-bold text-cream">{data.todoSummary.openAtEnd}件</span>
+                <button
+                  type="button"
+                  className="font-display text-lg font-bold text-cream underline decoration-dotted underline-offset-2 hover:text-alert"
+                  onClick={() => setViewingTodoList({ title: `期末時点で未完了（${today}時点）`, tasks: data.todoOpenAtEndList })}
+                >
+                  {data.todoSummary.openAtEnd}件
+                </button>
                 {(() => {
                   const delta = data.todoSummary.openAtEnd - data.todoSummary.openAtStart;
                   return (
@@ -665,7 +752,22 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                 })()}
               </p>
               <p className="mt-1 text-xs text-cream/50">
-                この期間の新規作成 {data.todoSummary.createdInPeriod}件・完了 {data.todoSummary.completedInPeriod}件
+                この期間の新規作成{" "}
+                <button
+                  type="button"
+                  className="font-bold underline decoration-dotted underline-offset-2 hover:text-alert"
+                  onClick={() => setViewingTodoList({ title: "この期間に新規作成", tasks: data.todoCreatedList })}
+                >
+                  {data.todoSummary.createdInPeriod}件
+                </button>
+                ・完了{" "}
+                <button
+                  type="button"
+                  className="font-bold underline decoration-dotted underline-offset-2 hover:text-alert"
+                  onClick={() => setViewingTodoList({ title: "この期間に完了", tasks: data.todoCompletedList })}
+                >
+                  {data.todoSummary.completedInPeriod}件
+                </button>
               </p>
             </div>
           )}
@@ -700,6 +802,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
       {viewingRanking && (
         <Modal title={`${viewingRanking.label} の内訳`} onClose={() => setViewingRanking(null)}>
           {viewingRanking.sublabel && <p className="mb-2 text-xs text-cream/50">{viewingRanking.sublabel}</p>}
+          {viewingRanking.note && <p className="mb-2 text-[10px] text-cream/40">{viewingRanking.note}</p>}
           {viewingRanking.records.length === 0 ? (
             <p className="text-sm text-cream/50">該当する実績がありません。</p>
           ) : (
@@ -719,6 +822,66 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           )}
         </Modal>
       )}
+
+      {viewingTrouble && (
+        <Modal title="トラブル対応の内訳" onClose={() => setViewingTrouble(null)}>
+          {viewingTrouble.length === 0 ? (
+            <p className="text-sm text-cream/50">該当するトラブル対応がありません。</p>
+          ) : (
+            <div className="space-y-1.5">
+              {[...viewingTrouble]
+                .sort((a, b) => b.date.localeCompare(a.date))
+                .map((t) => (
+                  <div key={t.id} className="rounded-lg bg-ink/50 px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-cream/80">{t.date}</span>
+                      <span className="font-bold tabular-nums text-cream">{formatHms(baseAccumulatedMs(t) / 1000)}</span>
+                    </div>
+                    <div className="mt-0.5 text-cream/60">
+                      {t.category} / {t.name}
+                    </div>
+                  </div>
+                ))}
+              <p className="pt-1 text-[10px] text-cream/40">
+                合計 {formatHms(viewingTrouble.reduce((s, t) => s + baseAccumulatedMs(t) / 1000, 0))}（{viewingTrouble.length}件）
+              </p>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {viewingTodoList && (
+        <Modal title={viewingTodoList.title} onClose={() => setViewingTodoList(null)}>
+          {viewingTodoList.tasks.length === 0 ? (
+            <p className="text-sm text-cream/50">該当するToDoがありません。</p>
+          ) : (
+            <div className="space-y-1.5">
+              {viewingTodoList.tasks.map((t) => (
+                <div
+                  key={t.id}
+                  className={`flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 text-xs ${
+                    onOpenTodoDetail ? "cursor-pointer hover:bg-ink/70" : ""
+                  } ${t.completed ? "opacity-50" : ""}`}
+                  onClick={
+                    onOpenTodoDetail
+                      ? () => {
+                          setViewingTodoList(null);
+                          onOpenTodoDetail(t.id);
+                        }
+                      : undefined
+                  }
+                  role={onOpenTodoDetail ? "button" : undefined}
+                  tabIndex={onOpenTodoDetail ? 0 : undefined}
+                >
+                  <span className={`truncate text-cream ${t.completed ? "line-through" : ""}`}>{t.title}</span>
+                  {t.dueDate && <span className="shrink-0 text-cream/50">{t.dueDate}</span>}
+                </div>
+              ))}
+              <p className="pt-1 text-[10px] text-cream/40">{viewingTodoList.tasks.length}件</p>
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
@@ -734,10 +897,14 @@ function StatTile({ label, value, accent }: { label: string; value: string; acce
   );
 }
 
-function AttentionRowCard({ row }: { row: AttentionRow }) {
+function AttentionRowCard({ row, onClick }: { row: AttentionRow; onClick?: () => void }) {
   const estPct = Math.min(100, (row.estimatedSeconds / row.avgSeconds) * 100);
   return (
-    <div className="rounded-lg border border-alert/30 bg-alert/5 p-3">
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-lg border border-alert/30 bg-alert/5 p-3 text-left hover:bg-alert/10"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-xs text-cream/50">{row.category}</div>
@@ -754,6 +921,6 @@ function AttentionRowCard({ row }: { row: AttentionRow }) {
         <div className="absolute inset-y-0 left-0 bg-cream/40" style={{ width: `${estPct}%` }} />
         <div className="absolute inset-y-0 bg-alert" style={{ left: `${estPct}%`, right: 0 }} />
       </div>
-    </div>
+    </button>
   );
 }

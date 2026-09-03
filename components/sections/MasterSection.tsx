@@ -45,7 +45,10 @@ export default function MasterSection() {
   // recordsをその場でコピーせず参照条件だけ持たせることで、モーダルを開いたまま
   // 集計への復活操作をしても一覧がリアルタイムに更新される
   const [viewingRecords, setViewingRecords] = useState<
-    { title: string; masterId: string } | { title: string; category: string; name: string } | null
+    | { title: string; masterId: string }
+    | { title: string; category: string; name: string }
+    | { title: string; masterIds: string[] }
+    | null
   >(null);
 
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -66,6 +69,10 @@ export default function MasterSection() {
     if (!viewingRecords || !records) return [];
     if ("masterId" in viewingRecords) {
       return records.filter((r) => r.masterTaskId === viewingRecords.masterId);
+    }
+    if ("masterIds" in viewingRecords) {
+      const idSet = new Set(viewingRecords.masterIds);
+      return records.filter((r) => r.masterTaskId && idSet.has(r.masterTaskId));
     }
     const existingMasterIds = new Set((tasks ?? []).map((t) => t.id));
     return records.filter(
@@ -175,6 +182,7 @@ export default function MasterSection() {
         seconds: v.seconds,
         recordCount: v.recordCount,
         taskCount: v.taskIds.size,
+        masterIds: [...v.taskIds],
         cost: v.hasRate ? v.cost : null,
       }))
       .sort((a, b) => b.seconds - a.seconds);
@@ -448,7 +456,12 @@ export default function MasterSection() {
           <div className="mt-3 space-y-1.5">
             {clientAggregation.length === 0 && <p className="text-xs text-cream/50">集計対象の実績がありません。</p>}
             {clientAggregation.map((c) => (
-              <div key={c.clientId} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+              <button
+                key={c.clientId}
+                type="button"
+                onClick={() => setViewingRecords({ title: `${c.clientName} の実績`, masterIds: c.masterIds })}
+                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 text-left hover:bg-ink/70"
+              >
                 <div className="text-sm text-cream">{c.clientName}</div>
                 <div className="flex items-center gap-3 text-xs text-cream/60">
                   <span>
@@ -466,7 +479,7 @@ export default function MasterSection() {
                     </span>
                   )}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -582,7 +595,14 @@ export default function MasterSection() {
                 .map((r) => (
                   <div key={r.id} className="rounded-lg bg-ink/50 px-3 py-2 text-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-cream/80">{r.date}</span>
+                      <span className="text-cream/80">
+                        {r.date}
+                        {viewingRecords && "masterIds" in viewingRecords && (
+                          <span className="ml-2 text-xs text-cream/50">
+                            {r.category} / {r.name}
+                          </span>
+                        )}
+                      </span>
                       <div className="flex items-center gap-2">
                         <span className="tabular-nums text-cream">{formatHms(r.seconds)}</span>
                         {r.isTrouble && <span className="text-xs text-alert">トラブル対応</span>}
