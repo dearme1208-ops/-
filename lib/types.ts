@@ -116,6 +116,8 @@ export interface DailyTask {
   // 記録するため、「直近に何かを止めた時刻」の判定(未計測の自動仮計測の起点など)に使う
   boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。日付が変わればタスク自体が
   boardY?: number; // 入れ替わるため、位置も自然にリセットされる(付箋のようにずっと保持はしない)
+  boardGroupId?: string; // 統合ボード上で他のカード(付箋/本日の作業/ToDo)とグループ化した場合の共通ID。
+  // 同じIDを持つカード同士は、いずれか1枚をドラッグすると全員が同じ分だけ一緒に動く
 }
 
 export interface WorkRecord {
@@ -282,6 +284,7 @@ export interface TodoTask {
   reminderFiredAt?: number; // 上記の通知を実際に表示した時刻。二重に通知しないためのフラグ(reminderAtを再設定するとクリアされる)
   boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。付箋と違いこちらは
   boardY?: number; // ToDo自体が残り続ける限り保持する(マイデイから外れると自然に表示対象から外れる)
+  boardGroupId?: string; // 統合ボード上でのグループ化ID。DailyTask.boardGroupIdと同じ仕組み
   imageDataUrl?: string; // タスク(サブタスクを含む)に添付した画像。1枚のみ、data URLとしてそのまま保存する
 }
 
@@ -329,6 +332,7 @@ export interface MemoNote {
   checklistItems?: MemoChecklistItem[];
   mailFileDataUrl?: string; // Outlookの.msgファイルを取り込んだ付箋の場合、元のファイル本体(data URL)。
   mailFileName?: string; // 付箋から「元のメールを開く」でダウンロード/OS側のOutlook等に渡すために保持する
+  boardGroupId?: string; // 統合ボード(UnifiedBoardSection)上でのグループ化ID。メモタブ側では未使用
 }
 
 export interface MemoChecklistItem {
