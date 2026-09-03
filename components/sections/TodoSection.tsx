@@ -2683,6 +2683,10 @@ function TaskDetailModal({
 
   async function addSubtask() {
     if (!newSubtask.trim()) return;
+    // subtasks.lengthだと、ガイドインポート等で大きい/歯抜けのorder値が既に
+    // 付いている場合に既存サブタスクより手前に来てしまうことがあるため、
+    // 実際の最大orderの次の値を使って確実に最下部に追加する
+    const maxOrder = subtasks.reduce((max, s) => Math.max(max, s.order), -1);
     await db.todoTasks.add({
       id: uid(),
       listId: task.listId,
@@ -2690,7 +2694,7 @@ function TaskDetailModal({
       title: newSubtask.trim(),
       important: false,
       completed: false,
-      order: subtasks.length,
+      order: maxOrder + 1,
       createdAt: Date.now(),
     });
     setNewSubtask("");
