@@ -45,6 +45,7 @@ import { DEFAULT_MEMO_NOTE_COLOR, estimateChecklistNoteHeight, estimateTextNoteH
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
+import GuideImportDialog from "@/components/sections/GuideImportDialog";
 import type { TreeNode, TreeNodeBadge } from "@/components/ui/TreeView";
 import PedigreeTable from "@/components/ui/PedigreeTable";
 import { showUndoToast } from "@/lib/toast";
@@ -271,6 +272,7 @@ export default function TodoSection({
   const [kanbanAxis, setKanbanAxis] = useState<KanbanAxis>("tag");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
+  const [showGuideImport, setShowGuideImport] = useState(false);
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1234,6 +1236,9 @@ export default function TodoSection({
         <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
           CSVインポート
         </button>
+        <button className="btn-pill-outline text-sm" onClick={() => setShowGuideImport(true)}>
+          📋 ガイド貼り付けインポート
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -1768,6 +1773,18 @@ export default function TodoSection({
           onAddToToday={(category, workName) => addTaskToToday(detailTask, category, workName)}
           onConvertToMemo={() => convertTodoToMemo(detailTask, subtasksByParent.get(detailTask.id) ?? [])}
           alreadyAddedToToday={addedTodoTaskIdsToday.has(detailTask.id)}
+        />
+      )}
+
+      {showGuideImport && (
+        <GuideImportDialog
+          lists={lists ?? []}
+          defaultListId={currentListId ?? lists?.[0]?.id}
+          onClose={() => setShowGuideImport(false)}
+          onImported={(n) => {
+            setImportResult(`${n}件のタスク・サブタスクを取り込みました。`);
+            setShowGuideImport(false);
+          }}
         />
       )}
 
