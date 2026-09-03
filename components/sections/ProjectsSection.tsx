@@ -34,6 +34,35 @@ const MAX_PX_PER_DAY = 80;
 const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
+// SWOT/クロスSWOT/BSC/3Cのいずれかに1文字でも入力があるか(一覧のバッジ表示・
+// 完了レポートへの反映可否の判定に使う)
+function hasAnalysisContent(project: ProjectItem): boolean {
+  const groups = [project.swot, project.crossSwot, project.bsc, project.threeC];
+  return groups.some((g) => g && Object.values(g).some((v) => v.trim() !== ""));
+}
+
+// 完了レポートに載せる、非空欄の項目だけを抜き出した{ラベル: 本文}のフラットな一覧
+function analysisSummaryEntries(project: ProjectItem): { label: string; text: string }[] {
+  const entries: { label: string; text: string }[] = [];
+  const pushGroup = (group: Record<string, string> | undefined, labels: Record<string, string>) => {
+    if (!group) return;
+    for (const key of Object.keys(labels)) {
+      const text = group[key]?.trim();
+      if (text) entries.push({ label: labels[key], text });
+    }
+  };
+  pushGroup(project.swot, { strengths: "強み", weaknesses: "弱み", opportunities: "機会", threats: "脅威" });
+  pushGroup(project.crossSwot, {
+    aggressive: "積極戦略",
+    differentiation: "差別化戦略",
+    improvement: "改善戦略",
+    defensive: "専守・撤退戦略",
+  });
+  pushGroup(project.bsc, { financial: "財務の視点", customer: "顧客の視点", process: "内部プロセスの視点", growth: "学習と成長の視点" });
+  pushGroup(project.threeC, { customer: "3C: 顧客", competitor: "3C: 競合", company: "3C: 自社" });
+  return entries;
+}
+
 export default function ProjectsSection({
   onAddedToToday,
   initialEditProjectId,
@@ -992,6 +1021,19 @@ export default function ProjectsSection({
                 </div>
               </div>
             </div>
+            {hasAnalysisContent(completionReport.project) && (
+              <div className="border-t border-cream/10 pt-3">
+                <h4 className="mb-2 text-xs font-bold text-cream/70">📝 当初の分析(SWOT等)の振り返り</h4>
+                <div className="space-y-2">
+                  {analysisSummaryEntries(completionReport.project).map((e, i) => (
+                    <div key={i} className="rounded-lg bg-ink px-3 py-2">
+                      <div className="text-[10px] text-cream/40">{e.label}</div>
+                      <div className="whitespace-pre-wrap text-xs text-cream/80">{e.text}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="mt-4 flex justify-end">
             <button className="btn-pill text-sm" onClick={() => setCompletionReport(null)}>
@@ -1067,6 +1109,14 @@ function ProjectRow({
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
           {clientName && (
             <span className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60">🏢 {clientName}</span>
+          )}
+          {hasAnalysisContent(project) && (
+            <span
+              className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60"
+              title="SWOT/BSC/3C分析が入力されています"
+            >
+              📝分析あり
+            </span>
           )}
         </div>
         <div className="text-sm text-cream">{project.workName}</div>

@@ -223,7 +223,14 @@ export default function HomePage() {
       {active === "memo" && <MemoSection />}
       {active === "board" && <UnifiedBoardSection onOpenTodo={() => setActive("todo")} />}
       {active === "report" && mode === "claude" && <ClaudeReportSection />}
-      {active === "report" && mode !== "claude" && <ReportSection />}
+      {active === "report" && mode !== "claude" && (
+        <ReportSection
+          onOpenTodoDetail={(taskId) => {
+            setPendingTodoDetailId(taskId);
+            setActive("todo");
+          }}
+        />
+      )}
       {active === "records" && <RecordsSection />}
       {active === "settings" && <SettingsSection />}
 

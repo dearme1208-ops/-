@@ -20,6 +20,8 @@ export interface MasterTask {
   tags?: string[]; // タグ別の作業時間集計に使う自由入力タグ
   archived?: boolean; // 使用頻度の低いマスタをアーカイブした際にtrue。一覧・ピッカーの既定表示から除外する
   quickSlot?: number; // 1〜4。ホーム画面ショートカット(?quickstart=N)から開始/終了できる枠に割り当て済みの場合に設定
+  clientId?: string; // この作業がどの取引先向けかの括り（任意）。案件のclientIdと同じ取引先マスタ(db.clients)を共有する。
+  // 設定すると、この作業マスタに紐づく実績(WorkRecord.masterTaskId経由)を取引先ごとに集計できる
 }
 
 // 位置情報による地点到着検知(自動開始)で使う、事前登録した場所。
@@ -208,6 +210,9 @@ export interface ProjectItem {
   swot?: { strengths: string; weaknesses: string; opportunities: string; threats: string };
   bsc?: { financial: string; customer: string; process: string; growth: string };
   threeC?: { customer: string; competitor: string; company: string };
+  // クロスSWOT(TOWS分析)。SWOTの4象限を掛け合わせて具体的な戦略に落とし込む、
+  // SWOT分析の実践的な発展形
+  crossSwot?: { aggressive: string; differentiation: string; improvement: string; defensive: string };
 }
 
 // ---- ToDo ----

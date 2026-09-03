@@ -12,6 +12,7 @@ import { computeStaleMasterTasks } from "@/lib/staleMaster";
 import { useSetting } from "@/lib/settings";
 import { useVisualMode } from "@/lib/theme";
 import type { MasterTask, WorkRecord } from "@/lib/types";
+import { formatYen, computeCost, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { showUndoToast } from "@/lib/toast";
 import Modal from "@/components/ui/Modal";
 
@@ -49,6 +50,12 @@ export default function MasterSection() {
 
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
+  const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
+  const [defaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
+  const defaultHourlyRate = Number(defaultHourlyRateStr) > 0 ? Number(defaultHourlyRateStr) : null;
+  const [categoryRatesJson] = useSetting("cost.categoryRates", "{}");
+  const categoryRates = useMemo(() => parseCategoryRates(categoryRatesJson), [categoryRatesJson]);
+  const [showClientAggregation, setShowClientAggregation] = useState(false);
 
   const staleCandidates = useMemo(
     () => computeStaleMasterTasks(tasks ?? [], records ?? [], staleDays, todayStr()),
@@ -140,6 +147,39 @@ export default function MasterSection() {
       }));
   }, [tasks, search, sortKey, showArchived]);
 
+  // 作業マスタに設定した取引先(clientId)の括りごとに、紐づく実績(WorkRecord.masterTaskId経由)を
+  // 合算する。取引先が未設定の作業マスタの実績は「未設定」としてまとめる
+  const clientAggregation = useMemo(() => {
+    if (!tasks || !records) return [];
+    const clientIdByMaster = new Map(tasks.map((t) => [t.id, t.clientId]));
+    const map = new Map<string, { seconds: number; recordCount: number; taskIds: Set<string>; cost: number; hasRate: boolean }>();
+    for (const r of records) {
+      if (r.excludedFromStats || !r.masterTaskId) continue;
+      const clientId = clientIdByMaster.get(r.masterTaskId) ?? "__none__";
+      if (!map.has(clientId)) map.set(clientId, { seconds: 0, recordCount: 0, taskIds: new Set(), cost: 0, hasRate: false });
+      const bucket = map.get(clientId)!;
+      bucket.seconds += r.seconds;
+      bucket.recordCount += 1;
+      bucket.taskIds.add(r.masterTaskId);
+      const rate = resolveCategoryRate(r.category, categoryRates, defaultHourlyRate);
+      if (rate !== null) {
+        bucket.cost += computeCost(r.seconds, rate);
+        bucket.hasRate = true;
+      }
+    }
+    const clientNameById = new Map((clients ?? []).map((c) => [c.id, c.name]));
+    return [...map.entries()]
+      .map(([clientId, v]) => ({
+        clientId,
+        clientName: clientId === "__none__" ? "（取引先未設定）" : clientNameById.get(clientId) ?? "（削除済みの取引先）",
+        seconds: v.seconds,
+        recordCount: v.recordCount,
+        taskCount: v.taskIds.size,
+        cost: v.hasRate ? v.cost : null,
+      }))
+      .sort((a, b) => b.seconds - a.seconds);
+  }, [tasks, records, clients, categoryRates, defaultHourlyRate]);
+
   async function toggleFavorite(t: MasterTask) {
     await db.masterTasks.update(t.id, { isFavorite: !t.isFavorite });
   }
@@ -158,6 +198,10 @@ export default function MasterSection() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
     await db.masterTasks.update(t.id, { tags: tags.length > 0 ? tags : undefined });
+  }
+
+  async function updateClient(t: MasterTask, clientId: string) {
+    await db.masterTasks.update(t.id, { clientId: clientId || undefined });
   }
 
   async function updateEstimate(t: MasterTask, hms: string) {
@@ -387,6 +431,47 @@ export default function MasterSection() {
         </div>
       )}
 
+      <div className="panel p-4">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowClientAggregation((v) => !v)}
+        >
+          <h3 className="font-display text-base font-bold">
+            🏢 取引先別集計 <span className="text-xs font-normal text-cream/50">({clientAggregation.length})</span>
+          </h3>
+          <span className="text-cream/60">{showClientAggregation ? "▼" : "▶"}</span>
+        </button>
+        <p className="mt-1 text-[11px] text-cream/40">
+          作業マスタごとに設定した取引先の括りで、実績(作業時間)を合算します。作業マスタの一覧で各作業の「取引先未設定」欄から設定してください。
+        </p>
+        {showClientAggregation && (
+          <div className="mt-3 space-y-1.5">
+            {clientAggregation.length === 0 && <p className="text-xs text-cream/50">集計対象の実績がありません。</p>}
+            {clientAggregation.map((c) => (
+              <div key={c.clientId} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                <div className="text-sm text-cream">{c.clientName}</div>
+                <div className="flex items-center gap-3 text-xs text-cream/60">
+                  <span>
+                    作業マスタ <span className="font-bold tabular-nums text-cream">{c.taskCount}</span>件
+                  </span>
+                  <span>
+                    実績 <span className="font-bold tabular-nums text-cream">{c.recordCount}</span>件
+                  </span>
+                  <span>
+                    合計 <span className="font-bold tabular-nums text-cream">{formatHms(c.seconds)}</span>
+                  </span>
+                  {c.cost !== null && (
+                    <span>
+                      概算 <span className="font-bold tabular-nums text-cream">{formatYen(c.cost)}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {grouped.map(({ category, items }) => (
         <div key={category} className="panel p-4">
           <button
@@ -438,6 +523,19 @@ export default function MasterSection() {
                           onBlur={(e) => updateTags(t, e.target.value)}
                           className="mt-1 w-40 rounded-md border border-cream/10 bg-transparent px-2 py-0.5 text-[11px] text-cream/70"
                         />
+                        <select
+                          value={t.clientId ?? ""}
+                          onChange={(e) => updateClient(t, e.target.value)}
+                          className="mt-1 ml-1 rounded-md border border-cream/10 bg-transparent px-1 py-0.5 text-[11px] text-cream/70"
+                          title="取引先の括り（集計に使えます）"
+                        >
+                          <option value="">取引先未設定</option>
+                          {(clients ?? []).map((c) => (
+                            <option key={c.id} value={c.id}>
+                              🏢 {c.name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

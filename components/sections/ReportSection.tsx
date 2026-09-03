@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { subDays, subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
-import { aggregateRecords } from "@/lib/aggregate";
+import { aggregateRecords, aggregateKey } from "@/lib/aggregate";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
@@ -20,14 +20,15 @@ import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from 
 import { useDraftSetting, useSetting } from "@/lib/settings";
 import { effectiveDueDate } from "@/lib/todo";
 import { daysBetweenDateStrs, formatHms, todayStr } from "@/lib/time";
-import type { TodoTask } from "@/lib/types";
+import type { TodoTask, WorkRecord } from "@/lib/types";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import OverlayLineChart from "@/components/charts/OverlayLineChart";
+import Modal from "@/components/ui/Modal";
 
 const TOP_N = 10;
 const MEDALS = ["🥇", "🥈", "🥉"];
 
-export default function ReportSection() {
+export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?: (taskId: string) => void } = {}) {
   const [kind, setKind] = useState<"day" | "week" | "month">("week");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [standardHoursStr] = useSetting("overtime.standardDailyHours", "8");
@@ -52,6 +53,8 @@ export default function ReportSection() {
 
   const title = kind === "week" ? "週報" : kind === "month" ? "月報" : "日報";
   const periodLabel = kind === "week" ? "週" : kind === "month" ? "月" : "日";
+  // ランキングの棒をクリックした際、その期間内でその作業に該当する実績の内訳を見せるためのモーダル
+  const [viewingRanking, setViewingRanking] = useState<{ label: string; sublabel?: string; records: WorkRecord[] } | null>(null);
   const filter: PeriodFilter = { type: kind };
   const today = todayStr();
 
@@ -542,10 +545,17 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                 value: r.totalSeconds,
               }))}
               formatValue={formatHms}
+              onBarClick={(i) => {
+                const row = data.ranking[i];
+                if (!row) return;
+                const matched = data.periodRecords.filter((r) => aggregateKey(r) === row.key);
+                setViewingRanking({ label: row.name, sublabel: row.category, records: matched });
+              }}
             />
             {data.ranking.length > TOP_N && (
               <p className="mt-3 text-[10px] text-cream/40">他{data.ranking.length - TOP_N}件（.txtダウンロードで全件確認できます）</p>
             )}
+            <p className="mt-2 text-[10px] text-cream/40">項目をタップすると、その期間の内訳(実績一覧)を確認できます。</p>
           </div>
 
           <div className="panel p-4">
@@ -617,7 +627,15 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             ) : (
               <div className="space-y-1.5">
                 {data.overdueTodos.map(({ task, due }) => (
-                  <div key={task.id} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
+                  <div
+                    key={task.id}
+                    className={`flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 ${
+                      onOpenTodoDetail ? "cursor-pointer hover:bg-ink/70" : ""
+                    }`}
+                    onClick={onOpenTodoDetail ? () => onOpenTodoDetail(task.id) : undefined}
+                    role={onOpenTodoDetail ? "button" : undefined}
+                    tabIndex={onOpenTodoDetail ? 0 : undefined}
+                  >
                     <span className="truncate text-sm text-cream">{task.title}</span>
                     <span className="shrink-0 text-xs font-bold text-alert">
                       {due} （{daysBetweenDateStrs(due, today)}日超過）
@@ -677,6 +695,29 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             />
           </div>
         </div>
+      )}
+
+      {viewingRanking && (
+        <Modal title={`${viewingRanking.label} の内訳`} onClose={() => setViewingRanking(null)}>
+          {viewingRanking.sublabel && <p className="mb-2 text-xs text-cream/50">{viewingRanking.sublabel}</p>}
+          {viewingRanking.records.length === 0 ? (
+            <p className="text-sm text-cream/50">該当する実績がありません。</p>
+          ) : (
+            <div className="space-y-1.5">
+              {[...viewingRanking.records]
+                .sort((a, b) => b.startedAt - a.startedAt)
+                .map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 text-xs">
+                    <span className="text-cream/80">{r.date}</span>
+                    <span className="font-bold tabular-nums text-cream">{formatHms(r.seconds)}</span>
+                  </div>
+                ))}
+              <p className="pt-1 text-[10px] text-cream/40">
+                合計 {formatHms(viewingRanking.records.reduce((s, r) => s + r.seconds, 0))}（{viewingRanking.records.length}件）
+              </p>
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   );

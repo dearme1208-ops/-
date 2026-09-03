@@ -14,7 +14,7 @@ export type SortMetric = "total" | "avg" | "count";
 
 // トラブル対応など「ポイント」が付いた実績は、実績ごとに詳細作業名が異なっていても
 // 大項目（category）でひとつにまとめて集計する
-function aggregateKey(r: WorkRecord): string {
+export function aggregateKey(r: WorkRecord): string {
   return r.isTrouble ? `__trouble__::${r.category}` : (r.masterTaskId ?? `${r.category}::${r.name}`);
 }
 
