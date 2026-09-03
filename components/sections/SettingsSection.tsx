@@ -114,6 +114,13 @@ export default function SettingsSection() {
   const conditionEnabled = conditionEnabledStr === "true";
   const [simpleButtonsStr, setSimpleButtonsStr] = useSetting("today.simpleButtons", "false");
   const simpleButtons = simpleButtonsStr === "true";
+  const [tabBarStyle, setTabBarStyle] = useSetting("ui.bottomTabBarStyle", "pill");
+  const [tabBarProgressStripStr, setTabBarProgressStripStr] = useSetting("today.tabBarProgressStrip", "false");
+  const tabBarProgressStrip = tabBarProgressStripStr === "true";
+  const [tabBarAdaptiveEmphasisStr, setTabBarAdaptiveEmphasisStr] = useSetting("ui.bottomTabBarAdaptiveEmphasis", "false");
+  const tabBarAdaptiveEmphasis = tabBarAdaptiveEmphasisStr === "true";
+  const [todoBottomViewBarStr, setTodoBottomViewBarStr] = useSetting("todo.bottomViewBar", "false");
+  const todoBottomViewBar = todoBottomViewBarStr === "true";
   const [growthStageEnabledStr, setGrowthStageEnabledStr] = useSetting("today.growthStageEnabled", "true");
   const growthStageEnabled = growthStageEnabledStr === "true";
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
@@ -1559,6 +1566,62 @@ export default function SettingsSection() {
           {simpleButtons
             ? "「トラブル発生」「突発作業を追加」「音声で操作」ボタンをアイコンのみで表示します。"
             : "「トラブル発生」「突発作業を追加」「音声で操作」ボタンを文字付きで表示します。"}
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">下部固定タブバー</h3>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={tabBarStyle === "pill" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setTabBarStyle("pill")}
+          >
+            パネル（従来）
+          </button>
+          <button
+            className={tabBarStyle === "segment" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setTabBarStyle("segment")}
+          >
+            セグメント（スライド式）
+          </button>
+          <button
+            className={tabBarStyle === "icon" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setTabBarStyle("icon")}
+          >
+            アイコン（ネイティブ風）
+          </button>
+          <button
+            className={tabBarStyle === "stamp" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setTabBarStyle("stamp")}
+          >
+            スタンプ
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          「本日の作業」画面下部の実行中/予定/完了/ボードタブ（ToDoの下部表示をONにした場合はそちらも）の見た目を切り替えます。
+        </p>
+        <div className="flex flex-wrap gap-2 border-t border-cream/10 pt-3">
+          <button
+            className={tabBarProgressStrip ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setTabBarProgressStripStr(tabBarProgressStrip ? "false" : "true")}
+          >
+            進捗ストリップを表示: {tabBarProgressStrip ? "ON" : "OFF"}
+          </button>
+          <button
+            className={tabBarAdaptiveEmphasis ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setTabBarAdaptiveEmphasisStr(tabBarAdaptiveEmphasis ? "false" : "true")}
+          >
+            実行中タブを強調: {tabBarAdaptiveEmphasis ? "ON" : "OFF"}
+          </button>
+          <button
+            className={todoBottomViewBar ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setTodoBottomViewBarStr(todoBottomViewBar ? "false" : "true")}
+          >
+            ToDoタブも下部固定表示にする: {todoBottomViewBar ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          進捗ストリップは、本日の作業の実行中/予定/完了の内訳をバー上部に帯で表示します。実行中タブの強調は、実際に計測中の作業がある間だけ「実行中」タブを一回り大きく表示します。ToDoタブの下部固定表示をONにすると、マイデイ/重要/期限日/期限切れの4つが上部の一覧から下部のタブバーに移動します（カスタムリストや検索・絞り込みは引き続き上部に表示されます）。
         </p>
       </div>
 

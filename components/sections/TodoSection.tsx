@@ -46,6 +46,7 @@ import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog
 import type { TreeNode, TreeNodeBadge } from "@/components/ui/TreeView";
 import PedigreeTable from "@/components/ui/PedigreeTable";
 import { showUndoToast } from "@/lib/toast";
+import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
@@ -158,6 +159,11 @@ export default function TodoSection({
   onInitialDetailConsumed?: () => void;
 } = {}) {
   const [view, setView] = useState<ViewKey>("myday");
+  const [bottomViewBarStr] = useSetting("todo.bottomViewBar", "false");
+  const bottomViewBar = bottomViewBarStr === "true";
+  const [tabBarStyle] = useSetting("ui.bottomTabBarStyle", "pill");
+  const [tabBarAdaptiveEmphasisStr] = useSetting("ui.bottomTabBarAdaptiveEmphasis", "false");
+  const tabBarAdaptiveEmphasis = tabBarAdaptiveEmphasisStr === "true";
   const [displayMode, setDisplayMode] = useState<DisplayMode>("list");
   const [showNewList, setShowNewList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
@@ -1059,21 +1065,24 @@ export default function TodoSection({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {(["myday", "important", "planned"] as ViewKey[]).map((v) => (
+        {!bottomViewBar &&
+          (["myday", "important", "planned"] as ViewKey[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={view === v ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+            >
+              {v === "myday" ? "☀ マイデイ" : v === "important" ? "★ 重要" : "📅 期限日"}
+            </button>
+          ))}
+        {!bottomViewBar && (
           <button
-            key={v}
-            onClick={() => setView(v)}
-            className={view === v ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+            onClick={() => setView("overdue")}
+            className={view === "overdue" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
           >
-            {v === "myday" ? "☀ マイデイ" : v === "important" ? "★ 重要" : "📅 期限日"}
+            ⚠ 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
           </button>
-        ))}
-        <button
-          onClick={() => setView("overdue")}
-          className={view === "overdue" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-        >
-          ⚠ 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
-        </button>
+        )}
         {(lists ?? []).map((l) => (
           <div key={l.id} className="flex items-center">
             <button
@@ -1702,6 +1711,21 @@ export default function TodoSection({
           </>
         )}
       </div>
+
+      {bottomViewBar && (
+        <BottomTabBar
+          items={[
+            { key: "myday", icon: "☀", label: "マイデイ" },
+            { key: "important", icon: "★", label: "重要" },
+            { key: "planned", icon: "📅", label: "期限日" },
+            { key: "overdue", icon: "⚠", label: "期限切れ", count: overdueTasks.length },
+          ]}
+          activeKey={view}
+          onSelect={(k) => setView(k as ViewKey)}
+          style={tabBarStyle as TabBarStyle}
+          adaptiveEmphasis={tabBarAdaptiveEmphasis}
+        />
+      )}
 
       {detailTask && (
         <TaskDetailModal

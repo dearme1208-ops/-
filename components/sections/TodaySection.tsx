@@ -90,6 +90,7 @@ import TomorrowDraftModal from "@/components/TomorrowDraftModal";
 import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
+import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
@@ -215,6 +216,11 @@ export default function TodaySection({
   const provisionalNotifiedAtRef = useRef<number | null>(null);
   const [emphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
   const emphasizeRunning = emphasizeRunningStr === "true";
+  const [tabBarStyle] = useSetting("ui.bottomTabBarStyle", "pill");
+  const [tabBarAdaptiveEmphasisStr] = useSetting("ui.bottomTabBarAdaptiveEmphasis", "false");
+  const tabBarAdaptiveEmphasis = tabBarAdaptiveEmphasisStr === "true";
+  const [tabBarProgressStripStr] = useSetting("today.tabBarProgressStrip", "false");
+  const tabBarProgressStrip = tabBarProgressStripStr === "true";
   const [provisionalIdleHoursStr] = useSetting("today.provisionalIdleThresholdHours", "3");
   const provisionalIdleMs = Math.max(0.5, Number(provisionalIdleHoursStr) || 3) * 3600000;
   const [geoTrackingEnabledStr] = useSetting("today.geoTrackingEnabled", "false");
@@ -734,6 +740,8 @@ export default function TodaySection({
     }
     return { running, pending, done };
   }, [nonProvisionalSortedTasks]);
+  // 下部タブバーの進捗ストリップ表示用(実行中/予定/完了の内訳比率の分母)
+  const taskViewTotal = taskCountsByTab.running + taskCountsByTab.pending + taskCountsByTab.done;
   const visibleTasks = useMemo(
     () =>
       nonProvisionalSortedTasks.filter((t) => {
@@ -3510,36 +3518,35 @@ export default function TodaySection({
         </>
       )}
 
-      <div className="sticky bottom-2 z-10 pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <div className="panel flex items-center gap-1 p-1.5 shadow-lg backdrop-blur">
-          {(
-            [
-              { key: "running", label: "▶ 実行中", count: taskCountsByTab.running },
-              { key: "pending", label: "📋 予定", count: taskCountsByTab.pending },
-              { key: "done", label: "✅ 完了", count: taskCountsByTab.done },
-              { key: "board", label: "🗂️ ボード", count: undefined },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTaskViewTab(t.key)}
-              className={`relative flex-1 ${taskViewTab === t.key ? "btn-pill" : "btn-pill-outline"} px-2 py-2 text-xs sm:text-sm`}
-            >
-              {t.key === "running" && provisionalActive && (
-                <span
-                  className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-alert ring-2 ring-ink"
-                  title="仮計測(未割り当て)が計測中です"
-                  aria-label="仮計測が計測中です"
-                />
-              )}
-              {t.label}
-              {t.count !== undefined && (
-                <span className={`tabular-nums ${taskViewTab === t.key ? "opacity-70" : "opacity-50"}`}>({t.count})</span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
+      <BottomTabBar
+        items={[
+          {
+            key: "running",
+            icon: "▶",
+            label: "実行中",
+            count: taskCountsByTab.running,
+            badge: provisionalActive,
+            badgeTitle: "仮計測(未割り当て)が計測中です",
+            emphasize: runningTaskIds.size > 0,
+          },
+          { key: "pending", icon: "📋", label: "予定", count: taskCountsByTab.pending },
+          { key: "done", icon: "✅", label: "完了", count: taskCountsByTab.done },
+          { key: "board", icon: "🗂️", label: "ボード" },
+        ]}
+        activeKey={taskViewTab}
+        onSelect={(k) => setTaskViewTab(k as typeof taskViewTab)}
+        style={tabBarStyle as TabBarStyle}
+        adaptiveEmphasis={tabBarAdaptiveEmphasis}
+        progress={
+          tabBarProgressStrip
+            ? [
+                { key: "running", ratio: taskViewTotal > 0 ? taskCountsByTab.running / taskViewTotal : 0, className: "bg-alert" },
+                { key: "pending", ratio: taskViewTotal > 0 ? taskCountsByTab.pending / taskViewTotal : 0, className: "bg-cream/40" },
+                { key: "done", ratio: taskViewTotal > 0 ? taskCountsByTab.done / taskViewTotal : 0, className: "bg-cream/15" },
+              ]
+            : undefined
+        }
+      />
 
       {showAddDialog && (
         <AddTaskDialog
