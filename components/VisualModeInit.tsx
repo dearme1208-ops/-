@@ -13,6 +13,7 @@ const THEMED_MODES = [
   "terminal",
   "adventurer",
   "hub",
+  "library",
 ];
 
 // 演出テーマ(オフ / ロボトミーコーポレーション風 / VA-11 HALL-A風 / ペルソナ5風 / ぼくのなつやすみ風 / Claudeモード / 禅モード / ターミナルモード)を

@@ -400,6 +400,17 @@ html[data-high-contrast="true"] :focus-visible {
     --panel-rgb: 21 25 32;
   }
 
+  /* 図書館モード: 古い紙・革表紙を思わせる、彩度を落としたセピア/羊皮紙のライトテーマ。
+     操作感そのものを変える演出(カードめくり・スワイプ・返却スタンプ・書架)と組み合わせるため、
+     配色自体は他の演出テーマより控えめにし、インデックスカードや背表紙の見た目を邪魔しない */
+  html[data-visual-mode="library"] {
+    color-scheme: light;
+    --accent-rgb: 122 74 42;
+    --ink-rgb: 238 227 200;
+    --cream-rgb: 51 38 26;
+    --panel-rgb: 250 244 228;
+  }
+
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
      vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
      日本語には効かず数字・記号にしか効かない。そこで時刻・パーセンテージ等の
@@ -1651,6 +1662,44 @@ html[data-high-contrast="true"] :focus-visible {
     animation: hazard-bar-v11-scroll 3s linear infinite;
   }
 
+  /* --- 図書館モード: 実行中(貸出中)はページに差し込んだ栞紐のような、ごく静かな
+     光彩の呼吸。延滞(超過)は督促印を思わせる、やや速い明滅に切り替える --- */
+  .card-running-lib {
+    animation: card-running-lib-glow 4s ease-in-out infinite;
+  }
+  @keyframes card-running-lib-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.16);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.4), 0 0 14px 1px rgb(var(--accent-rgb) / 0.12);
+    }
+  }
+  .card-overrun-lib {
+    animation: card-overrun-lib-glow 1.8s ease-in-out infinite;
+  }
+  @keyframes card-overrun-lib-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.8), 0 0 20px 4px rgb(var(--accent-rgb) / 0.25);
+    }
+  }
+  .hazard-bar-lib {
+    height: 3px;
+    border-radius: 999px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb) / 0.9) 0px,
+      rgb(var(--accent-rgb) / 0.9) 8px,
+      transparent 8px,
+      transparent 14px
+    );
+  }
+
   /* --- 禅モード: 他テーマの点滅・警戒色を一切使わず、実行中/超過中とも同じ極めて緩やかな
      呼吸だけで伝える(超過してもテンポは変えない。急かさない) --- */
   .card-running-zen {
@@ -2186,6 +2235,10 @@ html[data-high-contrast="true"] :focus-visible {
     border-radius: 999px;
     background-color: rgb(var(--accent-rgb) / 0.5);
   }
+  .gantt-bar-overrun-lib {
+    border-radius: 3px;
+    background-color: rgb(var(--accent-rgb) / 0.55);
+  }
   .gantt-bar-overrun-terminal {
     background-image: repeating-linear-gradient(
       90deg,
@@ -2658,6 +2711,66 @@ html[data-high-contrast="true"] :focus-visible {
   }
 }
 
+/* --- 図書館モード専用: 操作感そのものを変える演出。カード目録風のスワイプ一覧
+   (LibraryCardStack)の「返却/貸出スタンプ」演出と、サブタブ切替時の疑似ページめくり
+   トランジション。どちらもクラス名自体は他テーマでも使えるが、実際に呼び出すのは
+   図書館モードのコンポーネントだけなので、色はここでも--accent-rgb等のテーマ変数に委ねる --- */
+.library-stamp {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.library-stamp span {
+  display: inline-block;
+  padding: 0.4em 1.1em;
+  border: 5px solid rgb(var(--accent-rgb) / 0.85);
+  border-radius: 8px;
+  font-family: var(--font-oswald), sans-serif;
+  font-weight: 800;
+  font-size: 1.6rem;
+  letter-spacing: 0.08em;
+  color: rgb(var(--accent-rgb) / 0.9);
+  background: rgb(var(--accent-rgb) / 0.08);
+  animation: library-stamp-pop 0.7s ease-out forwards;
+}
+@keyframes library-stamp-pop {
+  0% {
+    transform: scale(2.4) rotate(-16deg);
+    opacity: 0;
+  }
+  35% {
+    transform: scale(0.94) rotate(-16deg);
+    opacity: 1;
+  }
+  55% {
+    transform: scale(1.08) rotate(-16deg);
+    opacity: 1;
+  }
+  75%,
+  100% {
+    transform: scale(1) rotate(-16deg);
+    opacity: 1;
+  }
+}
+.library-page {
+  animation: library-page-turn 0.32s ease-out;
+  transform-origin: left center;
+}
+@keyframes library-page-turn {
+  0% {
+    transform: perspective(1200px) rotateY(-10deg) translateX(-10px);
+    opacity: 0;
+  }
+  100% {
+    transform: perspective(1200px) rotateY(0deg) translateX(0);
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card-running,
   .card-overrun,
@@ -2675,6 +2788,8 @@ html[data-high-contrast="true"] :focus-visible {
   .card-overrun-terminal,
   .card-running-adv,
   .card-overrun-adv,
+  .card-running-lib,
+  .card-overrun-lib,
   .hazard-bar,
   .hazard-bar-v11,
   .hazard-bar-p5,
@@ -2682,6 +2797,7 @@ html[data-high-contrast="true"] :focus-visible {
   .hazard-bar-claude,
   .hazard-bar-terminal,
   .hazard-bar-adv,
+  .hazard-bar-lib,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,
@@ -2689,10 +2805,13 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-claude,
   .gantt-bar-overrun-terminal,
   .gantt-bar-overrun-adv,
+  .gantt-bar-overrun-lib,
   .zen-enso,
   .overrun-flicker,
   .overrun-flicker-intense,
   .overrun-badge,
+  .library-stamp span,
+  .library-page,
   .crt-noise,
   .app-title::before,
   .app-title::after,

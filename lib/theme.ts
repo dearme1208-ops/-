@@ -54,7 +54,8 @@ export type VisualMode =
   | "zen"
   | "terminal"
   | "adventurer"
-  | "hub";
+  | "hub"
+  | "library";
 export type ThemedMode =
   | "lobotomy"
   | "va11halla"
@@ -64,7 +65,8 @@ export type ThemedMode =
   | "zen"
   | "terminal"
   | "adventurer"
-  | "hub";
+  | "hub"
+  | "library";
 
 const THEMED_MODES: ThemedMode[] = [
   "lobotomy",
@@ -76,6 +78,7 @@ const THEMED_MODES: ThemedMode[] = [
   "terminal",
   "adventurer",
   "hub",
+  "library",
 ];
 
 export function useVisualMode(): {
@@ -89,6 +92,7 @@ export function useVisualMode(): {
   terminalMode: boolean;
   adventurerMode: boolean;
   hubMode: boolean;
+  libraryMode: boolean;
   themedMode: ThemedMode | null;
   // 色・形・アニメーションは常にthemedMode通りに適用される一方、
   // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
@@ -113,6 +117,7 @@ export function useVisualMode(): {
     terminalMode: mode === "terminal",
     adventurerMode: mode === "adventurer",
     hubMode: mode === "hub",
+    libraryMode: mode === "library",
     themedMode,
     wordingEnabled,
     wordingMode: wordingEnabled ? mode : "off",
@@ -246,6 +251,15 @@ export const RISK_TIERS_HUB = [
   { threshold: 1, name: "順調", level: 0 },
 ] as const;
 
+// 図書館モード: 図書館の督促・延滞のエスカレーションになぞらえた階級
+export const RISK_TIERS_LIBRARY = [
+  { threshold: 4, name: "回収不能本扱い", level: 4 },
+  { threshold: 2.5, name: "督促状発送", level: 3 },
+  { threshold: 1.8, name: "延滞警告", level: 2 },
+  { threshold: 1.3, name: "返却期限間近", level: 1 },
+  { threshold: 1, name: "貸出中", level: 0 },
+] as const;
+
 export type RiskTier =
   | (typeof RISK_TIERS_LOBOTOMY)[number]
   | (typeof RISK_TIERS_VA11HALLA)[number]
@@ -255,7 +269,8 @@ export type RiskTier =
   | (typeof RISK_TIERS_ZEN)[number]
   | (typeof RISK_TIERS_TERMINAL)[number]
   | (typeof RISK_TIERS_ADVENTURER)[number]
-  | (typeof RISK_TIERS_HUB)[number];
+  | (typeof RISK_TIERS_HUB)[number]
+  | (typeof RISK_TIERS_LIBRARY)[number];
 
 const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name: string; level: number }[]> = {
   lobotomy: RISK_TIERS_LOBOTOMY,
@@ -267,6 +282,7 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   terminal: RISK_TIERS_TERMINAL,
   adventurer: RISK_TIERS_ADVENTURER,
   hub: RISK_TIERS_HUB,
+  library: RISK_TIERS_LIBRARY,
 };
 
 export function getRiskTier(ratio: number, mode: ThemedMode): RiskTier {
@@ -293,7 +309,9 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
                 ? "risk-badge-terminal border-alert bg-black/80 text-alert font-bold uppercase tracking-wider"
                 : mode === "adventurer"
                   ? "border-2 border-alert bg-alert/15 text-alert font-bold"
-                  : "border-alert/70 bg-alert/20 text-alert";
+                  : mode === "library"
+                    ? "border border-dashed border-alert/70 bg-alert/10 text-alert font-bold"
+                    : "border-alert/70 bg-alert/20 text-alert";
   const roundness =
     mode === "claude" || mode === "zen" || mode === "adventurer"
       ? "rounded-full px-2.5"
@@ -313,6 +331,7 @@ export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode | null): string 
   if (mode === "zen") return tier.name;
   if (mode === "terminal") return `[${tier.name}]`;
   if (mode === "adventurer") return tier.name;
+  if (mode === "library") return tier.name;
   return `危険度 ${tier.name}`;
 }
 
@@ -328,6 +347,7 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   terminal: "card-running-terminal",
   adventurer: "card-running-adv",
   hub: "card-running-claude",
+  library: "card-running-lib",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -343,6 +363,7 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   terminal: "card-overrun-terminal",
   adventurer: "card-overrun-adv",
   hub: "card-overrun-claude",
+  library: "card-overrun-lib",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -358,6 +379,7 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   terminal: "hazard-bar-terminal",
   adventurer: "hazard-bar-adv",
   hub: "hazard-bar-claude",
+  library: "hazard-bar-lib",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -373,6 +395,7 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   terminal: "gantt-bar-overrun-terminal",
   adventurer: "gantt-bar-overrun-adv",
   hub: "gantt-bar-overrun-claude",
+  library: "gantt-bar-overrun-lib",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
@@ -395,6 +418,7 @@ export function runningLabel(mode: ThemedMode | null): string {
   if (mode === "zen") return "今、ここ";
   if (mode === "terminal") return "● LIVE";
   if (mode === "adventurer") return "ぼうけん中";
+  if (mode === "library") return "貸出中";
   return "計測中";
 }
 
@@ -407,6 +431,7 @@ export function overrunLabel(mode: ThemedMode | null): string {
   if (mode === "zen") return "まだ、そこに在ります";
   if (mode === "terminal") return "▲ THRESHOLD BREACH";
   if (mode === "adventurer") return "⚔️ 激闘中・想定を超過";
+  if (mode === "library") return "📚 延滞中・返却期限超過";
   return "⚠ 計測中・予測超過";
 }
 
@@ -421,6 +446,7 @@ export function completionLabel(mode: ThemedMode | null): string {
   if (mode === "zen") return "終えた";
   if (mode === "terminal") return "TASK COMPLETE";
   if (mode === "adventurer") return "討伐した！";
+  if (mode === "library") return "返却完了";
   return "完了しました";
 }
 
@@ -439,6 +465,7 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   terminal: "CTRL_ROOM",
   adventurer: "ぼうけんの書",
   hub: "統合ボード",
+  library: "書庫",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -656,6 +683,28 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     report: "レポート",
     records: "実績編集",
     settings: "設定",
+  },
+  // 図書館モード: 「本日の作業」画面の操作感自体をカード目録風のスワイプ・書架演出に
+  // 変えるモード。タブは絞り込まず、名称だけ図書館の用語になぞらえる
+  library: {
+    today: "本日の貸出",
+    todo: "予約票",
+    projects: "特別コレクション",
+    master: "蔵書目録",
+    template: "曜日別開館予定",
+    gantt: "貸出記録",
+    aggregation: "貸出統計",
+    charts: "利用グラフ",
+    heatmap: "混雑分布図",
+    attention: "延滞リスト",
+    overtime: "夜間開館記録",
+    yearlyChart: "年鑑",
+    mandala: "選書計画",
+    memo: "メモカード",
+    board: "閲覧室",
+    report: "日報・週報・月報",
+    records: "台帳の訂正",
+    settings: "司書設定",
   },
 };
 

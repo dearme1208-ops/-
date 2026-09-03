@@ -104,6 +104,16 @@ const HUB_STAGES: GrowthStage[] = [
   { icon: "✨", label: "完全掌握" },
 ];
 
+// 図書館モード: バラバラの本が少しずつ分類・配架されていく過程になぞらえた段階
+const LIBRARY_STAGES: GrowthStage[] = [
+  { icon: "📇", label: "未整理" },
+  { icon: "📋", label: "仮登録" },
+  { icon: "🏷️", label: "分類済み" },
+  { icon: "📚", label: "配架完了" },
+  { icon: "🗂️", label: "常設展示" },
+  { icon: "🏛️", label: "貴重書指定" },
+];
+
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
   lobotomy: LOBOTOMY_STAGES,
@@ -114,6 +124,7 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   terminal: TERMINAL_STAGES,
   adventurer: ADVENTURER_STAGES,
   hub: HUB_STAGES,
+  library: LIBRARY_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り

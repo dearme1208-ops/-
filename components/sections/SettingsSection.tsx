@@ -1241,6 +1241,12 @@ export default function SettingsSection() {
             🗂️ ハブモード
           </button>
           <button
+            className={visualMode === "library" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("library")}
+          >
+            📚 図書館モード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1323,6 +1329,11 @@ export default function SettingsSection() {
         {visualMode === "hub" && (
           <p className="text-xs text-cream/50">
             落ち着いたスレートブルーの配色に変わり、「本日の作業」タブの中身が、メモ・ToDo(マイデイ)・本日の作業を1つの自由配置キャンバスにまとめた「統合ボード」そのものに差し替わります。タブを行き来せず、この1画面を見ながら付箋を動かしたり作業を開始したりできるモードです。統合ボードにはマイデイのToDoだけが出るため、全件一覧やサブタスク編集をしたい時のためにToDoタブ、個別の手書き・連結・チェックリスト編集をしたい時のためにメモタブは残しています。
+          </p>
+        )}
+        {visualMode === "library" && (
+          <p className="text-xs text-cream/50">
+            画面全体が古い紙・革表紙を思わせるセピア/羊皮紙のライトテーマに変わるだけでなく、「本日の作業」タブの操作感そのものが変わります。実行中/予定タブは1枚ずつめくれるインデックスカードの束になり、右にスワイプで開始/完了（返却スタンプ演出つき）、左にスワイプで次のカードへ。完了タブは通常の一覧の代わりに、読了(完了)した作業が本の背表紙として並ぶ「書架」になります。作業は「貸出」、想定超過は「延滞」など、呼び名も図書館の用語に総入れ替えされます。
           </p>
         )}
         {visualMode === "off" && (
