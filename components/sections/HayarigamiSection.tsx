@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
+import { computeRemainingEstimatedSeconds, finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatHms, formatMsClock, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage } from "@/lib/growth";
 import { useSetting } from "@/lib/settings";
 import { getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
 import { buildKaiiIndex, erosionPercent, judgeRoute, phaseOf, type KaiiEntry } from "@/lib/hayarigami";
+import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask, TodoTask } from "@/lib/types";
 
 // 流行り神風モード(怪異調査モード)専用の「本日の作業」タブ。
@@ -70,6 +71,9 @@ export default function HayarigamiSection() {
   const [judgedIds, setJudgedIds] = useState<string[]>([]);
   const [lastJudgement, setLastJudgement] = useState<string | null>(null);
   const [openKaii, setOpenKaii] = useState<KaiiEntry | null>(null);
+  // 名鑑(作業マスタ)から自由に選んで調査を始める/ファイルだけ用意するためのピッカー
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickedMaster, setPickedMaster] = useState<MasterTask | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -247,8 +251,16 @@ export default function HayarigamiSection() {
     await finishDailyTask(task);
     setLastJudgement(`「${task.name}」は解決した。ファイルを閉じる。……この件は名鑑に綴じられた。`);
   }
-  async function startFromMaster(master: MasterTask) {
-    if (running) await pauseTask(running);
+  // 名鑑(作業マスタ)から本日のファイルを起こす。startImmediately=falseなら未着手のまま積むだけ。
+  // 想定時間は他タブと同じ計算(同じ作業を既にこなした分を差し引いた残り)に揃える
+  async function addFromMaster(master: MasterTask, startImmediately: boolean) {
+    if (startImmediately && running) await pauseTask(running);
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(
+      today,
+      master.category,
+      master.name,
+      master.estimatedSeconds
+    );
     await db.dailyTasks.add({
       id: uid(),
       date: today,
@@ -256,14 +268,18 @@ export default function HayarigamiSection() {
       masterTaskId: master.id,
       category: master.category,
       name: master.name,
-      estimatedSeconds: master.estimatedSeconds,
-      status: "running",
-      segments: [{ start: Date.now() }],
+      estimatedSeconds,
+      status: startImmediately ? "running" : "pending",
+      segments: startImmediately ? [{ start: Date.now() }] : [],
       accumulatedMs: 0,
-      startedAt: Date.now(),
+      startedAt: startImmediately ? Date.now() : undefined,
       isSpontaneous: true,
     });
-    setLastJudgement(null);
+    setLastJudgement(
+      startImmediately
+        ? null
+        : `「${master.name}」のファイルを用意した。……開くかどうかは、まだ決めなくていい。`
+    );
   }
 
   // ---- オカルト / 科学 の二択(どちらも実データを書き換える) ----
@@ -521,17 +537,15 @@ export default function HayarigamiSection() {
                   </button>
                 ))}
                 {favoriteMasters.slice(0, 3).map((m) => (
-                  <button key={m.id} className={choiceClass} onClick={() => startFromMaster(m)}>
+                  <button key={m.id} className={choiceClass} onClick={() => addFromMaster(m, true)}>
                     ▶ 新たに「{m.name}」を調べ始める
                   </button>
                 ))}
-                {paused.length === 0 && pending.length === 0 && favoriteMasters.length === 0 && (
-                  <p className="px-1 text-xs text-cream/35">
-                    開けるファイルがありません。作業マスタで★をつけておくと、ここから直接調査を始められます。
-                  </p>
-                )}
               </>
             )}
+            <button className={choiceClass} onClick={() => setShowPicker(true)}>
+              ▶ 名鑑（作業マスタ）から選んで調べる
+            </button>
           </>
         )}
 
@@ -562,6 +576,67 @@ export default function HayarigamiSection() {
           ))}
         </div>
       </div>
+
+      {/* ── 名鑑(作業マスタ)から選ぶ ── */}
+      {showPicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+          onClick={() => {
+            setShowPicker(false);
+            setPickedMaster(null);
+          }}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-sm flex-col rounded-sm border border-alert/40 bg-ink p-4"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundImage:
+                "radial-gradient(ellipse at 50% 0%, rgb(var(--accent-rgb) / 0.12) 0%, transparent 65%), linear-gradient(180deg, rgb(var(--panel-rgb)) 0%, rgb(var(--ink-rgb)) 100%)",
+            }}
+          >
+            <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">名鑑から選ぶ</p>
+            <p className="mb-2 shrink-0 text-xs text-cream/50">調べる対象を選んでください（作業マスタの全件から検索できます）。</p>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              <MasterTaskPicker selectedId={pickedMaster?.id} onSelect={setPickedMaster} />
+            </div>
+            <div className="mt-3 shrink-0 space-y-2">
+              <button
+                className={choiceClass + " disabled:opacity-40"}
+                disabled={!pickedMaster}
+                onClick={async () => {
+                  if (!pickedMaster) return;
+                  await addFromMaster(pickedMaster, true);
+                  setPickedMaster(null);
+                  setShowPicker(false);
+                }}
+              >
+                ▶ この怪異の調査を今すぐ始める（計測開始）
+              </button>
+              <button
+                className={choiceClass + " disabled:opacity-40"}
+                disabled={!pickedMaster}
+                onClick={async () => {
+                  if (!pickedMaster) return;
+                  await addFromMaster(pickedMaster, false);
+                  setPickedMaster(null);
+                  setShowPicker(false);
+                }}
+              >
+                ▶ ファイルだけ用意する（未着手のまま追加）
+              </button>
+              <button
+                className="w-full rounded-sm border border-cream/25 py-2 text-xs text-cream/70"
+                onClick={() => {
+                  setShowPicker(false);
+                  setPickedMaster(null);
+                }}
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 怪異の詳細(名鑑を開いた時) ── */}
       {openKaii && (
