@@ -1255,6 +1255,12 @@ export default function SettingsSection() {
             ⚾ 育成選手モード
           </button>
           <button
+            className={visualMode === "hayarigami" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("hayarigami")}
+          >
+            🩸 怪異調査モード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1347,6 +1353,11 @@ export default function SettingsSection() {
         {visualMode === "powerpro" && (
           <p className="text-xs text-cream/50">
             画面全体が白背景に鮮やかなブルーを効かせた、育成ゲームの選手育成画面のようなライトテーマに変わります。「本日の作業」タブが練習メニュー選択画面そのものに総入れ替えされ、球速・コントロール・スタミナなどの能力値カードで今日の調子を、体力ゲージ・やる気で今日の残り具合を確認しながら練習(作業)を進められます。作業は「練習」、完了は「練習完了！」など、呼び名も育成ゲームの用語に総入れ替えされます。
+          </p>
+        )}
+        {visualMode === "hayarigami" && (
+          <p className="text-xs text-cream/50">
+            流行り神風のホラーサウンドノベルモードです。ほぼ真っ黒な画面に血の色の差し色、全面に薄いノイズとヴィネットがかかり、「本日の作業」タブが一枚絵＋下部メッセージウィンドウ＋選択肢というノベルゲームの画面そのものに総入れ替えされます。文章は1文字ずつ表示され（タップで全文表示）、内容は実際の作業状況から組み立てられます。最大の特徴は、想定時間を超えた作業に対して出る「オカルト / 科学」の二択です。オカルト＝怪異の仕業として<b>トラブル対応</b>に記録、科学＝見積もりが甘かったとして<b>作業マスタの想定時間を実測値に書き換え</b>と、どちらも実データを変更する本物の判断になっており、以後の集計・レポートに反映されます。作業は「調査」、完了は「怪異、解決」など呼び名も捜査用語に変わります。
           </p>
         )}
         {visualMode === "off" && (

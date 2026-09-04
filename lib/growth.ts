@@ -124,6 +124,16 @@ const LIBRARY_STAGES: GrowthStage[] = [
   { icon: "🏛️", label: "貴重書指定" },
 ];
 
+// 流行り神風モード: 断片的な噂を集め、裏を取り、怪異の正体に迫っていく捜査の進展になぞらえた段階
+const HAYARIGAMI_STAGES: GrowthStage[] = [
+  { icon: "❓", label: "情報なし" },
+  { icon: "🗣", label: "噂を聞いた" },
+  { icon: "📓", label: "聞き込み中" },
+  { icon: "🔦", label: "現場検証" },
+  { icon: "📂", label: "核心に接近" },
+  { icon: "🩸", label: "真相を掴んだ" },
+];
+
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   natsuyasumi: NATSUYASUMI_STAGES,
   lobotomy: LOBOTOMY_STAGES,
@@ -136,6 +146,7 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   hub: HUB_STAGES,
   library: LIBRARY_STAGES,
   powerpro: POWERPRO_STAGES,
+  hayarigami: HAYARIGAMI_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り

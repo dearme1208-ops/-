@@ -422,6 +422,28 @@ html[data-high-contrast="true"] :focus-visible {
     --panel-rgb: 255 255 255;
   }
 
+  /* 流行り神風モード: ほぼ黒の背景に血のような赤、文字は色を抜いた骨色。
+     ホラーサウンドノベルの「暗闇に文字だけが浮かぶ」画面に寄せる */
+  html[data-visual-mode="hayarigami"] {
+    color-scheme: dark;
+    --accent-rgb: 176 26 38;
+    --ink-rgb: 7 6 8;
+    --cream-rgb: 209 204 197;
+    --panel-rgb: 16 14 17;
+  }
+  /* 画面全体にごく薄いノイズと四隅の暗がり(ヴィネット)を敷き、
+     どのタブを開いていても「何かに見られている」空気を保つ */
+  html[data-visual-mode="hayarigami"] body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 40;
+    background-image:
+      radial-gradient(ellipse at center, transparent 45%, rgb(0 0 0 / 0.55) 100%),
+      repeating-linear-gradient(0deg, rgb(255 255 255 / 0.022) 0 1px, transparent 1px 3px);
+  }
+
   /* --- テーマ別の書体。元ネタの雰囲気に寄せる本丸。
      vt323/anton/special-eliteは日本語グリフを持たないラテン専用書体のため、見出し等の
      日本語には効かず数字・記号にしか効かない。そこで時刻・パーセンテージ等の
@@ -1749,6 +1771,57 @@ html[data-high-contrast="true"] :focus-visible {
     animation: hazard-bar-scroll 0.8s linear infinite;
   }
 
+  /* --- 流行り神風モード: ホラーサウンドノベルらしく、実行中は「気配」程度のごく淡い明滅、
+     超過(怪異接触)では不規則に途切れる明滅で「何かがおかしい」感じを出す。
+     他テーマの規則的な脈動と違い、意図的にタイミングをずらして落ち着かなくしている --- */
+  .card-running-hyr {
+    animation: card-running-hyr-glow 4s ease-in-out infinite;
+  }
+  @keyframes card-running-hyr-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.2);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.55), 0 0 14px rgb(var(--accent-rgb) / 0.18);
+    }
+  }
+  .card-overrun-hyr {
+    animation: card-overrun-hyr-flicker 2.4s steps(1, end) infinite;
+  }
+  @keyframes card-overrun-hyr-flicker {
+    0%,
+    18%,
+    22%,
+    54%,
+    58%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.85), 0 0 20px rgb(var(--accent-rgb) / 0.4);
+    }
+    20%,
+    56%,
+    57% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.1);
+    }
+  }
+  .hazard-bar-hyr {
+    height: 3px;
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgb(var(--accent-rgb) / 0.9) 40%,
+      rgb(var(--accent-rgb)) 50%,
+      rgb(var(--accent-rgb) / 0.9) 60%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 2.6s linear infinite;
+  }
+  /* 危険度バッジ: 血で書き殴ったような滲みを1枚重ねる */
+  .risk-badge-hyr {
+    text-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.8);
+  }
+
   /* --- 禅モード: 他テーマの点滅・警戒色を一切使わず、実行中/超過中とも同じ極めて緩やかな
      呼吸だけで伝える(超過してもテンポは変えない。急かさない) --- */
   .card-running-zen {
@@ -2287,6 +2360,10 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-lib {
     border-radius: 3px;
     background-color: rgb(var(--accent-rgb) / 0.55);
+  }
+  .gantt-bar-overrun-hyr {
+    background-color: rgb(var(--accent-rgb) / 0.7);
+    box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.5);
   }
   .gantt-bar-overrun-pp {
     border-radius: 999px;
@@ -2851,6 +2928,8 @@ html[data-high-contrast="true"] :focus-visible {
   .card-overrun-lib,
   .card-running-pp,
   .card-overrun-pp,
+  .card-running-hyr,
+  .card-overrun-hyr,
   .hazard-bar,
   .hazard-bar-v11,
   .hazard-bar-p5,
@@ -2860,6 +2939,7 @@ html[data-high-contrast="true"] :focus-visible {
   .hazard-bar-adv,
   .hazard-bar-lib,
   .hazard-bar-pp,
+  .hazard-bar-hyr,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,
@@ -2869,6 +2949,7 @@ html[data-high-contrast="true"] :focus-visible {
   .gantt-bar-overrun-adv,
   .gantt-bar-overrun-lib,
   .gantt-bar-overrun-pp,
+  .gantt-bar-overrun-hyr,
   .zen-enso,
   .overrun-flicker,
   .overrun-flicker-intense,
