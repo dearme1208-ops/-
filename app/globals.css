@@ -1821,6 +1821,51 @@ html[data-high-contrast="true"] :focus-visible {
   .risk-badge-hyr {
     text-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.8);
   }
+  /* 深夜帯・侵蝕度が高い時などに、その領域だけノイズを一段濃くして「蝕まれている」感を出す */
+  .hyr-corrupt::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(0deg, rgb(var(--accent-rgb) / 0.05) 0 1px, transparent 1px 3px);
+    animation: hyr-corrupt-drift 7s linear infinite;
+  }
+  @keyframes hyr-corrupt-drift {
+    0% {
+      background-position: 0 0;
+      opacity: 0.75;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      background-position: 0 24px;
+      opacity: 0.75;
+    }
+  }
+  /* 最高危険度(顕現)の時だけ、画面がわずかに震える */
+  .hyr-shake {
+    animation: hyr-shake-move 3.4s ease-in-out infinite;
+  }
+  @keyframes hyr-shake-move {
+    0%,
+    88%,
+    100% {
+      transform: translate(0, 0);
+    }
+    90% {
+      transform: translate(-1px, 1px);
+    }
+    92% {
+      transform: translate(2px, -1px);
+    }
+    94% {
+      transform: translate(-2px, 0);
+    }
+    96% {
+      transform: translate(1px, 1px);
+    }
+  }
 
   /* --- 禅モード: 他テーマの点滅・警戒色を一切使わず、実行中/超過中とも同じ極めて緩やかな
      呼吸だけで伝える(超過してもテンポは変えない。急かさない) --- */
@@ -2940,6 +2985,8 @@ html[data-high-contrast="true"] :focus-visible {
   .hazard-bar-lib,
   .hazard-bar-pp,
   .hazard-bar-hyr,
+  .hyr-corrupt::before,
+  .hyr-shake,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,
