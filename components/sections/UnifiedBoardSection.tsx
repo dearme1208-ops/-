@@ -61,25 +61,6 @@ function findFreeSlot(occupied: BoardRect[], width: number, height: number): { x
   return { x: MEMO_BOARD_WIDTH - width, y: MEMO_BOARD_HEIGHT - height };
 }
 
-function clampPos(x: number, y: number, width: number, height: number): { x: number; y: number } {
-  return {
-    x: Math.max(0, Math.min(MEMO_BOARD_WIDTH - width, x)),
-    y: Math.max(0, Math.min(MEMO_BOARD_HEIGHT - height, y)),
-  };
-}
-
-// 付箋・本日の作業・ToDoの3種のカードをまたいで1枚を一意に指すための複合キー。
-// グループ化はboardGroupIdという1つの文字列フィールドをこの3つのDBテーブル(memoNotes/
-// dailyTasks/todoTasks)それぞれに持たせる形にしているため、種類+IDのペアが必要になる
-type CardKind = "note" | "task" | "todo";
-function cardKey(kind: CardKind, id: string): string {
-  return `${kind}:${id}`;
-}
-function parseCardKey(key: string): { kind: CardKind; id: string } {
-  const i = key.indexOf(":");
-  return { kind: key.slice(0, i) as CardKind, id: key.slice(i + 1) };
-}
-
 export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () => void }) {
   const today = todayStr();
   const boards = useLiveQuery(() => db.memoBoards.orderBy("order").toArray(), []);
@@ -234,125 +215,6 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
     await completeTodoTask(task, today);
   }
 
-  // ---- グループ化(複数カードをまとめて一括で動かす) ----
-  // 「選択モード」でカードを2枚以上選んで「グループ化」すると、同じboardGroupIdが
-  // 付く。以降はグループ内のどれか1枚をドラッグするだけで、全員が同じ分だけ動く
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-
-  function toggleSelect(key: string) {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  function groupIdOf(kind: CardKind, id: string): string | undefined {
-    if (kind === "note") return notes?.find((n) => n.id === id)?.boardGroupId;
-    if (kind === "task") return tasks.find((t) => t.id === id)?.boardGroupId;
-    return todos.find((t) => t.id === id)?.boardGroupId;
-  }
-
-  function cardGeometry(key: string): BoardRect | null {
-    const { kind, id } = parseCardKey(key);
-    if (kind === "note") {
-      const n = notes?.find((n) => n.id === id);
-      return n ? { x: n.x, y: n.y, width: n.width, height: n.height } : null;
-    }
-    if (kind === "task") {
-      const t = tasks.find((t) => t.id === id);
-      return t ? { x: t.boardX ?? 40, y: t.boardY ?? 40, width: CARD_WIDTH, height: TASK_CARD_HEIGHT } : null;
-    }
-    const t = todos.find((t) => t.id === id);
-    return t ? { x: t.boardX ?? 40, y: t.boardY ?? 40, width: CARD_WIDTH, height: TODO_CARD_HEIGHT } : null;
-  }
-
-  async function updateCardPos(kind: CardKind, id: string, x: number, y: number) {
-    if (kind === "note") await moveNote(id, x, y);
-    else if (kind === "task") await moveTask(id, x, y);
-    else await moveTodo(id, x, y);
-  }
-
-  async function setCardGroupId(kind: CardKind, id: string, boardGroupId: string | undefined) {
-    if (kind === "note") await db.memoNotes.update(id, { boardGroupId });
-    else if (kind === "task") await db.dailyTasks.update(id, { boardGroupId });
-    else await db.todoTasks.update(id, { boardGroupId });
-  }
-
-  async function groupSelected() {
-    if (selectedKeys.size < 2) return;
-    const gid = uid();
-    for (const key of selectedKeys) {
-      const { kind, id } = parseCardKey(key);
-      await setCardGroupId(kind, id, gid);
-      bringToFront(id);
-    }
-    setSelectedKeys(new Set());
-    setSelectionMode(false);
-  }
-
-  async function ungroupSelected() {
-    for (const key of selectedKeys) {
-      const { kind, id } = parseCardKey(key);
-      await setCardGroupId(kind, id, undefined);
-    }
-    setSelectedKeys(new Set());
-    setSelectionMode(false);
-  }
-
-  async function ungroupOne(kind: CardKind, id: string) {
-    await setCardGroupId(kind, id, undefined);
-  }
-
-  const selectedHasGroup = [...selectedKeys].some((key) => {
-    const { kind, id } = parseCardKey(key);
-    return !!groupIdOf(kind, id);
-  });
-
-  // ドラッグ中の全カードの動きをここで一元管理する。単体ドラッグの場合はkeysが1件、
-  // グループドラッグの場合はグループの全メンバーのkeysが入り、全員が同じdx/dyで動く
-  const [dragState, setDragState] = useState<{ keys: string[]; dx: number; dy: number } | null>(null);
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-
-  function beginDrag(kind: CardKind, id: string, clientX: number, clientY: number) {
-    const gid = groupIdOf(kind, id);
-    const keys = gid
-      ? [
-          ...(notes ?? []).filter((n) => n.boardGroupId === gid).map((n) => cardKey("note", n.id)),
-          ...tasks.filter((t) => t.boardGroupId === gid).map((t) => cardKey("task", t.id)),
-          ...todos.filter((t) => t.boardGroupId === gid).map((t) => cardKey("todo", t.id)),
-        ]
-      : [cardKey(kind, id)];
-    for (const key of keys) bringToFront(parseCardKey(key).id);
-    dragStartRef.current = { x: clientX, y: clientY };
-    setDragState({ keys, dx: 0, dy: 0 });
-  }
-  function updateDrag(clientX: number, clientY: number) {
-    if (!dragStartRef.current) return;
-    setDragState((prev) =>
-      prev ? { ...prev, dx: (clientX - dragStartRef.current!.x) / zoom, dy: (clientY - dragStartRef.current!.y) / zoom } : prev
-    );
-  }
-  async function commitDrag() {
-    const state = dragState;
-    dragStartRef.current = null;
-    setDragState(null);
-    if (!state) return;
-    for (const key of state.keys) {
-      const geo = cardGeometry(key);
-      if (!geo) continue;
-      const pos = clampPos(geo.x + state.dx, geo.y + state.dy, geo.width, geo.height);
-      const { kind, id } = parseCardKey(key);
-      await updateCardPos(kind, id, pos.x, pos.y);
-    }
-  }
-  function dragOffsetFor(key: string): { dx: number; dy: number } {
-    if (dragState && dragState.keys.includes(key)) return { dx: dragState.dx, dy: dragState.dy };
-    return { dx: 0, dy: 0 };
-  }
-
   return (
     <div className="space-y-3">
       <div className="panel flex flex-wrap items-center gap-2 p-3">
@@ -397,127 +259,49 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
         </button>
       </div>
 
-      <div className="panel flex flex-wrap items-center gap-2 p-3">
-        <button
-          className={selectionMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-          onClick={() => {
-            setSelectionMode((v) => !v);
-            setSelectedKeys(new Set());
-          }}
-        >
-          {selectionMode ? "☑ 選択モード中" : "☐ 選択してグループ化"}
-        </button>
-        {selectionMode && (
-          <>
-            <span className="text-xs text-cream/50">{selectedKeys.size}件選択中</span>
-            <button
-              className="btn-pill-outline text-xs disabled:opacity-40"
-              disabled={selectedKeys.size < 2}
-              onClick={groupSelected}
-            >
-              🔗 グループ化
-            </button>
-            <button
-              className="btn-pill-outline text-xs disabled:opacity-40"
-              disabled={selectedKeys.size === 0 || !selectedHasGroup}
-              onClick={ungroupSelected}
-            >
-              グループ解除
-            </button>
-            {selectedKeys.size > 0 && (
-              <button className="btn-pill-outline text-xs" onClick={() => setSelectedKeys(new Set())}>
-                選択解除
-              </button>
-            )}
-          </>
-        )}
-        <span className="text-[10px] text-cream/40">
-          カードを2枚以上選んでグループ化すると、1枚をドラッグするだけで全員が一緒に動きます。
-        </span>
-      </div>
-
       <div className="panel overflow-auto p-0" style={{ height: "70vh" }}>
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
           <div
             className="relative"
             style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
           >
-            {(notes ?? []).map((note) => {
-              const key = cardKey("note", note.id);
-              const offset = dragOffsetFor(key);
-              return (
-                <NoteCard
-                  key={note.id}
-                  note={note}
-                  zoom={zoom}
-                  zIndex={zIndexById[note.id] ?? 1}
-                  dx={offset.dx}
-                  dy={offset.dy}
-                  onDragStart={(cx, cy) => beginDrag("note", note.id, cx, cy)}
-                  onDragMove={updateDrag}
-                  onDragEnd={commitDrag}
-                  onCommitText={commitNoteText}
-                  onGrow={growNote}
-                  onFocus={() => bringToFront(note.id)}
-                  grouped={!!note.boardGroupId}
-                  onUngroup={() => ungroupOne("note", note.id)}
-                  selectionMode={selectionMode}
-                  selected={selectedKeys.has(key)}
-                  onToggleSelect={() => toggleSelect(key)}
-                />
-              );
-            })}
-            {tasks.map((task) => {
-              const key = cardKey("task", task.id);
-              const offset = dragOffsetFor(key);
-              return (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  now={now}
-                  zoom={zoom}
-                  zIndex={zIndexById[task.id] ?? 1}
-                  dx={offset.dx}
-                  dy={offset.dy}
-                  onDragStart={(cx, cy) => beginDrag("task", task.id, cx, cy)}
-                  onDragMove={updateDrag}
-                  onDragEnd={commitDrag}
-                  onStart={() => startTask(task)}
-                  onPause={() => pauseTask(task)}
-                  onComplete={() => completeTask(task)}
-                  onFocus={() => bringToFront(task.id)}
-                  grouped={!!task.boardGroupId}
-                  onUngroup={() => ungroupOne("task", task.id)}
-                  selectionMode={selectionMode}
-                  selected={selectedKeys.has(key)}
-                  onToggleSelect={() => toggleSelect(key)}
-                />
-              );
-            })}
-            {todos.map((todo) => {
-              const key = cardKey("todo", todo.id);
-              const offset = dragOffsetFor(key);
-              return (
-                <TodoCard
-                  key={todo.id}
-                  todo={todo}
-                  zoom={zoom}
-                  zIndex={zIndexById[todo.id] ?? 1}
-                  dx={offset.dx}
-                  dy={offset.dy}
-                  onDragStart={(cx, cy) => beginDrag("todo", todo.id, cx, cy)}
-                  onDragMove={updateDrag}
-                  onDragEnd={commitDrag}
-                  onComplete={() => completeTodo(todo)}
-                  onFocus={() => bringToFront(todo.id)}
-                  grouped={!!todo.boardGroupId}
-                  onUngroup={() => ungroupOne("todo", todo.id)}
-                  selectionMode={selectionMode}
-                  selected={selectedKeys.has(key)}
-                  onToggleSelect={() => toggleSelect(key)}
-                />
-              );
-            })}
+            {(notes ?? []).map((note) => (
+              <NoteCard
+                key={note.id}
+                note={note}
+                zoom={zoom}
+                zIndex={zIndexById[note.id] ?? 1}
+                onDragEnd={moveNote}
+                onCommitText={commitNoteText}
+                onGrow={growNote}
+                onFocus={() => bringToFront(note.id)}
+              />
+            ))}
+            {tasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                now={now}
+                zoom={zoom}
+                zIndex={zIndexById[task.id] ?? 1}
+                onDragEnd={moveTask}
+                onStart={() => startTask(task)}
+                onPause={() => pauseTask(task)}
+                onComplete={() => completeTask(task)}
+                onFocus={() => bringToFront(task.id)}
+              />
+            ))}
+            {todos.map((todo) => (
+              <TodoCard
+                key={todo.id}
+                todo={todo}
+                zoom={zoom}
+                zIndex={zIndexById[todo.id] ?? 1}
+                onDragEnd={moveTodo}
+                onComplete={() => completeTodo(todo)}
+                onFocus={() => bringToFront(todo.id)}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -553,64 +337,37 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
   );
 }
 
-// ボード上での自由配置に共通する、ヘッダー部分を掴んでのドラッグ処理。位置の計算・
-// 確定(グループの場合は他メンバーも一緒に動かす)は親(UnifiedBoardSection)側の
-// dragState/beginDrag/updateDrag/commitDragが一元的に行い、ここではポインタ座標を
-// そのまま親に渡すだけの薄いラッパーにする
-function useCardDragHandlers(
-  onDragStart: (clientX: number, clientY: number) => void,
-  onDragMove: (clientX: number, clientY: number) => void,
-  onDragEnd: () => void
-) {
+// ボード上での自由配置に共通する、ヘッダー部分を掴んでのドラッグ処理。移動確定は
+// pointerup時のみ行い、ドラッグ中はローカルのoffsetだけで見た目を動かす(付箋のドラッグと同じ方式)
+function useBoardDrag(x: number, y: number, width: number, height: number, zoom: number, onDragEnd: (x: number, y: number) => void) {
+  const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     e.currentTarget.setPointerCapture(e.pointerId);
-    onDragStart(e.clientX, e.clientY);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    setDragOffset({ dx: 0, dy: 0 });
   }
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
-    onDragMove(e.clientX, e.clientY);
+    if (!dragStartRef.current) return;
+    setDragOffset({ dx: (e.clientX - dragStartRef.current.x) / zoom, dy: (e.clientY - dragStartRef.current.y) / zoom });
   }
   function onPointerUp() {
-    onDragEnd();
+    if (!dragStartRef.current || !dragOffset) {
+      dragStartRef.current = null;
+      setDragOffset(null);
+      return;
+    }
+    const newX = Math.max(0, Math.min(MEMO_BOARD_WIDTH - width, x + dragOffset.dx));
+    const newY = Math.max(0, Math.min(MEMO_BOARD_HEIGHT - height, y + dragOffset.dy));
+    onDragEnd(newX, newY);
+    dragStartRef.current = null;
+    setDragOffset(null);
   }
-  return { onPointerDown, onPointerMove, onPointerUp };
-}
 
-// グループ化されたカードにつける、テーマの単一アクセント色に沿った統一の縁取り。
-// どのグループも同じ見た目にすることで、複数モード(テーマ)を跨いでも常に馴染む
-const GROUPED_RING_CLASS = "ring-2 ring-alert/70";
-
-function GroupBadge({ onUngroup }: { onUngroup: () => void }) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onUngroup();
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      title="グループから外す"
-      className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-alert/60 bg-ink text-[10px] text-alert shadow"
-    >
-      🔗
-    </button>
-  );
-}
-
-function SelectCheckbox({ selected, onToggle }: { selected: boolean; onToggle: () => void }) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      aria-label="選択"
-      className={`absolute -left-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full border-2 text-[10px] shadow ${
-        selected ? "border-alert bg-alert text-ink" : "border-cream/40 bg-ink text-transparent"
-      }`}
-    >
-      ✓
-    </button>
-  );
+  const left = x + (dragOffset?.dx ?? 0);
+  const top = y + (dragOffset?.dy ?? 0);
+  return { left, top, onPointerDown, onPointerMove, onPointerUp };
 }
 
 // カード上部の「掴む場所」。暗い背景でも見失わないよう、カード本体より一段
@@ -650,36 +407,18 @@ function NoteCard({
   note,
   zoom,
   zIndex,
-  dx,
-  dy,
-  onDragStart,
-  onDragMove,
   onDragEnd,
   onCommitText,
   onFocus,
   onGrow,
-  grouped,
-  onUngroup,
-  selectionMode,
-  selected,
-  onToggleSelect,
 }: {
   note: MemoNote;
   zoom: number;
   zIndex: number;
-  dx: number;
-  dy: number;
-  onDragStart: (clientX: number, clientY: number) => void;
-  onDragMove: (clientX: number, clientY: number) => void;
-  onDragEnd: () => void;
+  onDragEnd: (id: string, x: number, y: number) => void;
   onCommitText: (note: MemoNote, text: string) => void;
   onFocus: () => void;
   onGrow: (id: string, height: number) => void;
-  grouped: boolean;
-  onUngroup: () => void;
-  selectionMode: boolean;
-  selected: boolean;
-  onToggleSelect: () => void;
 }) {
   const [text, setText] = useState(note.text);
   const idRef = useRef(note.id);
@@ -689,19 +428,22 @@ function NoteCard({
       setText(note.text);
     }
   }, [note.id, note.text]);
-  const { onPointerDown, onPointerMove, onPointerUp } = useCardDragHandlers(onDragStart, onDragMove, onDragEnd);
-  const left = note.x + dx;
-  const top = note.y + dy;
+  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
+    note.x,
+    note.y,
+    note.width,
+    note.height,
+    zoom,
+    (x, y) => onDragEnd(note.id, x, y)
+  );
   const colors = MEMO_NOTE_COLORS[note.color] ?? MEMO_NOTE_COLORS[DEFAULT_MEMO_NOTE_COLOR];
 
   return (
     <div
-      className={`absolute flex flex-col rounded-md border-2 shadow-md ${grouped ? GROUPED_RING_CLASS : ""}`}
+      className="absolute flex flex-col rounded-md border-2 shadow-md"
       style={{ left, top, width: note.width, height: note.height, backgroundColor: colors.bg, borderColor: colors.border, zIndex }}
       onPointerDownCapture={onFocus}
     >
-      {selectionMode && <SelectCheckbox selected={selected} onToggle={onToggleSelect} />}
-      {grouped && !selectionMode && <GroupBadge onUngroup={onUngroup} />}
       <DragHandle tone="light" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
       <textarea
         value={text}
@@ -737,57 +479,40 @@ function NoteCard({
 function TaskCard({
   task,
   now,
+  zoom,
   zIndex,
-  dx,
-  dy,
-  onDragStart,
-  onDragMove,
   onDragEnd,
   onStart,
   onPause,
   onComplete,
   onFocus,
-  grouped,
-  onUngroup,
-  selectionMode,
-  selected,
-  onToggleSelect,
 }: {
   task: DailyTask;
   now: number;
   zoom: number;
   zIndex: number;
-  dx: number;
-  dy: number;
-  onDragStart: (clientX: number, clientY: number) => void;
-  onDragMove: (clientX: number, clientY: number) => void;
-  onDragEnd: () => void;
+  onDragEnd: (id: string, x: number, y: number) => void;
   onStart: () => void;
   onPause: () => void;
   onComplete: () => void;
   onFocus: () => void;
-  grouped: boolean;
-  onUngroup: () => void;
-  selectionMode: boolean;
-  selected: boolean;
-  onToggleSelect: () => void;
 }) {
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
-  const left = (task.boardX ?? 40) + dx;
-  const top = (task.boardY ?? 40) + dy;
-  const { onPointerDown, onPointerMove, onPointerUp } = useCardDragHandlers(onDragStart, onDragMove, onDragEnd);
+  const x = task.boardX ?? 40;
+  const y = task.boardY ?? 40;
+  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(x, y, CARD_WIDTH, TASK_CARD_HEIGHT, zoom, (nx, ny) =>
+    onDragEnd(task.id, nx, ny)
+  );
   const elapsedMs = segmentsAccumulatedMs(task, now);
   const running = task.status === "running";
 
   return (
     <div
-      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${running ? "border-alert" : "border-cream/20"} ${grouped ? GROUPED_RING_CLASS : ""}`}
+      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${running ? "border-alert" : "border-cream/20"}`}
       style={{ left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT, zIndex }}
       onPointerDownCapture={onFocus}
     >
-      {selectionMode && <SelectCheckbox selected={selected} onToggle={onToggleSelect} />}
-      {grouped && !selectionMode && <GroupBadge onUngroup={onUngroup} />}
       <div
         className="-mx-2 -mt-2 mb-1 flex shrink-0 cursor-grab items-center justify-between rounded-t bg-cream/10 px-2 py-1 active:cursor-grabbing"
         style={{ touchAction: "none" }}
@@ -824,50 +549,33 @@ function TaskCard({
 
 function TodoCard({
   todo,
+  zoom,
   zIndex,
-  dx,
-  dy,
-  onDragStart,
-  onDragMove,
   onDragEnd,
   onComplete,
   onFocus,
-  grouped,
-  onUngroup,
-  selectionMode,
-  selected,
-  onToggleSelect,
 }: {
   todo: TodoTask;
   zoom: number;
   zIndex: number;
-  dx: number;
-  dy: number;
-  onDragStart: (clientX: number, clientY: number) => void;
-  onDragMove: (clientX: number, clientY: number) => void;
-  onDragEnd: () => void;
+  onDragEnd: (id: string, x: number, y: number) => void;
   onComplete: () => void;
   onFocus: () => void;
-  grouped: boolean;
-  onUngroup: () => void;
-  selectionMode: boolean;
-  selected: boolean;
-  onToggleSelect: () => void;
 }) {
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
-  const left = (todo.boardX ?? 40) + dx;
-  const top = (todo.boardY ?? 40) + dy;
-  const { onPointerDown, onPointerMove, onPointerUp } = useCardDragHandlers(onDragStart, onDragMove, onDragEnd);
+  const x = todo.boardX ?? 40;
+  const y = todo.boardY ?? 40;
+  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(x, y, CARD_WIDTH, TODO_CARD_HEIGHT, zoom, (nx, ny) =>
+    onDragEnd(todo.id, nx, ny)
+  );
 
   return (
     <div
-      className={`absolute flex flex-col gap-1 rounded-md border-2 border-cream/20 bg-ink/90 p-2 shadow-md ${grouped ? GROUPED_RING_CLASS : ""}`}
+      className="absolute flex flex-col gap-1 rounded-md border-2 border-cream/20 bg-ink/90 p-2 shadow-md"
       style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, zIndex }}
       onPointerDownCapture={onFocus}
     >
-      {selectionMode && <SelectCheckbox selected={selected} onToggle={onToggleSelect} />}
-      {grouped && !selectionMode && <GroupBadge onUngroup={onUngroup} />}
       <DragHandle tone="dark" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
       <div className="flex flex-1 items-start gap-2">
         <button
