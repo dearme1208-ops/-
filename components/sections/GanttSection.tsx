@@ -10,6 +10,9 @@ import type { DailyTask } from "@/lib/types";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { ganttOverrunClass, useVisualMode } from "@/lib/theme";
+import { powerproWordsFor } from "@/lib/powerproWords";
+import { LineScore } from "@/components/powerpro/PowerproCanvas";
+import type { LineScoreCell } from "@/lib/powerproArt";
 import { usePinchZoom, useSwipeNavigate } from "@/lib/gestures";
 import GanttWeekView from "./GanttWeekView";
 import GanttMonthView from "./GanttMonthView";
@@ -140,7 +143,7 @@ export default function GanttSection() {
   const viewMode: "day" | "week" | "month" =
     viewModeStr === "week" ? "week" : viewModeStr === "month" ? "month" : "day";
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { themedMode } = useVisualMode();
+  const { themedMode, wordingEnabled } = useVisualMode();
   // 各バーのCSSホバー(:hover)によるツールチップは、タッチ端末には「ホバー」自体が
   // 無いため機能しない。タップした時はこちらに詳細文を入れ、下部の詳細パネルで確実に見せる
   const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
@@ -587,8 +590,51 @@ export default function GanttSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFitOnOpen, viewMode, date, tasks]);
 
+  // 育成選手モード: このタブの見出しに球場のスコアボードを置く。作業1件を1回に見立て、
+  // その回に入った点(実働の分数)と、予定内(○)/予定超過(●)を並べる。
+  // 数字はすべてタイムライン本体と同じdailyTasksから取っており、別集計は一切していない
+  const powerproMode = themedMode === "powerpro";
+  const PW = powerproWordsFor(wordingEnabled);
+  const lineScore = useMemo(() => {
+    const cells: LineScoreCell[] = (tasks ?? [])
+      .filter((t) => !t.isProvisional)
+      .map((t) => {
+        const seconds = segmentsAccumulatedMs(t, now) / 1000;
+        return {
+          minutes: seconds / 60,
+          over: t.estimatedSeconds > 0 && seconds > t.estimatedSeconds,
+          running: t.status === "running",
+        };
+      });
+    return {
+      cells,
+      totalMinutes: cells.reduce((sum, c) => sum + c.minutes, 0),
+      errors: cells.filter((c) => c.over).length,
+    };
+  }, [tasks, now]);
+
   return (
     <div className="space-y-4">
+      {powerproMode && lineScore.cells.length > 0 && (
+        <div>
+          <LineScore
+            cells={lineScore.cells}
+            totalMinutes={lineScore.totalMinutes}
+            errors={lineScore.errors}
+            labels={{
+              inning: PW.lineScoreInning,
+              runs: PW.lineScoreRuns,
+              total: PW.lineScoreTotal,
+              errors: PW.lineScoreErrors,
+            }}
+            className="overflow-hidden rounded-xl border border-cream/15 shadow-[0_3px_0_rgba(12,28,60,0.18)]"
+          />
+          <p className="mt-1 px-1 text-[11px] leading-relaxed text-cream/45">
+            <span className="mr-1 font-bold text-cream/60">{PW.lineScoreTitle}</span>
+            {PW.lineScoreNote}
+          </p>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm text-cream/70">日付</label>
         <div className="flex items-center gap-1">

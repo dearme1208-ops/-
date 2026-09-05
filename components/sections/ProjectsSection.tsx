@@ -29,6 +29,9 @@ import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
 import BranchTree from "@/components/hayarigami/BranchTree";
 import type { BranchNode } from "@/lib/hayarigamiArt";
+import { buildPennant } from "@/lib/powerpro";
+import { powerproWordsFor } from "@/lib/powerproWords";
+import { PennantBar } from "@/components/powerpro/PowerproCanvas";
 
 type ViewMode = "gantt" | "calendar" | "tree" | "ppm";
 const TREE_LEAF_LIMIT = 15;
@@ -1091,6 +1094,18 @@ function ProjectRow({
     const firstUndone = (project.stages ?? []).findIndex((s) => !isStageDone(s));
     return { done, current: i === firstUndone, overdue: stageOverdue };
   });
+  // 育成選手モード: 案件タブは「契約案件」。段階(マイルストーン)を1試合ずつに見立てて、
+  // 完了=勝ち・期日超過=負け・未消化=空きマスの勝敗表にする。順位も勝率という実データそのもの
+  const powerproMode = themedMode === "powerpro";
+  const PW = powerproWordsFor(wordingEnabled);
+  const pennant = powerproMode ? buildPennant(project, today) : null;
+  const pennantCells: ("win" | "loss" | "rest")[] = powerproMode
+    ? (project.stages ?? []).map((stage) => {
+        if (isStageDone(stage)) return "win";
+        if (stage.dueDate && stage.dueDate < today) return "loss";
+        return "rest";
+      })
+    : [];
   return (
     <div
       className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""} ${
@@ -1118,6 +1133,24 @@ function ProjectRow({
             <span className="mr-1.5 font-mono text-cream/45">
               {hayarigamiWordsFor(wordingEnabled).fileNoPrefix}
               {foafNumberOf(project.id)}
+            </span>
+          )}
+          {powerproMode && pennant && (
+            <span className="mr-1.5 inline-flex items-center gap-1 align-middle">
+              <span
+                className="rounded px-1.5 py-0.5 text-[10px] font-black text-white shadow-[0_1px_0_rgba(12,28,60,0.3)]"
+                style={{
+                  background:
+                    "linear-gradient(to bottom, rgb(var(--accent-rgb)), rgb(var(--accent-rgb) / 0.72))",
+                }}
+              >
+                {wordingEnabled ? pennant.standing : pennant.standingPlain}
+              </span>
+              {pennant.games > 0 && (
+                <span className="rounded-full border border-cream/20 bg-cream/5 px-1.5 py-0.5 text-[10px] tabular-nums text-cream/60">
+                  {PW.winLossLabel(pennant.wins, pennant.losses)}
+                </span>
+              )}
             </span>
           )}
           {project.title}
@@ -1196,6 +1229,12 @@ function ProjectRow({
             </button>
             {hayarigamiMode ? (
               <BranchTree nodes={branchNodes} seed={project.id} className="overflow-hidden rounded border border-cream/15" />
+            ) : powerproMode ? (
+              <PennantBar
+                cells={pennantCells}
+                label={PW.pennantLabel}
+                className="overflow-hidden rounded border border-cream/15"
+              />
             ) : (
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-cream/5">
                 <div

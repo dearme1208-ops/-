@@ -41,6 +41,10 @@ import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/p
 import { foafNumberOf } from "@/lib/hayarigami";
 import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
+import { scoutGradeOf } from "@/lib/powerpro";
+import { powerproWordsFor } from "@/lib/powerproWords";
+import { ScoutBust } from "@/components/powerpro/PowerproCanvas";
+import { rankCssColor } from "@/lib/powerproArt";
 import { readFileAsDataUrl } from "@/lib/mailImport";
 import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
@@ -2385,6 +2389,10 @@ function TaskRow({
   // ここでも「作った値」ではなく実際の状態を絵にする
   const hayarigamiMode = themedMode === "hayarigami";
   const hayarigamiIntensity = task.completed ? 0.05 : overdue ? 0.85 : dueToday ? 0.5 : 0.2;
+  // 育成選手モード: ToDoタブは「スカウトリスト」。1件を1人の候補選手に見立て、
+  // 胸像の背景の熱さと評価(S〜C)を、期日までの余裕と重要度という実データから決める
+  const powerproMode = themedMode === "powerpro";
+  const scout = powerproMode ? scoutGradeOf(task, today) : null;
   return (
     <div
       title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
@@ -2398,6 +2406,15 @@ function TaskRow({
           intensity={hayarigamiIntensity}
           night={overdue}
           className="h-11 w-11 shrink-0 overflow-hidden rounded border border-cream/25"
+        />
+      )}
+      {powerproMode && scout && (
+        <ScoutBust
+          seed={`${task.category ?? "候補"}/${task.title}`}
+          urgency={scout.urgency}
+          done={task.completed}
+          size={44}
+          className="shrink-0 overflow-hidden rounded-lg border border-cream/20 shadow-[0_2px_0_rgba(12,28,60,0.15)]"
         />
       )}
       <button
@@ -2416,6 +2433,19 @@ function TaskRow({
               {hayarigamiWordsFor(wordingEnabled).fileNoPrefix}
               {foafNumberOf(task.id)}
             </span>
+          )}
+          {powerproMode && scout && (
+            <>
+              <span
+                className="rounded px-1.5 py-0.5 text-[10px] font-black text-white shadow-[0_1px_0_rgba(12,28,60,0.25)]"
+                style={{ background: rankCssColor(scout.grade) }}
+              >
+                {powerproWordsFor(wordingEnabled).scoutBadge(scout.grade)}
+              </span>
+              <span className="rounded-full border border-cream/20 bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/55">
+                {wordingEnabled ? scout.label : scout.labelPlain}
+              </span>
+            </>
           )}
           {listTitle && (
             <span className="rounded-full bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/40">{listTitle}</span>
