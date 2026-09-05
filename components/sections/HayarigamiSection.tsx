@@ -11,6 +11,9 @@ import { useSetting } from "@/lib/settings";
 import { getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
 import { buildKaiiIndex, erosionPercent, judgeRoute, phaseOf, type KaiiEntry } from "@/lib/hayarigami";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
+import SceneCanvas from "@/components/hayarigami/SceneCanvas";
+import KaiiSilhouette from "@/components/hayarigami/KaiiSilhouette";
+import CaseDiagram from "@/components/hayarigami/CaseDiagram";
 import type { DailyTask, MasterTask, TodoTask } from "@/lib/types";
 
 // 流行り神風モード(怪異調査モード)専用の「本日の作業」タブ。
@@ -115,6 +118,11 @@ export default function HayarigamiSection() {
 
   // 画面が「蝕まれている」条件: 深夜帯、または侵蝕度が高い、または今まさに強い超過中
   const corrupted = phase.corrupt || erosion >= 60 || runningTier.level >= 3;
+
+  // 一枚絵(背景)の種と濃さ。調査中の作業があればその作業名、無ければ日付と時間帯で決まるため、
+  // 同じ案件を開けば毎回同じ景色が出る。濃さは侵蝕度と今の危険度の高い方を採る
+  const sceneSeed = running ? `${running.category}/${running.name}` : `${today}:${phase.phase}`;
+  const sceneIntensity = Math.max(erosion / 100, runningTier.level / 4);
 
   // ---- 語り(メッセージウィンドウ本文) ----
   const { narration, narrationKey } = useMemo(() => {
@@ -319,11 +327,20 @@ export default function HayarigamiSection() {
           corrupted ? "hyr-corrupt border-alert/40" : "border-cream/15"
         } ${runningTier.level >= 4 && !!running ? "hyr-shake" : ""}`}
         style={{
-          minHeight: "13rem",
+          minHeight: "15.5rem",
           backgroundImage:
             "radial-gradient(ellipse at 50% 0%, rgb(var(--accent-rgb) / 0.10) 0%, transparent 62%), linear-gradient(180deg, rgb(var(--panel-rgb)) 0%, rgb(var(--ink-rgb)) 100%)",
         }}
       >
+        <SceneCanvas
+          seed={sceneSeed}
+          intensity={sceneIntensity}
+          night={phase.corrupt}
+          className="pointer-events-none absolute inset-0"
+        />
+        {/* 文字が沈まないよう、一枚絵の上に暗幕を1枚敷く */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/25 via-black/10 to-black/70" />
+        <div className="relative">
         <div className="mb-3 flex items-center justify-between text-[10px] tracking-[0.3em] text-cream/40">
           <span>怪異調査ファイル</span>
           <span>
@@ -376,8 +393,14 @@ export default function HayarigamiSection() {
               <button
                 key={k.key}
                 onClick={() => setOpenKaii(k)}
-                className="flex w-full items-center justify-between gap-2 border-l-2 border-cream/25 bg-black/30 px-2 py-1.5 text-left text-xs hover:border-alert hover:bg-alert/10"
+                className="flex w-full items-center gap-2 border-l-2 border-cream/25 bg-black/30 px-2 py-1.5 text-left text-xs hover:border-alert hover:bg-alert/10"
               >
+                <KaiiSilhouette
+                  seed={k.displayName}
+                  size={34}
+                  dangerLevel={k.dangerLevel}
+                  className="shrink-0 rounded-sm border border-cream/15"
+                />
                 <span className="min-w-0 flex-1 truncate">
                   <span className={`${DANGER_TEXT[k.dangerLevel]} font-bold`}>{k.displayName}</span>
                   <span className="ml-1.5 text-[10px] text-cream/35">{k.status}</span>
@@ -389,8 +412,21 @@ export default function HayarigamiSection() {
         )}
 
         {screen === "files" && (
-          <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
             {tasks.length === 0 && <p className="text-sm text-cream/40">本日のファイルはまだ無い。</p>}
+            {tasks.length > 0 && (
+              <CaseDiagram
+                className="overflow-hidden rounded-sm border border-cream/10"
+                height={186}
+                centerLabel={`本日 ${done.length}/${tasks.length}`}
+                seed={`${today}:${tasks.length}`}
+                nodes={tasks.slice(0, 8).map((t) => {
+                  const el = segmentsAccumulatedMs(t, now) / 1000;
+                  const ratio = t.estimatedSeconds > 0 ? el / t.estimatedSeconds : 0;
+                  return { label: t.name, level: getRiskTier(ratio, mode).level, done: t.status === "done" };
+                })}
+              />
+            )}
             {tasks.map((t, i) => {
               const elapsed = segmentsAccumulatedMs(t, now);
               const ratio = t.estimatedSeconds > 0 ? elapsed / 1000 / t.estimatedSeconds : 0;
@@ -479,6 +515,7 @@ export default function HayarigamiSection() {
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* ── メッセージウィンドウ ── */}
@@ -653,10 +690,22 @@ export default function HayarigamiSection() {
             }}
           >
             <p className="text-[10px] tracking-[0.3em] text-cream/40">怪異名鑑</p>
-            <p className={`mt-1 font-display text-xl font-bold ${DANGER_TEXT[openKaii.dangerLevel]}`}>{openKaii.displayName}</p>
-            <p className="text-[11px] text-cream/40">
-              {openKaii.category} / {openKaii.realName}
-            </p>
+            <div className="mt-1 flex items-start gap-3">
+              <KaiiSilhouette
+                seed={openKaii.displayName}
+                size={92}
+                dangerLevel={openKaii.dangerLevel}
+                className="shrink-0 rounded-sm border border-cream/20"
+              />
+              <div className="min-w-0">
+                <p className={`font-display text-lg font-bold leading-snug ${DANGER_TEXT[openKaii.dangerLevel]}`}>
+                  {openKaii.displayName}
+                </p>
+                <p className="text-[11px] text-cream/40">
+                  {openKaii.category} / {openKaii.realName}
+                </p>
+              </div>
+            </div>
             <div className="mt-3 space-y-1 text-xs text-cream/70">
               <div className="flex justify-between border-b border-cream/10 pb-1">
                 <span className="text-cream/40">状態</span>
