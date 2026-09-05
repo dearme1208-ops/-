@@ -30,6 +30,7 @@ const TerminalDashboardSection = dynamic(() => import("@/components/sections/Ter
 const PowerproTrainingSection = dynamic(() => import("@/components/sections/PowerproTrainingSection"), { ssr: false });
 const HayarigamiSection = dynamic(() => import("@/components/sections/HayarigamiSection"), { ssr: false });
 const LobotomySection = dynamic(() => import("@/components/sections/LobotomySection"), { ssr: false });
+const LibrarySection = dynamic(() => import("@/components/sections/LibrarySection"), { ssr: false });
 const AdventurerQuestSection = dynamic(() => import("@/components/sections/AdventurerQuestSection"), { ssr: false });
 const AdventurerStatusSection = dynamic(() => import("@/components/sections/AdventurerStatusSection"), { ssr: false });
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
@@ -176,6 +177,7 @@ export default function HomePage() {
       {active === "today" && mode === "powerpro" && <PowerproTrainingSection />}
       {active === "today" && mode === "hayarigami" && <HayarigamiSection />}
       {active === "today" && mode === "lobotomy" && <LobotomySection />}
+      {active === "today" && mode === "library" && <LibrarySection />}
       {active === "today" &&
         mode !== "claude" &&
         mode !== "zen" &&
@@ -184,7 +186,8 @@ export default function HomePage() {
         mode !== "hub" &&
         mode !== "powerpro" &&
         mode !== "hayarigami" &&
-        mode !== "lobotomy" && (
+        mode !== "lobotomy" &&
+        mode !== "library" && (
         <TodaySection
           onOpenTodoDetail={(taskId) => {
             setPendingTodoDetailId(taskId);

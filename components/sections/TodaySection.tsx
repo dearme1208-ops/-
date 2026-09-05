@@ -91,8 +91,6 @@ import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
-import LibraryCardStack from "@/components/sections/LibraryCardStack";
-import LibraryBookshelf from "@/components/sections/LibraryBookshelf";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
@@ -175,7 +173,7 @@ export default function TodaySection({
   const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
-  const { lobotomyMode, va11hallaMode, libraryMode, themedMode, wordingThemedMode, wordingMode } = useVisualMode();
+  const { lobotomyMode, va11hallaMode, themedMode, wordingThemedMode, wordingMode } = useVisualMode();
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -2380,7 +2378,6 @@ export default function TodaySection({
     return { factors, avgShortfallPct: Math.round(totalShortfallPct / count) };
   }, [latestConditionLevel, conditionProductivity, weatherCurrent, weatherProductivityForEstimate]);
 
-  // 図書館モードのカードスタック(LibraryCardStack)からも同じカードを再利用するため、
   // 個々のタスクカードの描画をmapのコールバックから関数として切り出したもの
   function renderTaskCard(task: DailyTask) {
     const elapsedMs = segmentsAccumulatedMs(task, now);
@@ -2421,7 +2418,7 @@ export default function TodaySection({
     // 図書館モードではカードスタックのスワイプ操作(左スワイプ=後回し)がドラッグ並べ替えを
     // 兼ねるため、ネイティブdraggableは無効にする(有効のままだとポインタベースのスワイプ検知と
     // ブラウザのHTML5ドラッグが競合し、スワイプが反応しなくなる)
-    const isDraggable = task.status === "pending" && !libraryMode;
+    const isDraggable = task.status === "pending";
     return (
       <div
         key={task.id}
@@ -2878,33 +2875,6 @@ export default function TodaySection({
     const last = visibleTasks[visibleTasks.length - 1];
     if (last && last.id !== task.id) reorderPendingTask(task.id, last.id);
   }
-  function handleLibrarySwipeRight(task: DailyTask) {
-    if (controlsDisabledFor(task)) return;
-    if (taskViewTab === "pending") {
-      if (isDuplicateRunningTask(task)) return;
-      startTask(task);
-    } else if (taskViewTab === "running") {
-      finishTask(task);
-    }
-  }
-  function handleLibrarySwipeLeft(task: DailyTask) {
-    if (controlsDisabledFor(task)) return;
-    if (taskViewTab === "pending") {
-      sendPendingTaskToBack(task);
-    } else if (taskViewTab === "running") {
-      if (task.status === "running") pauseTask(task);
-      else if (!isDuplicateRunningTask(task)) startTask(task);
-    }
-  }
-  function librarySwipeRightLabel(): string {
-    return taskViewTab === "pending" ? "開始" : "返却";
-  }
-  function librarySwipeLeftLabel(task: DailyTask): string | null {
-    if (taskViewTab === "pending") return "後回し";
-    if (taskViewTab === "running") return task.status === "running" ? "中断" : "再開";
-    return null;
-  }
-
   return (
     <div className="space-y-4">
       {themedMode && (
@@ -3497,7 +3467,7 @@ export default function TodaySection({
       {taskViewTab === "board" && <UnifiedBoardSection onOpenTodo={onOpenTodoTab} />}
 
       {taskViewTab !== "board" && (
-        <div key={taskViewTab} className={libraryMode ? "library-page" : undefined}>
+        <div key={taskViewTab}>
       {provisionalTask && taskViewTab === "running" && (
         <ProvisionalTaskCard
           task={provisionalTask}
@@ -3544,7 +3514,7 @@ export default function TodaySection({
         </div>
       )}
 
-      {taskViewTab === "done" && !libraryMode && (
+      {taskViewTab === "done" && (
         <CompletedTasksGantt
           tasks={nonProvisionalSortedTasks}
           onOpenEdit={(task) => setEditingTask(task)}
@@ -3554,39 +3524,16 @@ export default function TodaySection({
         />
       )}
 
-      {libraryMode && taskViewTab === "done" && <LibraryBookshelf tasks={visibleTasks} />}
-
-      {libraryMode && (taskViewTab === "running" || taskViewTab === "pending") ? (
-        <>
-          {visibleTasks.length === 0 && (
-            <p className="panel p-4 text-center text-sm text-cream/50">
-              {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
-              {taskViewTab === "pending" && "予定している作業はありません"}
-            </p>
-          )}
-          <LibraryCardStack
-            tasks={visibleTasks}
-            renderCard={renderTaskCard}
-            onSwipeRight={handleLibrarySwipeRight}
-            onSwipeLeft={handleLibrarySwipeLeft}
-            rightStampLabel={librarySwipeRightLabel}
-            leftStampLabel={librarySwipeLeftLabel}
-          />
-        </>
-      ) : (
-        !libraryMode && (
-          <div className="space-y-3">
-            {visibleTasks.length === 0 && (
-              <p className="panel p-4 text-center text-sm text-cream/50">
-                {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
-                {taskViewTab === "pending" && "予定している作業はありません"}
-                {taskViewTab === "done" && "完了した作業はまだありません"}
-              </p>
-            )}
-            {visibleTasks.map(renderTaskCard)}
-          </div>
-        )
-      )}
+      <div className="space-y-3">
+        {visibleTasks.length === 0 && (
+          <p className="panel p-4 text-center text-sm text-cream/50">
+            {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
+            {taskViewTab === "pending" && "予定している作業はありません"}
+            {taskViewTab === "done" && "完了した作業はまだありません"}
+          </p>
+        )}
+        {visibleTasks.map(renderTaskCard)}
+      </div>
         </div>
       )}
 
