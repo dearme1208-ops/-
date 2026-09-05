@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { computeRemainingEstimatedSeconds, finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
+import { findOrCreateMasterTask } from "@/lib/master";
 import { formatHms, formatMsClock, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage } from "@/lib/growth";
@@ -80,9 +81,13 @@ export default function HayarigamiSection() {
   const [judgedIds, setJudgedIds] = useState<string[]>([]);
   const [lastJudgement, setLastJudgement] = useState<string | null>(null);
   const [openKaii, setOpenKaii] = useState<KaiiEntry | null>(null);
-  // 名鑑(作業マスタ)から自由に選んで調査を始める/ファイルだけ用意するためのピッカー
+  // 名鑑(作業マスタ)から自由に選んで調査を始める/ファイルだけ用意するためのピッカー。
+  // まず「名鑑全体 / お気に入り / 自由入力」のどこから選ぶかを聞き、その先は各手段ごとの画面になる
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerTab, setPickerTab] = useState<"menu" | "master" | "favorite" | "free">("menu");
   const [pickedMaster, setPickedMaster] = useState<MasterTask | null>(null);
+  const [freeCategory, setFreeCategory] = useState("");
+  const [freeName, setFreeName] = useState("");
   // 二択の紋章は、指したものだけ線が光る
   const [hoverJudge, setHoverJudge] = useState<"occult" | "science" | null>(null);
   // 推理ロジックの回答(空欄id -> キーワードid)と、当日の評価
@@ -387,7 +392,9 @@ export default function HayarigamiSection() {
     setLastJudgement(W.narration.completed(task.name));
   }
   // 名鑑(作業マスタ)から本日のファイルを起こす。startImmediately=falseなら未着手のまま積むだけ。
-  // 想定時間は他タブと同じ計算(同じ作業を既にこなした分を差し引いた残り)に揃える
+  // 想定時間は他タブと同じ計算(同じ作業を既にこなした分を差し引いた残り)に揃える。
+  // 実行中の作業を一時停止させてから残り時間を計算するのは、その一時停止で確定する
+  // accumulatedMsを踏まえた「残り」にするため(先に計算すると直前まで計測していた分が抜け落ちる)
   async function addFromMaster(master: MasterTask, startImmediately: boolean) {
     if (startImmediately && running) await pauseTask(running);
     const estimatedSeconds = await computeRemainingEstimatedSeconds(
@@ -396,13 +403,35 @@ export default function HayarigamiSection() {
       master.name,
       master.estimatedSeconds
     );
+    await insertDailyTask(master.category, master.name, master.id, estimatedSeconds, startImmediately);
+  }
+
+  // 名鑑に無い対象をその場で書き記す(自由入力)。名鑑側にも新規のファイルとして起こす
+  async function addFreeform(category: string, name: string, startImmediately: boolean) {
+    const cat = category.trim();
+    const nm = name.trim();
+    if (!cat || !nm) return;
+    if (startImmediately && running) await pauseTask(running);
+    const master = await findOrCreateMasterTask(cat, nm, 0);
+    const estimatedSeconds = await computeRemainingEstimatedSeconds(today, cat, nm, master.estimatedSeconds);
+    await insertDailyTask(cat, nm, master.id, estimatedSeconds, startImmediately);
+  }
+
+  // addFromMaster/addFreeformの共通処理。呼び出し元で実行中の作業は先に一時停止させておくこと
+  async function insertDailyTask(
+    category: string,
+    name: string,
+    masterId: string,
+    estimatedSeconds: number,
+    startImmediately: boolean
+  ) {
     await db.dailyTasks.add({
       id: uid(),
       date: today,
       order: tasks.length,
-      masterTaskId: master.id,
-      category: master.category,
-      name: master.name,
+      masterTaskId: masterId,
+      category,
+      name,
       estimatedSeconds,
       status: startImmediately ? "running" : "pending",
       segments: startImmediately ? [{ start: Date.now() }] : [],
@@ -410,7 +439,16 @@ export default function HayarigamiSection() {
       startedAt: startImmediately ? Date.now() : undefined,
       isSpontaneous: true,
     });
-    setLastJudgement(startImmediately ? null : W.narration.queued(master.name));
+    setLastJudgement(startImmediately ? null : W.narration.queued(name));
+  }
+
+  // ピッカーを完全に閉じて、次に開いたときは必ずメニューから始まるようにする
+  function closePicker() {
+    setShowPicker(false);
+    setPickerTab("menu");
+    setPickedMaster(null);
+    setFreeCategory("");
+    setFreeName("");
   }
 
   // ---- オカルト / 科学 の二択(どちらも実データを書き換える) ----
@@ -484,7 +522,14 @@ export default function HayarigamiSection() {
       }
     }
     choices.push(
-      <button key="picker" className={choicePlate} onClick={() => setShowPicker(true)}>
+      <button
+        key="picker"
+        className={choicePlate}
+        onClick={() => {
+          setShowPicker(true);
+          setPickerTab("menu");
+        }}
+      >
         {W.pickerChoice}
       </button>,
       <button key="sq" className={choicePlate} onClick={() => setSqStep(0)}>
@@ -984,15 +1029,9 @@ export default function HayarigamiSection() {
         ))}
       </div>
 
-      {/* ── 作業マスタから選ぶ ── */}
+      {/* ── 作業を選んで追加する(名鑑 / お気に入り / 自由入力の入口) ── */}
       {showPicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
-          onClick={() => {
-            setShowPicker(false);
-            setPickedMaster(null);
-          }}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4" onClick={closePicker}>
           <div
             className="flex max-h-[85vh] w-full max-w-sm flex-col border border-alert/40 bg-ink p-4"
             onClick={(e) => e.stopPropagation()}
@@ -1001,46 +1040,177 @@ export default function HayarigamiSection() {
                 "radial-gradient(ellipse at 50% 0%, rgb(var(--accent-rgb) / 0.12) 0%, transparent 65%), linear-gradient(180deg, rgb(var(--panel-rgb)) 0%, rgb(var(--ink-rgb)) 100%)",
             }}
           >
-            <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerTitle}</p>
-            <p className="mb-2 shrink-0 text-xs text-cream/50">{W.pickerDesc}</p>
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              <MasterTaskPicker selectedId={pickedMaster?.id} onSelect={setPickedMaster} />
-            </div>
-            <div className="mt-3 shrink-0 space-y-2">
-              <button
-                className={choicePlate + " disabled:opacity-40"}
-                disabled={!pickedMaster}
-                onClick={async () => {
-                  if (!pickedMaster) return;
-                  await addFromMaster(pickedMaster, true);
-                  setPickedMaster(null);
-                  setShowPicker(false);
-                }}
-              >
-                {W.pickerStart}
-              </button>
-              <button
-                className={choicePlate + " disabled:opacity-40"}
-                disabled={!pickedMaster}
-                onClick={async () => {
-                  if (!pickedMaster) return;
-                  await addFromMaster(pickedMaster, false);
-                  setPickedMaster(null);
-                  setShowPicker(false);
-                }}
-              >
-                {W.pickerQueue}
-              </button>
-              <button
-                className="w-full border border-cream/25 py-2 text-xs text-cream/70"
-                onClick={() => {
-                  setShowPicker(false);
-                  setPickedMaster(null);
-                }}
-              >
-                閉じる
-              </button>
-            </div>
+            {pickerTab === "menu" && (
+              <>
+                <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerMenuTitle}</p>
+                <div className="mt-3 shrink-0 space-y-2">
+                  <button className={choicePlate} onClick={() => setPickerTab("master")}>
+                    {W.pickerOptMaster}
+                  </button>
+                  <button className={choicePlate} onClick={() => setPickerTab("favorite")}>
+                    {W.pickerOptFavorite}
+                  </button>
+                  <button className={choicePlate} onClick={() => setPickerTab("free")}>
+                    {W.pickerOptFree}
+                  </button>
+                  <button className="w-full border border-cream/25 py-2 text-xs text-cream/70" onClick={closePicker}>
+                    閉じる
+                  </button>
+                </div>
+              </>
+            )}
+
+            {pickerTab === "master" && (
+              <>
+                <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerTitle}</p>
+                <p className="mb-2 shrink-0 text-xs text-cream/50">{W.pickerDesc}</p>
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <MasterTaskPicker selectedId={pickedMaster?.id} onSelect={setPickedMaster} />
+                </div>
+                <div className="mt-3 shrink-0 space-y-2">
+                  <button
+                    className={choicePlate + " disabled:opacity-40"}
+                    disabled={!pickedMaster}
+                    onClick={async () => {
+                      if (!pickedMaster) return;
+                      await addFromMaster(pickedMaster, true);
+                      closePicker();
+                    }}
+                  >
+                    {W.pickerStart}
+                  </button>
+                  <button
+                    className={choicePlate + " disabled:opacity-40"}
+                    disabled={!pickedMaster}
+                    onClick={async () => {
+                      if (!pickedMaster) return;
+                      await addFromMaster(pickedMaster, false);
+                      closePicker();
+                    }}
+                  >
+                    {W.pickerQueue}
+                  </button>
+                  <button
+                    className="w-full border border-cream/25 py-2 text-xs text-cream/70"
+                    onClick={() => {
+                      setPickerTab("menu");
+                      setPickedMaster(null);
+                    }}
+                  >
+                    戻る
+                  </button>
+                </div>
+              </>
+            )}
+
+            {pickerTab === "favorite" && (
+              <>
+                <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerOptFavorite}</p>
+                <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+                  {favoriteMasters.length === 0 ? (
+                    <p className="text-xs leading-relaxed text-cream/50">{W.favoriteEmpty}</p>
+                  ) : (
+                    favoriteMasters.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => setPickedMaster(m)}
+                        className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${
+                          pickedMaster?.id === m.id ? "bg-cream text-ink" : "bg-ink/60 text-cream hover:bg-ink/80"
+                        }`}
+                      >
+                        ★ {m.name}
+                        <span className="ml-1 text-xs opacity-60">（{m.category}）</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="mt-3 shrink-0 space-y-2">
+                  <button
+                    className={choicePlate + " disabled:opacity-40"}
+                    disabled={!pickedMaster}
+                    onClick={async () => {
+                      if (!pickedMaster) return;
+                      await addFromMaster(pickedMaster, true);
+                      closePicker();
+                    }}
+                  >
+                    {W.pickerStart}
+                  </button>
+                  <button
+                    className={choicePlate + " disabled:opacity-40"}
+                    disabled={!pickedMaster}
+                    onClick={async () => {
+                      if (!pickedMaster) return;
+                      await addFromMaster(pickedMaster, false);
+                      closePicker();
+                    }}
+                  >
+                    {W.pickerQueue}
+                  </button>
+                  <button
+                    className="w-full border border-cream/25 py-2 text-xs text-cream/70"
+                    onClick={() => {
+                      setPickerTab("menu");
+                      setPickedMaster(null);
+                    }}
+                  >
+                    戻る
+                  </button>
+                </div>
+              </>
+            )}
+
+            {pickerTab === "free" && (
+              <>
+                <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerOptFree}</p>
+                <div className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                  <div>
+                    <label className="mb-1 block text-xs text-cream/50">{W.freeCategoryLabel}</label>
+                    <input
+                      value={freeCategory}
+                      onChange={(e) => setFreeCategory(e.target.value)}
+                      className="w-full rounded-lg border border-cream/20 bg-black/40 px-3 py-2 text-sm text-cream"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-cream/50">{W.freeNameLabel}</label>
+                    <input
+                      value={freeName}
+                      onChange={(e) => setFreeName(e.target.value)}
+                      className="w-full rounded-lg border border-cream/20 bg-black/40 px-3 py-2 text-sm text-cream"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 shrink-0 space-y-2">
+                  <button
+                    className={choicePlate + " disabled:opacity-40"}
+                    disabled={!freeCategory.trim() || !freeName.trim()}
+                    onClick={async () => {
+                      await addFreeform(freeCategory, freeName, true);
+                      closePicker();
+                    }}
+                  >
+                    {W.pickerStart}
+                  </button>
+                  <button
+                    className={choicePlate + " disabled:opacity-40"}
+                    disabled={!freeCategory.trim() || !freeName.trim()}
+                    onClick={async () => {
+                      await addFreeform(freeCategory, freeName, false);
+                      closePicker();
+                    }}
+                  >
+                    {W.pickerQueue}
+                  </button>
+                  <button
+                    className="w-full border border-cream/25 py-2 text-xs text-cream/70"
+                    onClick={() => setPickerTab("menu")}
+                  >
+                    戻る
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

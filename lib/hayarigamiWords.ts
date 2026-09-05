@@ -43,6 +43,13 @@ export interface HayarigamiWords {
   openChoice: (name: string) => string;
   newChoice: (name: string) => string;
   pickerChoice: string;
+  pickerMenuTitle: string;
+  pickerOptMaster: string;
+  pickerOptFavorite: string;
+  pickerOptFree: string;
+  favoriteEmpty: string;
+  freeCategoryLabel: string;
+  freeNameLabel: string;
   pickerTitle: string;
   pickerDesc: string;
   pickerStart: string;
@@ -144,7 +151,14 @@ const THEMED: HayarigamiWords = {
   resumeChoice: (name) => `▶ 「${name}」の調査を再開する`,
   openChoice: (name) => `▶ 「${name}」のファイルを開く`,
   newChoice: (name) => `▶ 新たに「${name}」を調べ始める`,
-  pickerChoice: "▶ 名鑑（作業マスタ）から選んで調べる",
+  pickerChoice: "▶ 対象を選んで調べる",
+  pickerMenuTitle: "何から調べますか",
+  pickerOptMaster: "▶ 名鑑（作業マスタ）全体から選ぶ",
+  pickerOptFavorite: "▶ よく調べる相手（★）から選ぶ",
+  pickerOptFree: "▶ 未知の相手を書き記す（自由入力）",
+  favoriteEmpty: "★を付けた名鑑がまだない。名鑑（作業マスタ）で★を付けておくと、ここから直接選べる。",
+  freeCategoryLabel: "分類",
+  freeNameLabel: "対象の名前",
   pickerTitle: "名鑑から選ぶ",
   pickerDesc: "調べる対象を選んでください（作業マスタの全件から検索できます）。",
   pickerStart: "▶ この怪異の調査を今すぐ始める（計測開始）",
@@ -271,7 +285,14 @@ const PLAIN: HayarigamiWords = {
   resumeChoice: (name) => `▶ 「${name}」を再開する`,
   openChoice: (name) => `▶ 「${name}」を開始する`,
   newChoice: (name) => `▶ 「${name}」を開始する`,
-  pickerChoice: "▶ 作業マスタから選んで開始する",
+  pickerChoice: "▶ 作業を選んで開始する",
+  pickerMenuTitle: "追加する方法を選んでください",
+  pickerOptMaster: "▶ 作業マスタ全体から選ぶ",
+  pickerOptFavorite: "▶ よく使う作業（★）から選ぶ",
+  pickerOptFree: "▶ 自由入力で追加する",
+  favoriteEmpty: "★を付けた作業マスタがまだありません。作業マスタで★を付けておくと、ここから選べます。",
+  freeCategoryLabel: "業務区分（大項目）",
+  freeNameLabel: "詳細作業名",
   pickerTitle: "作業マスタから選ぶ",
   pickerDesc: "開始する作業を選んでください（作業マスタの全件から検索できます）。",
   pickerStart: "▶ この作業を今すぐ開始する（計測開始）",
