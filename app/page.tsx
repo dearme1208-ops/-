@@ -37,6 +37,7 @@ const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), {
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
 const ClaudeReportSection = dynamic(() => import("@/components/sections/ClaudeReportSection"), { ssr: false });
 const ClaudeInsightsSection = dynamic(() => import("@/components/sections/ClaudeInsightsSection"), { ssr: false });
+const NatsuyasumiSection = dynamic(() => import("@/components/sections/NatsuyasumiSection"), { ssr: false });
 const MasterSection = dynamic(() => import("@/components/sections/MasterSection"), { ssr: false });
 const TemplateSection = dynamic(() => import("@/components/sections/TemplateSection"), { ssr: false });
 const GanttSection = dynamic(() => import("@/components/sections/GanttSection"), { ssr: false });
@@ -171,6 +172,7 @@ export default function HomePage() {
       />
       <TabNav tabs={tabs} active={active} onChange={setActive} />
       {active === "today" && mode === "claude" && <ClaudeWorkspaceSection onOpenInsights={() => setActive("aggregation")} />}
+      {active === "today" && mode === "natsuyasumi" && <NatsuyasumiSection />}
       {active === "today" && mode === "zen" && <ZenSection />}
       {active === "today" && mode === "terminal" && <TerminalDashboardSection />}
       {active === "today" && mode === "adventurer" && <AdventurerQuestSection />}
@@ -188,6 +190,7 @@ export default function HomePage() {
         mode !== "powerpro" &&
         mode !== "hayarigami" &&
         mode !== "lobotomy" &&
+        mode !== "natsuyasumi" &&
         mode !== "library" && (
         <TodaySection
           onOpenTodoDetail={(taskId) => {
