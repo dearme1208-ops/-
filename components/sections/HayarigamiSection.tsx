@@ -546,7 +546,15 @@ export default function HayarigamiSection() {
           {running && (
             <p
               className="shrink-0 overflow-hidden text-sm font-bold tracking-widest text-cream/85"
-              style={{ writingMode: "vertical-rl", height: "9rem", textShadow: "0 1px 4px rgba(0,0,0,0.95)" }}
+              style={{
+                writingMode: "vertical-rl",
+                // 縦書きは高さを与えないと潰れるが、固定だと短い端末で中央の計測欄を圧迫する
+                height: "clamp(4.5rem, 16vh, 9rem)",
+                // 長い作業名は黙って途中で切れるのではなく、省略記号で終わらせる
+                whiteSpace: "nowrap",
+                textOverflow: "ellipsis",
+                textShadow: "0 1px 4px rgba(0,0,0,0.95)",
+              }}
             >
               {running.name}
             </p>
@@ -554,14 +562,18 @@ export default function HayarigamiSection() {
         </div>
 
         {/* ── 中央: 計測 または 資料画面 ── */}
-        <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3">
+        <div className="relative z-10 min-h-[6.5rem] flex-1 overflow-y-auto px-3">
           {screen === "main" && (
-            <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="flex min-h-full flex-col items-center justify-center gap-0.5 py-2 text-center">
               {running ? (
                 <>
                   <p
-                    className="font-display text-5xl font-bold tabular-nums text-alert"
-                    style={{ textShadow: "0 2px 12px rgba(0,0,0,0.95)" }}
+                    className="font-display font-bold leading-none tabular-nums text-alert"
+                    style={{
+                      // 画面の短い端末でも枠内に収まるよう、固定サイズではなく幅に応じて縮める
+                      fontSize: "clamp(1.75rem, 11vw, 3rem)",
+                      textShadow: "0 2px 12px rgba(0,0,0,0.95)",
+                    }}
                   >
                     {formatMsClock(runningElapsedMs)}
                   </p>
@@ -825,7 +837,7 @@ export default function HayarigamiSection() {
 
         {/* ── 選択肢(メッセージ窓の上に重ねる) ── */}
         {choices.length > 0 && (
-          <div className="relative z-10 max-h-[36%] shrink-0 space-y-1.5 overflow-y-auto px-2 pb-1">{choices}</div>
+          <div className="relative z-10 min-h-0 max-h-[32%] shrink space-y-1.5 overflow-y-auto px-2 pb-1">{choices}</div>
         )}
 
         {/* ── メッセージ窓 ── */}
