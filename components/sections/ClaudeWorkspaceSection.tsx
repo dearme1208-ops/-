@@ -8,6 +8,10 @@ import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
 import { daysBetweenDateStrs, formatMsClock, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
+import { useVisualMode } from "@/lib/theme";
+import { buildThinking, confidenceLabel } from "@/lib/claudeThinking";
+import { claudeWordsFor } from "@/lib/claudeWords";
+import { ConfidenceScale, Paper } from "@/components/claude/ClaudeCanvas";
 import type { DailyTask, ProjectItem, ProjectStage, TodoTask } from "@/lib/types";
 
 // Claudeモード専用の統合ワークスペース。
@@ -19,12 +23,18 @@ import type { DailyTask, ProjectItem, ProjectStage, TodoTask } from "@/lib/types
 // 開始・一時停止・完了できるようにした(「まずタブを移動して計測を始める」という
 // 手順そのものを無くす)。データは他モードと同じdailyTasks/todoTasks/projectsテーブルを
 // そのまま使うため、モードを切り替えても記録は失われない
-export default function ClaudeWorkspaceSection() {
+export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsights?: () => void }) {
   const today = todayStr();
+  const { wordingEnabled } = useVisualMode();
+  const W = claudeWordsFor(wordingEnabled);
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const allTodoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const lists = useLiveQuery(() => db.todoLists.orderBy("order").toArray(), []);
+  // ワークスペースの見出しにも分析結果を1件だけ出す。インサイトタブと同じ
+  // エンジン(lib/claudeThinking.ts)を呼ぶので、2つの画面で結論が食い違うことはない
+  const records = useLiveQuery(() => db.records.toArray(), []);
+  const masters = useLiveQuery(() => db.masterTasks.toArray(), []);
   const [now, setNow] = useState(Date.now());
   const [captureText, setCaptureText] = useState("");
   const [newProjectTitle, setNewProjectTitle] = useState("");
@@ -137,6 +147,27 @@ export default function ClaudeWorkspaceSection() {
     return candidates[0];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjects, activeTodos, today]);
+
+  // インサイトタブと同じ分析から、いちばん確度×影響の大きい1件だけを持ってくる
+  const topFinding = useMemo(() => {
+    if (!records || !masters || !allTodoTasks || !projects) return null;
+    return buildThinking(records, masters, allTodoTasks, projects, today).findings[0] ?? null;
+  }, [records, masters, allTodoTasks, projects, today]);
+
+  // 案件ごとの、直近14日に充てた時間。インサイトタブの分析と同じ窓を使い、
+  // 同じ画面で「順調です」と「14日間まったく進んでいません」が併存しないようにする
+  const recentSecondsByProject = useMemo(() => {
+    const since = new Date();
+    since.setDate(since.getDate() - 14);
+    const sinceStr = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-${String(since.getDate()).padStart(2, "0")}`;
+    const map = new Map<string, number>();
+    for (const r of records ?? []) {
+      if (r.excludedFromStats || r.date < sinceStr) continue;
+      const ids = [r.projectId, ...(r.secondaryProjectIds ?? [])].filter(Boolean) as string[];
+      for (const id of ids) map.set(id, (map.get(id) ?? 0) + r.seconds);
+    }
+    return map;
+  }, [records]);
 
   const totalMsToday = (dailyTasks ?? []).reduce((sum, d) => sum + segmentsAccumulatedMs(d, now), 0);
   const doneCountToday = (dailyTasks ?? []).filter((d) => d.status === "done").length;
@@ -307,41 +338,79 @@ export default function ClaudeWorkspaceSection() {
   function projectInsight(p: ProjectItem): string {
     const remaining = daysBetweenDateStrs(today, p.dueDate);
     const progress = computeProjectProgress(p.stages);
+    const recentHours = (recentSecondsByProject.get(p.id) ?? 0) / 3600;
     if (remaining < 0) return `期日を${Math.abs(remaining)}日過ぎています。状況を見直すことをおすすめします。`;
     if (progress !== null && progress >= 1) return "すべての段階が完了しています。仕上げの確認をどうぞ。";
+    // 残り日数だけを見て「順調」と言うと、手が付いていない案件まで順調に見えてしまう。
+    // 直近の投入時間を先に確かめる
+    if (recentHours === 0) return `直近14日間、この案件に時間を使っていません。期日まで残り${remaining}日です。`;
     if (remaining <= 3 && (progress ?? 0) < 0.5) return `期日まで残り${remaining}日です。優先度を上げることをおすすめします。`;
     if (remaining === 0) return "今日が期日です。";
-    return `期日まで残り${remaining}日。順調に進んでいます。`;
+    return `期日まで残り${remaining}日。直近14日で${recentHours.toFixed(1)}時間を充てています。`;
   }
 
   return (
-    <div className="space-y-4">
-      <div className="panel space-y-2 p-4">
-        <h2 className="font-display text-lg font-bold text-cream">ワークスペース</h2>
-        <p className="text-sm text-cream/60">
-          今日はこれまでに {doneCountToday}件完了、合計 {formatMsClock(totalMsToday)} 集中しています。
-        </p>
+    <div className="space-y-5">
+      {/* ══ 見出し ══ */}
+      <header className="space-y-1.5">
+        <p className="text-[11px] tracking-[0.2em] text-cream/35">{today}</p>
+        <h2 className="font-display text-2xl font-bold tracking-tight text-cream">ワークスペース</h2>
+        <p className="text-[13px] text-cream/55">{W.todayLine(doneCountToday, formatMsClock(totalMsToday))}</p>
         {suggestion && (
-          <p className="text-sm text-cream/70">
-            <span className="text-cream/40">Claude: </span>
-            次はこれをおすすめします「{suggestion.label}」({suggestion.reason})
+          <p className="text-[13px] text-cream/60">
+            次に取り組むなら「<span className="font-bold text-cream/80">{suggestion.label}</span>」です（
+            {suggestion.reason}）。
           </p>
         )}
-      </div>
+        <div className="h-px w-full bg-cream/10" />
+      </header>
+
+      {/* ══ 今いちばん気になっていること ══ */}
+      {topFinding && (
+        <article className="relative overflow-hidden rounded-xl border border-cream/12">
+          <Paper seed={topFinding.id} className="absolute inset-0" />
+          <div className="relative p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cream/35">{W.topFindingLead}</p>
+            <h3 className="mt-1.5 font-display text-[15px] font-bold leading-snug text-cream">
+              {topFinding.headline}
+            </h3>
+            {topFinding.action && (
+              <p className="mt-2 border-l-2 border-alert/50 pl-3 text-[13px] leading-relaxed text-cream/70">
+                {topFinding.action}
+              </p>
+            )}
+            <div className="mt-3 flex items-center gap-2.5">
+              <span className="shrink-0 text-[10px] tracking-wider text-cream/40">{W.confidenceLabel}</span>
+              <ConfidenceScale value={topFinding.confidence} className="min-w-0 flex-1" />
+              <span className="shrink-0 text-[10px] tabular-nums text-cream/50">
+                {Math.round(topFinding.confidence * 100)}%・{confidenceLabel(topFinding.confidence)}
+              </span>
+            </div>
+            {onOpenInsights && (
+              <button
+                onClick={onOpenInsights}
+                className="mt-3 text-[12px] text-alert underline decoration-alert/40 underline-offset-4 hover:decoration-alert"
+              >
+                {W.seeAll} →
+              </button>
+            )}
+          </div>
+        </article>
+      )}
 
       {runningDaily && (
-        <div className="panel space-y-1 p-4 ring-1 ring-alert/40">
-          <div className="flex items-center gap-2 text-sm text-alert">
-            <span className="claude-pulse-dot inline-flex h-2 w-2 rounded-full bg-alert" aria-hidden="true" />
-            今、集中していること
+        <div className="rounded-xl border border-alert/30 bg-panel/70 p-4">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-alert">
+            <span className="claude-pulse-dot inline-flex h-1.5 w-1.5 rounded-full bg-alert" aria-hidden="true" />
+            {W.focusTitle}
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <p className="font-display text-base font-bold text-cream">{runningDaily.name}</p>
-            <span className="tabular-nums text-xl font-bold text-alert">
+          <div className="mt-1.5 flex items-baseline justify-between gap-3">
+            <p className="min-w-0 flex-1 truncate font-display text-base font-bold text-cream">{runningDaily.name}</p>
+            <span className="shrink-0 font-display text-2xl font-bold tabular-nums tracking-tight text-alert">
               {formatMsClock(segmentsAccumulatedMs(runningDaily, now))}
             </span>
           </div>
-          <div className="flex gap-2 pt-1">
+          <div className="mt-3 flex gap-2">
             <button className="btn-pill-outline text-xs" onClick={() => pauseDaily(runningDaily)}>
               一時停止
             </button>
@@ -358,13 +427,13 @@ export default function ClaudeWorkspaceSection() {
       )}
 
       <div className="panel space-y-2 p-4">
-        <label className="block text-xs font-bold text-cream/60">今、何を考えていますか？</label>
+        <label className="block text-[11px] font-bold uppercase tracking-[0.2em] text-cream/40">{W.captureLabel}</label>
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
             value={captureText}
             onChange={(e) => setCaptureText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addTodo()}
-            placeholder="例: 見積書を送る @経理"
+            placeholder={W.capturePlaceholder}
             className="w-full min-w-0 flex-1 rounded-lg border border-cream/15 bg-ink px-3 py-2 text-sm text-cream"
           />
           <button className="btn-pill text-xs" onClick={addTodo} disabled={!captureText.trim()}>

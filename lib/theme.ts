@@ -156,7 +156,12 @@ export function useVisualMode(): {
 // 統合ボードにはマイデイのToDoしか出ないため、全件一覧やサブタスク編集等をしたい時の
 // ためにToDoタブ、個別編集(手書き・連結・チェックリスト等)のためにメモタブは残す
 export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
-  claude: ["today", "report", "settings"],
+  // Claudeモードは「作る/考える/振り返る/整える」の4面だけに絞る。
+  // 集計・グラフ・ヒートマップ・残業分析・年表はどれも同じ実績を別角度から見ているが、
+  // 数字を並べるだけでは読み手が結論を出す作業を丸ごと引き受けることになる。
+  // そこでaggregationタブの中身をClaudeInsightsSectionに差し替え、
+  // 「分析してから結論と根拠を出す」1画面に統合した
+  claude: ["today", "aggregation", "report", "settings"],
   zen: ["today", "settings"],
   hub: ["today", "todo", "memo", "report", "settings"],
   adventurer: [

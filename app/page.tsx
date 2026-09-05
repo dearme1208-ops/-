@@ -36,6 +36,7 @@ const AdventurerStatusSection = dynamic(() => import("@/components/sections/Adve
 const TodoSection = dynamic(() => import("@/components/sections/TodoSection"), { ssr: false });
 const ProjectsSection = dynamic(() => import("@/components/sections/ProjectsSection"), { ssr: false });
 const ClaudeReportSection = dynamic(() => import("@/components/sections/ClaudeReportSection"), { ssr: false });
+const ClaudeInsightsSection = dynamic(() => import("@/components/sections/ClaudeInsightsSection"), { ssr: false });
 const MasterSection = dynamic(() => import("@/components/sections/MasterSection"), { ssr: false });
 const TemplateSection = dynamic(() => import("@/components/sections/TemplateSection"), { ssr: false });
 const GanttSection = dynamic(() => import("@/components/sections/GanttSection"), { ssr: false });
@@ -169,7 +170,7 @@ export default function HomePage() {
         }}
       />
       <TabNav tabs={tabs} active={active} onChange={setActive} />
-      {active === "today" && mode === "claude" && <ClaudeWorkspaceSection />}
+      {active === "today" && mode === "claude" && <ClaudeWorkspaceSection onOpenInsights={() => setActive("aggregation")} />}
       {active === "today" && mode === "zen" && <ZenSection />}
       {active === "today" && mode === "terminal" && <TerminalDashboardSection />}
       {active === "today" && mode === "adventurer" && <AdventurerQuestSection />}
@@ -218,7 +219,8 @@ export default function HomePage() {
       {active === "template" && <TemplateSection />}
       {active === "gantt" && <GanttSection />}
       {active === "aggregation" && mode === "adventurer" && <AdventurerStatusSection />}
-      {active === "aggregation" && mode !== "adventurer" && <AggregationSection />}
+      {active === "aggregation" && mode === "claude" && <ClaudeInsightsSection />}
+      {active === "aggregation" && mode !== "adventurer" && mode !== "claude" && <AggregationSection />}
       {active === "charts" && <ChartsSection />}
       {active === "heatmap" && <HeatmapSection />}
       {active === "attention" && <AttentionSection />}
