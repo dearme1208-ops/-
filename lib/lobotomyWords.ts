@@ -196,7 +196,9 @@ const THEMED: LobotomyWords = {
 };
 
 const PLAIN_RISK_LABEL: Record<RiskLevel, string> = {
-  ZAYIN: "想定内",
+  // ZAYINは想定の1.3倍未満までを含む階級なので、言い切ると1.0〜1.3倍のときに
+  // 「実績は想定の1.27倍です。（想定内）」という矛盾した表示になってしまう
+  ZAYIN: "ほぼ想定内",
   TETH: "やや超過",
   HE: "超過",
   WAW: "大幅超過",

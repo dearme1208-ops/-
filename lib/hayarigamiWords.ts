@@ -1,4 +1,4 @@
-import type { KaiiStatus } from "./hayarigami";
+import { commentaryStepOf, type KaiiStatus } from "./hayarigami";
 import { KW_PLAIN, KW_THEMED, RANK_COMMENT, RANK_COMMENT_PLAIN, type Rank } from "./hayarigamiLogic";
 
 // 怪異調査モードの画面内文言。設定の「テーマに合わせた文言を使う」をオフにすると、
@@ -196,13 +196,15 @@ const THEMED: HayarigamiWords = {
   detailNote:
     "呼び名は実績の傾向から自動で決まります（いつも長引く／突発が多い／一瞬で終わる 等）。想定と実績が噛み合うと「鎮められた」になります。",
   noEstimate: "不明",
-  commentary: (ratio) => {
-    if (ratio >= 4) return "もはや見積もりの話ではない。これは完全に「出て」いる。";
-    if (ratio >= 2.5) return "想定の枠を大きく踏み越えた。何かに引きずり込まれている。";
-    if (ratio >= 1.8) return "明らかに長い。背後に何かが立っている気配がする。";
-    if (ratio >= 1.3) return "少しだけ、長い。気のせいだと思いたいが。";
-    return "今のところ、想定の内側だ。";
-  },
+  commentary: (ratio) =>
+    [
+      "今のところ、想定の内側だ。",
+      "……想定は、もう過ぎた。ほんのわずかだが、確かに過ぎている。",
+      "少しだけ、長い。気のせいだと思いたいが。",
+      "明らかに長い。背後に何かが立っている気配がする。",
+      "想定の枠を大きく踏み越えた。何かに引きずり込まれている。",
+      "もはや見積もりの話ではない。これは完全に「出て」いる。",
+    ][commentaryStepOf(ratio)],
   narration: {
     index: (count, sealed, topName) =>
       count === 0
@@ -329,13 +331,15 @@ const PLAIN: HayarigamiWords = {
   detailLastSeen: "最終実施",
   detailNote: "想定と実績の比が±20%以内に収まり、十分な件数が貯まると「想定と一致」になります。",
   noEstimate: "未設定",
-  commentary: (ratio) => {
-    if (ratio >= 4) return "想定の4倍以上に達しています。";
-    if (ratio >= 2.5) return "想定の2.5倍を超えています。";
-    if (ratio >= 1.8) return "想定を大きく超えています。";
-    if (ratio >= 1.3) return "想定を超えています。";
-    return "想定の範囲内です。";
-  },
+  commentary: (ratio) =>
+    [
+      "想定の範囲内です。",
+      "想定をわずかに超えています。",
+      "想定を超えています。",
+      "想定を大きく超えています。",
+      "想定の2.5倍を超えています。",
+      "想定の4倍以上に達しています。",
+    ][commentaryStepOf(ratio)],
   narration: {
     index: (count, sealed, topName) =>
       count === 0

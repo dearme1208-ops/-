@@ -243,6 +243,21 @@ export function erosionPercent(tasks: { estimatedSeconds: number; elapsedSeconds
   return Math.max(0, Math.min(100, Math.round((over / base) * 100)));
 }
 
+// ---- 想定との比の段階 ----
+// 語りの温度を決めるための段階。危険度バッジ(RISK_TIERS)は「どれくらいまずいか」の
+// 相対的な階級なので1.3倍まで同じ「低」だが、語りのほうは「想定を過ぎたかどうか」という
+// 事実を述べるため、1.0をまたぐところに独立した段目を持つ必要がある。
+// 語りの文面とその再描画キーの両方でこの関数を使い、文面だけ変わってキーが変わらない
+// (＝古い文が出たままになる)状態を防ぐ
+export function commentaryStepOf(ratio: number): 0 | 1 | 2 | 3 | 4 | 5 {
+  if (ratio >= 4) return 5;
+  if (ratio >= 2.5) return 4;
+  if (ratio >= 1.8) return 3;
+  if (ratio >= 1.3) return 2;
+  if (ratio > 1) return 1;
+  return 0;
+}
+
 // ---- F.O.A.F.データベース風の通し番号 ----
 // 原作では物語中に登場した警察用語・都市伝説・事件が自動的にデータベースへ登録され、
 // No.001から通し番号が振られていく。ここではToDo・案件のようなアプリ内の対象に同じ体裁を

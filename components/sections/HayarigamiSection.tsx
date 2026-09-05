@@ -10,7 +10,7 @@ import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage } from "@/lib/growth";
 import { useSetting } from "@/lib/settings";
 import { getRiskTier, riskBadgeClasses, riskBadgeLabel, useVisualMode } from "@/lib/theme";
-import { buildKaiiIndex, erosionPercent, judgeRoute, phaseOf, type KaiiEntry } from "@/lib/hayarigami";
+import { buildKaiiIndex, commentaryStepOf, erosionPercent, judgeRoute, phaseOf, type KaiiEntry } from "@/lib/hayarigami";
 import { kaiiStatusLabel, wordsFor } from "@/lib/hayarigamiWords";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
@@ -286,7 +286,10 @@ export default function HayarigamiSection() {
           W.commentary(runningRatio),
           tail
         ),
-        narrationKey: `run:${running.id}:${runningTier.level}:${phase.phase}`,
+        // 語りの段(commentaryStep)もキーに含める。危険度の階級(runningTier.level)は
+        // 1.3倍まで動かないため、これが無いと想定を過ぎた瞬間に本文だけ変わって
+        // 画面が「想定の内側だ」のまま止まってしまう
+        narrationKey: `run:${running.id}:${runningTier.level}:${commentaryStepOf(runningRatio)}:${phase.phase}`,
       };
     }
     if (paused.length > 0) {
