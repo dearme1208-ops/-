@@ -155,9 +155,12 @@ export function buildAbilities(
   const recent = valid.filter((r) => r.date >= since);
   const estimateById = new Map(masters.map((m) => [m.id, m.estimatedSeconds]));
 
-  // ミート: 想定時間の内に収まった実績の割合。狙ったところに当てられているか
+  // ミート: 想定時間の内に収まった実績の割合。狙ったところに当てられているか。
+  // 判定はアプリ共通の「想定超過」と同じく厳密(1秒でも超えたら超過)にする。
+  // ここだけ1割の猶予を持たせると、練習コマンドに⚠想定超過が出ている作業を
+  // 同じ画面で「想定時間に収まった」と数えることになり、表示が食い違う
   const withEstimate = recent.filter((r) => r.masterTaskId && (estimateById.get(r.masterTaskId) ?? 0) > 0);
-  const onTarget = withEstimate.filter((r) => r.seconds <= (estimateById.get(r.masterTaskId!) ?? 0) * 1.1).length;
+  const onTarget = withEstimate.filter((r) => r.seconds <= (estimateById.get(r.masterTaskId!) ?? 0)).length;
   const meetRatio = withEstimate.length > 0 ? onTarget / withEstimate.length : 0;
 
   // パワー: 1日あたりの平均実働時間。8時間で満点に近づく
@@ -177,7 +180,8 @@ export function buildAbilities(
   const maxDaySeconds = dayTotals.size > 0 ? Math.max(...dayTotals.values()) : 0;
   const armRatio = maxDaySeconds / (10 * 3600);
 
-  // 守備力: トラブル対応でない実績の割合。想定外をどれだけ防げているか
+  // 守備力: トラブル対応でない実績の割合。突発の割り込みをどれだけ防げているか
+  // (想定時間を守れたかどうかとは別の軸。そちらはミートが受け持つ)
   const troubleRate = recent.length > 0 ? recent.filter((r) => r.isTrouble).length / recent.length : 0;
   const fieldRatio = recent.length > 0 ? 1 - troubleRate : 0;
 
@@ -255,9 +259,10 @@ export function buildCondition(
   const staminaSeconds = Math.max(0, NOMINAL_DAY_SECONDS - workedSeconds);
   const staminaPercent = Math.round((staminaSeconds / NOMINAL_DAY_SECONDS) * 100);
 
-  // やる気: 本日完了した作業のうち、想定時間に収まった割合
+  // やる気: 本日完了した作業のうち、想定時間に収まった割合。
+  // 判定は練習コマンドの⚠想定超過と同じ厳密なものにする(同一画面で矛盾させない)
   const done = tasks.filter((t) => t.status === "done" && t.estimatedSeconds > 0);
-  const inside = done.filter((t) => elapsedSecondsOf(t) <= t.estimatedSeconds * 1.1).length;
+  const inside = done.filter((t) => elapsedSecondsOf(t) <= t.estimatedSeconds).length;
   let motivation: MotivationLevel;
   let motivationReason: string;
   if (done.length === 0) {

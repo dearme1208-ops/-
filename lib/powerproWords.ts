@@ -182,7 +182,10 @@ const PLAIN: PowerproWords = {
   staminaLabel: "残り想定時間",
   staminaNote: (rest) => `1日8時間を基準に、あと ${rest} 分です`,
   motivationLabel: "見積もり精度",
-  motivationName: (l) => ["大きく超過", "超過ぎみ", "普通", "おおむね想定内", "想定内"][l],
+  // この5段階が見ているのは超過の大きさではなく「本日完了した作業のうち、
+  // 想定内に収まった件数の割合」。大きさの話に読める語だと、
+  // 5%の超過1件でも「大きく超過」と出てしまい実態と食い違う
+  motivationName: (l) => ["ほとんどが超過", "超過が多い", "半々", "多くが想定内", "ほぼすべて想定内"][l],
   hotLabel: "本日の進捗",
   hotNote: (d, t) => `本日の作業 ${d}/${t} 件が完了`,
   feverLabel: "本日分すべて完了",
@@ -219,7 +222,7 @@ const PLAIN: PowerproWords = {
   playerRankLabel: "総合評価",
   allALabel: "全項目が高水準",
   abilityName: (k) =>
-    ({ meet: "見積もり精度", power: "1日の実働", speed: "1日の件数", arm: "最大実働", field: "予定どおり率", catch: "期日内完了率" })[k],
+    ({ meet: "見積もり精度", power: "1日の実働", speed: "1日の件数", arm: "最大実働", field: "通常作業率", catch: "期日内完了率" })[k],
   expTitle: "積み上げ",
   expName: (k) =>
     ({ muscle: "総実働", agility: "区分の幅", technique: "作業の種類", breaking: "トラブル", mental: "継続" })[k],

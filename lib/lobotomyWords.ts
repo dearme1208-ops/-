@@ -119,7 +119,7 @@ const THEMED: LobotomyWords = {
     `実績は想定の${ratio.toFixed(2)}倍。この比率から危険度は${level}と判定されています。`,
   qliphothLabel: "キリパス・カウンタ",
   qliphothNote: (counter, max) =>
-    `直近${max}件のうち${counter}件が想定内。ゼロになると収容違反です。`,
+    `直近${max}件のうち${counter}件が想定の5%増以内。ゼロになると収容違反です。`,
   breachedLabel: "収容違反",
   breachedNote: "直近の作業がすべて想定を超えています。この個体の想定時間は、もう現実と合っていません。",
   observationLabel: "観測レベル",
@@ -245,8 +245,8 @@ const PLAIN: LobotomyWords = {
     const label = PLAIN_RISK_LABEL[level];
     return `実績は想定の${ratio.toFixed(2)}倍です。（${label}）`;
   },
-  qliphothLabel: "想定内で収まった回数",
-  qliphothNote: (counter, max) => `直近${max}件のうち${counter}件が想定内でした。`,
+  qliphothLabel: "ほぼ想定内で終えた回数",
+  qliphothNote: (counter, max) => `直近${max}件のうち${counter}件が、想定の5%増以内で終わっています。`,
   breachedLabel: "要見直し",
   breachedNote: "直近の作業がすべて想定を超えています。この作業の想定時間は実態と合っていません。",
   observationLabel: "実績の蓄積",

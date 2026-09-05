@@ -178,6 +178,8 @@ function recommendWork(ratios: number[]): WorkType {
 }
 
 const QLIPHOTH_MAX = 4;
+// キリパス・カウンタが減らない上限(想定の5%増まで)。文言もこの値に合わせて書くこと
+export const QLIPHOTH_TOLERANCE = 1.05;
 
 export function buildAbnormality(master: MasterTask, records: WorkRecord[]): Abnormality {
   const mine = records
@@ -188,10 +190,13 @@ export function buildAbnormality(master: MasterTask, records: WorkRecord[]): Abn
   const ratios = base > 0 ? actuals.map((s) => s / base) : [];
   const meanRatio = ratios.length > 0 ? ratios.reduce((a, b) => a + b, 0) / ratios.length : 1;
 
-  // キリパス・カウンタ: 直近4件のうち想定内に収まった回数。
-  // ゼロ = 直近ずっと超過している = 収容違反(見積もりが壊れている)
+  // キリパス・カウンタ: 直近4件のうち、想定の5%増以内で終えた回数。
+  // ゼロ = 直近ずっと超過している = 収容違反(見積もりが壊れている)。
+  // ここは「想定を守れたか」ではなく「その想定時間がもう現実と合っていないか」を
+  // 見るための指標なので、数%の誤差で警告を出さないよう意図的に猶予を持たせている。
+  // その代わり表示側では「想定内」と言い切らず、猶予があることが分かる文言にしている
   const recent = ratios.slice(0, QLIPHOTH_MAX);
-  const counter = recent.length === 0 ? QLIPHOTH_MAX : recent.filter((r) => r <= 1.05).length;
+  const counter = recent.length === 0 ? QLIPHOTH_MAX : recent.filter((r) => r <= QLIPHOTH_TOLERANCE).length;
 
   return {
     masterId: master.id,
