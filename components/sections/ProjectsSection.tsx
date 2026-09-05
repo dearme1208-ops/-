@@ -1118,7 +1118,9 @@ function ProjectRow({
             : ""
       }`}
     >
-      <div className={hayarigamiMode ? "flex gap-2" : undefined}>
+      {/* 左カラム。基準幅を持たせて伸ばすことで、狭い画面では右の操作ボタンが
+          次の行へ回り、段階リストがカード幅いっぱいを使えるようにする */}
+      <div className={`min-w-0 grow basis-[260px] ${hayarigamiMode ? "flex gap-2" : ""}`}>
         {hayarigamiMode && (
           <SceneCanvas
             seed={`${project.category ?? "事件"}/${project.title}/${project.workName}`}
@@ -1211,7 +1213,9 @@ function ProjectRow({
           )
         )}
         {project.stages && project.stages.length > 0 && (
-          <div className="mt-1 max-w-[220px]">
+          <div className="mt-1 w-full">
+            {/* 見出しと進捗バーだけは、これまで通り本文脇に収まる幅に留める */}
+            <div className="max-w-[220px]">
             <button
               type="button"
               onClick={() => setStagesCollapsed((c) => !c)}
@@ -1245,6 +1249,7 @@ function ProjectRow({
                 />
               </div>
             )}
+            </div>
             {!stagesCollapsed && (
               <div className="mt-1.5 space-y-1">
                 {!showCompletedStages && visibleStages.length < project.stages.length && (
