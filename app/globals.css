@@ -2073,6 +2073,27 @@ html[data-high-contrast="true"] :focus-visible {
     transform: rotate(4deg);
     white-space: nowrap;
   }
+
+  /* テーマ文言をオフにしたときは、CSSで埋め込んでいる語も工程表のものへ差し替える。
+     スタンプや透かしという「形」は演出なので残し、書かれている言葉だけを戻す */
+  html[data-visual-mode="persona5"][data-wording="off"] .p5-watermark::before {
+    content: "工程表";
+  }
+  html[data-visual-mode="lobotomy"][data-wording="off"] .panel::after {
+    content: "記録";
+  }
+  html[data-visual-mode="lobotomy"][data-wording="off"] .lobo-watermark::before {
+    content: "工程表";
+  }
+  html[data-visual-mode="va11halla"][data-wording="off"] .v11-watermark::before {
+    content: "工程表";
+  }
+  html[data-visual-mode="natsuyasumi"][data-wording="off"] .nat-watermark::before {
+    content: "工程表";
+  }
+  html[data-visual-mode="adventurer"][data-wording="off"] .adv-watermark::before {
+    content: "工程表";
+  }
   html[data-visual-mode="adventurer"] ::selection {
     background: rgb(var(--adv-gold-rgb) / 0.4);
     color: rgb(var(--ink-rgb));
