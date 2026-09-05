@@ -127,36 +127,56 @@ export interface RouteJudgement {
   description: string;
 }
 
-export function judgeRoute(occultCount: number, scienceCount: number): RouteJudgement {
+export function judgeRoute(occultCount: number, scienceCount: number, wordingEnabled = true): RouteJudgement {
   const total = occultCount + scienceCount;
   if (total === 0) {
-    return {
-      route: "unknown",
-      label: "未分岐",
-      description: "まだ一度も判定していない。この先の分岐は、あなたの選択で決まる。",
-    };
+    return wordingEnabled
+      ? {
+          route: "unknown",
+          label: "未分岐",
+          description: "まだ一度も判定していない。この先の分岐は、あなたの選択で決まる。",
+        }
+      : { route: "unknown", label: "記録なし", description: "まだ超過の判定を行っていません。" };
   }
   if (occultCount >= scienceCount * 2) {
-    return {
-      route: "occult",
-      label: "オカルトルート",
-      description:
-        "超過のほとんどを「突発的な怪異」として処理してきた。想定は据え置かれ、トラブル対応の記録だけが積み上がっている。",
-    };
+    return wordingEnabled
+      ? {
+          route: "occult",
+          label: "オカルトルート",
+          description:
+            "超過のほとんどを「突発的な怪異」として処理してきた。想定は据え置かれ、トラブル対応の記録だけが積み上がっている。",
+        }
+      : {
+          route: "occult",
+          label: "トラブル計上が中心",
+          description: "超過の多くをトラブル対応として記録しています。想定時間は据え置かれたままです。",
+        };
   }
   if (scienceCount >= occultCount * 2) {
-    return {
-      route: "science",
-      label: "科学ルート",
-      description:
-        "超過のほとんどを「見積もりの誤り」として処理してきた。想定時間は実測に合わせて更新され、怪異は少しずつ姿を消していく。",
-    };
+    return wordingEnabled
+      ? {
+          route: "science",
+          label: "科学ルート",
+          description:
+            "超過のほとんどを「見積もりの誤り」として処理してきた。想定時間は実測に合わせて更新され、怪異は少しずつ姿を消していく。",
+        }
+      : {
+          route: "science",
+          label: "見積もり更新が中心",
+          description: "超過の多くを見積もりの誤差として処理し、想定時間を実測に合わせて更新しています。",
+        };
   }
-  return {
-    route: "neutral",
-    label: "中庸ルート",
-    description: "怪異と見積もり誤差を、その都度見極めて処理している。最も現実的で、最も疲れる道だ。",
-  };
+  return wordingEnabled
+    ? {
+        route: "neutral",
+        label: "中庸ルート",
+        description: "怪異と見積もり誤差を、その都度見極めて処理している。最も現実的で、最も疲れる道だ。",
+      }
+    : {
+        route: "neutral",
+        label: "使い分けている",
+        description: "トラブル対応と見積もり更新を、その都度使い分けています。",
+      };
 }
 
 // ---- 時間帯による空気の変化 ----
@@ -172,23 +192,39 @@ export interface PhaseInfo {
   corrupt: boolean; // trueの時、画面のノイズ演出を強める
 }
 
-export function phaseOf(date: Date = new Date()): PhaseInfo {
+export function phaseOf(date: Date = new Date(), wordingEnabled = true): PhaseInfo {
   const h = date.getHours();
+  // 画面の暗さ(corrupt)は演出であり文言設定とは独立なので、labelとflavorだけ切り替える
   if (h >= 2 && h < 5) {
     return {
       phase: "witching",
-      label: "丑三つ時",
-      flavor: "午前2時から4時。人が最も怪異に近づく時間帯だ。……まだ起きているのか。",
+      label: wordingEnabled ? "丑三つ時" : "深夜",
+      flavor: wordingEnabled ? "午前2時から4時。人が最も怪異に近づく時間帯だ。……まだ起きているのか。" : "",
       corrupt: true,
     };
   }
   if (h >= 22 || h < 2) {
-    return { phase: "night", label: "深夜", flavor: "日付が変わる頃。仕事の輪郭が、少しずつ曖昧になっていく。", corrupt: true };
+    return {
+      phase: "night",
+      label: "深夜",
+      flavor: wordingEnabled ? "日付が変わる頃。仕事の輪郭が、少しずつ曖昧になっていく。" : "",
+      corrupt: true,
+    };
   }
   if (h >= 17) {
-    return { phase: "evening", label: "宵", flavor: "陽が落ちた。ここから先は、時間の進み方が変わる。", corrupt: false };
+    return {
+      phase: "evening",
+      label: wordingEnabled ? "宵" : "夕方",
+      flavor: wordingEnabled ? "陽が落ちた。ここから先は、時間の進み方が変わる。" : "",
+      corrupt: false,
+    };
   }
-  return { phase: "day", label: "白昼", flavor: "陽のあるうちは、たいていのものは説明がつく。", corrupt: false };
+  return {
+    phase: "day",
+    label: wordingEnabled ? "白昼" : "日中",
+    flavor: wordingEnabled ? "陽のあるうちは、たいていのものは説明がつく。" : "",
+    corrupt: false,
+  };
 }
 
 // ---- 侵蝕度 ----
