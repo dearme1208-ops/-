@@ -1,4 +1,5 @@
 import type { KaiiStatus } from "./hayarigami";
+import { KW_PLAIN, KW_THEMED, RANK_COMMENT, RANK_COMMENT_PLAIN, type Rank } from "./hayarigamiLogic";
 
 // 怪異調査モードの画面内文言。設定の「テーマに合わせた文言を使う」をオフにすると、
 // 色・絵・アニメーションはこのモードのまま、言葉づかいだけ工程表本来のものに戻る。
@@ -47,7 +48,29 @@ export interface HayarigamiWords {
   pickerStart: string;
   pickerQueue: string;
   noStartHint: string;
-  screens: { main: string; index: string; files: string; rumors: string; record: string };
+  screens: { main: string; index: string; files: string; rumors: string; record: string; logic: string };
+  // 推理ロジック
+  logicTitle: string;
+  logicLead: string;
+  logicBlank: string;
+  logicConfirm: string;
+  logicRetry: string;
+  logicNoKeywords: string;
+  logicResult: (rank: string, correct: number, total: number) => string;
+  rankComment: (rank: string) => string;
+  keywordHint: string;
+  keywordCount: (n: number, total: number) => string;
+  // セルフ・クエスチョン
+  selfQuestionChoice: string;
+  sqTitle: string;
+  sqStep1: string;
+  sqStep2: (name: string) => string;
+  sqAsIs: string;
+  sqHalf: string;
+  sqDouble: string;
+  sqNone: string;
+  sqClose: string;
+  sqDone: (name: string, estimate: string) => string;
   detailHeader: string;
   detailStatus: string;
   detailCount: string;
@@ -61,9 +84,16 @@ export interface HayarigamiWords {
   commentary: (ratio: number) => string;
   narration: {
     index: (count: number, sealed: number, topName: string) => string;
-    files: (total: number, done: number, pending: number, paused: number) => string;
+    files: (total: number, done: number, pending: number, paused: number, overrun: number, hasTrouble: boolean) => string;
     rumors: (overdue: number, myDay: number) => string;
-    record: (streak: number, worked: string, erosion: number, stage: string, routeDesc: string) => string;
+    record: (
+      streak: number,
+      worked: string,
+      erosion: number,
+      stage: string,
+      routeDesc: string,
+      phaseLabel: string
+    ) => string;
     runningNoEstimate: (clock: string, category: string, name: string) => string;
     running: (clock: string, category: string, name: string, estimate: string, commentary: string, tail: string) => string;
     paused: (category: string, name: string) => string;
@@ -120,7 +150,27 @@ const THEMED: HayarigamiWords = {
   pickerStart: "▶ この怪異の調査を今すぐ始める（計測開始）",
   pickerQueue: "▶ ファイルだけ用意する（未着手のまま追加）",
   noStartHint: "開けるファイルがありません。作業マスタで★をつけておくと、ここから直接調査を始められます。",
-  screens: { main: "調査", index: "名鑑", files: "事件", rumors: "噂", record: "記録" },
+  screens: { main: "調査", index: "名鑑", files: "事件", rumors: "噂", record: "記録", logic: "推理" },
+  logicTitle: "推理ロジック",
+  logicLead: "集めたキーワードを空欄に当てはめ、本日の事件の全容を組み立てろ。",
+  logicBlank: "［　？　］",
+  logicConfirm: "この推理で確定する",
+  logicRetry: "もう一度、推理し直す",
+  logicNoKeywords: "キーワードが足りない。本文の色付きの語に触れて拾い集めろ。",
+  logicResult: (rank, correct, total) => `評価 ${rank}　（${correct} / ${total}）`,
+  rankComment: (rank) => RANK_COMMENT[rank as Rank] ?? "",
+  keywordHint: "色の付いた語に触れると、キーワードとして手帳に控えられる。",
+  keywordCount: (n, total) => `キーワード ${n}/${total}`,
+  selfQuestionChoice: "▶ 自問自答して、状況を整理する",
+  sqTitle: "── セルフ・クエスチョン ──",
+  sqStep1: "……今、何を優先すべきだ?",
+  sqStep2: (name) => `「${name}」に、どれだけ掛かると見ている?`,
+  sqAsIs: "想定どおりで構わない",
+  sqHalf: "想定の1.5倍は掛かるだろう",
+  sqDouble: "想定の倍は掛かる。そういう予感がする",
+  sqNone: "……今日は、まだ始めるものが無い。",
+  sqClose: "考えるのをやめる",
+  sqDone: (name, estimate) => `「${name}」に取り掛かる。見込みは${estimate}。……そう腹を括った。`,
   detailHeader: "怪異名鑑",
   detailStatus: "状態",
   detailCount: "遭遇回数",
@@ -144,14 +194,20 @@ const THEMED: HayarigamiWords = {
       count === 0
         ? "名鑑はまだ白紙だ。作業を完了させるたび、その記録がここに綴じられていく。"
         : `記録された怪異は${count}体。うち${sealed}体は想定と実績が噛み合い、すでに鎮められている。……最も厄介なのは「${topName}」だ。`,
-    files: (total, done, pending, paused) =>
-      `本日開いたファイルは${total}件。うち解決済みが${done}件、未着手が${pending}件、中断中が${paused}件だ。`,
+    files: (total, done, pending, paused, overrun, hasTrouble) =>
+      `本日開いたファイルは${total}件。うち解決済み${done}件、${KW_THEMED.pending(pending)}、${KW_THEMED.paused(
+        paused
+      )}だ。` +
+      (overrun > 0 ? `想定の内に収まらなかったものが${KW_THEMED.overrun(overrun)}。` : "") +
+      (hasTrouble ? `そのうちいくつかは${KW_THEMED.trouble}として、通常の見積もりから切り離してある。` : ""),
     rumors: (overdue, myDay) =>
       overdue > 0
-        ? `期限を過ぎた噂が${overdue}件、まだ野放しになっている。……放置された噂ほど、質が悪い。`
-        : `期限切れの噂はない。今日拾うべき噂は${myDay}件だ。`,
-    record: (streak, worked, erosion, stage, routeDesc) =>
-      `調査継続${streak}日。本日の実働は${worked}、侵蝕度${erosion}%。現在の到達段階は「${stage}」。${routeDesc}`,
+        ? `${KW_THEMED.overdue(overdue)}の噂が、まだ野放しになっている。……放置された噂ほど、質が悪い。`
+        : `期限を過ぎた噂はない。今日拾うべき噂は${myDay}件だ。`,
+    record: (streak, worked, erosion, stage, routeDesc, phaseLabel) =>
+      `${KW_THEMED.streak(streak)}。本日の実働は${worked}、${KW_THEMED.erosion(
+        erosion
+      )}。現在の到達段階は「${stage}」。いまは${phaseLabel}。${routeDesc}`,
     runningNoEstimate: (clock, category, name) =>
       `……${clock}。「${category} / ${name}」の調査を継続している。この件には想定時間が設定されていない。どこまで続くのか、誰も知らない。`,
     running: (clock, category, name, estimate, commentary, tail) =>
@@ -159,12 +215,14 @@ const THEMED: HayarigamiWords = {
     paused: (category, name) =>
       `「${category} / ${name}」の調査は中断したままだ。……中断した怪異は、こちらが忘れた頃に戻ってくる。`,
     pending: (clock, flavor, count) =>
-      `……${clock}。${flavor}手をつけていないファイルが${count}件、机の上に積まれている。どれから開く?`,
+      `……${clock}。${flavor}${KW_THEMED.pending(count)}のファイルが、机の上に積まれている。どれから開く?`,
     allDone: (count, streak, erosion) =>
-      `本日の怪異は${count}件すべて解決した。調査継続${streak}日目、侵蝕度${erosion}%。……今日は、静かだ。`,
+      `本日の怪異は${count}件すべて解決した。${KW_THEMED.streak(streak)}目、${KW_THEMED.erosion(
+        erosion
+      )}。……今日は、静かだ。`,
     idle: (clock, flavor) => `……${clock}。${flavor}まだ何も起きていない。それは幸運なのか、単に「まだ」なのか。`,
     judgedOccult: (count) =>
-      `これは怪異の仕業だ——そう記録した。この一件は「トラブル対応」として、通常の見積もりとは切り離して集計される。……${
+      `これは怪異の仕業だ——そう記録した。この一件は「${KW_THEMED.trouble}」として、通常の見積もりとは切り離して集計される。……${
         count >= 3 ? "オカルト側の判定が積み上がってきた。" : "判定はあなたの記録に残る。"
       }`,
     judgedScience: (actual, hasMaster) =>
@@ -219,7 +277,27 @@ const PLAIN: HayarigamiWords = {
   pickerStart: "▶ この作業を今すぐ開始する（計測開始）",
   pickerQueue: "▶ 未着手のまま追加する（開始しない）",
   noStartHint: "開始できる作業がありません。作業マスタで★をつけておくと、ここから直接開始できます。",
-  screens: { main: "本日", index: "集計", files: "作業", rumors: "ToDo", record: "記録" },
+  screens: { main: "本日", index: "集計", files: "作業", rumors: "ToDo", record: "記録", logic: "整理" },
+  logicTitle: "本日の振り返り",
+  logicLead: "拾ったキーワードを空欄に当てはめて、本日の状況をまとめてください。",
+  logicBlank: "［　？　］",
+  logicConfirm: "この内容で確定する",
+  logicRetry: "もう一度やり直す",
+  logicNoKeywords: "キーワードが足りません。本文中の色付きの語をタップして集めてください。",
+  logicResult: (rank, correct, total) => `評価 ${rank}（正解 ${correct} / ${total}）`,
+  rankComment: (rank) => RANK_COMMENT_PLAIN[rank as Rank] ?? "",
+  keywordHint: "色の付いた語をタップすると、キーワードとして控えられます。",
+  keywordCount: (n, total) => `キーワード ${n}/${total}`,
+  selfQuestionChoice: "▶ 今の状況を整理する",
+  sqTitle: "── 状況の整理 ──",
+  sqStep1: "今、優先する作業はどれですか?",
+  sqStep2: (name) => `「${name}」にどれくらい掛かりそうですか?`,
+  sqAsIs: "想定どおり",
+  sqHalf: "想定の1.5倍",
+  sqDouble: "想定の2倍",
+  sqNone: "今は開始できる作業がありません。",
+  sqClose: "閉じる",
+  sqDone: (name, estimate) => `「${name}」を開始しました。想定は${estimate}に設定しました。`,
   detailHeader: "作業別の実績",
   detailStatus: "状態",
   detailCount: "実績件数",
@@ -242,25 +320,29 @@ const PLAIN: HayarigamiWords = {
       count === 0
         ? "まだ実績がありません。作業を完了すると、ここに集計されていきます。"
         : `記録された作業は${count}件。うち${sealed}件は想定と実績が一致しています。最も超過が大きいのは「${topName}」です。`,
-    files: (total, done, pending, paused) =>
-      `本日の作業は${total}件。完了${done}件、未着手${pending}件、一時停止${paused}件です。`,
+    files: (total, done, pending, paused, overrun, hasTrouble) =>
+      `本日の作業は${total}件。完了${done}件、${KW_PLAIN.pending(pending)}、${KW_PLAIN.paused(paused)}です。` +
+      (overrun > 0 ? `想定に収まらなかったものが${KW_PLAIN.overrun(overrun)}あります。` : "") +
+      (hasTrouble ? `うち一部は${KW_PLAIN.trouble}として、通常の見積もりとは分けて集計しています。` : ""),
     rumors: (overdue, myDay) =>
       overdue > 0
-        ? `期限切れのToDoが${overdue}件あります。`
-        : `期限切れのToDoはありません。本日のマイデイは${myDay}件です。`,
-    record: (streak, worked, erosion, stage, routeDesc) =>
-      `連続日数${streak}日。本日の実働は${worked}、超過率${erosion}%。現在の到達段階は「${stage}」。${routeDesc}`,
+        ? `${KW_PLAIN.overdue(overdue)}のToDoがあります。`
+        : `期限を過ぎたToDoはありません。本日のマイデイは${myDay}件です。`,
+    record: (streak, worked, erosion, stage, routeDesc, phaseLabel) =>
+      `${KW_PLAIN.streak(streak)}。本日の実働は${worked}、${KW_PLAIN.erosion(
+        erosion
+      )}。現在の到達段階は「${stage}」。時間帯は${phaseLabel}です。${routeDesc}`,
     runningNoEstimate: (clock, category, name) =>
       `${clock}時点。「${category} / ${name}」を計測中です。この作業には想定時間が設定されていません。`,
     running: (clock, category, name, estimate, commentary) =>
       `${clock}時点。「${category} / ${name}」を計測中です。想定は${estimate}。${commentary}`,
     paused: (category, name) => `「${category} / ${name}」は一時停止のままです。`,
-    pending: (clock, _flavor, count) => `${clock}時点。未着手の作業が${count}件あります。`,
+    pending: (clock, _flavor, count) => `${clock}時点。${KW_PLAIN.pending(count)}の作業があります。`,
     allDone: (count, streak, erosion) =>
-      `本日の作業${count}件はすべて完了しました。連続日数${streak}日目、超過率${erosion}%です。`,
+      `本日の作業${count}件はすべて完了しました。${KW_PLAIN.streak(streak)}目、${KW_PLAIN.erosion(erosion)}です。`,
     idle: (clock) => `${clock}時点。本日の作業はまだ登録されていません。`,
     judgedOccult: () =>
-      "この作業をトラブル対応として記録しました。突発的な一件として、通常の見積もりとは切り離して集計されます。",
+      `この作業を${KW_PLAIN.trouble}として記録しました。突発的な一件として、通常の見積もりとは切り離して集計されます。`,
     judgedScience: (actual, hasMaster) =>
       `想定時間を実測の${actual}に更新しました。${
         hasMaster ? "作業マスタにも反映したため、次回からこの想定が使われます。" : "この作業には作業マスタが無いため、本日分のみ更新しました。"

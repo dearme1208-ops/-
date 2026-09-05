@@ -1843,6 +1843,20 @@ html[data-high-contrast="true"] :focus-visible {
       opacity: 0.75;
     }
   }
+  /* 本文中のキーワード。原作では推理に使える語が本文中で色分けされているため、
+     このモードに限りアクセント色とは別の一色(燐光のような緑)を割り当てている。
+     拾い終えた語は主張を落として、まだ拾っていない語だけが目に入るようにする */
+  .hyr-keyword {
+    color: #8fd39a;
+    border-bottom: 1px dashed rgb(143 211 154 / 0.6);
+    text-shadow: 0 0 7px rgb(143 211 154 / 0.45);
+  }
+  .hyr-keyword-taken {
+    color: rgb(var(--cream-rgb) / 0.5);
+    border-bottom-color: transparent;
+    text-shadow: none;
+  }
+
   /* 画面を切り替えた瞬間に一度だけ走る、フィルムの繋ぎ目のような閃光 */
   .hyr-flash {
     animation: hyr-flash-once 0.42s ease-out 1 forwards;

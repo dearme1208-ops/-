@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { computeRemainingEstimatedSeconds, finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
@@ -17,6 +17,16 @@ import KaiiSilhouette from "@/components/hayarigami/KaiiSilhouette";
 import CaseDiagram from "@/components/hayarigami/CaseDiagram";
 import EmblemCanvas from "@/components/hayarigami/EmblemCanvas";
 import { pickScene, SCENE_LABEL } from "@/lib/hayarigamiArt";
+import {
+  buildKeywords,
+  buildLogicPuzzle,
+  judgeRank,
+  keywordStorageKey,
+  keywordWordsFor,
+  parseCollected,
+  splitNarration,
+  type KeywordDef,
+} from "@/lib/hayarigamiLogic";
 import type { DailyTask, MasterTask, TodoTask } from "@/lib/types";
 
 // 流行り神風モード(怪異調査モード)専用の「本日の作業」タブ。
@@ -30,7 +40,7 @@ import type { DailyTask, MasterTask, TodoTask } from "@/lib/types";
 // という、このアプリに元からある2つの意味づけ(突発的な一件 / 恒常的な見積もり誤差)へ
 // そのまま接続している。さらにその判定の蓄積が「ルート」として残り、
 // 実績から組み上げた「怪異名鑑」がゲームの図鑑のように育っていく
-type Screen = "main" | "index" | "files" | "rumors" | "record";
+type Screen = "main" | "index" | "files" | "rumors" | "record" | "logic";
 
 const NOMINAL_DAY_SECONDS = 8 * 3600;
 const TYPE_INTERVAL_MS = 26;
@@ -44,7 +54,7 @@ function nowClock(): string {
 const DANGER_TEXT = ["text-cream/50", "text-cream/70", "text-alert/70", "text-alert", "text-alert"];
 
 export default function HayarigamiSection() {
-  const { themedMode, wordingEnabled } = useVisualMode();
+  const { themedMode, wordingEnabled, wordingThemedMode } = useVisualMode();
   const mode = themedMode ?? "hayarigami";
   // 設定の「テーマに合わせた文言を使う」がオフなら、色・絵はこのモードのまま
   // 言葉づかいだけ工程表本来のものへ差し替える
@@ -75,6 +85,12 @@ export default function HayarigamiSection() {
   const [pickedMaster, setPickedMaster] = useState<MasterTask | null>(null);
   // 二択の紋章は、指したものだけ線が光る
   const [hoverJudge, setHoverJudge] = useState<"occult" | "science" | null>(null);
+  // 推理ロジックの回答(空欄id -> キーワードid)と、当日の評価
+  const [logicAnswers, setLogicAnswers] = useState<Record<string, string>>({});
+  const [openSlot, setOpenSlot] = useState<string | null>(null);
+  // セルフ・クエスチョン(自問自答)の進行
+  const [sqStep, setSqStep] = useState<0 | 1 | null>(null);
+  const [sqTask, setSqTask] = useState<DailyTask | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -91,6 +107,12 @@ export default function HayarigamiSection() {
   const openTodos = (todoTasks ?? []).filter((t) => !t.completed && !t.parentTaskId);
   const overdueTodos = openTodos.filter((t) => t.dueDate && t.dueDate < today);
   const myDayTodos = openTodos.filter((t) => t.myDayDate === today);
+
+  // 本文にも手帳(キーワード)にも同じ数を出すため、ここで一度だけ数える
+  const overrunCount = tasks.filter(
+    (t) => t.estimatedSeconds > 0 && segmentsAccumulatedMs(t, now) / 1000 > t.estimatedSeconds
+  ).length;
+  const troubleCount = tasks.filter((t) => t.isTrouble).length;
 
   const totalMsToday = tasks.reduce((sum, t) => sum + segmentsAccumulatedMs(t, now), 0);
   const streakDays = useMemo(() => computeStreakDays(records ?? [], today), [records, today]);
@@ -122,6 +144,76 @@ export default function HayarigamiSection() {
   const sceneSeed = running ? `${running.category}/${running.name}` : `${today}:${phase.phase}`;
   const sceneIntensity = Math.max(erosion / 100, runningTier.level / 4);
 
+  // ---- キーワードと推理ロジック ----
+  // 本文に現れる語のうち、その日の事実に基づくものをキーワードとして拾えるようにする。
+  // 語そのものは本文と同じ辞書(keywordWordsFor)から作るので、本文と手帳が食い違うことはない
+  const dayFacts = useMemo(
+    () => ({
+      tasks,
+      openTodos,
+      overdueTodos,
+      kaiiIndex,
+      erosion,
+      streakDays,
+      phaseLabel: phase.label,
+      elapsedSecondsOf: (t: DailyTask) => segmentsAccumulatedMs(t, now) / 1000,
+      kw: keywordWordsFor(wordingEnabled),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasks, openTodos, overdueTodos, kaiiIndex, erosion, streakDays, phase.label, wordingEnabled, Math.floor(now / 60000)]
+  );
+  const keywords = useMemo(() => buildKeywords(dayFacts), [dayFacts]);
+  const [collectedRaw, setCollectedRaw] = useSetting(keywordStorageKey(today), "[]");
+  const collected = useMemo(() => parseCollected(collectedRaw, keywords), [collectedRaw, keywords]);
+  const [rankRaw, setRankRaw] = useSetting(`hayarigami.rank.${today}`, "");
+  const puzzle = useMemo(
+    () => buildLogicPuzzle(dayFacts, collected),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [collected, tasks.length, overdueTodos.length, erosion]
+  );
+
+  function collectKeyword(k: KeywordDef) {
+    if (collected.some((c) => c.id === k.id)) return;
+    setCollectedRaw(JSON.stringify([...collected.map((c) => c.id), k.id]));
+  }
+
+  function confirmLogic() {
+    let correct = 0;
+    for (const slot of puzzle.slots) {
+      if (logicAnswers[slot.id] === slot.answerId) correct += 1;
+    }
+    const { rank } = judgeRank(correct, puzzle.slots.length);
+    setRankRaw(JSON.stringify({ rank, correct, total: puzzle.slots.length }));
+  }
+
+  const logicResult = useMemo(() => {
+    if (!rankRaw) return null;
+    try {
+      const v = JSON.parse(rankRaw) as { rank: string; correct: number; total: number };
+      return typeof v?.rank === "string" ? v : null;
+    } catch {
+      return null;
+    }
+  }, [rankRaw]);
+
+  // ---- セルフ・クエスチョン ----
+  const sqCandidates = [...paused, ...pending].slice(0, 5);
+  async function sqPick(task: DailyTask) {
+    setSqTask(task);
+    await startTask(task);
+    setSqStep(1);
+  }
+  async function sqEstimate(multiplier: number) {
+    if (sqTask) {
+      const base = sqTask.estimatedSeconds > 0 ? sqTask.estimatedSeconds : 1800;
+      const next = Math.round(base * multiplier);
+      await db.dailyTasks.update(sqTask.id, { estimatedSeconds: next });
+      setLastJudgement(W.sqDone(sqTask.name, formatHms(next)));
+    }
+    setSqStep(null);
+    setSqTask(null);
+  }
+
   // ---- 語り(メッセージウィンドウ本文) ----
   const { narration, narrationKey } = useMemo(() => {
     const clock = nowClock();
@@ -140,8 +232,15 @@ export default function HayarigamiSection() {
     }
     if (screen === "files") {
       return {
-        narration: W.narration.files(tasks.length, done.length, pending.length, paused.length),
-        narrationKey: `files:${tasks.length}:${done.length}:${pending.length}:${paused.length}`,
+        narration: W.narration.files(
+          tasks.length,
+          done.length,
+          pending.length,
+          paused.length,
+          overrunCount,
+          troubleCount > 0
+        ),
+        narrationKey: `files:${tasks.length}:${done.length}:${pending.length}:${paused.length}:${overrunCount}:${troubleCount}`,
       };
     }
     if (screen === "rumors") {
@@ -157,9 +256,10 @@ export default function HayarigamiSection() {
           formatHms(Math.floor(totalMsToday / 1000)),
           erosion,
           growthStage.label,
-          route.description
+          route.description,
+          phase.label
         ),
-        narrationKey: `record:${streakDays}:${erosion}:${growthStage.label}:${route.route}`,
+        narrationKey: `record:${streakDays}:${erosion}:${growthStage.label}:${route.route}:${phase.phase}`,
       };
     }
 
@@ -216,6 +316,8 @@ export default function HayarigamiSection() {
     done.length,
     pending.length,
     paused,
+    overrunCount,
+    troubleCount,
     overdueTodos.length,
     myDayTodos.length,
     streakDays,
@@ -232,24 +334,39 @@ export default function HayarigamiSection() {
   ]);
 
   // ---- タイプライター表示(句読点と三点リーダーで「間」を取る) ----
+  // 送り位置と次のタイマーはrefで持つ。stateだけで持つと、窓をタップして最後まで送っても
+  // 走り続けているタイマーが次の一文字で巻き戻してしまい、原作の「クリックで全文表示」が効かない
   const [typedCount, setTypedCount] = useState(0);
+  const typeIndexRef = useRef(0);
+  const typeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     setTypedCount(0);
-    let i = 0;
-    let timer: ReturnType<typeof setTimeout>;
+    typeIndexRef.current = 0;
     const step = () => {
-      i += 1;
+      typeIndexRef.current += 1;
+      const i = typeIndexRef.current;
       setTypedCount(i);
       if (i >= narration.length) return;
       const ch = narration[i - 1];
       const delay = ch === "…" ? 150 : ch === "。" ? 110 : ch === "、" ? 70 : TYPE_INTERVAL_MS;
-      timer = setTimeout(step, delay);
+      typeTimerRef.current = setTimeout(step, delay);
     };
-    timer = setTimeout(step, TYPE_INTERVAL_MS);
-    return () => clearTimeout(timer);
+    typeTimerRef.current = setTimeout(step, TYPE_INTERVAL_MS);
+    return () => {
+      if (typeTimerRef.current) clearTimeout(typeTimerRef.current);
+    };
+    // narration自体は実働時間や時刻を含むため毎秒変わりうる。これを依存に入れると
+    // 記録画面のように秒が載る本文で送りが延々とやり直しになり、最後まで表示できない。
+    // 送り直すのは「別の話に切り替わった」ときだけでよいので、narrationKeyだけを見る
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [narrationKey, narration]);
+  }, [narrationKey]);
   const typedDone = typedCount >= narration.length;
+  // メッセージ窓のタップ = 全文送り
+  function skipTyping() {
+    if (typeTimerRef.current) clearTimeout(typeTimerRef.current);
+    typeIndexRef.current = narration.length;
+    setTypedCount(narration.length);
+  }
 
   // ---- 作業の操作 ----
   async function pauseTask(task: DailyTask) {
@@ -369,17 +486,29 @@ export default function HayarigamiSection() {
     choices.push(
       <button key="picker" className={choicePlate} onClick={() => setShowPicker(true)}>
         {W.pickerChoice}
+      </button>,
+      <button key="sq" className={choicePlate} onClick={() => setSqStep(0)}>
+        {W.selfQuestionChoice}
       </button>
     );
   }
 
+  const screenTabs = [
+    { key: "main", label: W.screens.main },
+    { key: "index", label: W.screens.index, badge: kaiiIndex.length },
+    { key: "files", label: W.screens.files },
+    { key: "rumors", label: W.screens.rumors, badge: overdueTodos.length },
+    { key: "record", label: W.screens.record },
+    { key: "logic", label: W.screens.logic },
+  ] as { key: Screen; label: string; badge?: number }[];
+
   return (
-    <div className="space-y-2">
+    <div className="flex gap-1">
       {/* ══ 舞台 ══
           一枚絵を全面に敷き、その上に情報・選択肢・メッセージ窓を重ねる。
           サウンドノベルの画面そのものを1つの枠として組み立てている */}
       <div
-        className={`relative flex flex-col overflow-hidden rounded-sm border ${
+        className={`relative flex min-w-0 flex-1 flex-col overflow-hidden border ${
           corrupted ? "hyr-corrupt border-alert/40" : "border-cream/20"
         } ${runningTier.level >= 4 && !!running ? "hyr-shake" : ""}`}
         style={{ height: "clamp(25rem, 70vh, 42rem)" }}
@@ -406,7 +535,7 @@ export default function HayarigamiSection() {
               <span>/</span>
               <span>{today.replace(/-/g, ".")}</span>
               {running && running.estimatedSeconds > 0 && (
-                <span className={riskBadgeClasses(runningTier.level, mode)}>{riskBadgeLabel(runningTier, mode)}</span>
+                <span className={riskBadgeClasses(runningTier.level, mode)}>{riskBadgeLabel(runningTier, wordingThemedMode)}</span>
               )}
               {running?.isTrouble && (
                 <span className="border border-alert/60 px-1 py-0.5 text-[9px] text-alert">{W.troubleBadge}</span>
@@ -599,6 +728,99 @@ export default function HayarigamiSection() {
               )}
             </div>
           )}
+
+          {screen === "logic" && (
+            <div className="space-y-2 py-1">
+              <p className="text-[10px] tracking-[0.3em] text-alert">{W.logicTitle}</p>
+              <p className="text-[11px] leading-relaxed text-cream/60">{W.logicLead}</p>
+              {puzzle.slots.length === 0 ? (
+                <p className="border border-cream/15 bg-black/55 p-3 text-xs text-cream/60">{W.logicNoKeywords}</p>
+              ) : logicResult ? (
+                <div className="space-y-2">
+                  <div className="border border-alert/50 bg-black/60 p-3 text-center">
+                    <p className="font-display text-4xl font-bold text-alert">{logicResult.rank}</p>
+                    <p className="mt-1 text-[11px] text-cream/60">
+                      {W.logicResult(logicResult.rank, logicResult.correct, logicResult.total)}
+                    </p>
+                    <p className="mt-2 text-xs leading-relaxed text-cream/75">{W.rankComment(logicResult.rank)}</p>
+                  </div>
+                  {puzzle.slots.map((slot) => {
+                    const chosen = keywords.find((k) => k.id === logicAnswers[slot.id]);
+                    const truth = keywords.find((k) => k.id === slot.answerId);
+                    const ok = logicAnswers[slot.id] === slot.answerId;
+                    return (
+                      <div key={slot.id} className="border-l-2 border-cream/20 bg-black/50 px-2 py-1.5 text-[11px]">
+                        <span className="text-cream/55">{slot.question}</span>{" "}
+                        <span className={ok ? "font-bold text-alert" : "text-cream/40 line-through"}>
+                          {chosen?.label ?? "—"}
+                        </span>
+                        {!ok && <span className="ml-1 font-bold text-alert">→ {truth?.label ?? "—"}</span>}
+                      </div>
+                    );
+                  })}
+                  <button
+                    className="w-full border border-cream/25 py-2 text-xs text-cream/70"
+                    onClick={() => {
+                      setRankRaw("");
+                      setLogicAnswers({});
+                    }}
+                  >
+                    {W.logicRetry}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {puzzle.slots.map((slot) => {
+                    const chosen = keywords.find((k) => k.id === logicAnswers[slot.id]);
+                    return (
+                      <div key={slot.id} className="border border-cream/15 bg-black/55 p-2">
+                        <p className="text-[11px] text-cream/70">
+                          {slot.question}
+                          <button
+                            className="ml-1 border border-alert/50 bg-alert/10 px-2 py-0.5 text-[11px] text-alert"
+                            onClick={() => setOpenSlot(openSlot === slot.id ? null : slot.id)}
+                          >
+                            {chosen ? chosen.label : W.logicBlank}
+                          </button>
+                        </p>
+                        {openSlot === slot.id && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {puzzle.candidates.map((k) => {
+                              // 1つのキーワードは1箇所にしか置けない(原作の相関図と同じ)
+                              const usedElsewhere = Object.entries(logicAnswers).some(
+                                ([sid, kid]) => sid !== slot.id && kid === k.id
+                              );
+                              return (
+                                <button
+                                  key={k.id}
+                                  disabled={usedElsewhere}
+                                  className="border border-cream/25 bg-black/60 px-2 py-1 text-[11px] text-cream/80 hover:border-alert hover:text-alert disabled:border-cream/10 disabled:text-cream/25 disabled:line-through disabled:hover:text-cream/25"
+                                  onClick={() => {
+                                    setLogicAnswers((prev) => ({ ...prev, [slot.id]: k.id }));
+                                    setOpenSlot(null);
+                                  }}
+                                >
+                                  {k.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <button
+                    className="w-full border border-alert/50 bg-alert/10 py-2 text-xs text-alert disabled:opacity-40"
+                    disabled={puzzle.slots.some((sl) => !logicAnswers[sl.id])}
+                    onClick={confirmLogic}
+                  >
+                    {W.logicConfirm}
+                  </button>
+                  <p className="text-[10px] text-cream/35">{W.keywordHint}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── 選択肢(メッセージ窓の上に重ねる) ── */}
@@ -615,15 +837,82 @@ export default function HayarigamiSection() {
           <div
             className="cursor-pointer border border-cream/30 bg-black/80 p-3"
             style={{ minHeight: "5.5rem" }}
-            onClick={() => setTypedCount(narration.length)}
+            onClick={skipTyping}
           >
             <p className="text-sm leading-relaxed tracking-wide text-cream/90">
-              {narration.slice(0, typedCount)}
+              {splitNarration(narration.slice(0, typedCount), keywords).map((part, i) =>
+                part.keyword ? (
+                  <button
+                    key={i}
+                    className={`hyr-keyword ${
+                      collected.some((c) => c.id === part.keyword!.id) ? "hyr-keyword-taken" : ""
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      collectKeyword(part.keyword!);
+                    }}
+                  >
+                    {part.text}
+                  </button>
+                ) : (
+                  <span key={i}>{part.text}</span>
+                )
+              )}
               {!typedDone && <span className="text-alert">▊</span>}
             </p>
-            {typedDone && <p className="mt-1 text-right text-xs text-alert">▼</p>}
+            {typedDone && (
+              <div className="mt-1 flex items-end justify-between gap-2">
+                <span className="text-[10px] text-cream/35">{W.keywordCount(collected.length, keywords.length)}</span>
+                <span className="text-xs text-alert">▼</span>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* ── セルフ・クエスチョン(自問自答) ── */}
+        {sqStep !== null && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/88 p-4">
+            <p className="text-center text-xs tracking-[0.3em] text-alert">{W.sqTitle}</p>
+            {sqStep === 0 && (
+              <>
+                <p className="text-center text-sm text-cream/85">{W.sqStep1}</p>
+                <div className="w-full max-w-sm space-y-1.5">
+                  {sqCandidates.length === 0 && <p className="text-center text-xs text-cream/50">{W.sqNone}</p>}
+                  {sqCandidates.map((t) => (
+                    <button key={t.id} className={choicePlate} onClick={() => sqPick(t)}>
+                      ▶ {t.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {sqStep === 1 && sqTask && (
+              <>
+                <p className="text-center text-sm text-cream/85">{W.sqStep2(sqTask.name)}</p>
+                <div className="w-full max-w-sm space-y-1.5">
+                  <button className={choicePlate} onClick={() => sqEstimate(1)}>
+                    ▶ {W.sqAsIs}
+                  </button>
+                  <button className={choicePlate} onClick={() => sqEstimate(1.5)}>
+                    ▶ {W.sqHalf}
+                  </button>
+                  <button className={choicePlate} onClick={() => sqEstimate(2)}>
+                    ▶ {W.sqDouble}
+                  </button>
+                </div>
+              </>
+            )}
+            <button
+              className="border border-cream/25 px-4 py-1.5 text-xs text-cream/60"
+              onClick={() => {
+                setSqStep(null);
+                setSqTask(null);
+              }}
+            >
+              {W.sqClose}
+            </button>
+          </div>
+        )}
 
         {/* ── オカルト / 科学 の二択(舞台を覆う見せ場) ── */}
         {askJudgement && running && (
@@ -656,30 +945,29 @@ export default function HayarigamiSection() {
         )}
       </div>
 
-      {/* ══ システムバー ══ */}
-      <div className="grid grid-cols-5 gap-1">
-        {(
-          [
-            { key: "main", label: W.screens.main },
-            { key: "index", label: `${W.screens.index}${kaiiIndex.length > 0 ? `(${kaiiIndex.length})` : ""}` },
-            { key: "files", label: W.screens.files },
-            { key: "rumors", label: `${W.screens.rumors}${overdueTodos.length > 0 ? `(${overdueTodos.length})` : ""}` },
-            { key: "record", label: W.screens.record },
-          ] as { key: Screen; label: string }[]
-        ).map((s) => (
+      {/* ══ 綴じ込みの見出し(右端の縦書きタブ) ══
+          事件ファイルの背に貼られたインデックスのつもりで、縦書きの札を縦に並べる */}
+      <div className="flex w-8 shrink-0 flex-col gap-1" style={{ height: "clamp(25rem, 70vh, 42rem)" }}>
+        {screenTabs.map((t) => (
           <button
-            key={s.key}
+            key={t.key}
             onClick={() => {
-              setScreen(s.key);
+              setScreen(t.key);
               setLastJudgement(null);
             }}
-            className={`border px-1 py-2 text-[11px] tracking-wider transition ${
-              screen === s.key
+            className={`relative flex flex-1 items-center justify-center border transition ${
+              screen === t.key
                 ? "border-alert bg-alert/15 text-alert"
-                : "border-cream/20 bg-black/40 text-cream/60 hover:border-cream/40"
+                : "border-cream/20 bg-black/50 text-cream/55 hover:border-cream/45"
             }`}
+            style={{ writingMode: "vertical-rl" }}
           >
-            {s.label}
+            <span className="text-[11px] tracking-[0.25em]">{t.label}</span>
+            {!!t.badge && t.badge > 0 && (
+              <span className="absolute left-0.5 top-0.5 text-[8px] text-alert" style={{ writingMode: "horizontal-tb" }}>
+                {t.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
