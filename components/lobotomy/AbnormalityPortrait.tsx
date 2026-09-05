@@ -1,21 +1,24 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { paintAbnormality, readAccentRgb, readCreamRgb } from "@/lib/lobotomyArt";
+import { paintAbnormality, readAccentRgb, readCreamRgb, type BusinessIcon } from "@/lib/lobotomyArt";
 import type { RiskLevel } from "@/lib/lobotomy";
 
-// 個体の肖像。種は作業名なので、同じ作業には毎回同じ姿が出る
+// 個体の肖像。種は作業名なので、同じ作業には毎回同じ姿が出る。
+// businessIconを渡すと(文言オフのとき)怪物ではなく、その作業を表す図になる
 export default function AbnormalityPortrait({
   seed,
   size,
   riskLevel,
   breached,
+  businessIcon,
   className,
 }: {
   seed: string;
   size: number;
   riskLevel: RiskLevel;
   breached: boolean;
+  businessIcon?: BusinessIcon | null;
   className?: string;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -36,10 +39,11 @@ export default function AbnormalityPortrait({
       size,
       riskLevel,
       breached,
+      businessIcon: businessIcon ?? null,
       accent: readAccentRgb(),
       cream: readCreamRgb(),
     });
-  }, [seed, size, riskLevel, breached]);
+  }, [seed, size, riskLevel, breached, businessIcon]);
 
   return <canvas ref={ref} className={className} aria-hidden />;
 }

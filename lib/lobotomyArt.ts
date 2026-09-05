@@ -146,6 +146,275 @@ export function creatureKindOf(seed: string): CreatureKind {
   return CREATURES[Math.floor(rng() * CREATURES.length)];
 }
 
+// ============================================================
+// 業務アイコン(文言オフのときの図版)
+// ============================================================
+// 文言をオフにすると、絵のほうも「怪物」ではなく作業そのものを表す図に切り替える。
+// どの図になるかは作業名とカテゴリの語から決まるので、
+// 「メール返信」なら封筒、「打ち合わせ」なら会議卓、といった具合に中身と一致する。
+// 該当する語が無いときだけ、汎用の作業板(クリップボード)になる。
+
+export type BusinessIcon =
+  | "mail"
+  | "meeting"
+  | "document"
+  | "phone"
+  | "travel"
+  | "code"
+  | "design"
+  | "review"
+  | "research"
+  | "invoice"
+  | "support"
+  | "plan"
+  | "test"
+  | "clean"
+  | "generic";
+
+// 語 → 図。上から順に照合するので、より具体的な語を先に置く
+const ICON_KEYWORDS: [BusinessIcon, string[]][] = [
+  ["mail", ["メール", "mail", "返信", "送信", "連絡", "案内状"]],
+  ["meeting", ["会議", "ミーティング", "打合", "打ち合", "商談", "mtg", "面談", "朝礼", "定例"]],
+  ["invoice", ["請求", "見積", "精算", "経理", "伝票", "支払", "入金", "決済", "予算"]],
+  ["design", ["設計", "図面", "作図", "cad", "デザイン", "レイアウト", "意匠"]],
+  ["code", ["開発", "実装", "コーディング", "プログラム", "デバッグ", "改修", "リリース", "ビルド"]],
+  ["review", ["レビュー", "確認", "チェック", "校正", "承認", "査読"]],
+  ["research", ["調査", "検討", "分析", "調べ", "リサーチ", "見学", "測量"]],
+  ["document", ["資料", "書類", "報告", "レポート", "議事録", "日報", "仕様", "マニュアル", "文書", "作成"]],
+  ["phone", ["電話", "tel", "コール", "架電", "問い合わせ"]],
+  ["travel", ["移動", "出張", "訪問", "現地", "外出", "配送", "納品", "運搬"]],
+  ["support", ["対応", "サポート", "クレーム", "トラブル", "保守", "問合"]],
+  ["plan", ["計画", "企画", "段取", "準備", "立案", "スケジュール", "工程"]],
+  ["test", ["試験", "テスト", "検査", "測定", "検証", "点検"]],
+  ["clean", ["整理", "片付", "清掃", "整備", "棚卸", "掃除"]],
+];
+
+export function businessIconOf(category: string, name: string): BusinessIcon {
+  const hay = `${category} ${name}`.toLowerCase();
+  for (const [icon, words] of ICON_KEYWORDS) {
+    if (words.some((w) => hay.includes(w))) return icon;
+  }
+  return "generic";
+}
+
+// 100x100の座標系で1つ描く。呼ぶ側でtranslate/scale済みであることを前提にする
+function strokeBusinessIcon(ctx: CanvasRenderingContext2D, icon: BusinessIcon, line: string, hot: string) {
+  ctx.strokeStyle = line;
+  ctx.fillStyle = "rgba(0,0,0,0)";
+  ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  const rect = (x: number, y: number, w: number, h: number) => {
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.stroke();
+  };
+  const line2 = (x1: number, y1: number, x2: number, y2: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  };
+
+  if (icon === "mail") {
+    rect(-34, -22, 68, 44);
+    ctx.beginPath();
+    ctx.moveTo(-34, -22);
+    ctx.lineTo(0, 6);
+    ctx.lineTo(34, -22);
+    ctx.stroke();
+  } else if (icon === "meeting") {
+    // 卓を囲む人影
+    ctx.beginPath();
+    ctx.ellipse(0, 8, 34, 14, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    for (const [x, y] of [[-26, -14], [0, -22], [26, -14]] as const) {
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y + 20, 13, Math.PI, 0);
+      ctx.stroke();
+    }
+  } else if (icon === "document") {
+    ctx.beginPath();
+    ctx.moveTo(-24, -34);
+    ctx.lineTo(12, -34);
+    ctx.lineTo(26, -20);
+    ctx.lineTo(26, 34);
+    ctx.lineTo(-24, 34);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(12, -34);
+    ctx.lineTo(12, -20);
+    ctx.lineTo(26, -20);
+    ctx.stroke();
+    for (let i = 0; i < 4; i++) line2(-14, -8 + i * 12, 16, -8 + i * 12);
+  } else if (icon === "phone") {
+    ctx.beginPath();
+    ctx.moveTo(-26, -26);
+    ctx.quadraticCurveTo(-34, -6, -14, 14);
+    ctx.quadraticCurveTo(6, 34, 26, 26);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-24, -24, 9, 0, Math.PI * 2);
+    ctx.strokeStyle = hot;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(24, 24, 9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = line;
+  } else if (icon === "travel") {
+    // 車
+    ctx.beginPath();
+    ctx.moveTo(-34, 10);
+    ctx.lineTo(-26, -12);
+    ctx.lineTo(24, -12);
+    ctx.lineTo(34, 10);
+    ctx.stroke();
+    rect(-34, 10, 68, 14);
+    ctx.beginPath();
+    ctx.arc(-18, 26, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(18, 26, 7, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (icon === "code") {
+    ctx.beginPath();
+    ctx.moveTo(-8, -26);
+    ctx.lineTo(-30, 0);
+    ctx.lineTo(-8, 26);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(8, -26);
+    ctx.lineTo(30, 0);
+    ctx.lineTo(8, 26);
+    ctx.stroke();
+    ctx.strokeStyle = hot;
+    line2(4, 30, -4, -30);
+    ctx.strokeStyle = line;
+  } else if (icon === "design") {
+    // 三角定規とコンパス
+    ctx.beginPath();
+    ctx.moveTo(-30, 26);
+    ctx.lineTo(18, 26);
+    ctx.lineTo(-30, -18);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(14, -30);
+    ctx.lineTo(30, 10);
+    ctx.moveTo(14, -30);
+    ctx.lineTo(2, 10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(14, -30, 4, 0, Math.PI * 2);
+    ctx.strokeStyle = hot;
+    ctx.stroke();
+    ctx.strokeStyle = line;
+  } else if (icon === "review") {
+    // 書類とチェック
+    rect(-30, -28, 46, 56);
+    for (let i = 0; i < 3; i++) line2(-20, -14 + i * 12, 4, -14 + i * 12);
+    ctx.strokeStyle = hot;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(2, 14);
+    ctx.lineTo(16, 30);
+    ctx.lineTo(36, -12);
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = line;
+  } else if (icon === "research") {
+    ctx.beginPath();
+    ctx.arc(-6, -8, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    line2(10, 8, 30, 28);
+    ctx.strokeStyle = hot;
+    ctx.beginPath();
+    ctx.arc(-6, -8, 12, Math.PI * 0.8, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.strokeStyle = line;
+  } else if (icon === "invoice") {
+    // 伝票と通貨
+    ctx.beginPath();
+    ctx.moveTo(-26, -32);
+    ctx.lineTo(26, -32);
+    ctx.lineTo(26, 26);
+    ctx.lineTo(16, 34);
+    ctx.lineTo(6, 26);
+    ctx.lineTo(-4, 34);
+    ctx.lineTo(-14, 26);
+    ctx.lineTo(-26, 34);
+    ctx.closePath();
+    ctx.stroke();
+    for (let i = 0; i < 2; i++) line2(-16, -18 + i * 12, 16, -18 + i * 12);
+    ctx.strokeStyle = hot;
+    line2(-10, 8, 10, 8);
+    line2(-10, 16, 10, 16);
+    line2(0, 2, 0, 22);
+    ctx.strokeStyle = line;
+  } else if (icon === "support") {
+    // ヘッドセット
+    ctx.beginPath();
+    ctx.arc(0, 0, 26, Math.PI, 0);
+    ctx.stroke();
+    rect(-32, 0, 12, 22);
+    rect(20, 0, 12, 22);
+    ctx.strokeStyle = hot;
+    ctx.beginPath();
+    ctx.moveTo(26, 22);
+    ctx.quadraticCurveTo(26, 34, 8, 34);
+    ctx.stroke();
+    ctx.strokeStyle = line;
+  } else if (icon === "plan") {
+    // 予定表
+    rect(-30, -24, 60, 54);
+    line2(-30, -8, 30, -8);
+    line2(-18, -34, -18, -18);
+    line2(18, -34, 18, -18);
+    ctx.strokeStyle = hot;
+    ctx.fillStyle = hot;
+    ctx.fillRect(-20, 2, 12, 10);
+    ctx.fillRect(4, 14, 12, 10);
+    ctx.strokeStyle = line;
+  } else if (icon === "test") {
+    // フラスコ
+    ctx.beginPath();
+    ctx.moveTo(-10, -30);
+    ctx.lineTo(-10, -4);
+    ctx.lineTo(-28, 28);
+    ctx.lineTo(28, 28);
+    ctx.lineTo(10, -4);
+    ctx.lineTo(10, -30);
+    ctx.stroke();
+    line2(-16, -30, 16, -30);
+    ctx.strokeStyle = hot;
+    ctx.beginPath();
+    ctx.moveTo(-20, 16);
+    ctx.lineTo(20, 16);
+    ctx.stroke();
+    ctx.strokeStyle = line;
+  } else if (icon === "clean") {
+    // 箱の整理
+    rect(-32, -4, 28, 28);
+    rect(4, -4, 28, 28);
+    rect(-14, -32, 28, 28);
+    ctx.strokeStyle = hot;
+    line2(-8, 10, 2, 10);
+    ctx.strokeStyle = line;
+  } else {
+    // generic: 作業板
+    rect(-26, -28, 52, 60);
+    ctx.beginPath();
+    ctx.rect(-12, -36, 24, 12);
+    ctx.stroke();
+    for (let i = 0; i < 3; i++) line2(-16, -10 + i * 12, 16, -10 + i * 12);
+  }
+}
+
 export interface AbnormalityPaintOptions {
   seed: string;
   size: number;
@@ -153,6 +422,8 @@ export interface AbnormalityPaintOptions {
   accent: Rgb;
   cream: Rgb;
   breached: boolean; // 収容違反。輪郭が割れて赤が滲む
+  // 文言オフのときに描く業務アイコン。指定があれば怪物ではなくこちらを描く
+  businessIcon?: BusinessIcon | null;
 }
 
 export function paintAbnormality(ctx: CanvasRenderingContext2D, o: AbnormalityPaintOptions): void {
@@ -213,7 +484,10 @@ export function paintAbnormality(ctx: CanvasRenderingContext2D, o: AbnormalityPa
   ctx.lineWidth = 1.6;
   ctx.fillStyle = fill;
 
-  if (kind === "eye") {
+  if (o.businessIcon) {
+    // 文言オフ: 怪物ではなく、その作業そのものを表す図を描く
+    strokeBusinessIcon(ctx, o.businessIcon, ink, hot);
+  } else if (kind === "eye") {
     // 巨大な単眼
     ctx.beginPath();
     ctx.ellipse(0, 0, 34, 22, 0, 0, Math.PI * 2);
@@ -430,8 +704,23 @@ export function paintAbnormality(ctx: CanvasRenderingContext2D, o: AbnormalityPa
   }
   ctx.restore();
 
-  // 収容違反: 画面が割れて赤が漏れる
-  if (o.breached) {
+  // 収容違反(文言オフでは要見直し)。怪物のときは画面が割れ、
+  // 業務アイコンのときは書類に引く警告の斜線にする
+  if (o.breached && o.businessIcon) {
+    ctx.save();
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = rgba(accent, 1);
+    for (let x = -size; x < size; x += 14) {
+      ctx.beginPath();
+      ctx.moveTo(x, size);
+      ctx.lineTo(x + 6, size);
+      ctx.lineTo(x + 6 + size, 0);
+      ctx.lineTo(x + size, 0);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  } else if (o.breached) {
     const crack = makeRng(`crack:${o.seed}`);
     for (let i = 0; i < 5; i++) {
       ctx.beginPath();
@@ -469,6 +758,7 @@ export interface FacilityCell {
   name: string;
   riskLevel: RiskLevel;
   riskLabel: string; // 表示する呼び名。文言オフでは「想定内」等の平易な語になる
+  businessIcon?: BusinessIcon | null; // 文言オフのとき観察窓に映す業務アイコン
   state: "running" | "paused" | "pending" | "done";
   progress: number; // 0〜1以上。1超で超過
   meltdown: boolean;
@@ -642,7 +932,7 @@ export function paintFacility(ctx: CanvasRenderingContext2D, o: FacilityPaintOpt
     ctx.strokeStyle = rgba(cream, 0.25);
     ctx.lineWidth = 1;
     ctx.strokeRect(wx + 0.5, wy + 0.5, winSize - 1, winSize - 1);
-    drawSilhouette(ctx, c.name || c.label, wx, wy, winSize, accent, cream, glow);
+    drawSilhouette(ctx, c.name || c.label, wx, wy, winSize, accent, cream, glow, c.businessIcon ?? null);
 
     // 個体番号と名前
     const textX = wx + winSize + 6;
@@ -719,7 +1009,8 @@ function drawSilhouette(
   size: number,
   accent: Rgb,
   cream: Rgb,
-  glow: number
+  glow: number,
+  businessIcon: BusinessIcon | null
 ) {
   const kind = creatureKindOf(seed);
   const rng = makeRng(`sil:${seed}`);
@@ -733,6 +1024,14 @@ function drawSilhouette(
   ctx.fillStyle = rgba(cream, 0.42);
   ctx.strokeStyle = rgba(cream, 0.5);
   ctx.lineWidth = 2;
+  if (businessIcon) {
+    // 業務アイコンは中心に置きたいので、影用の下寄せ分を戻してから描く
+    ctx.translate(0, -size * 0.08 * (100 / size));
+    ctx.scale(0.78, 0.78);
+    strokeBusinessIcon(ctx, businessIcon, rgba(cream, 0.62), rgba(accent, 0.7 + glow * 0.3));
+    ctx.restore();
+    return;
+  }
   if (kind === "eye") {
     ctx.beginPath();
     ctx.ellipse(0, -10, 30, 20, 0, 0, Math.PI * 2);

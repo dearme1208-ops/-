@@ -29,6 +29,8 @@ export interface LobotomyWords {
   indexEmpty: string;
   agentTitle: string;
   logTitle: string;
+  logLead: string; // この欄が何を数えているのかの説明
+  logMeaning: Record<WorkType, string>; // 各項目が何回を指すのか
 
   riskTitle: string;
   // 危険度の呼び名。文言オフでは ZAYIN 等のゲーム用語を出さず、超過の度合いそのものを言う
@@ -102,6 +104,14 @@ const THEMED: LobotomyWords = {
   indexEmpty: "まだ観測記録がありません。作業を完了すると、ここに登録されます。",
   agentTitle: "職員能力値",
   logTitle: "本日の作業記録",
+  logLead:
+    "着手時に選んだ作業種別の回数です。元ゲームでは作業種別が対応する能力値を鍛えますが、ここでの能力値は実績から算出しているため、この回数では変動しません。",
+  logMeaning: {
+    instinct: "想定時間を変えずに着手した回数",
+    insight: "想定時間を過去の実績の中央値に置き直して着手した回数",
+    attachment: "想定時間を1.5倍にして着手した回数",
+    repression: "想定時間を0.75倍に締めて着手した回数",
+  },
 
   riskTitle: "危険度",
   riskLabel: { ZAYIN: "ZAYIN", TETH: "TETH", HE: "HE", WAW: "WAW", ALEPH: "ALEPH" },
@@ -217,7 +227,15 @@ const PLAIN: LobotomyWords = {
   indexTitle: "作業別の傾向",
   indexEmpty: "まだ実績がありません。作業を完了すると、ここに集計されます。",
   agentTitle: "本日の指標",
-  logTitle: "本日の作業記録",
+  logTitle: "着手のしかたの記録",
+  logLead:
+    "着手のしかたを選んだ回数です。指標そのものは実績から算出しているため、この回数では変動しません。",
+  logMeaning: {
+    instinct: "想定時間を変えずに着手した回数",
+    insight: "想定時間を過去の実績の中央値に合わせて着手した回数",
+    attachment: "想定時間を1.5倍にして着手した回数",
+    repression: "想定時間を0.75倍にして着手した回数",
+  },
 
   riskTitle: "超過傾向",
   riskLabel: PLAIN_RISK_LABEL,

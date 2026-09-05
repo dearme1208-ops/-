@@ -28,7 +28,7 @@ import {
   type WorkType,
 } from "@/lib/lobotomy";
 import { lobotomyWordsFor } from "@/lib/lobotomyWords";
-import type { FacilityCell } from "@/lib/lobotomyArt";
+import { businessIconOf, type BusinessIcon, type FacilityCell } from "@/lib/lobotomyArt";
 import FacilityCanvas from "@/components/lobotomy/FacilityCanvas";
 import AbnormalityPortrait from "@/components/lobotomy/AbnormalityPortrait";
 import { EnergyMeter, OrdealSigil, RiskSeal, VirtueChart, WorkGlyph } from "@/components/lobotomy/GlyphCanvas";
@@ -88,6 +88,15 @@ export default function LobotomySection() {
     setTrainingRaw(WORK_TYPES.map((k) => `${k}:${next[k]}`).join(","));
   }
 
+  // 文言オフのときは、絵のほうも怪物ではなく作業そのものを表す図に切り替える。
+  // どの図になるかは作業名とカテゴリの語で決まる(「メール返信」なら封筒、など)
+  const iconFor = useMemo(
+    () =>
+      (category: string, name: string): BusinessIcon | null =>
+        wordingEnabled ? null : businessIconOf(category, name),
+    [wordingEnabled]
+  );
+
   const tasks = useMemo(() => (dailyTasks ?? []).filter((t) => !t.isProvisional), [dailyTasks]);
   const elapsedSecondsOf = useMemo(() => (t: DailyTask) => segmentsAccumulatedMs(t, now) / 1000, [now]);
   const running = tasks.find((t) => t.status === "running") ?? null;
@@ -136,13 +145,14 @@ export default function LobotomySection() {
           name: t.name,
           riskLevel: levelOfCell,
           riskLabel: W.riskLabel[levelOfCell],
+          businessIcon: iconFor(t.category, t.name),
           state: t.status === "done" ? "done" : t.status === "running" ? "running" : t.status === "paused" ? "paused" : "pending",
           progress: ratio,
           meltdown: meltdowns.some((m) => m.task.id === t.id),
           selected: t.id === selectedId,
         } satisfies FacilityCell;
       }),
-    [tasks, masterById, records, elapsedSecondsOf, meltdowns, selectedId, W]
+    [tasks, masterById, records, elapsedSecondsOf, meltdowns, selectedId, W, iconFor]
   );
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
@@ -351,6 +361,7 @@ export default function LobotomySection() {
                   size={104}
                   riskLevel={selectedAbnormality.riskLevel}
                   breached={selectedAbnormality.breached}
+                  businessIcon={iconFor(selectedTask.category, selectedTask.name)}
                   className="shrink-0 border border-cream/20"
                 />
                 <div className="min-w-0 flex-1 space-y-1">
@@ -503,6 +514,7 @@ export default function LobotomySection() {
                   size={44}
                   riskLevel={a.riskLevel}
                   breached={a.breached}
+                  businessIcon={iconFor(a.category, a.name)}
                   className="shrink-0 border border-cream/15"
                 />
                 <div className="min-w-0 flex-1">
@@ -527,6 +539,7 @@ export default function LobotomySection() {
             <IndexDetail
               abnormality={abnormalityIndex.find((a) => a.masterId === openIndexId) ?? null}
               words={W}
+              iconFor={iconFor}
               onClose={() => setOpenIndexId(null)}
             />
           )}
@@ -561,12 +574,22 @@ export default function LobotomySection() {
 
           <div className="border-t border-cream/15 pt-2">
             <p className="text-[10px] tracking-[0.25em] text-alert">{W.logTitle}</p>
-            <div className="mt-1.5 grid grid-cols-4 gap-1">
+            <p className="mt-1 text-[10px] leading-relaxed text-cream/40">{W.logLead}</p>
+            {/* 数字だけでは何を数えているのか伝わらないので、項目ごとに意味を添える */}
+            <div className="mt-1.5 space-y-1">
               {WORK_TYPES.map((type) => (
-                <div key={type} className="border border-cream/15 bg-black/30 px-1 py-1.5 text-center">
-                  <WorkGlyph type={type} size={26} active={false} className="mx-auto" />
-                  <p className="mt-0.5 text-[9px] text-cream/55">{W.workName[type]}</p>
-                  <p className="font-display text-sm font-bold tabular-nums text-cream/80">{training[type] ?? 0}</p>
+                <div
+                  key={type}
+                  className="flex items-center gap-2 border border-cream/15 bg-black/30 px-2 py-1.5"
+                >
+                  <WorkGlyph type={type} size={26} active={false} className="shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-cream/75">{W.workName[type]}</p>
+                    <p className="text-[10px] leading-snug text-cream/40">{W.logMeaning[type]}</p>
+                  </div>
+                  <p className="shrink-0 font-display text-lg font-bold tabular-nums text-cream/85">
+                    {training[type] ?? 0}
+                  </p>
                 </div>
               ))}
             </div>
@@ -665,10 +688,12 @@ function QliphothPips({ value, max }: { value: number; max: number }) {
 function IndexDetail({
   abnormality,
   words,
+  iconFor,
   onClose,
 }: {
   abnormality: Abnormality | null;
   words: ReturnType<typeof lobotomyWordsFor>;
+  iconFor: (category: string, name: string) => BusinessIcon | null;
   onClose: () => void;
 }) {
   if (!abnormality) return null;
@@ -685,6 +710,7 @@ function IndexDetail({
             size={120}
             riskLevel={a.riskLevel}
             breached={a.breached}
+            businessIcon={iconFor(a.category, a.name)}
             className="shrink-0 border border-cream/20"
           />
           <div className="min-w-0 flex-1">
