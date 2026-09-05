@@ -61,6 +61,15 @@ function css(c: Rgb, a = 1): string {
   return a >= 1 ? `rgb(${c[0]}, ${c[1]}, ${c[2]})` : `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
 }
 
+/** 2色を混ぜる。盤の上下に光と影を付けるための、DOM側の小さな道具 */
+function mix(a: Rgb, b: Rgb, t: number): Rgb {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t),
+  ];
+}
+
 type Panel = "training" | "player" | "scout";
 type PickerTab = "menu" | "master" | "favorite" | "free";
 
@@ -192,92 +201,131 @@ export default function PowerproTrainingSection() {
     setFreeName("");
   }
 
+  // ---- 素材 ----
+  // 「高価に見える」かどうかは面より縁で決まるので、金の細線・面取り・多重の影を
+  // 使い回せる形で持っておく。図版側(powerproArt.ts)の金と同じ色域に揃えてある
+  const GOLD_RULE =
+    "linear-gradient(90deg, rgba(201,162,39,0) 0%, rgba(201,162,39,.8) 16%, rgba(255,240,186,.95) 50%, rgba(201,162,39,.8) 84%, rgba(201,162,39,0) 100%)";
+  const cardShadow = "0 1px 2px rgba(10,16,32,.06), 0 6px 18px -6px rgba(10,16,32,.18)";
+  const card: React.CSSProperties = {
+    background: "linear-gradient(180deg, rgb(var(--panel-rgb)) 0%, rgb(var(--ink-rgb)) 190%)",
+    boxShadow: `inset 0 1px 0 rgba(255,255,255,.9), ${cardShadow}`,
+  };
+  // 計器盤。球場の真下に置いて、絵と一体の器具に見せる
+  const instrument: React.CSSProperties = {
+    background: "linear-gradient(180deg, #141C2E 0%, #0A0F1C 100%)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.1), 0 6px 18px -8px rgba(10,16,32,.5)",
+  };
+  const goldEdge = "1px solid rgba(201,162,39,.42)";
+
   const plate =
-    "w-full rounded-lg border border-white/40 px-3 py-2.5 text-sm font-bold text-white shadow-[0_2px_0_rgba(12,28,60,0.35)] transition active:translate-y-px";
+    "w-full rounded-lg px-3 py-2.5 text-sm font-bold text-white transition active:translate-y-px";
   const plateAccent = plate;
+  const plateAccentStyle: React.CSSProperties = {
+    ...accentPlate,
+    border: goldEdge,
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,.38), 0 2px 0 rgba(10,16,32,.3), 0 6px 14px -6px rgba(10,16,32,.4)",
+  };
   const plateQuiet =
-    "w-full rounded-lg border border-cream/20 bg-panel px-3 py-2.5 text-sm font-bold text-cream/80 transition active:translate-y-px";
+    "w-full rounded-lg border border-cream/15 px-3 py-2.5 text-sm font-bold text-cream/75 transition active:translate-y-px";
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-3">
       {/* ══ ターン表示 ══ */}
-      <div className="overflow-hidden rounded-xl border border-cream/15 shadow-[0_3px_0_rgba(12,28,60,0.18)]">
-        <div
-          className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
-          style={accentPlate}
-        >
-          <div className="flex items-baseline gap-2">
-            <span className="rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-black tracking-wider text-white">
-              {W.screenTitle}
-            </span>
-            <span className="font-display text-sm font-black tabular-nums tracking-wide text-white drop-shadow-[0_1px_0_rgba(0,0,0,0.35)]">
+      <div className="overflow-hidden rounded-2xl" style={{ border: goldEdge, boxShadow: cardShadow }}>
+        <div className="relative px-4 pb-2.5 pt-3" style={{ background: "linear-gradient(180deg, #16203A 0%, #0A0F1C 100%)" }}>
+          {/* チームカラーを上から薄く掛けて、濃紺と地続きにする */}
+          <div className="pointer-events-none absolute inset-0" style={{ ...accentPlate, opacity: 0.24 }} />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/20" />
+          <div className="relative">
+            <p className="text-[10px] font-bold tracking-[0.42em] text-[rgb(226,203,131)]">
+              {W.screenTitle.toUpperCase()}
+            </p>
+            <p className="mt-0.5 font-display text-[17px] font-black tabular-nums tracking-wide text-white drop-shadow-[0_1px_2px_rgba(0,0,0,.5)]">
               {W.turnLabel(turn.year, turn.month, turn.weekOfMonth)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-[11px] font-bold text-white/85">
-            <span className="tabular-nums">{W.usedTurns(turn.usedTurns)}</span>
-            <span className="rounded bg-black/25 px-1.5 py-0.5 tabular-nums">{W.remainingTurns(turn.remainingTurns)}</span>
+            </p>
+            <div className="mt-2 h-px w-full" style={{ background: GOLD_RULE }} />
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] tracking-wider">
+              <span className="text-white/55">
+                {W.usedTurns(turn.usedTurns)}
+              </span>
+              <span className="text-white/55">{W.remainingTurns(turn.remainingTurns)}</span>
+              {favoriteCategory && (
+                <span className="ml-auto flex min-w-0 items-center gap-1.5">
+                  <span className="text-[rgb(232,196,96)]">★</span>
+                  <span className="shrink-0 text-white/45">{W.favoriteTrainingLabel}</span>
+                  <span className="truncate font-bold text-white/85">{favoriteCategory}</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        {favoriteCategory && (
-          <div className="flex items-center gap-1.5 bg-panel px-3 py-1.5 text-[11px] text-cream/65">
-            <span className="rounded bg-[rgb(232,172,40)]/20 px-1.5 py-0.5 text-[10px] font-black text-[rgb(166,116,10)]">
-              ★ {W.favoriteTrainingLabel}
-            </span>
-            <span className="truncate font-bold text-cream/80">{favoriteCategory}</span>
-          </div>
-        )}
       </div>
 
-      {/* ══ 球場 + ゲージ ══ */}
-      <div className="relative overflow-hidden rounded-xl border border-cream/15 shadow-[0_3px_0_rgba(12,28,60,0.18)]">
-        <Stadium
-          phase={skyPhaseOf(new Date(now).getHours())}
-          motivation={condition.motivation}
-          running={!!running}
-          injured={condition.injuryRisk >= 0.6}
-          hot={hot.filled}
-          fever={hot.fever}
-          doneCount={hot.done}
-          totalCount={hot.total}
-          seed={today}
-        />
-        {hot.fever && (
-          <span className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-full bg-[rgb(232,172,40)] px-3 py-1 text-[11px] font-black text-white shadow-[0_2px_0_rgba(140,92,0,0.5)]">
-            {W.feverLabel}
-          </span>
-        )}
-        {/* ゲージ盤。球場の上に半透明で乗せる */}
-        <div className="absolute inset-x-0 bottom-0 space-y-1 bg-gradient-to-t from-black/70 to-transparent px-3 pb-2 pt-6">
-          <GaugeRow
-            label={W.staminaLabel}
-            value={condition.staminaPercent / 100}
-            color={[86, 186, 118]}
-            danger={condition.staminaPercent <= 20}
-            right={`${condition.staminaPercent}`}
-            onInfo={() => setOpenReason(W.staminaNote(String(Math.round(condition.staminaSeconds / 60))))}
+      {/* ══ 球場 + 計器盤 ══ */}
+      <div className="overflow-hidden rounded-2xl" style={{ border: goldEdge, boxShadow: cardShadow }}>
+        <div className="relative">
+          <Stadium
+            phase={skyPhaseOf(new Date(now).getHours())}
+            motivation={condition.motivation}
+            running={!!running}
+            injured={condition.injuryRisk >= 0.6}
+            hot={hot.filled}
+            fever={hot.fever}
+            doneCount={hot.done}
+            totalCount={hot.total}
+            seed={today}
           />
-          <GaugeRow
-            label={W.motivationLabel}
-            value={(condition.motivation + 1) / 5}
-            color={MOTIVATION_COLOR[condition.motivation]}
-            segments={5}
-            right={W.motivationName(condition.motivation)}
-            onInfo={() => setOpenReason(condition.motivationReason)}
-          />
-          <GaugeRow
-            label={W.hotLabel}
-            value={hot.filled}
-            color={[226, 74, 60]}
-            right={`${hot.done}/${hot.total}`}
-            onInfo={() => setOpenReason(W.hotNote(hot.done, hot.total))}
-          />
+          {hot.fever && (
+            <span
+              className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3.5 py-1 text-[11px] font-black tracking-widest text-[rgb(58,38,4)]"
+              style={{
+                background: "linear-gradient(180deg, #FFF0BA 0%, #C9A227 60%, #7C5E14 100%)",
+                boxShadow: "0 2px 8px rgba(120,84,0,.45)",
+              }}
+            >
+              {W.feverLabel}
+            </span>
+          )}
+        </div>
+        {/* 計器盤。以前は絵の上に半透明で重ねていたが、選手の足元を隠してしまうので独立させた */}
+        <div style={instrument}>
+          <div className="h-px w-full" style={{ background: GOLD_RULE }} />
+          <div className="px-4 py-2.5">
+            <GaugeRow
+              label={W.staminaLabel}
+              value={condition.staminaPercent / 100}
+              color={[86, 186, 118]}
+              danger={condition.staminaPercent <= 20}
+              right={`${condition.staminaPercent}`}
+              onInfo={() => setOpenReason(W.staminaNote(String(Math.round(condition.staminaSeconds / 60))))}
+            />
+            <GaugeRow
+              label={W.motivationLabel}
+              value={(condition.motivation + 1) / 5}
+              color={MOTIVATION_COLOR[condition.motivation]}
+              segments={5}
+              right={W.motivationName(condition.motivation)}
+              onInfo={() => setOpenReason(condition.motivationReason)}
+            />
+            <GaugeRow
+              label={W.hotLabel}
+              value={hot.filled}
+              color={[226, 74, 60]}
+              right={`${hot.done}/${hot.total}`}
+              onInfo={() => setOpenReason(W.hotNote(hot.done, hot.total))}
+              last
+            />
+          </div>
         </div>
       </div>
 
       {openReason && (
-        <p className="rounded-lg border border-cream/15 bg-panel px-3 py-2 text-[11px] leading-relaxed text-cream/70">
-          <span className="mr-1 font-bold text-cream/50">{W.basisLabel}:</span>
+        <p
+          className="rounded-xl px-3.5 py-2.5 text-[11px] leading-relaxed text-cream/70"
+          style={{ ...card, border: goldEdge }}
+        >
+          <span className="mr-1.5 font-bold tracking-widest text-[rgb(166,132,32)]">{W.basisLabel}</span>
           {openReason}
           <button className="ml-2 text-cream/40 underline" onClick={() => setOpenReason(null)}>
             {W.closeLabel}
@@ -286,7 +334,10 @@ export default function PowerproTrainingSection() {
       )}
 
       {/* ══ 画面切り替え ══ */}
-      <div className="grid grid-cols-3 gap-1.5">
+      <div
+        className="grid grid-cols-3 gap-1 rounded-xl p-1"
+        style={{ background: "linear-gradient(180deg, #101828 0%, #0A0F1C 100%)", border: goldEdge }}
+      >
         {(
           [
             ["training", W.panelTraining, commands.length],
@@ -297,16 +348,14 @@ export default function PowerproTrainingSection() {
           <button
             key={key}
             onClick={() => setPanel(key)}
-            style={panel === key ? accentPlate : undefined}
-            className={`relative rounded-lg border px-2 py-2 text-xs font-black transition active:translate-y-px ${
-              panel === key
-                ? "border-white/40 text-white shadow-[0_2px_0_rgba(12,28,60,0.35)]"
-                : "border-cream/15 bg-panel text-cream/55"
+            style={panel === key ? plateAccentStyle : undefined}
+            className={`relative rounded-lg px-2 py-2 text-xs font-black tracking-wider transition active:translate-y-px ${
+              panel === key ? "text-white" : "text-white/40"
             }`}
           >
             {label}
             {badge !== undefined && badge > 0 && (
-              <span className="absolute right-1 top-0.5 text-[9px] opacity-70">{badge}</span>
+              <span className="absolute right-1.5 top-1 text-[9px] font-bold text-[rgb(226,203,131)]">{badge}</span>
             )}
           </button>
         ))}
@@ -314,14 +363,18 @@ export default function PowerproTrainingSection() {
 
       {/* ══ 練習中 ══ */}
       {panel === "training" && running && runningCommand && (
-        <div className="overflow-hidden rounded-xl border-2 border-[rgb(226,74,60)]/60 bg-panel shadow-[0_3px_0_rgba(160,40,32,0.25)]">
-          <div className="flex items-center gap-2 bg-gradient-to-b from-[rgb(232,88,72)] to-[rgb(196,44,38)] px-3 py-1.5">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-            <span className="text-[11px] font-black tracking-wider text-white">{W.nowTraining}</span>
-            <span className="ml-auto text-[11px] font-bold text-white/85">
+        <div className="overflow-hidden rounded-2xl" style={{ ...card, border: goldEdge }}>
+          <div
+            className="flex items-center gap-2 px-3.5 py-2"
+            style={{ background: "linear-gradient(180deg, #1B2540 0%, #0C1220 100%)" }}
+          >
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[rgb(255,206,72)] shadow-[0_0_6px_rgba(255,186,32,.9)]" />
+            <span className="text-[10px] font-bold tracking-[0.3em] text-[rgb(226,203,131)]">{W.nowTraining}</span>
+            <span className="ml-auto text-[11px] tracking-wider text-white/55">
               {W.practiceName(runningCommand.kind)}
             </span>
           </div>
+          <div className="h-px w-full" style={{ background: GOLD_RULE }} />
           <div className="flex items-center gap-3 px-3 py-2.5">
             <PracticeIcon kind={runningCommand.kind} expKind={runningCommand.expKind} size={46} />
             <div className="min-w-0 flex-1">
@@ -351,8 +404,8 @@ export default function PowerproTrainingSection() {
               </p>
             )}
           </div>
-          <div className="flex gap-1.5 border-t border-cream/10 p-2">
-            <button className={plateAccent} style={accentPlate} onClick={() => finishDailyTask(running)}>
+          <div className="flex gap-1.5 border-t border-cream/10 p-2.5">
+            <button className={plateAccent} style={plateAccentStyle} onClick={() => finishDailyTask(running)}>
               {W.actionFinish}
             </button>
             <button className={plateQuiet} onClick={() => pauseTask(running)}>
@@ -371,9 +424,12 @@ export default function PowerproTrainingSection() {
             </p>
           ) : (
             <>
-              <div className="flex items-baseline justify-between px-1">
-                <p className="text-[11px] font-black tracking-wider text-cream/60">{W.trainingTitle}</p>
-                <p className="text-[11px] text-cream/45">{W.trainingHint}</p>
+              <div className="flex items-baseline justify-between gap-3 px-1">
+                <p className="shrink-0 text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">
+                  {W.trainingTitle}
+                </p>
+                <span className="h-px min-w-0 flex-1 translate-y-[-3px]" style={{ background: GOLD_RULE }} />
+                <p className="shrink-0 text-[11px] text-cream/40">{W.trainingHint}</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {commands
@@ -392,7 +448,7 @@ export default function PowerproTrainingSection() {
               </div>
             </>
           )}
-          <button className={plateAccent} style={accentPlate} onClick={() => setShowPicker(true)}>
+          <button className={plateAccent} style={plateAccentStyle} onClick={() => setShowPicker(true)}>
             {W.actionPick}
           </button>
         </div>
@@ -402,7 +458,7 @@ export default function PowerproTrainingSection() {
       {panel === "player" && (
         <div className="space-y-2">
           {/* 選手カード */}
-          <div className="relative overflow-hidden rounded-xl border border-cream/15 shadow-[0_3px_0_rgba(12,28,60,0.18)]">
+          <div className="relative overflow-hidden rounded-2xl" style={{ border: goldEdge, boxShadow: cardShadow }}>
             <CardBase rank={player.rank} seed={today} className="absolute inset-0" />
             <div className="relative flex items-center gap-3 px-3 py-3">
               <RankEmblem rank={player.rank} size={54} className="shrink-0 drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]" />
@@ -424,7 +480,7 @@ export default function PowerproTrainingSection() {
           </div>
 
           {/* 六角形 + 能力値 */}
-          <div className="rounded-xl border border-cream/15 bg-panel p-3 shadow-[0_2px_0_rgba(12,28,60,0.1)]">
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
             <AbilityHex
               values={abilities.map((a) => a.value)}
               labels={abilities.map((a) => W.abilityName(a.key))}
@@ -455,18 +511,21 @@ export default function PowerproTrainingSection() {
           </div>
 
           {/* 経験点 */}
-          <div className="rounded-xl border border-cream/15 bg-panel p-3 shadow-[0_2px_0_rgba(12,28,60,0.1)]">
-            <p className="mb-2 text-[11px] font-black tracking-wider text-cream/60">{W.expTitle}</p>
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
+            <p className="mb-2 text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.expTitle}</p>
             <div className="grid grid-cols-5 gap-1.5">
               {experience.map((e) => (
                 <button
                   key={e.kind}
                   onClick={() => setOpenReason(e.reason)}
-                  className="rounded-lg border border-white/30 px-1 py-1.5 text-center shadow-[0_2px_0_rgba(12,28,60,0.2)]"
+                  className="rounded-xl px-1 py-2 text-center"
                   style={{
-                    background: `linear-gradient(to bottom, ${css(EXP_COLOR[e.kind], 0.9)}, ${css(
+                    background: `linear-gradient(180deg, ${css(mix(EXP_COLOR[e.kind], [255, 255, 255], 0.26))} 0%, ${css(
                       EXP_COLOR[e.kind]
-                    )})`,
+                    )} 55%, ${css(mix(EXP_COLOR[e.kind], [10, 14, 28], 0.3))} 100%)`,
+                    border: "1px solid rgba(201,162,39,.5)",
+                    boxShadow:
+                      "inset 0 1px 0 rgba(255,255,255,.45), 0 2px 0 rgba(10,16,32,.2), 0 6px 12px -6px rgba(10,16,32,.4)",
                   }}
                 >
                   <span className="block text-[10px] font-bold leading-tight text-white/85">{W.expName(e.kind)}</span>
@@ -479,8 +538,8 @@ export default function PowerproTrainingSection() {
           </div>
 
           {/* 特殊能力 */}
-          <div className="rounded-xl border border-cream/15 bg-panel p-3 shadow-[0_2px_0_rgba(12,28,60,0.1)]">
-            <p className="mb-2 text-[11px] font-black tracking-wider text-cream/60">{W.specialTitle}</p>
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
+            <p className="mb-2 text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.specialTitle}</p>
             {specials.length === 0 ? (
               <p className="text-[11px] text-cream/45">{W.specialEmpty}</p>
             ) : (
@@ -488,11 +547,13 @@ export default function PowerproTrainingSection() {
                 {specials.map((s) => (
                   <li key={s.name} className="flex items-start gap-2">
                     <span
-                      className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[11px] font-black text-white shadow-[0_1px_0_rgba(12,28,60,0.25)]"
+                      className="mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[11px] font-black text-white"
                       style={{
-                        background: `linear-gradient(to bottom, ${css(SPECIAL_COLOR[s.color], 0.85)}, ${css(
+                        background: `linear-gradient(180deg, ${css(mix(SPECIAL_COLOR[s.color], [255, 255, 255], 0.22))} 0%, ${css(
                           SPECIAL_COLOR[s.color]
-                        )})`,
+                        )} 60%, ${css(mix(SPECIAL_COLOR[s.color], [10, 14, 28], 0.28))} 100%)`,
+                        border: "1px solid rgba(201,162,39,.45)",
+                        boxShadow: "inset 0 1px 0 rgba(255,255,255,.4), 0 1px 0 rgba(10,16,32,.25)",
                       }}
                     >
                       {wordingEnabled ? s.name : s.plainName}
@@ -509,8 +570,8 @@ export default function PowerproTrainingSection() {
       {/* ══ 評価(本日の成績) ══ */}
       {panel === "scout" && (
         <div className="space-y-2">
-          <div className="rounded-xl border border-cream/15 bg-panel p-3 shadow-[0_2px_0_rgba(12,28,60,0.1)]">
-            <p className="mb-2 text-[11px] font-black tracking-wider text-cream/60">{W.recordTitle}</p>
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
+            <p className="mb-2 text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.recordTitle}</p>
             <div className="grid grid-cols-3 gap-x-3 gap-y-2">
               {(
                 [
@@ -530,9 +591,9 @@ export default function PowerproTrainingSection() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-cream/15 bg-panel p-3 shadow-[0_2px_0_rgba(12,28,60,0.1)]">
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
             <div className="mb-1.5 flex items-baseline justify-between">
-              <p className="text-[11px] font-black tracking-wider text-cream/60">{W.injuryLabel}</p>
+              <p className="text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.injuryLabel}</p>
               <p className="text-xs font-black tabular-nums text-cream/80">
                 {Math.round(condition.injuryRisk * 100)}%
               </p>
@@ -550,9 +611,9 @@ export default function PowerproTrainingSection() {
             </p>
           </div>
 
-          <div className="rounded-xl border border-cream/15 bg-panel p-3 shadow-[0_2px_0_rgba(12,28,60,0.1)]">
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
             <div className="mb-1.5 flex items-baseline justify-between">
-              <p className="text-[11px] font-black tracking-wider text-cream/60">{W.motivationLabel}</p>
+              <p className="text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.motivationLabel}</p>
               <p className="text-xs font-black text-cream/80">{W.motivationName(condition.motivation)}</p>
             </div>
             <Gauge
@@ -583,13 +644,13 @@ export default function PowerproTrainingSection() {
             {pickerTab === "menu" && (
               <div className="space-y-2 p-3">
                 <p className="text-[11px] text-cream/50">{W.pickerMenuTitle}</p>
-                <button className={plateAccent} style={accentPlate} onClick={() => setPickerTab("master")}>
+                <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("master")}>
                   {W.pickerOptMaster}
                 </button>
-                <button className={plateAccent} style={accentPlate} onClick={() => setPickerTab("favorite")}>
+                <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("favorite")}>
                   {W.pickerOptFavorite}
                 </button>
-                <button className={plateAccent} style={accentPlate} onClick={() => setPickerTab("free")}>
+                <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("free")}>
                   {W.pickerOptFree}
                 </button>
                 <button className={plateQuiet} onClick={closePicker}>
@@ -606,7 +667,7 @@ export default function PowerproTrainingSection() {
                 <div className="space-y-1.5 border-t border-cream/10 p-3">
                   <button
                     className={plateAccent + " disabled:opacity-40"}
-                  style={accentPlate}
+                    style={plateAccentStyle}
                     disabled={!pickedMaster}
                     onClick={async () => {
                       if (!pickedMaster) return;
@@ -689,7 +750,7 @@ export default function PowerproTrainingSection() {
                 </label>
                 <button
                   className={plateAccent + " disabled:opacity-40"}
-                  style={accentPlate}
+                  style={plateAccentStyle}
                   disabled={!freeCategory.trim() || !freeName.trim()}
                   onClick={async () => {
                     await addFreeform(freeCategory, freeName, true);
@@ -721,6 +782,8 @@ export default function PowerproTrainingSection() {
 }
 
 // 球場に重ねるゲージ1本ぶん。押すとその値の根拠が出る
+// 計器盤の1行。ラベルは字間を広げて小さく、値は大きく等幅に。
+// 行の区切りに髪の毛ほどの罫を入れると、3本並んでも計器らしい静けさが保てる
 function GaugeRow({
   label,
   value,
@@ -729,6 +792,7 @@ function GaugeRow({
   danger = false,
   right,
   onInfo,
+  last = false,
 }: {
   label: string;
   value: number;
@@ -737,16 +801,18 @@ function GaugeRow({
   danger?: boolean;
   right: string;
   onInfo: () => void;
+  last?: boolean;
 }) {
   return (
-    <button onClick={onInfo} className="flex w-full items-center gap-2 text-left">
-      <span className="w-16 shrink-0 text-[10px] font-black tracking-wider text-white/90 drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]">
-        {label}
-      </span>
+    <button
+      onClick={onInfo}
+      className={`flex w-full items-center gap-3 py-1.5 text-left ${last ? "" : "border-b border-white/[0.07]"}`}
+    >
+      <span className="w-[4.5rem] shrink-0 truncate text-[10px] tracking-[0.16em] text-white/45">{label}</span>
       <span className="min-w-0 flex-1">
-        <Gauge value={value} color={color} segments={segments} danger={danger} height={11} />
+        <Gauge value={value} color={color} segments={segments} danger={danger} height={9} />
       </span>
-      <span className="w-14 shrink-0 text-right text-[11px] font-black tabular-nums text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]">
+      <span className="w-[5.25rem] shrink-0 truncate text-right text-[12px] font-black tabular-nums tracking-tight text-white/90">
         {right}
       </span>
     </button>
@@ -769,15 +835,21 @@ function CommandPlate({
     <button
       onClick={done ? undefined : onStart}
       disabled={done}
-      className={`overflow-hidden rounded-xl border text-left transition active:translate-y-px ${
-        done
-          ? "border-cream/10 bg-panel/60 opacity-60"
-          : "border-white/40 shadow-[0_3px_0_rgba(12,28,60,0.28)] hover:brightness-105"
+      className={`overflow-hidden rounded-2xl text-left transition active:translate-y-px ${
+        done ? "border border-cream/10 bg-panel/60 opacity-55" : "hover:brightness-[1.04]"
       }`}
       style={
         done
           ? undefined
-          : { background: `linear-gradient(to bottom, ${css(c, 0.92)} 0%, ${css(c)} 55%, ${css(c, 0.82)} 100%)` }
+          : {
+              // 面は経験点の色、縁は金。得意練習だけ金を強めて一段格上に見せる
+              background: `linear-gradient(180deg, ${css(mix(c, [255, 255, 255], 0.24))} 0%, ${css(c)} 52%, ${css(
+                mix(c, [10, 14, 28], 0.28)
+              )} 100%)`,
+              border: command.favorite ? "1px solid rgba(255,240,186,.85)" : "1px solid rgba(201,162,39,.5)",
+              boxShadow:
+                "inset 0 1px 0 rgba(255,255,255,.45), inset 0 -1px 0 rgba(10,16,32,.25), 0 2px 0 rgba(10,16,32,.22), 0 8px 16px -8px rgba(10,16,32,.45)",
+            }
       }
     >
       <div className="flex items-start gap-2 px-2 pb-1 pt-2">
@@ -801,7 +873,10 @@ function CommandPlate({
             {words.expGainLabel(command.expGain, words.expName(command.expKind))}
           </span>
           {command.favorite && !done && (
-            <span className="rounded bg-[rgb(232,172,40)] px-1 py-0.5 text-[9px] font-black text-[rgb(72,48,4)]">
+            <span
+              className="rounded px-1.5 py-0.5 text-[9px] font-black text-[rgb(58,38,4)]"
+              style={{ background: "linear-gradient(180deg,#FFF0BA 0%,#C9A227 65%,#7C5E14 100%)" }}
+            >
               ★{words.favoriteBadge}
             </span>
           )}
