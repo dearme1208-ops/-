@@ -24,6 +24,11 @@ import Modal from "@/components/ui/Modal";
 import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
 import { showUndoToast } from "@/lib/toast";
 import { fireConfetti } from "@/lib/confetti";
+import { foafNumberOf } from "@/lib/hayarigami";
+import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
+import SceneCanvas from "@/components/hayarigami/SceneCanvas";
+import BranchTree from "@/components/hayarigami/BranchTree";
+import type { BranchNode } from "@/lib/hayarigamiArt";
 
 type ViewMode = "gantt" | "calendar" | "tree" | "ppm";
 const TREE_LEAF_LIMIT = 15;
@@ -1074,6 +1079,18 @@ function ProjectRow({
   const [stagesCollapsed, setStagesCollapsed] = useState(false);
   // 進捗率・段階数の表示は全段階を対象にする一方、ここでの一覧描画だけ設定に応じて完了済みを間引く
   const visibleStages = showCompletedStages ? project.stages ?? [] : (project.stages ?? []).filter((s) => !isStageDone(s));
+  // 怪異調査モード: 案件1件ごとに「事件ファイル」の表紙写真(生成)と、F.O.A.F.データベース風の
+  // 通し番号を添える。写真の荒れ具合は延滞状況という実データに連動させる
+  const { wordingEnabled } = useVisualMode();
+  const hayarigamiMode = themedMode === "hayarigami";
+  const hayarigamiIntensity = project.completedAt ? 0.05 : overdue ? 0.85 : dueToday ? 0.5 : 0.25;
+  // 分岐ツリー用のノード。段階の並びをそのまま一本道の捜査ルートとして描く
+  const branchNodes: BranchNode[] = (project.stages ?? []).map((stage, i) => {
+    const done = isStageDone(stage);
+    const stageOverdue = !done && !!stage.dueDate && stage.dueDate < today;
+    const firstUndone = (project.stages ?? []).findIndex((s) => !isStageDone(s));
+    return { done, current: i === firstUndone, overdue: stageOverdue };
+  });
   return (
     <div
       className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""} ${
@@ -1086,8 +1103,23 @@ function ProjectRow({
             : ""
       }`}
     >
-      <div>
+      <div className={hayarigamiMode ? "flex gap-2" : undefined}>
+        {hayarigamiMode && (
+          <SceneCanvas
+            seed={`${project.category ?? "事件"}/${project.title}/${project.workName}`}
+            intensity={hayarigamiIntensity}
+            night={overdue}
+            className="h-14 w-14 shrink-0 overflow-hidden rounded border border-cream/25"
+          />
+        )}
+        <div className="min-w-0">
         <div className="text-xs text-cream/50">
+          {hayarigamiMode && (
+            <span className="mr-1.5 font-mono text-cream/45">
+              {hayarigamiWordsFor(wordingEnabled).fileNoPrefix}
+              {foafNumberOf(project.id)}
+            </span>
+          )}
           {project.title}
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
           {clientName && (
@@ -1162,14 +1194,18 @@ function ProjectRow({
                 {Math.round((computeProjectProgress(project.stages) ?? 0) * 100)}%
               </span>
             </button>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-cream/5">
-              <div
-                className="h-1.5 rounded-full bg-cream"
-                style={{
-                  width: `${Math.round((computeProjectProgress(project.stages) ?? 0) * 100)}%`,
-                }}
-              />
-            </div>
+            {hayarigamiMode ? (
+              <BranchTree nodes={branchNodes} seed={project.id} className="overflow-hidden rounded border border-cream/15" />
+            ) : (
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-cream/5">
+                <div
+                  className="h-1.5 rounded-full bg-cream"
+                  style={{
+                    width: `${Math.round((computeProjectProgress(project.stages) ?? 0) * 100)}%`,
+                  }}
+                />
+              </div>
+            )}
             {!stagesCollapsed && (
               <div className="mt-1.5 space-y-1">
                 {!showCompletedStages && visibleStages.length < project.stages.length && (
@@ -1270,6 +1306,7 @@ function ProjectRow({
             )}
           </div>
         )}
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <button className="btn-pill-outline text-xs" onClick={onAddToToday}>

@@ -242,3 +242,20 @@ export function erosionPercent(tasks: { estimatedSeconds: number; elapsedSeconds
   if (base <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((over / base) * 100)));
 }
+
+// ---- F.O.A.F.データベース風の通し番号 ----
+// 原作では物語中に登場した警察用語・都市伝説・事件が自動的にデータベースへ登録され、
+// No.001から通し番号が振られていく。ここではToDo・案件のようなアプリ内の対象に同じ体裁を
+// 与えるため、対象のID(並び替えやフィルタでも変わらない)から決定的な3桁番号を割り当てる。
+// 一覧の表示順が変わっても、同じ対象には常に同じ番号が付く
+// 数字だけを返す。呼び出し側でW.fileNoPrefix(「FILE No.」/「No.」)と組み合わせて使うため、
+// ここで独自に「No.」を付けると呼び出し側のプレフィックスと二重になってしまう
+export function foafNumberOf(id: string): string {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  const n = (h % 899) + 100;
+  return String(n);
+}

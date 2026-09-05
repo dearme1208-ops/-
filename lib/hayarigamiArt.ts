@@ -1129,6 +1129,141 @@ export function paintDiagram(ctx: CanvasRenderingContext2D, o: DiagramPaintOptio
   ctx.putImageData(img, 0, 0);
 }
 
+// ============================================================
+// 分岐ツリー(案件の段階を、シナリオの分岐ツリーに見立てて描く)
+// ============================================================
+// 原作は『流行り神2』以降、シナリオ全体の分岐構造を俯瞰し、既読/未読が
+// 一目でわかる「分岐ツリー」を備える。ここでは案件の段階(マイルストーン)を
+// 一本道の捜査ルートに見立て、済んだ段階・現在地・これからの段階を並べて描く
+
+export interface BranchNode {
+  done: boolean;
+  current: boolean;
+  overdue: boolean;
+}
+
+export interface BranchTreePaintOptions {
+  width: number;
+  height: number;
+  nodes: BranchNode[];
+  accent: [number, number, number];
+  seed: string;
+}
+
+export function paintBranchTree(ctx: CanvasRenderingContext2D, o: BranchTreePaintOptions): void {
+  const { width: w, height: h, accent, nodes } = o;
+  const rng = makeRng(`branch:${o.seed}`);
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "rgba(16, 15, 16, 0.9)";
+  ctx.fillRect(0, 0, w, h);
+
+  if (nodes.length === 0) return;
+
+  const midY = h * 0.56;
+  const marginX = Math.min(18, w * 0.06);
+  const step = nodes.length > 1 ? (w - marginX * 2) / (nodes.length - 1) : 0;
+  const xs = nodes.map((_, i) => marginX + step * i);
+
+  // 手描きの震えを持つ一本道
+  ctx.strokeStyle = "rgba(196, 190, 178, 0.35)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(xs[0], midY);
+  for (let i = 1; i < xs.length; i++) {
+    const steps = 8;
+    const x0 = xs[i - 1];
+    const x1 = xs[i];
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      ctx.lineTo(lerp(x0, x1, t), midY + (rng() - 0.5) * 2.2);
+    }
+  }
+  ctx.stroke();
+
+  // 済んだ区間だけ、アクセント色の糸を重ねて濃くする(捜査の歩みそのもの)
+  const doneUpTo = nodes.reduce((acc, n, i) => (n.done ? i : acc), -1);
+  if (doneUpTo > 0) {
+    ctx.strokeStyle = rgba(accent, 0.55);
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(xs[0], midY);
+    ctx.lineTo(xs[doneUpTo], midY);
+    ctx.stroke();
+  }
+
+  const r = Math.min(7, h * 0.16);
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const x = xs[i];
+
+    if (n.overdue) {
+      // 延滞している段階だけ、下へ垂れる赤い糸(差し戻し)を足す
+      ctx.strokeStyle = rgba(accent, 0.6);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(x, midY + r);
+      ctx.lineTo(x + (rng() - 0.5) * 3, midY + r + h * 0.22);
+      ctx.stroke();
+    }
+
+    if (n.current) {
+      // 現在地: 明るい halo と、上から刺さる画鋲
+      const halo = ctx.createRadialGradient(x, midY, 0, x, midY, r * 2.4);
+      halo.addColorStop(0, rgba(accent, 0.55));
+      halo.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(x, midY, r * 2.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(x - 4, midY - r - 10);
+      ctx.lineTo(x + 4, midY - r - 10);
+      ctx.lineTo(x, midY - r - 3);
+      ctx.closePath();
+      ctx.fillStyle = rgba(accent, 0.95);
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(x, midY, r, 0, Math.PI * 2);
+    if (n.done) {
+      ctx.fillStyle = rgba(accent, 0.85);
+      ctx.fill();
+    } else if (n.current) {
+      ctx.fillStyle = "rgba(20, 18, 18, 0.95)";
+      ctx.fill();
+      ctx.strokeStyle = rgba(accent, 1);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = "rgba(20, 18, 18, 0.9)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(196, 190, 178, 0.45)";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = n.done ? "rgba(20, 18, 18, 0.9)" : "rgba(220, 216, 208, 0.8)";
+    ctx.font = `${Math.max(8, Math.round(r * 1.15))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(i + 1), x, midY + 0.5);
+  }
+
+  // 紙の粒子
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const nz = (rng() - 0.5) * 10;
+    d[i] = clamp255(d[i] + nz);
+    d[i + 1] = clamp255(d[i + 1] + nz);
+    d[i + 2] = clamp255(d[i + 2] + nz);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
 // テーマのアクセント色(CSS変数)を読み、Canvasで使えるRGBに変換する
 export function readAccentRgb(): [number, number, number] {
   if (typeof window === "undefined") return [176, 26, 38];

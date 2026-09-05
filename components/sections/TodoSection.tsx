@@ -38,6 +38,9 @@ import {
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
+import { foafNumberOf } from "@/lib/hayarigami";
+import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
+import SceneCanvas from "@/components/hayarigami/SceneCanvas";
 import { readFileAsDataUrl } from "@/lib/mailImport";
 import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
@@ -2368,7 +2371,7 @@ function TaskRow({
 }) {
   const today = todayStr();
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
-  const { themedMode } = useVisualMode();
+  const { themedMode, wordingEnabled } = useVisualMode();
   const dueDate = effectiveDueDate(task, subtasks);
   const overdue = !task.completed && !!dueDate && dueDate < today;
   const dueToday = !task.completed && !!dueDate && dueDate === today;
@@ -2377,6 +2380,11 @@ function TaskRow({
   // (期日ベースの赤系警告とは重ならない範囲だけを対象にする、静かな気づきのための表現)
   const ageDays = task.completed || dueDate || task.important ? 0 : daysBetweenDateStrs(todayStr(new Date(task.createdAt)), today);
   const agingClass = ageDays >= 30 ? "opacity-45 grayscale" : ageDays >= 14 ? "opacity-70 grayscale-[50%]" : "";
+  // 怪異調査モード: 未解決の噂1件ごとに、現場の写真(生成)とF.O.A.F.データベース風の
+  // 通し番号を添える。写真の荒れ具合(intensity)は放置度合いという実データに連動させ、
+  // ここでも「作った値」ではなく実際の状態を絵にする
+  const hayarigamiMode = themedMode === "hayarigami";
+  const hayarigamiIntensity = task.completed ? 0.05 : overdue ? 0.85 : dueToday ? 0.5 : 0.2;
   return (
     <div
       title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
@@ -2384,6 +2392,14 @@ function TaskRow({
         task.completed ? "opacity-50" : agingClass
       } ${overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""}`}
     >
+      {hayarigamiMode && (
+        <SceneCanvas
+          seed={`${task.category ?? "噂"}/${task.title}`}
+          intensity={hayarigamiIntensity}
+          night={overdue}
+          className="h-11 w-11 shrink-0 overflow-hidden rounded border border-cream/25"
+        />
+      )}
       <button
         onClick={onToggleComplete}
         aria-label="完了"
@@ -2395,6 +2411,12 @@ function TaskRow({
       </button>
       <button className="min-w-0 flex-1 text-left" onClick={onOpenDetail}>
         <div className="flex flex-wrap items-center gap-1.5">
+          {hayarigamiMode && (
+            <span className="rounded-full border border-cream/20 bg-cream/5 px-1.5 py-0.5 font-mono text-[10px] text-cream/45">
+              {hayarigamiWordsFor(wordingEnabled).fileNoPrefix}
+              {foafNumberOf(task.id)}
+            </span>
+          )}
           {listTitle && (
             <span className="rounded-full bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/40">{listTitle}</span>
           )}
