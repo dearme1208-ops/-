@@ -15,6 +15,8 @@ import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
 import KaiiSilhouette from "@/components/hayarigami/KaiiSilhouette";
 import CaseDiagram from "@/components/hayarigami/CaseDiagram";
+import EmblemCanvas from "@/components/hayarigami/EmblemCanvas";
+import { pickScene, SCENE_LABEL } from "@/lib/hayarigamiArt";
 import type { DailyTask, MasterTask, TodoTask } from "@/lib/types";
 
 // 流行り神風モード(怪異調査モード)専用の「本日の作業」タブ。
@@ -71,6 +73,8 @@ export default function HayarigamiSection() {
   // 名鑑(作業マスタ)から自由に選んで調査を始める/ファイルだけ用意するためのピッカー
   const [showPicker, setShowPicker] = useState(false);
   const [pickedMaster, setPickedMaster] = useState<MasterTask | null>(null);
+  // 二択の紋章は、指したものだけ線が光る
+  const [hoverJudge, setHoverJudge] = useState<"occult" | "science" | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -313,18 +317,72 @@ export default function HayarigamiSection() {
   const choiceClass =
     "w-full rounded-sm border border-cream/25 bg-black/40 px-3 py-2 text-left text-sm text-cream transition hover:border-alert hover:bg-alert/10 hover:text-alert";
 
+  // 舞台に敷く一枚絵の情景。名札(現場)にも使う
+  const sceneKind = pickScene(sceneSeed);
+  const placeLabel = wordingEnabled ? `${SCENE_LABEL[sceneKind]}　・　${phase.label}` : W.fileHeader;
+
+  const choicePlate =
+    "w-full border border-cream/30 bg-black/55 px-3 py-2 text-left text-sm text-cream transition hover:border-alert hover:bg-alert/15 hover:text-alert";
+
+  // 現在の画面に応じた選択肢。舞台の中でメッセージ窓の上に重ねる
+  const choices: React.ReactNode[] = [];
+  if (screen === "main") {
+    if (running) {
+      choices.push(
+        <button key="complete" className={choicePlate} onClick={() => completeTask(running)}>
+          {W.completeChoice}
+        </button>,
+        <button key="pause" className={choicePlate} onClick={() => pauseTask(running)}>
+          {W.pauseChoice}
+        </button>
+      );
+    } else {
+      for (const t of paused) {
+        choices.push(
+          <button key={`resume-${t.id}`} className={choicePlate} onClick={() => startTask(t)}>
+            {W.resumeChoice(t.name)}
+          </button>
+        );
+      }
+      for (const t of pending.slice(0, 4)) {
+        choices.push(
+          <button key={`open-${t.id}`} className={choicePlate} onClick={() => startTask(t)}>
+            {W.openChoice(t.name)}
+          </button>
+        );
+      }
+      for (const m of favoriteMasters.slice(0, 3)) {
+        choices.push(
+          <button key={`fav-${m.id}`} className={choicePlate} onClick={() => addFromMaster(m, true)}>
+            {W.newChoice(m.name)}
+          </button>
+        );
+      }
+      if (paused.length === 0 && pending.length === 0 && favoriteMasters.length === 0) {
+        choices.push(
+          <p key="hint" className="px-1 text-xs text-cream/45">
+            {W.noStartHint}
+          </p>
+        );
+      }
+    }
+    choices.push(
+      <button key="picker" className={choicePlate} onClick={() => setShowPicker(true)}>
+        {W.pickerChoice}
+      </button>
+    );
+  }
+
   return (
-    <div className="space-y-3">
-      {/* ── 上段: 現在開いているファイル ── */}
+    <div className="space-y-2">
+      {/* ══ 舞台 ══
+          一枚絵を全面に敷き、その上に情報・選択肢・メッセージ窓を重ねる。
+          サウンドノベルの画面そのものを1つの枠として組み立てている */}
       <div
-        className={`relative overflow-hidden rounded-sm border p-4 ${
-          corrupted ? "hyr-corrupt border-alert/40" : "border-cream/15"
+        className={`relative flex flex-col overflow-hidden rounded-sm border ${
+          corrupted ? "hyr-corrupt border-alert/40" : "border-cream/20"
         } ${runningTier.level >= 4 && !!running ? "hyr-shake" : ""}`}
-        style={{
-          minHeight: "15.5rem",
-          backgroundImage:
-            "radial-gradient(ellipse at 50% 0%, rgb(var(--accent-rgb) / 0.10) 0%, transparent 62%), linear-gradient(180deg, rgb(var(--panel-rgb)) 0%, rgb(var(--ink-rgb)) 100%)",
-        }}
+        style={{ height: "clamp(25rem, 70vh, 42rem)" }}
       >
         <SceneCanvas
           seed={sceneSeed}
@@ -332,296 +390,301 @@ export default function HayarigamiSection() {
           night={phase.corrupt}
           className="pointer-events-none absolute inset-0"
         />
-        {/* 文字が沈まないよう、一枚絵の上に暗幕を1枚敷く */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/25 via-black/10 to-black/70" />
-        <div className="relative">
-        <div className="mb-3 flex items-center justify-between text-[10px] tracking-[0.3em] text-cream/40">
-          <span>{W.fileHeader}</span>
-          <span>
-            {phase.label}／{today.replace(/-/g, ".")}
-          </span>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/5 to-black/85" />
+        {/* 画面切り替えのたびに走る一瞬のノイズ */}
+        <div key={screen} className="hyr-flash pointer-events-none absolute inset-0 bg-cream/10" />
+
+        {/* ── 上部: 事件情報 ── */}
+        <div className="relative z-10 flex items-start justify-between gap-2 p-3">
+          <div className="min-w-0">
+            <p className="text-[10px] tracking-[0.3em] text-cream/50">{W.fileHeader}</p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-cream/40">
+              <span>
+                {W.fileNoPrefix}
+                {done.length + 1}
+              </span>
+              <span>/</span>
+              <span>{today.replace(/-/g, ".")}</span>
+              {running && running.estimatedSeconds > 0 && (
+                <span className={riskBadgeClasses(runningTier.level, mode)}>{riskBadgeLabel(runningTier, mode)}</span>
+              )}
+              {running?.isTrouble && (
+                <span className="border border-alert/60 px-1 py-0.5 text-[9px] text-alert">{W.troubleBadge}</span>
+              )}
+            </p>
+          </div>
+          {/* 右肩に縦書きで作業名。和製ホラーの装丁に寄せる */}
+          {running && (
+            <p
+              className="shrink-0 overflow-hidden text-sm font-bold tracking-widest text-cream/85"
+              style={{ writingMode: "vertical-rl", height: "9rem", textShadow: "0 1px 4px rgba(0,0,0,0.95)" }}
+            >
+              {running.name}
+            </p>
+          )}
         </div>
 
-        {screen === "main" && (
-          <div className="space-y-3">
-            {running ? (
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] tracking-[0.25em] text-cream/40">
-                    {W.fileNoPrefix}
-                    {done.length + 1}
-                  </span>
+        {/* ── 中央: 計測 または 資料画面 ── */}
+        <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3">
+          {screen === "main" && (
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              {running ? (
+                <>
+                  <p
+                    className="font-display text-5xl font-bold tabular-nums text-alert"
+                    style={{ textShadow: "0 2px 12px rgba(0,0,0,0.95)" }}
+                  >
+                    {formatMsClock(runningElapsedMs)}
+                  </p>
+                  <p className="mt-1 text-[11px] tabular-nums text-cream/60">
+                    想定 {running.estimatedSeconds > 0 ? formatHms(running.estimatedSeconds) : W.noEstimate}
+                    {running.estimatedSeconds > 0 && ` ／ ${Math.round(runningRatio * 100)}%`}
+                  </p>
                   {running.estimatedSeconds > 0 && (
-                    <span className={riskBadgeClasses(runningTier.level, mode)}>{riskBadgeLabel(runningTier, mode)}</span>
+                    <div className="mt-2 h-[3px] w-40 overflow-hidden bg-cream/15">
+                      <div className="h-[3px] bg-alert" style={{ width: `${Math.min(100, runningRatio * 100)}%` }} />
+                    </div>
                   )}
-                  {running.isTrouble && (
-                    <span className="rounded-sm border border-alert/60 px-1.5 py-0.5 text-[10px] text-alert">{W.troubleBadge}</span>
-                  )}
-                </div>
-                <p className="mt-2 font-display text-xl font-bold text-cream">{running.name}</p>
-                <p className="text-xs text-cream/45">{running.category}</p>
-                <p className="mt-3 font-display text-3xl font-bold tabular-nums text-alert">{formatMsClock(runningElapsedMs)}</p>
-                <p className="text-[11px] tabular-nums text-cream/40">
-                  想定 {running.estimatedSeconds > 0 ? formatHms(running.estimatedSeconds) : W.noEstimate}
-                  {running.estimatedSeconds > 0 && ` ／ 到達率 ${Math.round(runningRatio * 100)}%`}
-                </p>
-                {running.estimatedSeconds > 0 && (
-                  <div className="mt-2 h-1 w-full overflow-hidden bg-cream/10">
-                    <div className="h-1 bg-alert transition-[width]" style={{ width: `${Math.min(100, runningRatio * 100)}%` }} />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="py-6 text-center">
-                <p className="text-4xl">{growthStage.icon}</p>
-                <p className="mt-2 text-sm text-cream/50">{W.noRunning}</p>
-                <p className="text-[11px] text-cream/30">
-                  {W.stagePrefix}: {growthStage.label}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+                </>
+              ) : (
+                <>
+                  <p className="text-5xl opacity-80">{growthStage.icon}</p>
+                  <p className="mt-2 text-sm text-cream/60">{W.noRunning}</p>
+                  <p className="text-[11px] text-cream/35">
+                    {W.stagePrefix}: {growthStage.label}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
 
-        {screen === "index" && (
-          <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
-            {kaiiIndex.length === 0 && (
-              <p className="text-sm text-cream/40">{W.indexEmpty}</p>
-            )}
-            {kaiiIndex.slice(0, 40).map((k) => (
-              <button
-                key={k.key}
-                onClick={() => setOpenKaii(k)}
-                className="flex w-full items-center gap-2 border-l-2 border-cream/25 bg-black/30 px-2 py-1.5 text-left text-xs hover:border-alert hover:bg-alert/10"
-              >
-                <KaiiSilhouette
-                  seed={k.displayName}
-                  size={34}
-                  dangerLevel={k.dangerLevel}
-                  className="shrink-0 rounded-sm border border-cream/15"
-                />
-                <span className="min-w-0 flex-1 truncate">
-                  <span className={`${DANGER_TEXT[k.dangerLevel]} font-bold`}>
-                    {wordingEnabled ? k.displayName : k.realName}
-                  </span>
-                  <span className="ml-1.5 text-[10px] text-cream/35">{kaiiStatusLabel(k.status, wordingEnabled)}</span>
-                </span>
-                <span className="shrink-0 tabular-nums text-cream/45">×{k.encounterCount}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {screen === "files" && (
-          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-            {tasks.length === 0 && <p className="text-sm text-cream/40">{W.filesEmpty}</p>}
-            {tasks.length > 0 && (
-              <CaseDiagram
-                className="overflow-hidden rounded-sm border border-cream/10"
-                height={186}
-                centerLabel={`本日 ${done.length}/${tasks.length}`}
-                seed={`${today}:${tasks.length}`}
-                nodes={tasks.slice(0, 8).map((t) => {
-                  const el = segmentsAccumulatedMs(t, now) / 1000;
-                  const ratio = t.estimatedSeconds > 0 ? el / t.estimatedSeconds : 0;
-                  return { label: t.name, level: getRiskTier(ratio, mode).level, done: t.status === "done" };
-                })}
-              />
-            )}
-            {tasks.map((t, i) => {
-              const elapsed = segmentsAccumulatedMs(t, now);
-              const ratio = t.estimatedSeconds > 0 ? elapsed / 1000 / t.estimatedSeconds : 0;
-              return (
-                <div
-                  key={t.id}
-                  className={`flex items-center justify-between gap-2 border-l-2 bg-black/30 px-2 py-1.5 text-xs ${
-                    t.status === "done" ? "border-cream/20 opacity-50" : ratio >= 1.3 ? "border-alert" : "border-cream/30"
-                  }`}
+          {screen === "index" && (
+            <div className="space-y-1.5 py-1">
+              {kaiiIndex.length === 0 && <p className="text-sm text-cream/50">{W.indexEmpty}</p>}
+              {kaiiIndex.slice(0, 40).map((k) => (
+                <button
+                  key={k.key}
+                  onClick={() => setOpenKaii(k)}
+                  className="flex w-full items-center gap-2.5 border-l-2 border-cream/25 bg-black/55 px-2 py-1.5 text-left text-xs hover:border-alert hover:bg-alert/10"
                 >
-                  <span className="min-w-0 flex-1 truncate text-cream/80">
-                    <span className="mr-1.5 text-[10px] text-cream/30">No.{i + 1}</span>
-                    {t.name}
-                    {t.isTrouble && <span className="ml-1 text-alert">［{W.troubleBadge}］</span>}
+                  <KaiiSilhouette
+                    seed={k.displayName}
+                    size={42}
+                    dangerLevel={k.dangerLevel}
+                    className="shrink-0 border border-cream/15"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className={`block truncate font-bold ${DANGER_TEXT[k.dangerLevel]}`}>
+                      {wordingEnabled ? k.displayName : k.realName}
+                    </span>
+                    <span className="block text-[10px] text-cream/40">
+                      {kaiiStatusLabel(k.status, wordingEnabled)}　{k.category}
+                    </span>
                   </span>
-                  <span className="shrink-0 tabular-nums text-cream/50">{formatMsClock(elapsed)}</span>
-                  <span className="shrink-0 text-[10px] text-cream/35">
-                    {t.status === "done"
-                      ? W.statusDone
-                      : t.status === "running"
-                        ? W.statusRunning
-                        : t.status === "paused"
-                          ? W.statusPaused
-                          : W.statusPending}
-                  </span>
+                  <span className="shrink-0 tabular-nums text-cream/45">×{k.encounterCount}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {screen === "files" && (
+            <div className="space-y-2 py-1">
+              {tasks.length === 0 && <p className="text-sm text-cream/50">{W.filesEmpty}</p>}
+              {tasks.length > 0 && (
+                <CaseDiagram
+                  className="overflow-hidden border border-cream/15 bg-black/40"
+                  height={186}
+                  centerLabel={`本日 ${done.length}/${tasks.length}`}
+                  seed={`${today}:${tasks.length}`}
+                  nodes={tasks.slice(0, 8).map((t) => {
+                    const el = segmentsAccumulatedMs(t, now) / 1000;
+                    const ratio = t.estimatedSeconds > 0 ? el / t.estimatedSeconds : 0;
+                    return { label: t.name, level: getRiskTier(ratio, mode).level, done: t.status === "done" };
+                  })}
+                />
+              )}
+              {tasks.map((t, i) => {
+                const elapsed = segmentsAccumulatedMs(t, now);
+                const ratio = t.estimatedSeconds > 0 ? elapsed / 1000 / t.estimatedSeconds : 0;
+                return (
+                  <div
+                    key={t.id}
+                    className={`flex items-center justify-between gap-2 border-l-2 bg-black/55 px-2 py-1.5 text-xs ${
+                      t.status === "done" ? "border-cream/20 opacity-50" : ratio >= 1.3 ? "border-alert" : "border-cream/30"
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-cream/85">
+                      <span className="mr-1.5 text-[10px] text-cream/30">
+                        {W.fileNoPrefix}
+                        {i + 1}
+                      </span>
+                      {t.name}
+                      {t.isTrouble && <span className="ml-1 text-alert">［{W.troubleBadge}］</span>}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-cream/55">{formatMsClock(elapsed)}</span>
+                    <span className="shrink-0 text-[10px] text-cream/40">
+                      {t.status === "done"
+                        ? W.statusDone
+                        : t.status === "running"
+                          ? W.statusRunning
+                          : t.status === "paused"
+                            ? W.statusPaused
+                            : W.statusPending}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {screen === "rumors" && (
+            <div className="space-y-1.5 py-1">
+              {overdueTodos.length === 0 && myDayTodos.length === 0 && (
+                <p className="text-sm text-cream/50">{W.rumorsEmpty}</p>
+              )}
+              {overdueTodos.map((t: TodoTask) => (
+                <div key={t.id} className="border-l-2 border-alert bg-black/55 px-2 py-1.5 text-xs">
+                  <span className="text-cream/85">{t.title}</span>
+                  <span className="ml-2 text-[10px] text-alert">期限 {t.dueDate}</span>
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {screen === "rumors" && (
-          <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
-            {overdueTodos.length === 0 && myDayTodos.length === 0 && (
-              <p className="text-sm text-cream/40">{W.rumorsEmpty}</p>
-            )}
-            {overdueTodos.map((t: TodoTask) => (
-              <div key={t.id} className="border-l-2 border-alert bg-black/30 px-2 py-1.5 text-xs">
-                <span className="text-cream/80">{t.title}</span>
-                <span className="ml-2 text-[10px] text-alert">期限 {t.dueDate} を過ぎている</span>
-              </div>
-            ))}
-            {myDayTodos.map((t: TodoTask) => (
-              <div key={t.id} className="border-l-2 border-cream/25 bg-black/30 px-2 py-1.5 text-xs text-cream/70">
-                {t.title}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {screen === "record" && (
-          <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
-            <div>
-              <div className="flex items-center justify-between text-[10px] text-cream/40">
-                <span>{W.erosionLabel}</span>
-                <span className="tabular-nums">{erosion}%</span>
-              </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden bg-cream/10">
-                <div className="h-1.5 bg-alert transition-[width]" style={{ width: `${erosion}%` }} />
-              </div>
-            </div>
-            <div className="border border-alert/30 bg-black/40 px-2 py-2">
-              <p className="text-[10px] tracking-[0.2em] text-cream/40">{W.routeTitle}</p>
-              <p className="font-display text-base font-bold text-alert">{route.label}</p>
-              <p className="mt-0.5 text-[10px] text-cream/50">
-                {W.occultCountLabel} {occultCount}回 ／ {W.scienceCountLabel} {scienceCount}回
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-center">
-              {[
-                { label: W.statStreak, value: `${streakDays}日` },
-                { label: W.statToday, value: formatHms(Math.floor(totalMsToday / 1000)) },
-                { label: W.statSolved, value: `${done.length}件` },
-                { label: W.statIndexed, value: `${kaiiIndex.length}件` },
-                { label: W.statSealed, value: `${sealedCount}件` },
-                { label: W.statLoad, value: `${Math.round((totalMsToday / 1000 / NOMINAL_DAY_SECONDS) * 100)}%` },
-              ].map((s) => (
-                <div key={s.label} className="border border-cream/10 bg-black/30 px-2 py-2">
-                  <p className="text-[10px] tracking-wider text-cream/40">{s.label}</p>
-                  <p className="font-display text-lg font-bold tabular-nums text-cream">{s.value}</p>
+              ))}
+              {myDayTodos.map((t: TodoTask) => (
+                <div key={t.id} className="border-l-2 border-cream/25 bg-black/55 px-2 py-1.5 text-xs text-cream/75">
+                  {t.title}
                 </div>
               ))}
             </div>
-            {tasks.length > 0 && done.length === tasks.length && (
-              <div className="border border-alert/40 bg-alert/5 px-2 py-2">
-                <p className="text-[10px] tracking-[0.2em] text-alert">{W.reportTitle}</p>
-                <p className="mt-1 text-xs leading-relaxed text-cream/75">
-                  {W.reportBody(tasks.length, erosion, formatHms(Math.floor(totalMsToday / 1000)), route.label)}
+          )}
+
+          {screen === "record" && (
+            <div className="space-y-3 py-1">
+              <div className="border border-cream/15 bg-black/55 px-2 py-2">
+                <div className="flex items-center justify-between text-[10px] text-cream/45">
+                  <span>{W.erosionLabel}</span>
+                  <span className="tabular-nums">{erosion}%</span>
+                </div>
+                <div className="mt-1 h-1.5 w-full overflow-hidden bg-cream/10">
+                  <div className="h-1.5 bg-alert transition-[width]" style={{ width: `${erosion}%` }} />
+                </div>
+              </div>
+              <div className="border border-alert/40 bg-black/60 px-2 py-2">
+                <p className="text-[10px] tracking-[0.2em] text-cream/45">{W.routeTitle}</p>
+                <p className="font-display text-base font-bold text-alert">{route.label}</p>
+                <p className="mt-0.5 text-[10px] text-cream/50">
+                  {W.occultCountLabel} {occultCount}回 ／ {W.scienceCountLabel} {scienceCount}回
                 </p>
               </div>
-            )}
-          </div>
-        )}
+              <div className="grid grid-cols-2 gap-2 text-center">
+                {[
+                  { label: W.statStreak, value: `${streakDays}日` },
+                  { label: W.statToday, value: formatHms(Math.floor(totalMsToday / 1000)) },
+                  { label: W.statSolved, value: `${done.length}件` },
+                  { label: W.statIndexed, value: `${kaiiIndex.length}件` },
+                  { label: W.statSealed, value: `${sealedCount}件` },
+                  { label: W.statLoad, value: `${Math.round((totalMsToday / 1000 / NOMINAL_DAY_SECONDS) * 100)}%` },
+                ].map((s) => (
+                  <div key={s.label} className="border border-cream/10 bg-black/55 px-2 py-2">
+                    <p className="text-[10px] tracking-wider text-cream/45">{s.label}</p>
+                    <p className="font-display text-lg font-bold tabular-nums text-cream">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+              {tasks.length > 0 && done.length === tasks.length && (
+                <div className="border border-alert/40 bg-alert/10 px-2 py-2">
+                  <p className="text-[10px] tracking-[0.2em] text-alert">{W.reportTitle}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-cream/80">
+                    {W.reportBody(tasks.length, erosion, formatHms(Math.floor(totalMsToday / 1000)), route.label)}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      </div>
 
-      {/* ── メッセージウィンドウ ── */}
-      <div
-        className="cursor-pointer rounded-sm border border-cream/25 bg-black/70 p-4"
-        style={{ minHeight: "6.5rem" }}
-        onClick={() => setTypedCount(narration.length)}
-      >
-        <p className="text-sm leading-relaxed tracking-wide text-cream/90">
-          {narration.slice(0, typedCount)}
-          {!typedDone && <span className="text-alert">▊</span>}
-        </p>
-        {typedDone && <p className="mt-2 text-right text-xs text-alert">▼</p>}
-      </div>
+        {/* ── 選択肢(メッセージ窓の上に重ねる) ── */}
+        {choices.length > 0 && (
+          <div className="relative z-10 max-h-[36%] shrink-0 space-y-1.5 overflow-y-auto px-2 pb-1">{choices}</div>
+        )}
 
-      {/* ── 選択肢 ── */}
-      <div className="space-y-2">
+        {/* ── メッセージ窓 ── */}
+        <div className="relative z-10 mx-2 mb-2 shrink-0">
+          {/* 名札(現場) */}
+          <div className="inline-block border border-cream/30 border-b-0 bg-black/80 px-2 py-0.5 text-[10px] tracking-widest text-cream/70">
+            {placeLabel}
+          </div>
+          <div
+            className="cursor-pointer border border-cream/30 bg-black/80 p-3"
+            style={{ minHeight: "5.5rem" }}
+            onClick={() => setTypedCount(narration.length)}
+          >
+            <p className="text-sm leading-relaxed tracking-wide text-cream/90">
+              {narration.slice(0, typedCount)}
+              {!typedDone && <span className="text-alert">▊</span>}
+            </p>
+            {typedDone && <p className="mt-1 text-right text-xs text-alert">▼</p>}
+          </div>
+        </div>
+
+        {/* ── オカルト / 科学 の二択(舞台を覆う見せ場) ── */}
         {askJudgement && running && (
-          <div className="space-y-2 rounded-sm border border-alert/50 bg-alert/5 p-3">
-            <p className="text-center text-xs tracking-[0.2em] text-alert">{W.judgeTitle}</p>
-            <button className={choiceClass} onClick={() => judgeOccult(running)}>
-              <span className="mr-2 text-alert">{W.occultTag}</span>
-              {W.occultChoice}
-            </button>
-            <button className={choiceClass} onClick={() => judgeScience(running)}>
-              <span className="mr-2 text-alert">{W.scienceTag}</span>
-              {W.scienceChoice}
-            </button>
-            <p className="text-center text-[10px] text-cream/35">{W.judgeNote}</p>
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/85 p-4">
+            <p className="text-center text-xs tracking-[0.3em] text-alert">{W.judgeTitle}</p>
+            <div className="flex w-full max-w-md items-stretch justify-center gap-3">
+              {(
+                [
+                  { key: "occult" as const, tag: W.occultTag, text: W.occultChoice, run: () => judgeOccult(running) },
+                  { key: "science" as const, tag: W.scienceTag, text: W.scienceChoice, run: () => judgeScience(running) },
+                ]
+              ).map((c) => (
+                <button
+                  key={c.key}
+                  onClick={c.run}
+                  onMouseEnter={() => setHoverJudge(c.key)}
+                  onMouseLeave={() => setHoverJudge(null)}
+                  className={`flex flex-1 flex-col items-center gap-2 border bg-black/60 p-3 transition ${
+                    hoverJudge === c.key ? "border-alert bg-alert/10" : "border-cream/30"
+                  }`}
+                >
+                  <EmblemCanvas kind={c.key} size={92} active={hoverJudge === c.key} className="border border-cream/10" />
+                  <span className="font-display text-base font-bold text-alert">{c.tag}</span>
+                  <span className="text-center text-[11px] leading-snug text-cream/70">{c.text}</span>
+                </button>
+              ))}
+            </div>
+            <p className="max-w-md text-center text-[10px] leading-relaxed text-cream/40">{W.judgeNote}</p>
           </div>
         )}
-
-        {screen === "main" && (
-          <>
-            {running ? (
-              <>
-                <button className={choiceClass} onClick={() => completeTask(running)}>
-                  {W.completeChoice}
-                </button>
-                <button className={choiceClass} onClick={() => pauseTask(running)}>
-                  {W.pauseChoice}
-                </button>
-              </>
-            ) : (
-              <>
-                {paused.map((t) => (
-                  <button key={t.id} className={choiceClass} onClick={() => startTask(t)}>
-                    {W.resumeChoice(t.name)}
-                  </button>
-                ))}
-                {pending.slice(0, 4).map((t) => (
-                  <button key={t.id} className={choiceClass} onClick={() => startTask(t)}>
-                    {W.openChoice(t.name)}
-                  </button>
-                ))}
-                {favoriteMasters.slice(0, 3).map((m) => (
-                  <button key={m.id} className={choiceClass} onClick={() => addFromMaster(m, true)}>
-                    {W.newChoice(m.name)}
-                  </button>
-                ))}
-                {paused.length === 0 && pending.length === 0 && favoriteMasters.length === 0 && (
-                  <p className="px-1 text-xs text-cream/35">{W.noStartHint}</p>
-                )}
-              </>
-            )}
-            <button className={choiceClass} onClick={() => setShowPicker(true)}>
-              {W.pickerChoice}
-            </button>
-          </>
-        )}
-
-        <div className="grid grid-cols-5 gap-1 pt-1">
-          {(
-            [
-              { key: "main", label: W.screens.main },
-              { key: "index", label: `${W.screens.index}${kaiiIndex.length > 0 ? `(${kaiiIndex.length})` : ""}` },
-              { key: "files", label: W.screens.files },
-              { key: "rumors", label: `${W.screens.rumors}${overdueTodos.length > 0 ? `(${overdueTodos.length})` : ""}` },
-              { key: "record", label: W.screens.record },
-            ] as { key: Screen; label: string }[]
-          ).map((s) => (
-            <button
-              key={s.key}
-              onClick={() => {
-                setScreen(s.key);
-                setLastJudgement(null);
-              }}
-              className={`rounded-sm border px-1 py-1.5 text-[11px] transition ${
-                screen === s.key
-                  ? "border-alert bg-alert/15 text-alert"
-                  : "border-cream/20 bg-black/30 text-cream/60 hover:border-cream/40"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {/* ── 名鑑(作業マスタ)から選ぶ ── */}
+      {/* ══ システムバー ══ */}
+      <div className="grid grid-cols-5 gap-1">
+        {(
+          [
+            { key: "main", label: W.screens.main },
+            { key: "index", label: `${W.screens.index}${kaiiIndex.length > 0 ? `(${kaiiIndex.length})` : ""}` },
+            { key: "files", label: W.screens.files },
+            { key: "rumors", label: `${W.screens.rumors}${overdueTodos.length > 0 ? `(${overdueTodos.length})` : ""}` },
+            { key: "record", label: W.screens.record },
+          ] as { key: Screen; label: string }[]
+        ).map((s) => (
+          <button
+            key={s.key}
+            onClick={() => {
+              setScreen(s.key);
+              setLastJudgement(null);
+            }}
+            className={`border px-1 py-2 text-[11px] tracking-wider transition ${
+              screen === s.key
+                ? "border-alert bg-alert/15 text-alert"
+                : "border-cream/20 bg-black/40 text-cream/60 hover:border-cream/40"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── 作業マスタから選ぶ ── */}
       {showPicker && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
@@ -631,7 +694,7 @@ export default function HayarigamiSection() {
           }}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-sm flex-col rounded-sm border border-alert/40 bg-ink p-4"
+            className="flex max-h-[85vh] w-full max-w-sm flex-col border border-alert/40 bg-ink p-4"
             onClick={(e) => e.stopPropagation()}
             style={{
               backgroundImage:
@@ -645,7 +708,7 @@ export default function HayarigamiSection() {
             </div>
             <div className="mt-3 shrink-0 space-y-2">
               <button
-                className={choiceClass + " disabled:opacity-40"}
+                className={choicePlate + " disabled:opacity-40"}
                 disabled={!pickedMaster}
                 onClick={async () => {
                   if (!pickedMaster) return;
@@ -657,7 +720,7 @@ export default function HayarigamiSection() {
                 {W.pickerStart}
               </button>
               <button
-                className={choiceClass + " disabled:opacity-40"}
+                className={choicePlate + " disabled:opacity-40"}
                 disabled={!pickedMaster}
                 onClick={async () => {
                   if (!pickedMaster) return;
@@ -669,7 +732,7 @@ export default function HayarigamiSection() {
                 {W.pickerQueue}
               </button>
               <button
-                className="w-full rounded-sm border border-cream/25 py-2 text-xs text-cream/70"
+                className="w-full border border-cream/25 py-2 text-xs text-cream/70"
                 onClick={() => {
                   setShowPicker(false);
                   setPickedMaster(null);
@@ -689,7 +752,7 @@ export default function HayarigamiSection() {
           onClick={() => setOpenKaii(null)}
         >
           <div
-            className="w-full max-w-sm rounded-sm border border-alert/40 bg-ink p-4"
+            className="w-full max-w-sm border border-alert/40 bg-ink p-4"
             onClick={(e) => e.stopPropagation()}
             style={{
               backgroundImage:
@@ -700,9 +763,9 @@ export default function HayarigamiSection() {
             <div className="mt-1 flex items-start gap-3">
               <KaiiSilhouette
                 seed={openKaii.displayName}
-                size={92}
+                size={104}
                 dangerLevel={openKaii.dangerLevel}
-                className="shrink-0 rounded-sm border border-cream/20"
+                className="shrink-0 border border-cream/20"
               />
               <div className="min-w-0">
                 <p className={`font-display text-lg font-bold leading-snug ${DANGER_TEXT[openKaii.dangerLevel]}`}>
@@ -714,41 +777,26 @@ export default function HayarigamiSection() {
               </div>
             </div>
             <div className="mt-3 space-y-1 text-xs text-cream/70">
-              <div className="flex justify-between border-b border-cream/10 pb-1">
-                <span className="text-cream/40">{W.detailStatus}</span>
-                <span>{kaiiStatusLabel(openKaii.status, wordingEnabled)}</span>
-              </div>
-              <div className="flex justify-between border-b border-cream/10 pb-1">
-                <span className="text-cream/40">{W.detailCount}</span>
-                <span className="tabular-nums">{openKaii.encounterCount}回</span>
-              </div>
-              <div className="flex justify-between border-b border-cream/10 pb-1">
-                <span className="text-cream/40">{W.detailAvg}</span>
-                <span className="tabular-nums">{formatHms(Math.round(openKaii.avgSeconds))}</span>
-              </div>
-              <div className="flex justify-between border-b border-cream/10 pb-1">
-                <span className="text-cream/40">{W.detailMax}</span>
-                <span className="tabular-nums">{formatHms(Math.round(openKaii.maxSeconds))}</span>
-              </div>
-              <div className="flex justify-between border-b border-cream/10 pb-1">
-                <span className="text-cream/40">{W.detailRatio}</span>
-                <span className="tabular-nums">
-                  {openKaii.avgRatio > 0 ? `${Math.round(openKaii.avgRatio * 100)}%` : W.noEstimate}
-                </span>
-              </div>
-              <div className="flex justify-between border-b border-cream/10 pb-1">
-                <span className="text-cream/40">{W.detailTrouble}</span>
-                <span className="tabular-nums">{openKaii.troubleCount}回</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-cream/40">{W.detailLastSeen}</span>
-                <span className="tabular-nums">{openKaii.lastSeenDate}</span>
-              </div>
+              {[
+                [W.detailStatus, kaiiStatusLabel(openKaii.status, wordingEnabled)],
+                [W.detailCount, `${openKaii.encounterCount}回`],
+                [W.detailAvg, formatHms(Math.round(openKaii.avgSeconds))],
+                [W.detailMax, formatHms(Math.round(openKaii.maxSeconds))],
+                [W.detailRatio, openKaii.avgRatio > 0 ? `${Math.round(openKaii.avgRatio * 100)}%` : W.noEstimate],
+                [W.detailTrouble, `${openKaii.troubleCount}回`],
+                [W.detailLastSeen, openKaii.lastSeenDate],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between border-b border-cream/10 pb-1">
+                  <span className="text-cream/40">{label}</span>
+                  <span className="tabular-nums">{value}</span>
+                </div>
+              ))}
             </div>
-            <p className="mt-3 text-[10px] leading-relaxed text-cream/35">
-              {W.detailNote}
-            </p>
-            <button className="mt-3 w-full rounded-sm border border-cream/25 py-2 text-xs text-cream/70" onClick={() => setOpenKaii(null)}>
+            <p className="mt-3 text-[10px] leading-relaxed text-cream/35">{W.detailNote}</p>
+            <button
+              className="mt-3 w-full border border-cream/25 py-2 text-xs text-cream/70"
+              onClick={() => setOpenKaii(null)}
+            >
               閉じる
             </button>
           </div>

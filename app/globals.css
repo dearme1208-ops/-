@@ -1843,6 +1843,22 @@ html[data-high-contrast="true"] :focus-visible {
       opacity: 0.75;
     }
   }
+  /* 画面を切り替えた瞬間に一度だけ走る、フィルムの繋ぎ目のような閃光 */
+  .hyr-flash {
+    animation: hyr-flash-once 0.42s ease-out 1 forwards;
+  }
+  @keyframes hyr-flash-once {
+    0% {
+      opacity: 0.5;
+    }
+    35% {
+      opacity: 0.12;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
   /* 最高危険度(顕現)の時だけ、画面がわずかに震える */
   .hyr-shake {
     animation: hyr-shake-move 3.4s ease-in-out infinite;
@@ -2987,6 +3003,7 @@ html[data-high-contrast="true"] :focus-visible {
   .hazard-bar-hyr,
   .hyr-corrupt::before,
   .hyr-shake,
+  .hyr-flash,
   .gantt-bar-overrun,
   .gantt-bar-overrun-v11,
   .gantt-bar-overrun-p5,

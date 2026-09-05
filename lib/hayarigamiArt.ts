@@ -34,9 +34,30 @@ function rgba(c: [number, number, number], a: number): string {
 
 // ---- 背景(一枚絵) ----
 
-export type SceneKind = "corridor" | "tunnel" | "stairs" | "street" | "torii" | "room";
+export type SceneKind =
+  | "corridor"
+  | "tunnel"
+  | "stairs"
+  | "street"
+  | "torii"
+  | "room"
+  | "phone"
+  | "crossing"
+  | "ward"
+  | "elevator";
 
-const SCENES: SceneKind[] = ["corridor", "tunnel", "stairs", "street", "torii", "room"];
+const SCENES: SceneKind[] = [
+  "corridor",
+  "tunnel",
+  "stairs",
+  "street",
+  "torii",
+  "room",
+  "phone",
+  "crossing",
+  "ward",
+  "elevator",
+];
 
 export const SCENE_LABEL: Record<SceneKind, string> = {
   corridor: "廊下",
@@ -45,6 +66,10 @@ export const SCENE_LABEL: Record<SceneKind, string> = {
   street: "路地",
   torii: "参道",
   room: "座敷",
+  phone: "公衆電話",
+  crossing: "踏切",
+  ward: "病室",
+  elevator: "昇降機",
 };
 
 export function pickScene(seed: string): SceneKind {
@@ -79,7 +104,15 @@ export function paintScene(ctx: CanvasRenderingContext2D, o: ScenePaintOptions):
   else if (o.kind === "stairs") paintStairs(ctx, o, rng);
   else if (o.kind === "street") paintStreet(ctx, o, rng);
   else if (o.kind === "torii") paintTorii(ctx, o, rng);
+  else if (o.kind === "phone") paintPhone(ctx, o, rng);
+  else if (o.kind === "crossing") paintCrossing(ctx, o, rng);
+  else if (o.kind === "ward") paintWard(ctx, o, rng);
+  else if (o.kind === "elevator") paintElevator(ctx, o, rng);
   else paintRoom(ctx, o, rng);
+
+  // 危険度が高い時だけ、背景のどこかに「写り込み」が現れる。
+  // 心霊写真のように、言われなければ気づかない程度の濃さに留める
+  if (o.intensity >= 0.7) paintApparition(ctx, o, rng);
 
   postProcess(ctx, o, rng);
 }
@@ -449,6 +482,341 @@ function paintRoom(ctx: CanvasRenderingContext2D, o: ScenePaintOptions, rng: () 
   bg2.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = bg2;
   ctx.fillRect(0, 0, w, h);
+}
+
+function paintPhone(ctx: CanvasRenderingContext2D, o: ScenePaintOptions, rng: () => number) {
+  const { width: w, height: h } = o;
+  const bx = w * (0.36 + rng() * 0.2);
+  const horizon = h * 0.62;
+
+  ctx.fillStyle = "rgba(14, 14, 17, 0.6)";
+  ctx.fillRect(0, 0, w, horizon);
+  ctx.fillStyle = "rgba(24, 23, 23, 0.95)";
+  ctx.fillRect(0, horizon, w, h - horizon);
+
+  // 電話ボックスの箱
+  const boxW = w * 0.26;
+  const boxH = h * 0.52;
+  const boxY = horizon - boxH;
+  const inner = ctx.createLinearGradient(bx, boxY, bx, boxY + boxH);
+  inner.addColorStop(0, "rgba(206, 214, 206, 0.30)");
+  inner.addColorStop(1, "rgba(120, 130, 122, 0.16)");
+  ctx.fillStyle = inner;
+  ctx.fillRect(bx, boxY, boxW, boxH);
+  ctx.strokeStyle = "rgba(190, 196, 188, 0.4)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(bx, boxY, boxW, boxH);
+  // 桟
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(bx + boxW * 0.5, boxY);
+  ctx.lineTo(bx + boxW * 0.5, boxY + boxH);
+  ctx.moveTo(bx, boxY + boxH * 0.34);
+  ctx.lineTo(bx + boxW, boxY + boxH * 0.34);
+  ctx.stroke();
+  // 中の受話器と光
+  const g = ctx.createRadialGradient(bx + boxW * 0.5, boxY + boxH * 0.3, 0, bx + boxW * 0.5, boxY + boxH * 0.3, boxW);
+  g.addColorStop(0, "rgba(214, 222, 200, 0.32)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // アスファルトの反射
+  ctx.fillStyle = "rgba(190, 200, 186, 0.06)";
+  ctx.fillRect(bx, horizon, boxW, h * 0.2);
+}
+
+function paintCrossing(ctx: CanvasRenderingContext2D, o: ScenePaintOptions, rng: () => number) {
+  const { width: w, height: h } = o;
+  const horizon = h * 0.58;
+  const vx = w * (0.44 + rng() * 0.12);
+
+  ctx.fillStyle = "rgba(15, 15, 19, 0.62)";
+  ctx.fillRect(0, 0, w, horizon);
+  ctx.fillStyle = "rgba(26, 25, 25, 0.95)";
+  ctx.fillRect(0, horizon, w, h - horizon);
+
+  // 線路(奥へ収束)
+  ctx.strokeStyle = "rgba(170, 168, 158, 0.30)";
+  ctx.lineWidth = 2;
+  for (const off of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(vx + off * w * 0.02, horizon);
+    ctx.lineTo(vx + off * w * 0.42, h);
+    ctx.stroke();
+  }
+  // 枕木
+  for (let i = 0; i < 9; i++) {
+    const d = i / 9;
+    const y = lerp(horizon, h, d * d + 0.05);
+    const half = lerp(w * 0.03, w * 0.44, d);
+    ctx.strokeStyle = `rgba(150, 146, 138, ${0.08 + 0.14 * d})`;
+    ctx.lineWidth = lerp(1, 4, d);
+    ctx.beginPath();
+    ctx.moveTo(vx - half, y);
+    ctx.lineTo(vx + half, y);
+    ctx.stroke();
+  }
+
+  // 遮断機と警報灯
+  for (const side of [-1, 1]) {
+    const x = vx + side * w * 0.33;
+    ctx.strokeStyle = "rgba(10, 10, 11, 0.9)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(x, h * 0.95);
+    ctx.lineTo(x, horizon - h * 0.16);
+    ctx.stroke();
+    // 警報灯
+    const ly = horizon - h * 0.16;
+    const lg = ctx.createRadialGradient(x, ly, 0, x, ly, w * 0.1);
+    lg.addColorStop(0, rgba(o.accent, 0.6));
+    lg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.arc(x, ly, w * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 遮断桿(斜めに降りている)
+  ctx.strokeStyle = "rgba(220, 214, 200, 0.55)";
+  ctx.lineWidth = 4;
+  ctx.setLineDash([w * 0.035, w * 0.035]);
+  ctx.beginPath();
+  ctx.moveTo(vx - w * 0.33, horizon - h * 0.04);
+  ctx.lineTo(vx + w * 0.16, horizon + h * 0.02);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function paintWard(ctx: CanvasRenderingContext2D, o: ScenePaintOptions, rng: () => number) {
+  const { width: w, height: h } = o;
+  ctx.fillStyle = "rgba(18, 19, 20, 0.55)";
+  ctx.fillRect(0, 0, w, h);
+
+  // 窓からの薄明かり
+  const wx = w * (0.58 + rng() * 0.14);
+  const wy = h * 0.16;
+  const ww = w * 0.3;
+  const wh = h * 0.36;
+  const mg = ctx.createLinearGradient(wx, wy, wx, wy + wh);
+  mg.addColorStop(0, "rgba(186, 192, 188, 0.34)");
+  mg.addColorStop(1, "rgba(110, 116, 114, 0.14)");
+  ctx.fillStyle = mg;
+  ctx.fillRect(wx, wy, ww, wh);
+  ctx.strokeStyle = "rgba(24, 24, 24, 0.85)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(wx, wy, ww, wh);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(wx + ww / 2, wy);
+  ctx.lineTo(wx + ww / 2, wy + wh);
+  ctx.stroke();
+
+  // ベッド(シルエット)
+  const by = h * 0.66;
+  ctx.fillStyle = "rgba(196, 198, 192, 0.20)";
+  ctx.fillRect(w * 0.08, by, w * 0.5, h * 0.1);
+  ctx.fillStyle = "rgba(10, 10, 11, 0.85)";
+  ctx.fillRect(w * 0.08, by + h * 0.1, w * 0.5, h * 0.05);
+  // 枕とヘッドボード
+  ctx.fillStyle = "rgba(210, 212, 205, 0.26)";
+  ctx.fillRect(w * 0.1, by - h * 0.035, w * 0.12, h * 0.04);
+  ctx.fillStyle = "rgba(12, 12, 13, 0.9)";
+  ctx.fillRect(w * 0.06, by - h * 0.12, w * 0.02, h * 0.14);
+
+  // カーテンレールと点滴スタンド
+  ctx.strokeStyle = "rgba(150, 148, 140, 0.28)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(w * 0.62, by - h * 0.02);
+  ctx.lineTo(w * 0.62, h * 0.28);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(w * 0.62, h * 0.27, w * 0.012, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function paintElevator(ctx: CanvasRenderingContext2D, o: ScenePaintOptions, rng: () => number) {
+  const { width: w, height: h } = o;
+  ctx.fillStyle = "rgba(17, 16, 17, 0.5)";
+  ctx.fillRect(0, 0, w, h);
+
+  const cx = w * 0.5 + (rng() - 0.5) * w * 0.06;
+  const dw = w * 0.46;
+  const dh = h * 0.76;
+  const dy = h * 0.12;
+
+  // 金属の扉
+  const metal = ctx.createLinearGradient(cx - dw / 2, 0, cx + dw / 2, 0);
+  metal.addColorStop(0, "rgba(74, 74, 76, 0.9)");
+  metal.addColorStop(0.45, "rgba(126, 126, 128, 0.9)");
+  metal.addColorStop(0.5, "rgba(30, 30, 32, 1)");
+  metal.addColorStop(0.55, "rgba(126, 126, 128, 0.9)");
+  metal.addColorStop(1, "rgba(70, 70, 72, 0.9)");
+  ctx.fillStyle = metal;
+  ctx.fillRect(cx - dw / 2, dy, dw, dh);
+  // 縦の筋
+  ctx.strokeStyle = "rgba(180, 180, 180, 0.10)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 14; i++) {
+    const x = cx - dw / 2 + (dw / 14) * i;
+    ctx.beginPath();
+    ctx.moveTo(x, dy);
+    ctx.lineTo(x, dy + dh);
+    ctx.stroke();
+  }
+  // 階数表示
+  ctx.fillStyle = "rgba(8, 8, 9, 0.95)";
+  ctx.fillRect(cx - w * 0.09, dy - h * 0.09, w * 0.18, h * 0.07);
+  ctx.fillStyle = rgba(o.accent, 0.8);
+  ctx.font = `bold ${Math.round(h * 0.05)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(["B1", "4", "13", "7"][Math.floor(rng() * 4)], cx, dy - h * 0.055);
+  ctx.textAlign = "start";
+  ctx.textBaseline = "alphabetic";
+
+  // 上からの照明
+  const g = ctx.createRadialGradient(cx, dy - h * 0.02, 0, cx, dy, w * 0.6);
+  g.addColorStop(0, "rgba(200, 198, 180, 0.20)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+}
+
+// 背景への「写り込み」。輪郭をぼかすため、少しずつずらして薄く重ね描きする
+function paintApparition(ctx: CanvasRenderingContext2D, o: ScenePaintOptions, rng: () => number) {
+  const { width: w, height: h } = o;
+  const gx = w * (0.12 + rng() * 0.76);
+  const scale = 0.28 + rng() * 0.22;
+  const headR = h * 0.05 * scale * 2;
+  const headY = h * (0.42 + rng() * 0.12);
+  const alpha = 0.1 + (o.intensity - 0.7) * 0.4;
+
+  for (let pass = 0; pass < 3; pass++) {
+    const off = pass * 1.6;
+    ctx.fillStyle = `rgba(6, 5, 7, ${alpha / (pass + 1)})`;
+    // 胴
+    ctx.beginPath();
+    ctx.moveTo(gx - headR * 1.6 - off, headY + headR);
+    ctx.quadraticCurveTo(gx - headR * 2.2 - off, headY + h * 0.3 * scale, gx - headR * 1.9 - off, headY + h * 0.42 * scale);
+    ctx.lineTo(gx + headR * 1.9 + off, headY + h * 0.42 * scale);
+    ctx.quadraticCurveTo(gx + headR * 2.2 + off, headY + h * 0.3 * scale, gx + headR * 1.6 + off, headY + headR);
+    ctx.closePath();
+    ctx.fill();
+    // 頭
+    ctx.beginPath();
+    ctx.arc(gx, headY, headR + off * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ---- オカルト / 科学 の紋章 ----
+// 二択の見せ場で使う、対になる二つの意匠。どちらも線画で、テーマのアクセント色で光る
+
+export interface EmblemPaintOptions {
+  kind: "occult" | "science";
+  size: number;
+  accent: [number, number, number];
+  active: boolean;
+}
+
+export function paintEmblem(ctx: CanvasRenderingContext2D, o: EmblemPaintOptions): void {
+  const s = o.size;
+  const c = s / 2;
+  const rng = makeRng(`emblem:${o.kind}`);
+  ctx.clearRect(0, 0, s, s);
+
+  // 下地の光
+  const bg = ctx.createRadialGradient(c, c, 0, c, c, s * 0.6);
+  bg.addColorStop(0, o.active ? rgba(o.accent, 0.3) : "rgba(30, 28, 31, 0.85)");
+  bg.addColorStop(1, "rgba(6, 6, 8, 0.95)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, s, s);
+
+  const line = o.active ? rgba(o.accent, 0.95) : "rgba(206, 202, 194, 0.55)";
+  ctx.strokeStyle = line;
+  ctx.fillStyle = line;
+  ctx.lineWidth = Math.max(1.5, s * 0.012);
+
+  if (o.kind === "occult") {
+    // 円環 + 鳥居 + 放射する呪符の線
+    ctx.beginPath();
+    ctx.arc(c, c, s * 0.36, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(c, c, s * 0.3, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.4;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // 放射線
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      ctx.globalAlpha = 0.25 + rng() * 0.35;
+      ctx.beginPath();
+      ctx.moveTo(c + Math.cos(a) * s * 0.36, c + Math.sin(a) * s * 0.36);
+      ctx.lineTo(c + Math.cos(a) * s * 0.45, c + Math.sin(a) * s * 0.45);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // 鳥居
+    const tw = s * 0.34;
+    const th = s * 0.3;
+    const ty = c - th * 0.45;
+    ctx.lineWidth = Math.max(2, s * 0.022);
+    ctx.beginPath();
+    ctx.moveTo(c - tw * 0.62, ty);
+    ctx.lineTo(c + tw * 0.62, ty);
+    ctx.moveTo(c - tw * 0.5, ty + th * 0.22);
+    ctx.lineTo(c + tw * 0.5, ty + th * 0.22);
+    ctx.moveTo(c - tw * 0.38, ty);
+    ctx.lineTo(c - tw * 0.38, ty + th);
+    ctx.moveTo(c + tw * 0.38, ty);
+    ctx.lineTo(c + tw * 0.38, ty + th);
+    ctx.stroke();
+  } else {
+    // 円環 + 原子軌道 + 目盛り
+    ctx.beginPath();
+    ctx.arc(c, c, s * 0.36, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = Math.max(1.2, s * 0.009);
+    for (let i = 0; i < 3; i++) {
+      ctx.save();
+      ctx.translate(c, c);
+      ctx.rotate((i / 3) * Math.PI);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s * 0.3, s * 0.12, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 核
+    ctx.beginPath();
+    ctx.arc(c, c, s * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+    // 目盛り
+    ctx.lineWidth = Math.max(1, s * 0.008);
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const inner = i % 6 === 0 ? s * 0.4 : s * 0.43;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(c + Math.cos(a) * inner, c + Math.sin(a) * inner);
+      ctx.lineTo(c + Math.cos(a) * s * 0.46, c + Math.sin(a) * s * 0.46);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // 粒子
+  const img = ctx.getImageData(0, 0, s, s);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (rng() - 0.5) * 18;
+    d[i] = clamp255(d[i] + n);
+    d[i + 1] = clamp255(d[i + 1] + n);
+    d[i + 2] = clamp255(d[i + 2] + n);
+  }
+  ctx.putImageData(img, 0, 0);
 }
 
 // 写真らしさ(粒子・走査線・周辺減光・色かぶり)を最後にまとめて乗せる
