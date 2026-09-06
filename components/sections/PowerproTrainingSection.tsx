@@ -8,9 +8,14 @@ import { findOrCreateMasterTask } from "@/lib/master";
 import { formatHms, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { useVisualMode } from "@/lib/theme";
+import { useSetting } from "@/lib/settings";
+import { breakRangeKey, parseBreakRanges } from "@/lib/breaks";
 import {
   ABILITY_KEYS,
+  REST_RECOVERY_PERCENT,
   buildAbilities,
+  buildGrowth,
+  buildStamina,
   buildCommands,
   buildCondition,
   buildExperience,
@@ -19,6 +24,7 @@ import {
   buildTurnState,
   favoriteCategoryOf,
   playerRankOf,
+  type AbilityKey,
   type PracticeCommand,
 } from "@/lib/powerpro";
 import { EXP_COLOR, SPECIAL_COLOR, rankCssColor, skyPhaseOf, type Rgb } from "@/lib/powerproArt";
@@ -70,7 +76,7 @@ function mix(a: Rgb, b: Rgb, t: number): Rgb {
   ];
 }
 
-type Panel = "training" | "player" | "scout";
+type Panel = "training" | "growth" | "player" | "scout";
 type PickerTab = "menu" | "master" | "favorite" | "free";
 
 export default function PowerproTrainingSection() {
@@ -86,6 +92,15 @@ export default function PowerproTrainingSection() {
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masters = useLiveQuery(() => db.masterTasks.toArray(), []);
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
+  const projects = useLiveQuery(() => db.projects.toArray(), []);
+  // 体力の満タンは、設定の所定労働時間。8時間を決め打ちにせず、その人の就業時間に合わせる
+  const [standardHoursStr] = useSetting("overtime.standardDailyHours", "8");
+  const standardHours = Math.max(1, Number(standardHoursStr) || 8);
+  // 休憩帯とそのチェック項目は既存の設定をそのまま読む(このモード専用の設定は増やさない)
+  const [breakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
+  const breakRanges = useMemo(() => parseBreakRanges(breakRangesStr), [breakRangesStr]);
+  // 消化したチェック項目は日付ごとに保存する。翌日になれば自然に空に戻る
+  const [restDoneStr, setRestDoneStr] = useSetting(`powerpro.rest.${today}`, "{}");
 
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -119,6 +134,39 @@ export default function PowerproTrainingSection() {
     [records, todos, masters]
   );
   const experience = useMemo(() => buildExperience(records ?? [], streakDays), [records, streakDays]);
+  // 1日ごとの育成。初日からの積み上げなので、シーズン成績(直近30日の比率)とは別物
+  const growth = useMemo(
+    () => buildGrowth(records ?? [], todos ?? [], projects ?? [], masters ?? [], today),
+    [records, todos, projects, masters, today]
+  );
+  const growthRank = useMemo(() => playerRankOf(growth.abilities), [growth.abilities]);
+
+  // 休憩チェックの消化状況。{ "12:00-13:00": [0,2] } の形で持つ
+  const restDone = useMemo<Record<string, number[]>>(() => {
+    try {
+      const parsed = JSON.parse(restDoneStr);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }, [restDoneStr]);
+  const restedItems = useMemo(
+    () => Object.values(restDone).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0),
+    [restDone]
+  );
+  const restTotal = useMemo(
+    () => breakRanges.reduce((sum, r) => sum + (r.checklist?.length ?? 0), 0),
+    [breakRanges]
+  );
+  const stamina = useMemo(
+    () => buildStamina(condition.workedSeconds, standardHours, restedItems),
+    [condition.workedSeconds, standardHours, restedItems]
+  );
+  function toggleRest(rangeKey: string, index: number) {
+    const cur = Array.isArray(restDone[rangeKey]) ? restDone[rangeKey] : [];
+    const next = cur.includes(index) ? cur.filter((i) => i !== index) : [...cur, index];
+    setRestDoneStr(JSON.stringify({ ...restDone, [rangeKey]: next }));
+  }
   const player = useMemo(() => playerRankOf(abilities), [abilities]);
   const specials = useMemo(
     () => buildSpecialAbilities(records ?? [], todos ?? [], abilities, streakDays, condition),
@@ -294,11 +342,11 @@ export default function PowerproTrainingSection() {
           <div className="px-4 py-2.5">
             <GaugeRow
               label={W.staminaLabel}
-              value={condition.staminaPercent / 100}
+              value={stamina.percent / 100}
               color={[86, 186, 118]}
-              danger={condition.staminaPercent <= 20}
-              right={`${condition.staminaPercent}`}
-              onInfo={() => setOpenReason(W.staminaNote(String(Math.round(condition.staminaSeconds / 60))))}
+              danger={stamina.percent <= 20}
+              right={`${stamina.percent}`}
+              onInfo={() => setOpenReason(stamina.reason)}
             />
             <GaugeRow
               label={W.motivationLabel}
@@ -335,12 +383,13 @@ export default function PowerproTrainingSection() {
 
       {/* ══ 画面切り替え ══ */}
       <div
-        className="grid grid-cols-3 gap-1 rounded-xl p-1"
+        className="grid grid-cols-4 gap-1 rounded-xl p-1"
         style={{ background: "linear-gradient(180deg, #101828 0%, #0A0F1C 100%)", border: goldEdge }}
       >
         {(
           [
             ["training", W.panelTraining, commands.length],
+            ["growth", W.panelGrowth, growth.today.total || undefined],
             ["player", W.panelPlayer, undefined],
             ["scout", W.panelScout, overdueTodos || undefined],
           ] as const
@@ -454,6 +503,165 @@ export default function PowerproTrainingSection() {
         </div>
       )}
 
+      {/* ══ 育成(1日ごとの積み上げ) ══ */}
+      {panel === "growth" && (
+        <div className="space-y-2">
+          {/* 積み上げた能力 */}
+          <div className="relative overflow-hidden rounded-2xl" style={{ border: goldEdge, boxShadow: cardShadow }}>
+            <CardBase rank={growthRank.rank} seed={`growth:${today}`} className="absolute inset-0" />
+            <div className="relative flex items-center gap-3 px-3 py-3">
+              <RankEmblem rank={growthRank.rank} size={54} className="shrink-0 drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] tracking-[0.2em] text-white/60">{W.growthNote}</p>
+                <p className="font-display text-2xl font-black leading-tight text-white drop-shadow-[0_1px_0_rgba(0,0,0,0.4)]">
+                  {growthRank.rank}
+                  {growthRank.allA && (
+                    <span className="ml-2 rounded bg-[rgb(236,196,72)] px-1.5 py-0.5 align-middle text-[10px] font-black text-[rgb(72,48,4)]">
+                      {W.allALabel}
+                    </span>
+                  )}
+                </p>
+                <p className="text-[11px] tabular-nums text-white/60">
+                  {W.trainedDaysLabel(growth.trainedDays)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
+            <p className="mb-2 text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.growthTitle}</p>
+            <p className="mb-2 text-[11px] leading-relaxed text-cream/45">{W.growthLead}</p>
+            <AbilityHex
+              values={growth.abilities.map((a) => a.value)}
+              labels={growth.abilities.map((a) => W.growthAbilityName(a.key))}
+            />
+            <div className="mt-1 space-y-1">
+              {growth.abilities.map((a) => {
+                const gain = growth.today[a.key];
+                return (
+                  <button
+                    key={a.key}
+                    onClick={() => setOpenReason(`${a.reason}（${growth.today.detail[a.key]}）`)}
+                    className="flex w-full items-center gap-2 border-b border-cream/10 py-1 text-left"
+                  >
+                    <span className="w-20 shrink-0 truncate text-[11px] text-cream/55">{W.growthAbilityName(a.key)}</span>
+                    <span className="min-w-0 flex-1">
+                      <Gauge value={a.value / 150} color={accent} height={8} />
+                    </span>
+                    <span className="w-9 shrink-0 text-right text-xs font-black tabular-nums text-cream/85">
+                      {a.value}
+                    </span>
+                    {/* 今日の伸びは、あった日だけ出す。0を並べても情報にならない */}
+                    <span
+                      className={`w-9 shrink-0 text-right text-[11px] font-black tabular-nums ${
+                        gain > 0 ? "text-[rgb(70,158,96)]" : "text-transparent"
+                      }`}
+                    >
+                      +{gain}
+                    </span>
+                    <span
+                      className="w-6 shrink-0 rounded text-center text-[11px] font-black text-white"
+                      style={{ background: rankCssColor(a.rank) }}
+                    >
+                      {a.rank}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 今日の練習で伸びたぶん */}
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
+            <div className="mb-2 flex items-baseline justify-between">
+              <p className="text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.todayGainTitle}</p>
+              <p className="font-display text-lg font-black tabular-nums text-cream/85">+{growth.today.total}</p>
+            </div>
+            {growth.today.total === 0 ? (
+              <p className="text-[11px] text-cream/45">{W.todayGainEmpty}</p>
+            ) : (
+              <ul className="space-y-1">
+                {ABILITY_KEYS.filter((k) => growth.today[k] > 0).map((k) => (
+                  <li key={k} className="flex items-start gap-2 border-b border-cream/10 pb-1">
+                    <span className="w-20 shrink-0 text-[11px] text-cream/55">{W.growthAbilityName(k)}</span>
+                    <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-cream/70">
+                      {growth.today.detail[k]}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-black tabular-nums text-[rgb(70,158,96)]">
+                      +{growth.today[k]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* 体力と休憩 */}
+          <div className="rounded-2xl p-3.5" style={{ ...card, border: goldEdge }}>
+            <div className="mb-1.5 flex items-baseline justify-between">
+              <p className="text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.staminaTitle}</p>
+              <p className="text-xs font-black tabular-nums text-cream/80">{stamina.percent}/100</p>
+            </div>
+            <Gauge value={stamina.percent / 100} color={[86, 186, 118]} danger={stamina.percent <= 20} height={12} />
+            <p className="mt-1.5 text-[11px] leading-relaxed text-cream/50">{W.staminaLead}</p>
+            <p className="mt-0.5 text-[11px] text-cream/45">
+              <span className="mr-1 font-bold text-cream/40">{W.basisLabel}</span>
+              {stamina.reason}
+            </p>
+
+            <div className="mt-3 border-t border-cream/10 pt-2.5">
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <p className="text-[10px] font-bold tracking-[0.3em] text-[rgb(166,132,32)]">{W.restTitle}</p>
+                {restTotal > 0 && (
+                  <p className="text-[11px] tabular-nums text-cream/50">{W.restDoneLabel(restedItems, restTotal)}</p>
+                )}
+              </div>
+              {restTotal === 0 ? (
+                <p className="text-[11px] leading-relaxed text-cream/45">{W.restEmpty}</p>
+              ) : (
+                <>
+                  <p className="mb-2 text-[11px] text-cream/45">{W.restRecover(REST_RECOVERY_PERCENT)}</p>
+                  <div className="space-y-2">
+                    {breakRanges
+                      .filter((r) => (r.checklist?.length ?? 0) > 0)
+                      .map((r) => {
+                        const key = breakRangeKey(r);
+                        const done = Array.isArray(restDone[key]) ? restDone[key] : [];
+                        return (
+                          <div key={key}>
+                            <p className="mb-1 text-[10px] tabular-nums tracking-wider text-cream/40">
+                              {r.start} – {r.end}
+                            </p>
+                            <div className="space-y-1">
+                              {(r.checklist ?? []).map((item, i) => (
+                                <label
+                                  key={i}
+                                  className="flex items-center gap-2 rounded-lg border border-cream/10 bg-ink px-3 py-2 text-[12px] text-cream/85"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={done.includes(i)}
+                                    onChange={() => toggleRest(key, i)}
+                                    className="h-4 w-4 shrink-0 rounded border-cream/30 bg-ink accent-[rgb(70,158,96)]"
+                                  />
+                                  <span className={done.includes(i) ? "text-cream/40 line-through" : ""}>{item}</span>
+                                  <span className="ml-auto shrink-0 text-[10px] font-black tabular-nums text-[rgb(70,158,96)]">
+                                    +{REST_RECOVERY_PERCENT}%
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ 選手データ ══ */}
       {panel === "player" && (
         <div className="space-y-2">
@@ -473,7 +681,7 @@ export default function PowerproTrainingSection() {
                   )}
                 </p>
                 <p className="text-[11px] tabular-nums text-white/60">
-                  {W.playerTitle}　{player.total} / {ABILITY_KEYS.length * 150}
+                  {W.seasonNote}　{player.total} / {ABILITY_KEYS.length * 150}
                 </p>
               </div>
             </div>

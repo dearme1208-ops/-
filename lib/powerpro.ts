@@ -543,3 +543,223 @@ export function buildPennant(project: ProjectItem, today: string): PennantRecord
     : null;
   return { wins, losses, remaining, games, winRate, standing, standingPlain, daysLeft };
 }
+
+// ============================================================
+// 1日ごとの育成
+// ============================================================
+// ここが「シーズン成績」と決定的に違うところ。
+//
+// buildAbilities(直近30日の比率)は“今の調子”のスナップショットで、良い日が続けば
+// 上がり、悪い日が続けば下がる。それはそれで意味があるが、育成ゲームとしては
+// 「昨日がんばったぶんが今日の自分に残っている」感覚が無い。
+//
+// そこでこちらは、1日の働きを「その日の練習で得た成長ポイント」に換算し、
+// 初日からの合計を能力値とする。過去の記録は変わらないので値は下がらず、
+// 働いた日だけ確実に伸びる。
+//
+// 重要なのは、これが実データの純粋な関数であること。どこにも“育成値”という
+// 可変の数字を保存していない。全実績から毎回同じ合計が出るので、
+// 端末を変えてもデータを戻しても、同じ記録からは必ず同じ能力値になる。
+
+/** 1日の練習で1ポイント得るのに必要な量。ここを変えると育ちの速さが変わる */
+const GAIN_UNIT = {
+  /** ミート: 想定内に収めて完了した作業 1件につき1 */
+  meet: 1,
+  /** パワー: 実働30分につき1 */
+  powerMinutes: 30,
+  /** 走力: 片付けたToDo・案件の段階 1件につき1 */
+  speed: 1,
+  /** 肩力: 完了した作業 1件につき1 */
+  arm: 1,
+  /** 守備力: 突発対応をやり切った 1件につき1 */
+  field: 1,
+  /** 捕球: 期日までに片付けたToDo 1件につき1 */
+  catch: 1,
+} as const;
+
+export interface DailyGain {
+  date: string;
+  meet: number;
+  power: number;
+  speed: number;
+  arm: number;
+  field: number;
+  catch: number;
+  /** その日の合計ポイント */
+  total: number;
+  /** 画面にそのまま出せる、何をしたから何ポイント入ったかの内訳 */
+  detail: Record<AbilityKey, string>;
+}
+
+interface DayInput {
+  date: string;
+  /** その日に完了した作業(実績) */
+  records: WorkRecord[];
+  /** その日に完了したToDoの件数 */
+  todoDone: number;
+  /** そのうち期日までに片付けた件数 */
+  todoInTime: number;
+  /** その日に完了した案件の段階の件数 */
+  stageDone: number;
+}
+
+function gainOfDay(input: DayInput, estimateById: Map<string, number>): DailyGain {
+  const rs = input.records;
+  const worked = rs.reduce((s, r) => s + r.seconds, 0);
+  // ミートは「想定内に収めて完了した件数」。判定はアプリ共通の厳密なもの
+  const withEstimate = rs.filter((r) => r.masterTaskId && (estimateById.get(r.masterTaskId) ?? 0) > 0);
+  const inside = withEstimate.filter((r) => r.seconds <= (estimateById.get(r.masterTaskId!) ?? 0)).length;
+  const troubles = rs.filter((r) => r.isTrouble).length;
+
+  const meet = inside * GAIN_UNIT.meet;
+  const power = Math.floor(worked / 60 / GAIN_UNIT.powerMinutes);
+  const speed = (input.todoDone + input.stageDone) * GAIN_UNIT.speed;
+  const arm = rs.length * GAIN_UNIT.arm;
+  const field = troubles * GAIN_UNIT.field;
+  const catchG = input.todoInTime * GAIN_UNIT.catch;
+
+  return {
+    date: input.date,
+    meet,
+    power,
+    speed,
+    arm,
+    field,
+    catch: catchG,
+    total: meet + power + speed + arm + field + catchG,
+    detail: {
+      meet: `想定内に収めて完了 ${inside}件`,
+      power: `実働 ${Math.round(worked / 60)}分（${GAIN_UNIT.powerMinutes}分で+1）`,
+      speed: `片付けたToDo ${input.todoDone}件・案件の段階 ${input.stageDone}件`,
+      arm: `完了した作業 ${rs.length}件`,
+      field: `やり切った突発対応 ${troubles}件`,
+      catch: `期日までに片付けたToDo ${input.todoInTime}件`,
+    },
+  };
+}
+
+export interface Growth {
+  /** 初日からの合計。1〜150に丸めた能力値 */
+  abilities: Ability[];
+  /** 本日ぶんの伸び */
+  today: DailyGain;
+  /** 記録のある日数 */
+  trainedDays: number;
+  /** 丸める前の素点。次の1ポイントまでの距離を出すのに使う */
+  rawTotals: Record<AbilityKey, number>;
+}
+
+function dateOf(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * 初日からの積み上げで能力値を出す。
+ * 素点をそのまま能力値にすると青天井になるので、150を上限に緩やかに詰める
+ * (伸び始めは素直に上がり、高くなるほど1ポイントの重みが増す)。
+ */
+function toAbilityFromPoints(points: number): number {
+  // 150 * (1 - e^(-p/90)) 。p=90でおよそ95、p=300でほぼ上限に達する
+  return Math.max(1, Math.min(150, Math.round(150 * (1 - Math.exp(-points / 90)))));
+}
+
+export function buildGrowth(
+  records: WorkRecord[],
+  todos: TodoTask[],
+  projects: ProjectItem[],
+  masters: MasterTask[],
+  today: string
+): Growth {
+  const estimateById = new Map(masters.map((m) => [m.id, m.estimatedSeconds]));
+
+  // 日ごとにまとめる
+  const byDate = new Map<string, DayInput>();
+  const ensure = (date: string) => {
+    let d = byDate.get(date);
+    if (!d) {
+      d = { date, records: [], todoDone: 0, todoInTime: 0, stageDone: 0 };
+      byDate.set(date, d);
+    }
+    return d;
+  };
+  for (const r of records) {
+    if (r.excludedFromStats) continue;
+    ensure(r.date).records.push(r);
+  }
+  for (const t of todos) {
+    if (!t.completed || !t.completedAt) continue;
+    const date = dateOf(t.completedAt);
+    const d = ensure(date);
+    d.todoDone += 1;
+    if (t.dueDate && date <= t.dueDate) d.todoInTime += 1;
+  }
+  for (const p of projects) {
+    for (const st of p.stages ?? []) {
+      if (!st.completed || !st.completedAt) continue;
+      ensure(dateOf(st.completedAt)).stageDone += 1;
+    }
+  }
+
+  const raw: Record<AbilityKey, number> = { meet: 0, power: 0, speed: 0, arm: 0, field: 0, catch: 0 };
+  let todayGain: DailyGain | null = null;
+  for (const input of byDate.values()) {
+    const g = gainOfDay(input, estimateById);
+    raw.meet += g.meet;
+    raw.power += g.power;
+    raw.speed += g.speed;
+    raw.arm += g.arm;
+    raw.field += g.field;
+    raw.catch += g.catch;
+    if (input.date === today) todayGain = g;
+  }
+  if (!todayGain) {
+    todayGain = gainOfDay({ date: today, records: [], todoDone: 0, todoInTime: 0, stageDone: 0 }, estimateById);
+  }
+
+  const abilities: Ability[] = ABILITY_KEYS.map((key) => {
+    const value = toAbilityFromPoints(raw[key]);
+    return { key, value, rank: rankOf(value), reason: `これまでの積み上げ ${raw[key]}ポイント` };
+  });
+
+  return { abilities, today: todayGain, trainedDays: byDate.size, rawTotals: raw };
+}
+
+// ============================================================
+// 体力(その日の残り)
+// ============================================================
+// 就業時間ぶんを走り切れる体力を1日の満タンとし、実働で減っていく。
+// 休憩のチェックリストを1つ消化するごとに少し戻る。
+// 「働けば減る/休めば戻る」という当たり前の関係を、そのまま数字にしている。
+
+/** チェックリスト1件あたりの回復量(%) */
+export const REST_RECOVERY_PERCENT = 6;
+
+export interface Stamina {
+  percent: number;
+  /** 就業時間(秒)。設定の所定労働時間から取る */
+  standardSeconds: number;
+  workedSeconds: number;
+  /** 消化した休憩チェックの件数 */
+  restedItems: number;
+  /** 回復したぶん(%) */
+  recoveredPercent: number;
+  reason: string;
+}
+
+export function buildStamina(workedSeconds: number, standardHours: number, restedItems: number): Stamina {
+  const standardSeconds = Math.max(3600, standardHours * 3600);
+  const consumed = (workedSeconds / standardSeconds) * 100;
+  const recovered = restedItems * REST_RECOVERY_PERCENT;
+  const percent = Math.max(0, Math.min(100, Math.round(100 - consumed + recovered)));
+  return {
+    percent,
+    standardSeconds,
+    workedSeconds,
+    restedItems,
+    recoveredPercent: recovered,
+    reason:
+      `就業時間 ${standardHours}時間を満タンとして、実働 ${Math.round(workedSeconds / 60)}分で ${Math.round(consumed)}% 消費` +
+      (restedItems > 0 ? `、休憩の消化 ${restedItems}件で ${recovered}% 回復` : ""),
+  };
+}

@@ -15,8 +15,29 @@ export interface PowerproWords {
 
   // 画面切り替え
   panelTraining: string;
+  panelGrowth: string;
   panelPlayer: string;
   panelScout: string;
+
+  // 1日ごとの育成
+  /** 積み上げのほうの名前。比率(選手データ)とは測っているものが違うので、平文では別の語を使う */
+  growthAbilityName: (key: AbilityKey) => string;
+  growthTitle: string;
+  growthLead: string;
+  growthNote: string;
+  seasonNote: string;
+  todayGainTitle: string;
+  todayGainEmpty: string;
+  trainedDaysLabel: (n: number) => string;
+  nextPointLabel: (n: number) => string;
+
+  // 体力と休憩
+  staminaTitle: string;
+  staminaLead: string;
+  restTitle: string;
+  restEmpty: string;
+  restRecover: (n: number) => string;
+  restDoneLabel: (done: number, total: number) => string;
 
   // ゲージ
   staminaLabel: string;
@@ -98,8 +119,30 @@ const THEMED: PowerproWords = {
   usedTurns: (n) => `消化${n}ターン`,
 
   panelTraining: "練習",
-  panelPlayer: "選手データ",
+  panelGrowth: "育成",
+  panelPlayer: "データ",
   panelScout: "評価",
+
+  // 野球の能力名は比喩なので、比率でも積み上げでもそのまま通じる
+  growthAbilityName: (k) =>
+    ({ meet: "ミート", power: "パワー", speed: "走力", arm: "肩力", field: "守備力", catch: "捕球" })[k],
+  growthTitle: "積み上げた能力",
+  growthLead:
+    "初日からの練習の合計です。過去の記録は変わらないので、この値は下がりません。働いた日だけ確実に伸びます。",
+  growthNote: "初日からの積み上げ",
+  seasonNote: "いまの調子（直近30日）",
+  todayGainTitle: "今日の練習で伸びたぶん",
+  todayGainEmpty: "今日はまだ練習していません。作業を完了すると、ここに伸びが出ます。",
+  trainedDaysLabel: (n) => `練習した日数 ${n}日`,
+  nextPointLabel: (n) => `次の1ポイントまで あと${n}`,
+
+  staminaTitle: "体力",
+  staminaLead: "就業時間ぶんを走り切れる体力が満タンです。練習で減り、休憩で戻ります。",
+  restTitle: "休憩メニュー",
+  restEmpty:
+    "休憩の設定がまだありません。設定の「休憩時間帯」でチェック項目を登録すると、ここで消化して体力を戻せます。",
+  restRecover: (n) => `1つ消化するごとに体力が ${n}% 戻ります`,
+  restDoneLabel: (done, total) => `${done}/${total} 消化`,
 
   staminaLabel: "体力",
   staminaNote: (rest) => `本日はあと ${rest} 分の練習に耐えられます`,
@@ -176,8 +219,31 @@ const PLAIN: PowerproWords = {
   usedTurns: (n) => `完了${n}件`,
 
   panelTraining: "作業",
-  panelPlayer: "実績データ",
+  panelGrowth: "積み上げ",
+  panelPlayer: "データ",
   panelScout: "評価",
+
+  // 平文では、比率の名前(「1日の実働」等)をそのまま使うと実態と 食い違ってしまう。
+  // ここで測っているのは割合ではなく、初日からの件数・時間の積み上げそのもの
+  growthAbilityName: (k) =>
+    ({ meet: "想定内", power: "実働", speed: "片付け", arm: "作業数", field: "突発対応", catch: "期日内" })[k],
+  growthTitle: "積み上げた指標",
+  growthLead:
+    "記録初日からの合計です。過去の記録は変わらないため、この値は下がりません。作業した日だけ増えます。",
+  growthNote: "初日からの積み上げ",
+  seasonNote: "直近30日の傾向",
+  todayGainTitle: "本日ぶんの積み上げ",
+  todayGainEmpty: "本日の記録はまだありません。作業を完了すると、ここに加算されます。",
+  trainedDaysLabel: (n) => `記録のある日数 ${n}日`,
+  nextPointLabel: (n) => `次の1ポイントまで あと${n}`,
+
+  staminaTitle: "体力",
+  staminaLead: "所定労働時間を満タンとして、実働で減り、休憩の消化で戻ります。",
+  restTitle: "休憩チェックリスト",
+  restEmpty:
+    "休憩時間帯の設定がありません。設定の「休憩時間帯」でチェック項目を登録すると、ここで消化できます。",
+  restRecover: (n) => `1件消化するごとに ${n}% 回復します`,
+  restDoneLabel: (done, total) => `${done}/${total} 消化`,
 
   staminaLabel: "残り想定時間",
   staminaNote: (rest) => `1日8時間を基準に、あと ${rest} 分です`,
