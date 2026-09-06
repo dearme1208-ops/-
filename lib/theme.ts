@@ -57,7 +57,8 @@ export type VisualMode =
   | "hub"
   | "library"
   | "powerpro"
-  | "hayarigami";
+  | "hayarigami"
+  | "mountain";
 export type ThemedMode =
   | "lobotomy"
   | "va11halla"
@@ -70,7 +71,8 @@ export type ThemedMode =
   | "hub"
   | "library"
   | "powerpro"
-  | "hayarigami";
+  | "hayarigami"
+  | "mountain";
 
 const THEMED_MODES: ThemedMode[] = [
   "lobotomy",
@@ -85,6 +87,7 @@ const THEMED_MODES: ThemedMode[] = [
   "library",
   "powerpro",
   "hayarigami",
+  "mountain",
 ];
 
 export function useVisualMode(): {
@@ -101,6 +104,7 @@ export function useVisualMode(): {
   libraryMode: boolean;
   powerproMode: boolean;
   hayarigamiMode: boolean;
+  mountainMode: boolean;
   themedMode: ThemedMode | null;
   // 色・形・アニメーションは常にthemedMode通りに適用される一方、
   // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
@@ -128,6 +132,7 @@ export function useVisualMode(): {
     libraryMode: mode === "library",
     powerproMode: mode === "powerpro",
     hayarigamiMode: mode === "hayarigami",
+    mountainMode: mode === "mountain",
     themedMode,
     wordingEnabled,
     wordingMode: wordingEnabled ? mode : "off",
@@ -306,7 +311,18 @@ export type RiskTier =
   | (typeof RISK_TIERS_HUB)[number]
   | (typeof RISK_TIERS_LIBRARY)[number]
   | (typeof RISK_TIERS_POWERPRO)[number]
-  | (typeof RISK_TIERS_HAYARIGAMI)[number];
+  | (typeof RISK_TIERS_HAYARIGAMI)[number]
+  | (typeof RISK_TIERS_MOUNTAIN)[number];
+
+// 登山モード: 山の遭難リスクのエスカレーション。想定(コースタイム)から
+// どれだけ離れているかを、行動時間の遅れがそのまま危険度になる山の言葉で表す
+export const RISK_TIERS_MOUNTAIN = [
+  { threshold: 4, name: "遭難", level: 4 },
+  { threshold: 2.5, name: "ビバーク覚悟", level: 3 },
+  { threshold: 1.8, name: "日没に追われる", level: 2 },
+  { threshold: 1.3, name: "コースタイム超過", level: 1 },
+  { threshold: 1, name: "順調な歩き", level: 0 },
+] as const;
 
 const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name: string; level: number }[]> = {
   lobotomy: RISK_TIERS_LOBOTOMY,
@@ -321,6 +337,7 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   library: RISK_TIERS_LIBRARY,
   powerpro: RISK_TIERS_POWERPRO,
   hayarigami: RISK_TIERS_HAYARIGAMI,
+  mountain: RISK_TIERS_MOUNTAIN,
 };
 
 export function getRiskTier(ratio: number, mode: ThemedMode): RiskTier {
@@ -394,6 +411,7 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   library: "card-running-lib",
   powerpro: "card-running-pp",
   hayarigami: "card-running-hyr",
+  mountain: "card-running-mtn",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -412,6 +430,7 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   library: "card-overrun-lib",
   powerpro: "card-overrun-pp",
   hayarigami: "card-overrun-hyr",
+  mountain: "card-overrun-mtn",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -430,6 +449,7 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   library: "hazard-bar-lib",
   powerpro: "hazard-bar-pp",
   hayarigami: "hazard-bar-hyr",
+  mountain: "hazard-bar-mtn",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -448,6 +468,7 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   library: "gantt-bar-overrun-lib",
   powerpro: "gantt-bar-overrun-pp",
   hayarigami: "gantt-bar-overrun-hyr",
+  mountain: "gantt-bar-overrun-mtn",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
@@ -526,6 +547,7 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   library: "書庫",
   powerpro: "育成選手名鑑",
   hayarigami: "怪異調査ファイル",
+  mountain: "登攀記録",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -807,6 +829,26 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     report: "日次・週次・月次 捜査報告書",
     records: "供述の訂正",
     settings: "捜査環境設定",
+  },
+  mountain: {
+    today: "本日の行程",
+    todo: "登山計画",
+    projects: "登攀中の山",
+    master: "ルート図鑑",
+    template: "曜日別の行程",
+    gantt: "行動記録",
+    aggregation: "登頂記録",
+    charts: "標高グラフ",
+    heatmap: "気象図",
+    attention: "危険箇所",
+    overtime: "日没後の行動",
+    yearlyChart: "年間山行記録",
+    mandala: "計画書",
+    memo: "山日記",
+    board: "作戦テーブル",
+    report: "山行報告書",
+    records: "行動記録の訂正",
+    settings: "装備と設定",
   },
 };
 

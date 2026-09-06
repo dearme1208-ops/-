@@ -28,6 +28,7 @@ const ClaudeWorkspaceSection = dynamic(() => import("@/components/sections/Claud
 const ZenSection = dynamic(() => import("@/components/sections/ZenSection"), { ssr: false });
 const TerminalDashboardSection = dynamic(() => import("@/components/sections/TerminalDashboardSection"), { ssr: false });
 const PowerproTrainingSection = dynamic(() => import("@/components/sections/PowerproTrainingSection"), { ssr: false });
+const MountainSection = dynamic(() => import("@/components/sections/MountainSection"), { ssr: false });
 const HayarigamiSection = dynamic(() => import("@/components/sections/HayarigamiSection"), { ssr: false });
 const LobotomySection = dynamic(() => import("@/components/sections/LobotomySection"), { ssr: false });
 const LibrarySection = dynamic(() => import("@/components/sections/LibrarySection"), { ssr: false });
@@ -178,6 +179,7 @@ export default function HomePage() {
       {active === "today" && mode === "adventurer" && <AdventurerQuestSection />}
       {active === "today" && mode === "hub" && <UnifiedBoardSection onOpenTodo={() => setActive("todo")} />}
       {active === "today" && mode === "powerpro" && <PowerproTrainingSection />}
+      {active === "today" && mode === "mountain" && <MountainSection />}
       {active === "today" && mode === "hayarigami" && <HayarigamiSection />}
       {active === "today" && mode === "lobotomy" && <LobotomySection />}
       {active === "today" && mode === "library" && <LibrarySection />}
@@ -188,6 +190,7 @@ export default function HomePage() {
         mode !== "adventurer" &&
         mode !== "hub" &&
         mode !== "powerpro" &&
+        mode !== "mountain" &&
         mode !== "hayarigami" &&
         mode !== "lobotomy" &&
         mode !== "natsuyasumi" &&

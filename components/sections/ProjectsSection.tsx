@@ -42,6 +42,9 @@ import SceneCanvas from "@/components/hayarigami/SceneCanvas";
 import BranchTree from "@/components/hayarigami/BranchTree";
 import type { BranchNode } from "@/lib/hayarigamiArt";
 import { buildPennant, buildStandings } from "@/lib/powerpro";
+import { buildRoute, gradeOf } from "@/lib/mountain";
+import { mountainWordsFor } from "@/lib/mountainWords";
+import { Profile as MountainProfile, Signboard } from "@/components/mountain/MountainCanvas";
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { PennantBar, Standings } from "@/components/powerpro/PowerproCanvas";
 
@@ -1165,6 +1168,11 @@ function ProjectRow({
   // 完了=勝ち・期日超過=負け・未消化=空きマスの勝敗表にする。順位も勝率という実データそのもの
   const powerproMode = themedMode === "powerpro";
   const PW = powerproWordsFor(wordingEnabled);
+  // 登山モード: 案件1件を一座の山として、木の山名板と高度断面図に置き換える。
+  // 標高も難易度も段階の数・期日という実データから決まる純粋関数の値
+  const mountainMode = themedMode === "mountain";
+  const MW = mountainWordsFor(wordingEnabled);
+  const mountainRoute = mountainMode ? buildRoute(project, today, new Map()) : null;
   const pennant = powerproMode ? buildPennant(project, today) : null;
   const pennantCells: ("win" | "loss" | "rest")[] = powerproMode
     ? (project.stages ?? []).map((stage) => {
@@ -1279,6 +1287,32 @@ function ProjectRow({
             </div>
           )
         )}
+        {/* 登山モード: 案件の見出しを木の山名板に、進捗を高度断面図に置き換える。
+            標高は段階の数(1段階=300m)、難易度は残りの段階数と期日までの日数から決まる */}
+        {mountainMode && mountainRoute && (
+          <div className="mt-1 w-full space-y-1">
+            <Signboard
+              name={project.title}
+              altitude={mountainRoute.summit}
+              grade={gradeOf(mountainRoute)}
+              summited={mountainRoute.summited}
+              seed={`sign:${project.id}`}
+              height={70}
+              className="overflow-hidden rounded-lg"
+            />
+            {mountainRoute.waypoints.length > 0 && (
+              <MountainProfile
+                summit={mountainRoute.summit}
+                current={mountainRoute.current}
+                waypoints={mountainRoute.waypoints}
+                seed={`prof:${project.id}`}
+                labels={{ start: MW.start, summit: MW.summit, now: MW.now }}
+                compact
+                className="overflow-hidden rounded-lg border border-cream/12"
+              />
+            )}
+          </div>
+        )}
         {project.stages && project.stages.length > 0 && (
           <div className="mt-1 w-full">
             {/* 見出しと進捗バーだけは、これまで通り本文脇に収まる幅に留める */}
@@ -1300,6 +1334,13 @@ function ProjectRow({
             </button>
             {hayarigamiMode ? (
               <BranchTree nodes={branchNodes} seed={project.id} className="overflow-hidden rounded border border-cream/15" />
+            ) : mountainMode ? (
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-cream/5">
+                <div
+                  className="h-1.5 rounded-full bg-alert"
+                  style={{ width: `${Math.round((computeProjectProgress(project.stages) ?? 0) * 100)}%` }}
+                />
+              </div>
             ) : powerproMode ? (
               <PennantBar
                 cells={pennantCells}

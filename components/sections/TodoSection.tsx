@@ -42,6 +42,7 @@ import { foafNumberOf } from "@/lib/hayarigami";
 import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
 import { buildScoutBoard, scoutGradeOf } from "@/lib/powerpro";
+import { itemWeight } from "@/lib/mountain";
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { DraftBoard, RankEmblem, ScoutBust } from "@/components/powerpro/PowerproCanvas";
 import { rankCssColor } from "@/lib/powerproArt";
@@ -2461,6 +2462,12 @@ function TaskRow({
   // 胸像の背景の熱さと評価(S〜C)を、期日までの余裕と重要度という実データから決める
   const powerproMode = themedMode === "powerpro";
   const scout = powerproMode ? scoutGradeOf(task, today) : null;
+  // 登山モード: ToDoはザックの中身。期日までの余裕と重要度から「重さ」を決め、
+  // 何が荷物として効いているかを重量そのもので見せる(期日を過ぎたものほど重い)
+  const mountainMode = themedMode === "mountain";
+  const packGrams =
+    mountainMode && !task.completed ? itemWeight(dueDate ? daysBetweenDateStrs(today, dueDate) : null, !!task.important) : null;
+  const heaviest = 3400; // 期日を大きく過ぎた重要タスクの上限。バーの満杯の基準にする
   return (
     <div
       title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
@@ -2597,6 +2604,23 @@ function TaskRow({
               {dueToday && (
                 <span className="ml-1 rounded-full bg-alert/20 px-1.5 py-0.5 text-[9px] font-bold text-alert">本日</span>
               )}
+            </span>
+          )}
+          {/* 登山モード: この1件がザックの中でどれだけ重いか。期日を過ぎたものほど重い */}
+          {packGrams !== null && (
+            <span
+              className="flex shrink-0 items-center gap-1"
+              title={`ザックの重さ ${(packGrams / 1000).toFixed(1)}kg（期日までの余裕と重要度から決まります）`}
+            >
+              <span className="h-1.5 w-8 overflow-hidden rounded-full bg-cream/10">
+                <span
+                  className={`block h-full rounded-full ${overdue ? "bg-alert" : "bg-cream/45"}`}
+                  style={{ width: `${Math.min(100, (packGrams / heaviest) * 100)}%` }}
+                />
+              </span>
+              <span className={`text-[10px] tabular-nums ${overdue ? "font-bold text-alert" : "text-cream/45"}`}>
+                {(packGrams / 1000).toFixed(1)}kg
+              </span>
             </span>
           )}
           {subtasks.length > 0 && (

@@ -422,6 +422,35 @@ html[data-high-contrast="true"] :focus-visible {
     --panel-rgb: 255 255 255;
   }
 
+  /* 登山モード: 早朝の山の空気。青みの強い岩色を地に、雪と朝日のオレンジを差す。
+     山の絵と地の色が地続きに見えるよう、パネルは霧のかかった岩壁の色にしてある */
+  html[data-visual-mode="mountain"] {
+    color-scheme: dark;
+    --accent-rgb: 232 138 74;
+    --ink-rgb: 15 22 34;
+    --cream-rgb: 226 234 244;
+    --panel-rgb: 24 34 49;
+  }
+  /* 画面の上端に、うっすらと稜線のシルエットを敷く。どのタブにいても
+     「山の中にいる」空気を切らさないための背景で、内容は一切隠さない */
+  html[data-visual-mode="mountain"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 160px;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      linear-gradient(to bottom, rgb(var(--accent-rgb) / 0.1), transparent 70%),
+      repeating-linear-gradient(
+        115deg,
+        rgb(var(--cream-rgb) / 0.03) 0 2px,
+        transparent 2px 7px
+      );
+    -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+    mask-image: linear-gradient(to bottom, #000, transparent);
+  }
+
   /* 流行り神風モード: ほぼ黒の背景に血のような赤、文字は色を抜いた骨色。
      ホラーサウンドノベルの「暗闇に文字だけが浮かぶ」画面に寄せる */
   html[data-visual-mode="hayarigami"] {
@@ -1771,6 +1800,47 @@ html[data-high-contrast="true"] :focus-visible {
     animation: hazard-bar-scroll 0.8s linear infinite;
   }
 
+  /* --- 登山モード: 行動中は呼吸のようにゆっくり明滅させ、コースタイム超過では
+     日が傾いていく焦りが出るよう、上端から影が降りてくる動きにする --- */
+  .card-running-mtn {
+    animation: card-running-mtn-breath 3.4s ease-in-out infinite;
+  }
+  @keyframes card-running-mtn-breath {
+    0%,
+    100% {
+      box-shadow: inset 0 2px 0 rgb(var(--accent-rgb) / 0.5), 0 0 0 1px rgb(var(--accent-rgb) / 0.35);
+    }
+    50% {
+      box-shadow: inset 0 3px 0 rgb(var(--accent-rgb) / 0.95), 0 0 16px rgb(var(--accent-rgb) / 0.28);
+    }
+  }
+  .card-overrun-mtn {
+    position: relative;
+    box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.6);
+    animation: card-overrun-mtn-dusk 2.2s ease-in-out infinite;
+  }
+  @keyframes card-overrun-mtn-dusk {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.6), inset 0 -30px 30px -30px rgb(var(--accent-rgb) / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.95), inset 0 -60px 40px -30px rgb(var(--accent-rgb) / 0.65);
+    }
+  }
+  /* 危険箇所のバーは、地形図の等高線のような細い横縞にする */
+  .hazard-bar-mtn {
+    height: 4px;
+    border-radius: 999px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb)) 0 3px,
+      rgb(var(--accent-rgb) / 0.2) 3px 8px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 1.6s linear infinite;
+  }
+
   /* --- 流行り神風モード: ホラーサウンドノベルらしく、実行中は「気配」程度のごく淡い明滅、
      超過(怪異接触)では不規則に途切れる明滅で「何かがおかしい」感じを出す。
      他テーマの規則的な脈動と違い、意図的にタイミングをずらして落ち着かなくしている --- */
@@ -2470,6 +2540,16 @@ html[data-high-contrast="true"] :focus-visible {
     );
     background-size: 200% 100%;
     animation: hazard-bar-scroll 1s linear infinite;
+  }
+  .gantt-bar-overrun-mtn {
+    border-radius: 999px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb)) 0 3px,
+      rgb(var(--accent-rgb) / 0.25) 3px 8px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 1.6s linear infinite;
   }
   .gantt-bar-overrun-terminal {
     background-image: repeating-linear-gradient(

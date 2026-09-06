@@ -115,6 +115,16 @@ const POWERPRO_STAGES: GrowthStage[] = [
 ];
 
 // 図書館モード: バラバラの本が少しずつ分類・配架されていく過程になぞらえた段階
+// 登山モード: 標高を上げていく過程。行動時間が伸びるほど高いところへ出る
+const MOUNTAIN_STAGES: GrowthStage[] = [
+  { icon: "🅿️", label: "登山口" },
+  { icon: "🌲", label: "樹林帯" },
+  { icon: "🏕️", label: "森林限界" },
+  { icon: "🥾", label: "稜線" },
+  { icon: "🏔️", label: "山頂直下" },
+  { icon: "⛰️", label: "登頂" },
+];
+
 const LIBRARY_STAGES: GrowthStage[] = [
   { icon: "📇", label: "未整理" },
   { icon: "📋", label: "仮登録" },
@@ -147,6 +157,7 @@ const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
   library: LIBRARY_STAGES,
   powerpro: POWERPRO_STAGES,
   hayarigami: HAYARIGAMI_STAGES,
+  mountain: MOUNTAIN_STAGES,
 };
 
 // 6段階(0h/1h/2h/4h/6h/8h以上)。所要時間の感覚に合わせた区切り

@@ -1371,6 +1371,12 @@ export default function SettingsSection() {
             🩸 怪異調査モード
           </button>
           <button
+            className={visualMode === "mountain" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("mountain")}
+          >
+            ⛰️ 登山モード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >
@@ -1494,6 +1500,16 @@ export default function SettingsSection() {
         {visualMode === "hayarigami" && (
           <p className="text-xs text-cream/50">
             「ToDo」タブと「案件」タブにも同じ演出が及びます。ToDoの各項目にはその場で生成した現場写真（放置日数や期限切れの度合いに応じて、荒れ具合が変わります）と、原作の「F.O.A.F.データベース」を模した通し番号（並び替えても同じ項目には同じ番号が付きます）が付きます。案件には表紙写真に加えて、段階（マイルストーン）の並びを原作の「分岐ツリー」に見立てた図が表示され、済んだ段階・現在地・延滞中の段階が線と印の色でひと目でわかります。
+          </p>
+        )}
+        {visualMode === "mountain" && (
+          <p className="text-xs text-cream/50">
+            早朝の山の空気を写した、青みの強い岩色に朝日のオレンジを差した配色に変わり、「本日の作業」タブが<b>一日を1回の山行として見る画面</b>に総入れ替えされます。見出しは時間帯で空の色が変わる山のパノラマの一枚絵で、空・遠景の連山（大気遠近で霞ませています）・主峰・雪渓・岩肌・樹林帯・ルート・現在地の登山者をその場で描いています。ルートの実線は本日の進み具合そのもので、歩いた分だけ伸びます。天候は気分ではなく実データで決まり、トラブル対応2件以上か想定の2倍超で<b>荒天</b>（雨と稲妻が降ります）、トラブル1件か超過が半数以上で<b>雨</b>、超過が1件以上で<b>曇り</b>、超過なしで<b>快晴</b>です。
+          </p>
+        )}
+        {visualMode === "mountain" && (
+          <p className="text-xs text-cream/50">
+            言い換えは全編にわたります。<b>案件＝一座の山</b>（段階の数がそのまま標高になり、1段階＝300m）、<b>案件の段階＝通過点</b>（完了＝通過、期日を過ぎた未通過＝ルートの崩落で×印）、<b>本日の作業＝区間</b>、<b>想定時間＝コースタイム</b>、<b>実績時間＝行動時間</b>（実働10分＝獲得標高50m）、<b>所定労働時間の残り＝日没までの時間</b>、<b>未完了のToDo＝ザックの中身</b>（期日を過ぎたものほど重い）です。「登攀中の山」を開くと案件ごとに木の山名板と<b>高度断面図</b>が出て、どの通過点まで登れていて、どこが崩れているかが横から見た形で分かります。
           </p>
         )}
         {visualMode === "off" && (
