@@ -37,7 +37,7 @@ import {
 } from "@/lib/time";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
-import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
+import { buildStageCompletionOrder, computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
 import { foafNumberOf } from "@/lib/hayarigami";
 import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
@@ -1895,22 +1895,31 @@ function TodoProjectsView({ today }: { today: string }) {
                 )}
                 {project.stages && project.stages.length > 0 && (
                   <div className="mt-2 space-y-1">
-                    {project.stages.map((stage) => (
-                      <button
-                        key={stage.id}
-                        onClick={() => toggleProjectStage(project, stage.id)}
-                        className="flex w-full items-center gap-2 text-left text-xs text-cream/70 hover:text-cream"
-                      >
-                        <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-                            isStageDone(stage) ? "border-cream bg-cream text-ink" : "border-cream/40"
-                          }`}
-                        >
-                          {isStageDone(stage) ? "✓" : ""}
-                        </span>
-                        <span className={isStageDone(stage) ? "text-cream/40 line-through" : ""}>{stage.title || "（段階名未入力）"}</span>
-                      </button>
-                    ))}
+                    {(() => {
+                      // 案件タブと同じく、完了済みの段階にはチェックの代わりに完了した順番を出す
+                      const stageOrder = buildStageCompletionOrder(project.stages);
+                      return project.stages.map((stage) => {
+                        const done = isStageDone(stage);
+                        const order = stageOrder.get(stage.id);
+                        return (
+                          <button
+                            key={stage.id}
+                            onClick={() => toggleProjectStage(project, stage.id)}
+                            className="flex w-full items-center gap-2 text-left text-xs text-cream/70 hover:text-cream"
+                            title={order ? `${order.rank}番目に完了（${formatDateTimeJp(order.at)}）` : undefined}
+                          >
+                            <span
+                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold tabular-nums ${
+                                done ? "border-cream bg-cream text-ink" : "border-cream/40"
+                              } ${order?.aheadOfPlan ? "ring-1 ring-alert/60" : ""}`}
+                            >
+                              {done ? (order ? order.rank : "✓") : ""}
+                            </span>
+                            <span className={done ? "text-cream/40 line-through" : ""}>{stage.title || "（段階名未入力）"}</span>
+                          </button>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </div>

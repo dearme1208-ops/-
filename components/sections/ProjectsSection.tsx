@@ -10,10 +10,22 @@ import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/proj
 import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { computeProjectForecast, type ProjectForecast } from "@/lib/projectForecast";
-import { computeProjectProgress, isStageDone, toggleProjectStage as toggleProjectStageShared } from "@/lib/projectStage";
+import {
+  buildStageCompletionOrder,
+  computeProjectProgress,
+  isStageDone,
+  toggleProjectStage as toggleProjectStageShared,
+} from "@/lib/projectStage";
 import { useSetting } from "@/lib/settings";
 import { cardOverrunClass, useVisualMode, type ThemedMode } from "@/lib/theme";
-import { daysBetweenDateStrs, formatDateJp, formatHms, todayStr } from "@/lib/time";
+import {
+  daysBetweenDateStrs,
+  formatDateJp,
+  formatDateShortJp,
+  formatDateTimeJp,
+  formatHms,
+  todayStr,
+} from "@/lib/time";
 import type { DailyTask, ProjectItem, ProjectStage } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
@@ -1105,6 +1117,10 @@ function ProjectRow({
   const [stagesCollapsed, setStagesCollapsed] = useState(false);
   // 進捗率・段階数の表示は全段階を対象にする一方、ここでの一覧描画だけ設定に応じて完了済みを間引く
   const visibleStages = showCompletedStages ? project.stages ?? [] : (project.stages ?? []).filter((s) => !isStageDone(s));
+  // 完了した順番。定義順のままでは「どれを先に片付けたか」が読み取れないため、
+  // 完了時刻の記録がある段階にだけ通し番号を振り、チェックマークの代わりに出す
+  const stageOrder = buildStageCompletionOrder(project.stages);
+  const jumpedCount = Array.from(stageOrder.values()).filter((o) => o.aheadOfPlan).length;
   // 怪異調査モード: 案件1件ごとに「事件ファイル」の表紙写真(生成)と、F.O.A.F.データベース風の
   // 通し番号を添える。写真の荒れ具合は延滞状況という実データに連動させる
   const { wordingEnabled } = useVisualMode();
@@ -1280,12 +1296,29 @@ function ProjectRow({
                     完了済み{project.stages.length - visibleStages.length}段階を非表示中
                   </div>
                 )}
+                {showCompletedStages && stageOrder.size >= 2 && (
+                  <div className="text-[10px] text-cream/30">
+                    丸の中の数字は完了した順番
+                    {jumpedCount > 0 && `（うち${jumpedCount}段階はリスト上の前の段階を追い越して完了）`}
+                  </div>
+                )}
                 {visibleStages.map((stage) => {
                 const seconds = stageSecondsFor(stage.id);
                 const isCountBased = stage.targetCount != null;
                 const done = isStageDone(stage);
                 const stageOverdue = !done && !!stage.dueDate && stage.dueDate < today;
                 const stageDueToday = !done && !!stage.dueDate && stage.dueDate === today;
+                const order = stageOrder.get(stage.id);
+                // 完了済みならチェックの代わりに「何番目に完了したか」を出す。完了時刻の記録が
+                // 残っていない段階は番号を持たないので、これまで通りチェックのままにする
+                const markLabel = done ? (order ? String(order.rank) : "✓") : "";
+                const markTitle = order
+                  ? `${order.rank}番目に完了（${formatDateTimeJp(order.at)}）${
+                      order.aheadOfPlan ? "／リスト上これより前の段階を追い越して完了" : ""
+                    }`
+                  : done
+                    ? "完了（完了した時刻の記録なし）"
+                    : undefined;
                 return (
                   <div
                     key={stage.id}
@@ -1301,26 +1334,37 @@ function ProjectRow({
                   >
                     {isCountBased ? (
                       <span
-                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[8px] font-bold tabular-nums ${
                           done ? "border-cream bg-cream text-ink" : "border-cream/40"
-                        }`}
+                        } ${order?.aheadOfPlan ? "ring-1 ring-alert/60" : ""}`}
+                        title={markTitle}
                       >
-                        {done ? "✓" : ""}
+                        {markLabel}
                       </span>
                     ) : (
                       <button
                         onClick={() => onToggleStage(stage.id)}
-                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[8px] ${
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[8px] font-bold tabular-nums ${
                           stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-                        }`}
-                        aria-label={stage.completed ? "未完了に戻す" : "完了にする"}
+                        } ${order?.aheadOfPlan ? "ring-1 ring-alert/60" : ""}`}
+                        aria-label={
+                          stage.completed
+                            ? `未完了に戻す${order ? `（${order.rank}番目に完了）` : ""}`
+                            : "完了にする"
+                        }
+                        title={markTitle}
                       >
-                        {stage.completed ? "✓" : ""}
+                        {markLabel}
                       </button>
                     )}
                     <span className={`flex-1 truncate text-[11px] ${done ? "text-cream/40 line-through" : "text-cream/80"}`}>
                       {stage.title}
                     </span>
+                    {order && (
+                      <span className="shrink-0 text-[10px] tabular-nums text-cream/35" title={markTitle}>
+                        {formatDateShortJp(order.at)}
+                      </span>
+                    )}
                     {isCountBased && (
                       <span className="shrink-0 text-[10px] font-bold tabular-nums text-cream/70">
                         {stage.completedCount ?? 0}/{stage.targetCount}件

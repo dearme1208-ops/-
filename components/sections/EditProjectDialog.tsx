@@ -249,7 +249,22 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   }
   function setStageCompletedCount(id: string, value: string) {
     const n = Math.max(0, Math.round(Number(value)));
-    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, completedCount: Number.isFinite(n) ? n : 0 } : s)));
+    setStages((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const next = Number.isFinite(n) ? n : 0;
+        const target = s.targetCount ?? 0;
+        // 件数を手で書き換えて目標に到達した場合も完了時刻を残す。ここで残しておかないと
+        // 「何番目に完了したか」の並びからこの段階だけ抜け落ちてしまう
+        const reachedNow = target > 0 && next >= target && (s.completedCount ?? 0) < target;
+        const fellBelow = target > 0 && next < target;
+        return {
+          ...s,
+          completedCount: next,
+          completedAt: reachedNow ? Date.now() : fellBelow ? undefined : s.completedAt,
+        };
+      })
+    );
   }
   function setStageTargetCount(id: string, value: string) {
     const trimmed = value.trim();

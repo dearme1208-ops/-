@@ -72,6 +72,12 @@ export function formatDateJp(dateStr: string): string {
   return `${Number(m)}/${Number(d)}`;
 }
 
+// epoch msを"8/27"のような短い日付にする(狭い行に完了日を添える用)
+export function formatDateShortJp(epochMs: number): string {
+  const d = new Date(epochMs);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 // epoch msを<input type="datetime-local">用の"YYYY-MM-DDTHH:mm"文字列に変換する(ローカル時刻基準)
 export function toDatetimeLocalValue(epochMs: number): string {
   const d = new Date(epochMs);
