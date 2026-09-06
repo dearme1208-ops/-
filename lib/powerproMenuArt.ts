@@ -516,7 +516,7 @@ export function paintModeIcon(ctx: CanvasRenderingContext2D, o: ModeIconOptions)
   ctx.save();
   const inset = w * 0.19;
   const gs = (w - inset * 2) / 100;
-  ctx.translate(pad + inset, pad + inset - (o.badge ? w * 0.05 : 0));
+  ctx.translate(pad + inset, pad + inset - (o.badge ? w * 0.08 : 0));
   ctx.scale(gs, gs);
   ctx.shadowColor = "rgba(0,0,0,0.25)";
   ctx.shadowBlur = 3;
@@ -525,22 +525,51 @@ export function paintModeIcon(ctx: CanvasRenderingContext2D, o: ModeIconOptions)
   ctx.restore();
 
   // ---- 下端の帯(件数) ----
+  // 帯はタイルの角丸に切り抜かれるので、下端に近いほど左右が内側へ湾曲する。
+  // 以前は帯が角丸半径より低く、文字も端から6%しか離していなかったため、
+  // 「計測中」「進行中」などの下側が角の曲線に削られていた。
+  // 帯を角丸半径より高くし、文字を曲線に当たらない位置・幅へ収める
   if (o.badge) {
-    const bh = w * 0.2;
+    const bh = Math.max(w * 0.27, r + w * 0.05);
     const by = pad + w - bh;
-    ctx.fillStyle = "rgba(10,16,32,0.62)";
+    ctx.fillStyle = "rgba(10,16,32,0.66)";
     ctx.fillRect(pad, by, w, bh);
     // 中の進み具合
-    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
     ctx.fillRect(pad, by, w * Math.max(0, Math.min(1, o.badge.ratio)), bh);
-    ctx.font = `bold ${Math.round(bh * 0.56)}px ui-sans-serif, system-ui, sans-serif`;
+    // 帯の上端に細い区切り線を入れて、記号と数字の領域を分ける
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.fillRect(pad, by, w, 1);
+
+    // 文字は帯の上寄り(全幅が使える高さ)に置き、左右は角の曲線より内側から始める
+    const textY = by + bh * 0.44;
+    const sideInset = w * 0.12;
+    const avail = w - sideInset * 2;
+    let fontSize = Math.max(8, Math.round(bh * 0.44));
+    const setFont = () => (ctx.font = `bold ${fontSize}px ui-sans-serif, system-ui, sans-serif`);
+    setFont();
+    // ラベルと数字が重なるなら、まず字を詰め、それでも入らなければラベルを落として
+    // 数字だけにする(数字のほうが情報として重い)
+    let label = o.badge.label;
+    while (fontSize > 7 && ctx.measureText(label + o.badge.value).width > avail - w * 0.06) {
+      fontSize -= 1;
+      setFont();
+    }
+    if (ctx.measureText(label + o.badge.value).width > avail - w * 0.06) label = "";
+
     ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(o.badge.label, pad + w * 0.06, by + bh / 2);
-    ctx.textAlign = "right";
-    ctx.fillText(o.badge.value, pad + w - w * 0.06, by + bh / 2);
+    if (label) {
+      ctx.textAlign = "left";
+      ctx.fillText(label, pad + sideInset, textY);
+      ctx.textAlign = "right";
+      ctx.fillText(o.badge.value, pad + w - sideInset, textY);
+    } else {
+      ctx.textAlign = "center";
+      ctx.fillText(o.badge.value, pad + w / 2, textY);
+    }
     ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";
   }
   ctx.restore();
 

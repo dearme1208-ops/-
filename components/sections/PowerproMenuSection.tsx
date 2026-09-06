@@ -103,8 +103,12 @@ export default function PowerproMenuSection({ onEnter }: { onEnter: (tab: TabKey
       {/* 狭い画面では左右の柱が入らないので、立ち絵とランクと数字を横1本の帯にまとめる。
           テレビ画面向けの構図をそのまま縦に潰すのではなく、順番を組み替えて成立させる */}
       <div className="flex items-center gap-2 overflow-hidden rounded-xl border border-cream/15 bg-gradient-to-r from-[#1b3358] to-[#0d1a30] px-2 py-1.5 sm:hidden">
-        <div className="shrink-0 scale-[0.62] origin-left" style={{ width: 60, height: 74 }}>
-          <PlayerPortrait motivation={condition.motivation} running={realTasks.some((t) => t.status === "running")} />
+        <div className="shrink-0">
+          <PlayerPortrait
+            motivation={condition.motivation}
+            running={realTasks.some((t) => t.status === "running")}
+            width={58}
+          />
         </div>
         <div className="shrink-0">
           <RankEmblemSmall rank={rank.rank} />
@@ -285,10 +289,13 @@ function ModeTile({
       >
         <canvas ref={canvasRef} className="block" />
       </div>
+      {/* 「曜日別テンプレート」のような長い名前は、9pxのままだと最後の1文字だけが
+          2行目に落ちて据わりが悪い。文字数に応じて少しだけ字を詰め、1行に収める。
+          それでも入らない場合だけ2行にする(切り捨てはしない) */}
       <span
-        className={`line-clamp-2 w-full rounded px-0.5 text-center text-[9px] leading-tight transition sm:text-[10px] ${
-          selected ? "bg-cream/15 font-bold text-cream" : "text-cream/65"
-        }`}
+        className={`line-clamp-2 w-full rounded px-0.5 text-center leading-tight transition ${
+          label.length >= 9 ? "text-[8px] sm:text-[9px]" : "text-[9px] sm:text-[10px]"
+        } ${selected ? "bg-cream/15 font-bold text-cream" : "text-cream/65"}`}
       >
         {label}
       </span>
@@ -297,12 +304,21 @@ function ModeTile({
 }
 
 // 左の立ち絵。既存の選手の絵をそのまま小さく描く
-function PlayerPortrait({ motivation, running }: { motivation: 0 | 1 | 2 | 3 | 4; running: boolean }) {
+function PlayerPortrait({
+  motivation,
+  running,
+  width = 96,
+}: {
+  motivation: 0 | 1 | 2 | 3 | 4;
+  running: boolean;
+  width?: number;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    const w = 96, h = 118;
+    // 絵の縦横比(96:118)を保ったまま、指定された幅で描く
+    const w = width, h = Math.round(width * (118 / 96));
     const dpr = Math.min(typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1, 2);
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
@@ -315,8 +331,8 @@ function PlayerPortrait({ motivation, running }: { motivation: 0 | 1 | 2 | 3 | 4
     const pal = readPalette();
     paintPlayer(ctx, {
       cx: w / 2,
-      baseY: h - 8,
-      scale: 0.92,
+      baseY: h - Math.round(h * 0.07),
+      scale: 0.92 * (w / 96),
       motivation,
       running,
       injured: false,
@@ -324,7 +340,7 @@ function PlayerPortrait({ motivation, running }: { motivation: 0 | 1 | 2 | 3 | 4
       warm: [255, 240, 210],
       light: 0.8,
     });
-  }, [motivation, running]);
+  }, [motivation, running, width]);
   return <canvas ref={ref} className="block" />;
 }
 
