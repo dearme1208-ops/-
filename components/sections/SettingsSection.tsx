@@ -141,6 +141,8 @@ export default function SettingsSection() {
   const [csvToolsMasterStr, setCsvToolsMasterStr] = useSetting("csvTools.master", "true");
   const [csvToolsTemplateStr, setCsvToolsTemplateStr] = useSetting("csvTools.template", "true");
   const [csvToolsRecordsStr, setCsvToolsRecordsStr] = useSetting("csvTools.records", "true");
+  const [powerproMenuStr, setPowerproMenuStr] = useSetting("powerpro.mainMenu", "true");
+  const powerproMenu = powerproMenuStr === "true";
   const csvToolSettings = [
     { label: "本日の作業（予定CSV）", valueStr: csvToolsTodayStr, setValueStr: setCsvToolsTodayStr },
     { label: "ToDo", valueStr: csvToolsTodoStr, setValueStr: setCsvToolsTodoStr },
@@ -1966,6 +1968,21 @@ export default function SettingsSection() {
         </p>
         <p className="text-xs text-cream/50">
           案件の完了済み段階には、チェックマークの代わりに<b>実際に完了した順番</b>が丸数字で入り、右側に完了日が付きます（丸や日付を長押し／マウスを重ねると完了日時が出ます）。リスト上の並びと実際に片付けた順番は食い違うことがあるため、前の段階を追い越して完了した段階は丸に赤い輪を付けて区別しています。完了した時刻が残っていない段階（この表示より前に完了させた古い段階など）は、順番を推測せずこれまで通りチェックマークのままにします。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">育成選手モードのメインメニュー</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={powerproMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setPowerproMenuStr(powerproMenu ? "false" : "true")}
+          >
+            メインメニューから入る: {powerproMenu ? "ON" : "OFF"}
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          ONにすると、育成選手モードのときだけ、家庭用野球ゲームのモード選択画面のような<b>メインメニュー</b>が最初に出ます。18のタブが4列のタイルで並び、1回押すと下の帯に説明が出て、もう1回押すとその画面に入ります。入った先の左上の「◀ メニュー」で戻れます。タイルの下に出る件数（本日の消化、期限切れのToDo、期日超過の案件など）はすべて実際の数え上げです。OFFにすると、これまで通りタブを直接切り替える形になります（この設定は育成選手モード以外には影響しません）。
         </p>
       </div>
 

@@ -29,6 +29,7 @@ const ZenSection = dynamic(() => import("@/components/sections/ZenSection"), { s
 const TerminalDashboardSection = dynamic(() => import("@/components/sections/TerminalDashboardSection"), { ssr: false });
 const PowerproTrainingSection = dynamic(() => import("@/components/sections/PowerproTrainingSection"), { ssr: false });
 const MountainSection = dynamic(() => import("@/components/sections/MountainSection"), { ssr: false });
+const PowerproMenuSection = dynamic(() => import("@/components/sections/PowerproMenuSection"), { ssr: false });
 const HayarigamiSection = dynamic(() => import("@/components/sections/HayarigamiSection"), { ssr: false });
 const LobotomySection = dynamic(() => import("@/components/sections/LobotomySection"), { ssr: false });
 const LibrarySection = dynamic(() => import("@/components/sections/LibrarySection"), { ssr: false });
@@ -79,6 +80,9 @@ const TABS: TabDef[] = [
 export default function HomePage() {
   const [active, setActive] = useState("today");
   const [showCloseCheck, setShowCloseCheck] = useState(false);
+  // 育成選手モードのメインメニュー。家庭用ゲームのモード選択画面のように、
+  // まずタイルの一覧を出し、選んだタブの中身へ入る。入った先の左上から戻れる
+  const [menuOpen, setMenuOpen] = useState(true);
   // 期日リマインダーポップアップの「詳細確認」から、ToDoタブへ切り替えつつ該当タスクの
   // 詳細ダイアログを開いた状態にするための橋渡し。TodoSection側で消費されたらnullに戻す
   const [pendingTodoDetailId, setPendingTodoDetailId] = useState<string | null>(null);
@@ -86,6 +90,10 @@ export default function HomePage() {
   // 編集ダイアログを開いた状態にするための橋渡し。上と同じ仕組み
   const [pendingProjectEditId, setPendingProjectEditId] = useState<string | null>(null);
   const { mode, wordingMode } = useVisualMode();
+  const [powerproMenuStr] = useSetting("powerpro.mainMenu", "true");
+  // メインメニューを出すのは育成選手モードで、設定がONのときだけ
+  const usePowerproMenu = mode === "powerpro" && powerproMenuStr === "true";
+  const showMenu = usePowerproMenu && menuOpen;
   const tabs = useMemo(() => {
     const allKeys = TABS.map((t) => t.key as TabKey);
     const visibleKeys = new Set(visibleTabKeys(mode, allKeys));
@@ -171,7 +179,30 @@ export default function HomePage() {
           setActive("todo");
         }}
       />
-      <TabNav tabs={tabs} active={active} onChange={setActive} />
+      {/* 育成選手モードのメインメニュー中はタブ列を隠し、メニューだけを見せる。
+          モードへ入ったら、タブ列の上に「◀ メニュー」を出して戻れるようにする */}
+      {showMenu ? (
+        <PowerproMenuSection
+          onEnter={(tab) => {
+            setActive(tab);
+            setMenuOpen(false);
+          }}
+        />
+      ) : (
+        <>
+          {usePowerproMenu && (
+            <button
+              className="btn-pill-outline mb-1 self-start text-xs"
+              onClick={() => setMenuOpen(true)}
+            >
+              ◀ メニュー
+            </button>
+          )}
+          <TabNav tabs={tabs} active={active} onChange={setActive} />
+        </>
+      )}
+      {!showMenu && (
+      <>
       {active === "today" && mode === "claude" && <ClaudeWorkspaceSection onOpenInsights={() => setActive("aggregation")} />}
       {active === "today" && mode === "natsuyasumi" && <NatsuyasumiSection />}
       {active === "today" && mode === "zen" && <ZenSection />}
@@ -253,6 +284,8 @@ export default function HomePage() {
       )}
       {active === "records" && <RecordsSection />}
       {active === "settings" && <SettingsSection />}
+      </>
+      )}
 
       {showCloseCheck && (
         <Modal title="アプリを閉じますか?" onClose={() => setShowCloseCheck(false)}>
