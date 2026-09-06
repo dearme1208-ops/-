@@ -94,6 +94,20 @@ export default function RecordsSection() {
 
   const excludedCount = useMemo(() => (records ?? []).filter((r) => r.excludedFromStats).length, [records]);
 
+  // 実績は1件ごとに日付・時刻・区分・作業名・時間の入力欄が並ぶ縦長の行になるため、
+  // 全件を一度に描くと数ヶ月分でも画面が数万pxになり、目的の行まで辿り着けない。
+  // 新しい順に一定件数だけ描き、必要な分だけ足していく
+  const PAGE_SIZE = 50;
+  const [shownCount, setShownCount] = useState(PAGE_SIZE);
+  const visibleRecords = useMemo(() => filtered.slice(0, shownCount), [filtered, shownCount]);
+  // 検索・絞り込みを変えたら先頭から見せ直す
+  const filterKey = `${search}::${showExcludedOnly}`;
+  const lastFilterKey = useRef(filterKey);
+  if (lastFilterKey.current !== filterKey) {
+    lastFilterKey.current = filterKey;
+    if (shownCount !== PAGE_SIZE) setShownCount(PAGE_SIZE);
+  }
+
   // 名称・区分を変更した場合、設定に応じて紐づく作業マスタもリネームするか、
   // 新しい名称・区分のマスタ（既存 or 新規）に繋ぎ変える。時間変更時は紐づくマスタの想定時間を再計算する
   async function updateRecord(r: WorkRecord, patch: Partial<WorkRecord>) {
@@ -416,7 +430,7 @@ export default function RecordsSection() {
       </div>
 
       <div className="panel divide-y divide-cream/10">
-        {filtered.map((r) => (
+        {visibleRecords.map((r) => (
           <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -478,6 +492,22 @@ export default function RecordsSection() {
           </div>
         ))}
         {filtered.length === 0 && <p className="px-4 py-6 text-sm text-cream/50">実績データがありません。</p>}
+        {filtered.length > visibleRecords.length && (
+          <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-4">
+            <span className="text-xs text-cream/50 tabular-nums">
+              新しい順に{visibleRecords.length}件 / 全{filtered.length}件
+            </span>
+            <button className="btn-pill-outline text-xs" onClick={() => setShownCount((c) => c + PAGE_SIZE)}>
+              さらに{Math.min(PAGE_SIZE, filtered.length - visibleRecords.length)}件表示
+            </button>
+            <button className="btn-pill-outline text-xs" onClick={() => setShownCount(filtered.length)}>
+              全{filtered.length}件を表示
+            </button>
+          </div>
+        )}
+        {filtered.length > 0 && filtered.length === visibleRecords.length && filtered.length > PAGE_SIZE && (
+          <p className="px-4 py-3 text-center text-xs text-cream/40 tabular-nums">全{filtered.length}件を表示中</p>
+        )}
       </div>
 
       {showAddRecord && (

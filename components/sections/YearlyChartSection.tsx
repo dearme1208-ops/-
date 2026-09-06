@@ -76,12 +76,17 @@ export default function YearlyChartSection() {
     segments: [
       { value: s.normalSeconds, className: "fill-cream/30" },
       { value: s.overtimeSeconds, className: "fill-alert/70" },
+      { value: s.unclassifiedSeconds, className: "fill-cream/15" },
     ],
     lineValue: s.avgTaskSeconds,
   }));
 
   const totalYearSeconds = stats.reduce((s, m) => s + m.totalSeconds, 0);
   const totalOvertimeSeconds = stats.reduce((s, m) => s + m.overtimeSeconds, 0);
+  // 労働日数が未入力で、所定内/残業に分けられない月。ここを黙って「全部残業」に
+  // していたため、残業分析タブと正反対の数字が出ていた
+  const unsetMonths = stats.filter((m) => !m.hasBaseline && m.totalSeconds > 0);
+  const unclassifiedSeconds = unsetMonths.reduce((s, m) => s + m.totalSeconds, 0);
   const bestMonth = useMemo(
     () => stats.reduce((best: (typeof stats)[number] | null, m) => (!best || m.totalSeconds > best.totalSeconds ? m : best), null),
     [stats]
@@ -147,7 +152,10 @@ export default function YearlyChartSection() {
           </h3>
           <div className="text-right text-xs text-cream/60">
             <div>年度合計 {formatHms(totalYearSeconds)}</div>
-            <div>うち残業 {formatHms(totalOvertimeSeconds)}</div>
+            <div>
+              うち残業 {formatHms(totalOvertimeSeconds)}
+              {unsetMonths.length > 0 && <span className="text-cream/40">（{unsetMonths.length}ヶ月を除く）</span>}
+            </div>
           </div>
         </div>
         <StackedComboChart
@@ -157,6 +165,9 @@ export default function YearlyChartSection() {
           barLegendItems={[
             { label: "所定時間内", className: "fill-cream/30" },
             { label: "残業時間", className: "fill-alert/70" },
+            ...(unsetMonths.length > 0
+              ? [{ label: "内訳不明（労働日数が未入力）", className: "fill-cream/15" }]
+              : []),
           ]}
           lineLabel="平均作業時間"
           onBarClick={(month) => setSelectedMonth(month === selectedMonth ? null : month)}
@@ -179,8 +190,16 @@ export default function YearlyChartSection() {
             );
           }}
         />
+        {unsetMonths.length > 0 && (
+          <p className="mt-2 text-xs text-cream/60">
+            ⚠ {unsetMonths.map((m) => m.label).join("・")}は<b>労働日数が未入力</b>のため、所定内と残業に分けられません（
+            {formatHms(unclassifiedSeconds)}分を「内訳不明」として薄い色で積んでいます）。残業分析タブの表を右へスクロールすると
+            「労働日数」の欄があり、そこに月の労働日数を入れると内訳が出ます。
+          </p>
+        )}
         <p className="mt-2 text-xs text-cream/40">
-          棒グラフをクリックするとその月の作業別ランキングを、★（変動の大きい月）をクリックすると月次コメントを書けます。労働日数・所定労働時間は残業分析タブで設定します。
+          棒グラフをクリックするとその月の作業別ランキングを、★（変動の大きい月）をクリックすると月次コメントを書けます。労働日数・所定労働時間は残業分析タブで設定します。ここでの残業は「月の総実績 −
+          労働日数×所定労働時間」で、残業分析タブの概算残業（日ごとに所定時間を超えた分を積み上げたもの）とは計算方法が異なります。
         </p>
       </div>
 

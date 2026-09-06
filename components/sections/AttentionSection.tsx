@@ -28,6 +28,15 @@ import DiffLineChart from "@/components/charts/DiffLineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
+
+// 達成度(想定÷実績の百分率)を「想定からどれだけ離れているか」の一言にする。
+// ちょうど100%のときに「想定より0pt速い」と出てしまっていたので、差が無い場合は
+// 速い/遅いを言わず「想定どおり」とだけ言う
+function deviationText(pct: number): string {
+  const diff = pct - 100;
+  if (diff === 0) return "想定どおり";
+  return `想定より${Math.abs(diff)}pt${diff > 0 ? "速い" : "遅い"}`;
+}
 const AVG_COMPARE_TYPE_LABELS: Record<AvgComparePeriodType, string> = { year: "年度", h1: "上期", h2: "下期" };
 
 export default function AttentionSection() {
@@ -177,9 +186,9 @@ export default function AttentionSection() {
                   <div
                     className={`w-40 shrink-0 text-right text-xs tabular-nums ${good ? "text-cream/80" : "font-bold text-alert"}`}
                   >
-                    {good ? "▲" : "▼"} {row.avgProductivityPct}%
+                    {row.avgProductivityPct === 100 ? "＝" : good ? "▲" : "▼"} {row.avgProductivityPct}%
                     <span className="text-cream/40">
-                      （想定より{Math.abs(row.avgProductivityPct - 100)}pt{good ? "速い" : "遅い"}・{row.sampleCount}件）
+                      （{deviationText(row.avgProductivityPct)}・{row.sampleCount}件）
                     </span>
                   </div>
                 </div>
@@ -223,9 +232,9 @@ export default function AttentionSection() {
                   <div
                     className={`w-40 shrink-0 text-right text-xs tabular-nums ${good ? "text-cream/80" : "font-bold text-alert"}`}
                   >
-                    {good ? "▲" : "▼"} {row.avgProductivityPct}%
+                    {row.avgProductivityPct === 100 ? "＝" : good ? "▲" : "▼"} {row.avgProductivityPct}%
                     <span className="text-cream/40">
-                      （想定より{Math.abs(row.avgProductivityPct - 100)}pt{good ? "速い" : "遅い"}・{row.sampleCount}件）
+                      （{deviationText(row.avgProductivityPct)}・{row.sampleCount}件）
                     </span>
                   </div>
                 </div>
@@ -288,9 +297,9 @@ export default function AttentionSection() {
                     <div
                       className={`w-40 shrink-0 text-right text-xs tabular-nums ${good ? "text-cream/80" : "font-bold text-alert"}`}
                     >
-                      {good ? "▲" : "▼"} {row.avgProductivityPct}%
+                      {row.avgProductivityPct === 100 ? "＝" : good ? "▲" : "▼"} {row.avgProductivityPct}%
                       <span className="text-cream/40">
-                        （想定より{Math.abs(row.avgProductivityPct - 100)}pt{good ? "速い" : "遅い"}・{row.sampleCount}件）
+                        （{deviationText(row.avgProductivityPct)}・{row.sampleCount}件）
                       </span>
                     </div>
                   </div>

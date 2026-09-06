@@ -33,7 +33,7 @@ export interface TurnState {
   year: number; // 育成N年目(最初の実績の年を1年目とする)
   month: number;
   weekOfMonth: number; // 1〜5
-  remainingTurns: number; // 本日まだ着手していない作業の件数
+  remainingTurns: number; // 本日まだ完了していない作業の件数(計測中・一時停止中も含む)
   usedTurns: number; // 本日すでに完了した件数
   dateLabel: string; // YYYY-MM-DD
 }
@@ -47,7 +47,9 @@ export function buildTurnState(today: string, records: WorkRecord[], tasks: Dail
     year: Math.max(1, thisYear - firstYear + 1),
     month: Number(today.slice(5, 7)),
     weekOfMonth: Math.min(5, Math.floor((day - 1) / 7) + 1),
-    remainingTurns: tasks.filter((t) => t.status === "pending" || t.status === "paused").length,
+    // 完了していないものは全部「残り」。計測中の1件を残りにも消化にも数えていなかったため、
+    // 同じ画面の掲示板(DONE 1/4)と「消化1・残り2」の合計が合わなかった
+    remainingTurns: tasks.filter((t) => t.status !== "done").length,
     usedTurns: tasks.filter((t) => t.status === "done").length,
     dateLabel: today,
   };

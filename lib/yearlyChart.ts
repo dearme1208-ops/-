@@ -6,6 +6,11 @@ export interface MonthlyLaborStat {
   totalSeconds: number;
   normalSeconds: number; // 所定時間内（労働日数×所定労働時間を上限）
   overtimeSeconds: number; // 所定時間を超えた分
+  // その月の労働日数・所定労働時間が入力されていて、所定内/残業に分けられるかどうか。
+  // falseの月は基準そのものが無いので分けようがなく、normal/overtimeは両方0にして
+  // 全額をunclassifiedSecondsに置く（基準が未入力なだけの時間を「残業」と言い切らないため）
+  hasBaseline: boolean;
+  unclassifiedSeconds: number; // 内訳を出せない分（hasBaselineがfalseの月の総実績）
   avgTaskSeconds: number; // その月の実績1件あたりの平均時間
   taskCount: number;
   workDays: number;
@@ -40,8 +45,12 @@ export function computeMonthlyLaborStats(
     const entry = byMonth.get(month) ?? { totalSeconds: 0, count: 0 };
     const workDays = workDaysByMonth.get(month) ?? 0;
     const baselineSeconds = workDays * standardDailyHours * 3600;
-    const overtimeSeconds = Math.max(0, entry.totalSeconds - baselineSeconds);
-    const normalSeconds = entry.totalSeconds - overtimeSeconds;
+    // 労働日数(または所定労働時間)が未入力の月は基準が0になる。そのまま引き算すると
+    // その月の実績が丸ごと「残業」になってしまい、日ごとに超過分を積む残業分析タブと
+    // 正反対の値が出てしまうため、内訳は出さず「不明」として扱う
+    const hasBaseline = baselineSeconds > 0;
+    const overtimeSeconds = hasBaseline ? Math.max(0, entry.totalSeconds - baselineSeconds) : 0;
+    const normalSeconds = hasBaseline ? entry.totalSeconds - overtimeSeconds : 0;
     const monthNum = Number(month.slice(5, 7));
     return {
       month,
@@ -49,6 +58,8 @@ export function computeMonthlyLaborStats(
       totalSeconds: entry.totalSeconds,
       normalSeconds,
       overtimeSeconds,
+      hasBaseline,
+      unclassifiedSeconds: hasBaseline ? 0 : entry.totalSeconds,
       avgTaskSeconds: entry.count > 0 ? entry.totalSeconds / entry.count : 0,
       taskCount: entry.count,
       workDays,

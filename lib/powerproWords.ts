@@ -241,7 +241,7 @@ const THEMED: PowerproWords = {
 const PLAIN: PowerproWords = {
   screenTitle: "本日の作業",
   turnLabel: (y, m, w) => `記録${y}年目　${m}月　第${w}週`,
-  remainingTurns: (n) => `未着手${n}件`,
+  remainingTurns: (n) => `未完了${n}件`,
   usedTurns: (n) => `完了${n}件`,
 
   panelTraining: "作業",

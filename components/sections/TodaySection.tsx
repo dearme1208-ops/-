@@ -3294,9 +3294,11 @@ export default function TodaySection({
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h2 className="font-display text-lg font-bold">{date} の作業リスト</h2>
+      {/* 右のボタン群が多いので、狭い画面では折り返して段を分ける。折り返しがないと
+          見出し側が押し潰されて「2026-」「09-06」「の作業」「リスト」の4行になっていた */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="font-display text-lg font-bold whitespace-nowrap">{date} の作業リスト</h2>
           {streakDays > 0 && (
             <span
               className="rounded-full bg-alert/15 px-2 py-0.5 text-xs font-bold text-alert"

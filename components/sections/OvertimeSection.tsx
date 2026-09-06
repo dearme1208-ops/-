@@ -187,6 +187,12 @@ export default function OvertimeSection() {
         </p>
       </div>
 
+      {/* 表は6列あって狭い画面には収まりきらない。特に一番右の「労働日数」は年表タブの
+          所定内/残業の内訳に使われる大事な入力なのに、横スクロールの外にあって
+          存在に気づけなかったため、その旨を先に書いておく */}
+      <p className="text-xs text-cream/40">
+        表は横にスクロールします。右端の<b className="text-cream/60">「手入力残業」「労働日数」</b>は入力欄で、労働日数を入れると年表タブのグラフが所定内と残業に分かれます。
+      </p>
       <div className="panel overflow-x-auto p-0">
         <table className="w-full min-w-[560px] text-sm">
           <thead>

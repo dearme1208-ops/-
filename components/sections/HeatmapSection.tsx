@@ -89,6 +89,16 @@ export default function HeatmapSection() {
     return { categories: sorted, matrix: m, totals: totalMap, counts: countMap, max: maxVal };
   }, [records, sortKey]);
 
+  // 曜日の列。平日は常に出すが、記録が1件も無い土日は列ごと畳む。
+  // 狭い画面では空の土日2列のせいで木・金が画面外に押し出されてしまうため。
+  // 土日に働いた記録が1つでもあればその列は必ず出す(データがあるものは隠さない)
+  const visibleDows = useMemo(() => {
+    const hasData = (dow: number) =>
+      hourMatrix.matrix[dow].some((v) => v > 0) || [...matrix.values()].some((row) => row[dow] > 0);
+    return [0, 1, 2, 3, 4, 5, 6].filter((dow) => (dow !== 0 && dow !== 6) || hasData(dow));
+  }, [hourMatrix, matrix]);
+  const hiddenDowLabels = [0, 6].filter((d) => !visibleDows.includes(d)).map((d) => DOW_LABELS[d]);
+
   function cellColor(value: number): string {
     if (max === 0 || value === 0) return "rgba(233,230,189,0.04)";
     const ratio = Math.min(1, value / max);
@@ -139,9 +149,9 @@ export default function HeatmapSection() {
             <thead>
               <tr>
                 <th className="text-left text-xs text-cream/50">時間帯 ＼ 曜日</th>
-                {DOW_LABELS.map((d) => (
-                  <th key={d} className="w-14 text-center text-xs text-cream/50">
-                    {d}
+                {visibleDows.map((dow) => (
+                  <th key={dow} className="w-14 text-center text-xs text-cream/50">
+                    {DOW_LABELS[dow]}
                   </th>
                 ))}
               </tr>
@@ -152,7 +162,7 @@ export default function HeatmapSection() {
                   <td className="whitespace-nowrap pr-2 text-xs text-cream/70">
                     {String(hour).padStart(2, "0")}:00
                   </td>
-                  {DOW_LABELS.map((_, dow) => {
+                  {visibleDows.map((dow) => {
                     const v = hourMatrix.matrix[dow][hour];
                     return (
                       <td
@@ -235,9 +245,9 @@ export default function HeatmapSection() {
           <thead>
             <tr>
               <th className="text-left text-xs text-cream/50">区分 ＼ 曜日</th>
-              {DOW_LABELS.map((d) => (
-                <th key={d} className="w-16 text-center text-xs text-cream/50">
-                  {d}
+              {visibleDows.map((dow) => (
+                <th key={dow} className="w-16 text-center text-xs text-cream/50">
+                  {DOW_LABELS[dow]}
                 </th>
               ))}
               <th className="w-20 text-center text-xs text-cream/50">合計</th>
@@ -248,7 +258,9 @@ export default function HeatmapSection() {
             {categories.map((cat) => (
               <tr key={cat}>
                 <td className="whitespace-nowrap pr-2 text-cream">{cat}</td>
-                {matrix.get(cat)!.map((v, dow) => (
+                {visibleDows.map((dow) => {
+                  const v = matrix.get(cat)![dow];
+                  return (
                   <td
                     key={dow}
                     className="rounded-md text-center text-[11px] tabular-nums text-cream/90"
@@ -257,13 +269,19 @@ export default function HeatmapSection() {
                   >
                     {v > 0 ? formatHms(v) : ""}
                   </td>
-                ))}
+                  );
+                })}
                 <td className="text-center text-xs tabular-nums text-cream/70">{formatHms(totals.get(cat) ?? 0)}</td>
                 <td className="text-center text-xs tabular-nums text-cream/70">{counts.get(cat) ?? 0}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        {hiddenDowLabels.length > 0 && (
+          <p className="mt-2 text-xs text-cream/40">
+            {hiddenDowLabels.join("・")}曜日は記録が1件もないため列を省いています（記録が入れば自動的に出ます）。
+          </p>
+        )}
         {categories.length === 0 && <p className="py-6 text-sm text-cream/50">データがありません。</p>}
       </div>
       )}
