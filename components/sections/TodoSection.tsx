@@ -169,6 +169,8 @@ export default function TodoSection({
   onInitialDetailConsumed?: () => void;
 } = {}) {
   const [view, setView] = useState<ViewKey>("myday");
+  const [showCsvToolsStr] = useSetting("csvTools.todo", "true");
+  const showCsvTools = showCsvToolsStr === "true";
   const [bottomViewBarStr] = useSetting("todo.bottomViewBar", "false");
   const bottomViewBar = bottomViewBarStr === "true";
   const [showProjectsViewStr] = useSetting("todo.showProjectsView", "false");
@@ -1236,31 +1238,33 @@ export default function TodoSection({
         </div>
       )}
 
-      <div className="flex flex-wrap justify-end gap-2">
-        <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
-          CSVテンプレート
-        </button>
-        <button className="btn-pill-outline text-sm" onClick={exportCsv}>
-          CSVエクスポート
-        </button>
-        <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
-          CSVインポート
-        </button>
-        <button className="btn-pill-outline text-sm" onClick={() => setShowGuideImport(true)}>
-          📋 ガイド貼り付けインポート
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) importCsv(file);
-            e.target.value = "";
-          }}
-        />
-      </div>
+      {showCsvTools && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+            CSVテンプレート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+            CSVエクスポート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+            CSVインポート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={() => setShowGuideImport(true)}>
+            📋 ガイド貼り付けインポート
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importCsv(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      )}
 
       {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
       {importErrors.length > 0 && (

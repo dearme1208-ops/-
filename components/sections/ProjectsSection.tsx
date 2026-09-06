@@ -102,6 +102,8 @@ export default function ProjectsSection({
   // ガントチャートを開いた際の初期表示位置。「今日」を基準にするか、登録されている
   // 一番古い期日（案件の中で最も早いcreatedAt/dueDate）を基準にするかを選べるようにする
   const [ganttAnchor, setGanttAnchor] = useSetting("projects.ganttAnchor", "today");
+  const [showCsvToolsStr] = useSetting("csvTools.projects", "true");
+  const showCsvTools = showCsvToolsStr === "true";
   // 完了済み段階の表示切替。設定タブと同じキーを読み書きしているので、どちらで切り替えても
   // 状態は共通で、リロードしても保たれる。段階の確認は案件タブでするものなので、
   // 設定タブまで行かずにここで直接ひっくり返せるようにしてある
@@ -567,28 +569,30 @@ export default function ProjectsSection({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap justify-end gap-2">
-        <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
-          CSVテンプレート
-        </button>
-        <button className="btn-pill-outline text-sm" onClick={exportCsv}>
-          CSVエクスポート
-        </button>
-        <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
-          CSVインポート
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) importCsv(file);
-            e.target.value = "";
-          }}
-        />
-      </div>
+      {showCsvTools && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+            CSVテンプレート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+            CSVエクスポート
+          </button>
+          <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+            CSVインポート
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importCsv(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      )}
 
       {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
       {importErrors.length > 0 && (

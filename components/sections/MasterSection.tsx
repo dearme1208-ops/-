@@ -40,6 +40,8 @@ export default function MasterSection() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [staleDaysStr] = useSetting("master.staleDays", "90");
   const staleDays = Math.max(1, Number(staleDaysStr) || 90);
+  const [showCsvToolsStr] = useSetting("csvTools.master", "true");
+  const showCsvTools = showCsvToolsStr === "true";
   const [orphansCollapsed, setOrphansCollapsed] = useState(false);
   // クリックした作業マスタ(または宙に浮いた実績のグループ)の実績一覧を表示するモーダル。
   // recordsをその場でコピーせず参照条件だけ持たせることで、モーダルを開いたまま
@@ -296,26 +298,30 @@ export default function MasterSection() {
           ))}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
-            CSVテンプレート
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={exportCsv}>
-            CSVエクスポート
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
-            CSVインポート
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importCsv(file);
-              e.target.value = "";
-            }}
-          />
+          {showCsvTools && (
+            <>
+              <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+                CSVテンプレート
+              </button>
+              <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+                CSVエクスポート
+              </button>
+              <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+                CSVインポート
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importCsv(file);
+                  e.target.value = "";
+                }}
+              />
+            </>
+          )}
           <button className="btn-pill-outline text-sm" onClick={recalcEstimates}>
             想定時間を再計算
           </button>

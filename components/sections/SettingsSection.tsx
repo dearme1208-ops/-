@@ -135,6 +135,20 @@ export default function SettingsSection() {
   const showCompletedSubtasks = showCompletedSubtasksStr === "true";
   const [showCompletedStagesStr, setShowCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
   const showCompletedStages = showCompletedStagesStr === "true";
+  const [csvToolsTodayStr, setCsvToolsTodayStr] = useSetting("csvTools.today", "true");
+  const [csvToolsTodoStr, setCsvToolsTodoStr] = useSetting("csvTools.todo", "true");
+  const [csvToolsProjectsStr, setCsvToolsProjectsStr] = useSetting("csvTools.projects", "true");
+  const [csvToolsMasterStr, setCsvToolsMasterStr] = useSetting("csvTools.master", "true");
+  const [csvToolsTemplateStr, setCsvToolsTemplateStr] = useSetting("csvTools.template", "true");
+  const [csvToolsRecordsStr, setCsvToolsRecordsStr] = useSetting("csvTools.records", "true");
+  const csvToolSettings = [
+    { label: "本日の作業（予定CSV）", valueStr: csvToolsTodayStr, setValueStr: setCsvToolsTodayStr },
+    { label: "ToDo", valueStr: csvToolsTodoStr, setValueStr: setCsvToolsTodoStr },
+    { label: "案件", valueStr: csvToolsProjectsStr, setValueStr: setCsvToolsProjectsStr },
+    { label: "作業マスタ", valueStr: csvToolsMasterStr, setValueStr: setCsvToolsMasterStr },
+    { label: "曜日別テンプレート", valueStr: csvToolsTemplateStr, setValueStr: setCsvToolsTemplateStr },
+    { label: "実績編集", valueStr: csvToolsRecordsStr, setValueStr: setCsvToolsRecordsStr },
+  ];
   const [todoReminderEnabledStr, setTodoReminderEnabledStr] = useSetting("todo.reminderEnabled", "true");
   const todoReminderEnabled = todoReminderEnabledStr === "true";
   const [todoReminderDaysBefore, setTodoReminderDaysBefore] = useSetting("todo.reminderDaysBefore", "1");
@@ -1840,6 +1854,27 @@ export default function SettingsSection() {
         </p>
         <p className="text-xs text-cream/50">
           案件の完了済み段階には、チェックマークの代わりに<b>実際に完了した順番</b>が丸数字で入り、右側に完了日が付きます（丸や日付を長押し／マウスを重ねると完了日時が出ます）。リスト上の並びと実際に片付けた順番は食い違うことがあるため、前の段階を追い越して完了した段階は丸に赤い輪を付けて区別しています。完了した時刻が残っていない段階（この表示より前に完了させた古い段階など）は、順番を推測せずこれまで通りチェックマークのままにします。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">タブごとのCSVインポート/エクスポート/テンプレート表示</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          {csvToolSettings.map(({ label, valueStr, setValueStr }) => {
+            const visible = valueStr === "true";
+            return (
+              <button
+                key={label}
+                className={visible ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setValueStr(visible ? "false" : "true")}
+              >
+                {label}: {visible ? "表示" : "非表示"}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-cream/50">
+          普段使わないCSVテンプレート・エクスポート・インポート（ToDoの「ガイド貼り付けインポート」を含む）のボタンをタブごとに隠せます。OFFにしても機能自体やデータには一切影響せず、ボタンが一覧の上から消えるだけです（いつでもONに戻せます）。
         </p>
       </div>
 

@@ -23,6 +23,7 @@ import { upsertTemplateItemsFromCsv } from "@/lib/template";
 import { templateItemsToCsv, templateCsvTemplate, parseTemplateCsv } from "@/lib/templateCsv";
 import { downloadTextFile } from "@/lib/report";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
+import { useSetting } from "@/lib/settings";
 import type { MasterTask, TemplateItem, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -73,6 +74,8 @@ export default function TemplateSection() {
   const [showPicker, setShowPicker] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
+  const [showCsvToolsStr] = useSetting("csvTools.template", "true");
+  const showCsvTools = showCsvToolsStr === "true";
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const items = useLiveQuery(
@@ -136,28 +139,30 @@ export default function TemplateSection() {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
-            CSVテンプレート
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={exportCsv}>
-            CSVエクスポート
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
-            CSVインポート
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importCsv(file);
-              e.target.value = "";
-            }}
-          />
-        </div>
+        {showCsvTools && (
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+              CSVテンプレート
+            </button>
+            <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+              CSVエクスポート
+            </button>
+            <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+              CSVインポート
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) importCsv(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {importResult && <p className="text-xs text-cream/70">{importResult}</p>}

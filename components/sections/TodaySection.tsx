@@ -142,6 +142,8 @@ export default function TodaySection({
   const [scheduleConflict, setScheduleConflict] = useState<{ task: DailyTask; runningTasks: DailyTask[] } | null>(null);
   const [voiceEnabledStr] = useSetting("today.voiceEnabled", "false");
   const voiceEnabled = voiceEnabledStr === "true";
+  const [showScheduleCsvToolsStr] = useSetting("csvTools.today", "true");
+  const showScheduleCsvTools = showScheduleCsvToolsStr === "true";
   const [handsFreeModeStr] = useSetting("today.handsFreeEnabled", "false");
   const handsFreeMode = handsFreeModeStr === "true";
   const [voiceListening, setVoiceListening] = useState(false);
@@ -3430,23 +3432,27 @@ export default function TodaySection({
                   : "🎤 音声で操作"}
             </button>
           ))}
-          <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
-            予定CSVテンプレート
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={() => scheduleFileInputRef.current?.click()}>
-            予定インポート
-          </button>
-          <input
-            ref={scheduleFileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importScheduleCsv(file);
-              e.target.value = "";
-            }}
-          />
+          {showScheduleCsvTools && (
+            <>
+              <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
+                予定CSVテンプレート
+              </button>
+              <button className="btn-pill-outline text-sm" onClick={() => scheduleFileInputRef.current?.click()}>
+                予定インポート
+              </button>
+              <input
+                ref={scheduleFileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importScheduleCsv(file);
+                  e.target.value = "";
+                }}
+              />
+            </>
+          )}
           {tasks && tasks.length > 0 && (
             <button className="btn-pill-outline text-sm" onClick={generateFromTemplate}>
               再生成

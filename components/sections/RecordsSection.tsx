@@ -40,6 +40,8 @@ export default function RecordsSection() {
   const [importStatus, setImportStatus] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
+  const [showCsvToolsStr] = useSetting("csvTools.records", "true");
+  const showCsvTools = showCsvToolsStr === "true";
   // パソコンを閉じていた等で計測できず、後日まとめて過去の実績を手入力したい場合に使う
   const [showAddRecord, setShowAddRecord] = useState(false);
 
@@ -263,23 +265,27 @@ export default function RecordsSection() {
           <button className="btn-pill-outline text-sm" onClick={() => setShowAddRecord(true)}>
             + 実績を追加
           </button>
-          <button className="btn-pill-outline text-sm" onClick={exportCsv}>
-            CSVエクスポート
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
-            CSVインポート
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importCsv(file);
-              e.target.value = "";
-            }}
-          />
+          {showCsvTools && (
+            <>
+              <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+                CSVエクスポート
+              </button>
+              <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+                CSVインポート
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importCsv(file);
+                  e.target.value = "";
+                }}
+              />
+            </>
+          )}
         </div>
       </div>
 
@@ -318,9 +324,11 @@ export default function RecordsSection() {
                     onChange={(e) => setJournalSearch(e.target.value)}
                     className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
                   />
-                  <button className="btn-pill-outline text-xs" onClick={exportJournalCsv}>
-                    記録CSVエクスポート
-                  </button>
+                  {showCsvTools && (
+                    <button className="btn-pill-outline text-xs" onClick={exportJournalCsv}>
+                      記録CSVエクスポート
+                    </button>
+                  )}
                 </div>
                 <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
                   {filteredJournal.map((e) => (
