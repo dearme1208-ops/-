@@ -102,6 +102,11 @@ export default function ProjectsSection({
   // ガントチャートを開いた際の初期表示位置。「今日」を基準にするか、登録されている
   // 一番古い期日（案件の中で最も早いcreatedAt/dueDate）を基準にするかを選べるようにする
   const [ganttAnchor, setGanttAnchor] = useSetting("projects.ganttAnchor", "today");
+  // 完了済み段階の表示切替。設定タブと同じキーを読み書きしているので、どちらで切り替えても
+  // 状態は共通で、リロードしても保たれる。段階の確認は案件タブでするものなので、
+  // 設定タブまで行かずにここで直接ひっくり返せるようにしてある
+  const [showCompletedStagesStr, setShowCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
+  const showCompletedStages = showCompletedStagesStr === "true";
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [analysisProject, setAnalysisProject] = useState<ProjectItem | null>(null);
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
@@ -404,6 +409,11 @@ export default function ProjectsSection({
 
   const activeRows = useMemo(() => rows.filter((r) => !r.project.completedAt), [rows]);
   const completedRows = useMemo(() => rows.filter((r) => !!r.project.completedAt), [rows]);
+  // 完了済みの段階が1件もない間はトグルを出しても切り替える対象がないので、その時は隠す
+  const completedStageCount = useMemo(
+    () => rows.reduce((n, r) => n + (r.project.stages ?? []).filter(isStageDone).length, 0),
+    [rows]
+  );
 
   // ガントチャート・カレンダーは既定で未完了の案件だけを表示する(一覧の「完了済み」欄と同様、
   // デフォルトでは埋もれさせない)。トグルで完了済みも重ねて表示できる
@@ -718,6 +728,20 @@ export default function ProjectsSection({
           />
         );
       })()}
+
+      {completedStageCount > 0 && (
+        <div className="mb-2 flex justify-end">
+          <button
+            type="button"
+            className={showCompletedStages ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowCompletedStagesStr(showCompletedStages ? "false" : "true")}
+            aria-pressed={showCompletedStages}
+            title="各案件の下に並ぶ完了済みの段階を、一覧に出すかどうかを切り替えます（設定タブの同じ項目と連動し、次に開いた時も保たれます）"
+          >
+            完了済みの段階（{completedStageCount}）: {showCompletedStages ? "表示中" : "非表示"}
+          </button>
+        </div>
+      )}
 
       <div className="panel divide-y divide-cream/10">
         {activeRows.map(({ project, overdue, dueToday, daysLeft, paceWarning, forecast }) => (
