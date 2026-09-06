@@ -2508,7 +2508,8 @@ function TaskRow({
           />
           <span
             className="pointer-events-none absolute inset-0 rounded-lg"
-            style={{ boxShadow: "inset 0 0 0 1px rgba(201,162,39,.6), 0 2px 8px -4px rgba(10,16,32,.7)" }}
+            // 台紙の縁そのものが階級の色になったので、この上に重ねる線は色を持たせない
+            style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,.24), 0 2px 8px -4px rgba(10,16,32,.7)" }}
           />
           {/* 階級は平たい札ではなく、盾の記章で出す */}
           <RankEmblem

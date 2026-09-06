@@ -1271,6 +1271,11 @@ export function rankCssColor(rank: string): string {
   return `linear-gradient(to bottom, ${rgb(light)}, ${rgb(dark)})`;
 }
 
+/** 記章と同じ配色を、Canvasで塗るための2色として返す */
+export function rankColorPair(rank: string): [Rgb, Rgb] {
+  return RANK_COLOR[rank] ?? RANK_COLOR.G;
+}
+
 export function paintRankEmblem(ctx: CanvasRenderingContext2D, o: { size: number; rank: string }) {
   const s = o.size;
   ctx.clearRect(0, 0, s, s);
@@ -1308,12 +1313,18 @@ export function paintRankEmblem(ctx: CanvasRenderingContext2D, o: { size: number
   ctx.fillText(o.rank, 0, s * 0.02);
   ctx.restore();
 }
-
 // ============================================================
 // スカウト候補の胸像(ToDo一覧用)
 // ============================================================
-// 一覧の各行に置く小さな図。ヘルメットの色は件名から決定的に決まるので、
-// 同じToDoは一覧の並びが変わっても同じ顔で出る。評価が高いほど背景が熱を帯びる。
+// 一覧の各行に置く小さな名鑑写真。誰の顔になるかは件名から決定的に決まるので、
+// 同じToDoは並び順が変わっても同じ人物で出る。
+//
+// 描き方で気をつけていること:
+//  ・実際に出るのは54px前後。織りや網点や虹彩の繊維をその大きさで描いても、
+//    縮小の過程で潰れて濁るだけなので、描き込みは表示サイズで段階を分ける。
+//    小さいときは代わりに「背景と顔の明暗差」「輪郭」を強くする
+//  ・顔の作りを種で散らす。同じ骨格に色だけ変えたものを並べると人形の列に見える
+//  ・乱数が決めるのは「誰の顔か」だけで、評価・期日・完了状態には一切関わらない
 
 export function paintScoutBust(
   ctx: CanvasRenderingContext2D,
@@ -1322,169 +1333,287 @@ export function paintScoutBust(
   const s = o.size;
   ctx.clearRect(0, 0, s, s);
   const rng = makeRng(`scout:${o.seed}`);
-  // 個体差(髪・肌・ユニフォームの色、顔の作り)は種から決まるので、
-  // 同じ項目には毎回まったく同じ顔が出る。乱数は「誰の顔か」を決めるだけで、
-  // 評価や期日といった数値には一切関わらない
-  const hue = rng();
-  const teamBase: Rgb = hue < 0.3 ? [188, 42, 46] : hue < 0.55 ? [26, 74, 148] : hue < 0.78 ? [22, 108, 78] : [92, 58, 142];
-  const uni: Rgb = o.done ? [138, 146, 162] : mix(o.accent, teamBase, 0.55 + rng() * 0.3);
-  const uniLit = mix(uni, [255, 255, 255], 0.4);
-  const uniDim = mix(uni, [10, 14, 26], 0.45);
-  const skinTone = rng();
-  const skin: Rgb = mix([255, 224, 190], [222, 172, 128], skinTone * 0.8);
-  const skinLit = mix(skin, [255, 250, 236], 0.45);
-  const skinDim = mix(skin, [128, 74, 52], 0.34);
-  const skinDeep = mix(skin, [96, 52, 38], 0.5);
-  const hair: Rgb = rng() < 0.75 ? [38, 28, 26] : [78, 52, 34];
-  const irisPick = rng();
-  const iris: Rgb = irisPick < 0.6 ? [58, 40, 30] : irisPick < 0.85 ? [46, 76, 108] : [64, 92, 62];
+
+  // 表示サイズに応じた描き込みの段階
+  const detail = s >= 110 ? 2 : s >= 64 ? 1 : 0;
 
   // ------------------------------------------------------------
-  // 背景: 名鑑の証明写真らしく、頭の後ろにだけ光を置いた撮影ホリゾント
+  // 個体の決定
   // ------------------------------------------------------------
-  const heatT = o.done ? 0 : o.urgency;
-  const bgFar: Rgb = o.done ? [206, 210, 220] : mix([168, 188, 216], [176, 118, 112], heatT * 0.65);
-  const bgNear: Rgb = o.done ? [236, 238, 244] : mix([238, 246, 255], [250, 224, 214], heatT * 0.65);
-  const spot = ctx.createRadialGradient(s * 0.5, s * 0.34, s * 0.05, s * 0.5, s * 0.5, s * 0.78);
-  spot.addColorStop(0, rgb(bgNear));
-  spot.addColorStop(1, rgb(bgFar));
-  ctx.fillStyle = spot;
+  const hue = rng();
+  const teamBase: Rgb = hue < 0.28 ? [176, 34, 44] : hue < 0.52 ? [22, 62, 132] : hue < 0.72 ? [16, 96, 70] : hue < 0.88 ? [84, 48, 132] : [26, 30, 40];
+  const uni: Rgb = o.done ? [132, 140, 156] : mix(o.accent, teamBase, 0.6 + rng() * 0.3);
+  const uniLit = mix(uni, [255, 255, 255], 0.42);
+  const uniDim = mix(uni, [6, 10, 22], 0.5);
+  const uniDeep = mix(uni, [4, 6, 16], 0.72);
+  const skinT = rng();
+  const skin: Rgb = mix([255, 226, 194], [206, 150, 108], skinT * 0.9);
+  const skinLit = mix(skin, [255, 252, 242], 0.5);
+  const skinDim = mix(skin, [150, 84, 58], 0.3);
+  const skinDeep = mix(skin, [92, 44, 34], 0.52);
+  const hairPick = rng();
+  const hair: Rgb = hairPick < 0.62 ? [34, 26, 26] : hairPick < 0.86 ? [72, 48, 32] : [104, 78, 52];
+  const hairLit = mix(hair, [255, 236, 200], 0.34);
+  const irisPick = rng();
+  const iris: Rgb = irisPick < 0.58 ? [64, 42, 28] : irisPick < 0.84 ? [44, 74, 108] : [58, 90, 60];
+  const irisLit = mix(iris, [255, 255, 255], 0.42);
+
+  // 顔立ち。骨格そのものを種で散らして、並べたときに別人に見えるようにする
+  const faceW = 0.9 + rng() * 0.22; // 顔の幅
+  const jawL = 0.84 + rng() * 0.32; // 顎の長さ
+  const eyeR = 0.9 + rng() * 0.24; // 目の大きさ
+  const eyeGap = 8.8 + rng() * 2; // 目の間隔
+  const browW = 0.8 + rng() * 0.5; // 眉の太さ
+  const noseW = 0.82 + rng() * 0.4;
+  const earR = 0.86 + rng() * 0.34;
+  const mouthW = 0.84 + rng() * 0.36;
+  const hairStyle = Math.floor(rng() * 4); // 前髪の形
+  const capTilt = (rng() - 0.5) * 0.11; // 帽子のかぶり方の癖
+  const turn = (rng() - 0.5) * 0.16; // 首の振り
+  const tilt = (rng() - 0.5) * 0.1;
+
+  const u = s / 100; // 「顔の高さ100」を基準にした単位
+  const heat = o.done ? 0 : o.urgency;
+
+  // ============================================================
+  // 台紙(背景)
+  // ============================================================
+  // 撮影所の背景紙。頭の後ろが明るく、四隅へ向かって落ちる。
+  // 小さく出したときに人物の輪郭が浮き上がるかどうかは、ここの明暗差で決まる
+  const bgDeep: Rgb = o.done
+    ? [104, 110, 124]
+    : mix(mix(teamBase, [28, 38, 62], 0.42), [128, 34, 28], heat * 0.5);
+  const bgLit: Rgb = o.done
+    ? [212, 216, 224]
+    : mix(mix(teamBase, [240, 246, 255], 0.78), [255, 216, 198], heat * 0.55);
+  const base = ctx.createRadialGradient(s * 0.46, s * 0.3, s * 0.04, s * 0.5, s * 0.4, s * 0.6);
+  base.addColorStop(0, rgb(mix(bgLit, [255, 255, 255], 0.35)));
+  base.addColorStop(0.4, rgb(bgLit));
+  base.addColorStop(1, rgb(bgDeep));
+  ctx.fillStyle = base;
   ctx.fillRect(0, 0, s, s);
-  // 四隅を落として被写体へ視線を寄せる
-  const vig = ctx.createRadialGradient(s * 0.5, s * 0.45, s * 0.28, s * 0.5, s * 0.5, s * 0.78);
+  // 四隅をさらに落とす。ここの明暗差が、小さく出したときの輪郭の見え方を決める
+  const vig = ctx.createRadialGradient(s * 0.5, s * 0.44, s * 0.3, s * 0.5, s * 0.5, s * 0.78);
   vig.addColorStop(0, "rgba(0,0,0,0)");
-  vig.addColorStop(1, "rgba(12,18,32,0.34)");
+  vig.addColorStop(1, `rgba(${o.done ? "30,32,38" : mix(teamBase, [10, 14, 26], 0.55).join(",")},0.55)`);
   ctx.fillStyle = vig;
   ctx.fillRect(0, 0, s, s);
 
-  // 期日が迫っているときだけ、背景に集中線を薄く入れる
+  if (detail >= 2) {
+    // 証書のような細かい干渉模様(ギヨシェ)。紙そのものに「刷りもの」の質感を出す
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.strokeStyle = rgb(mix(bgDeep, [0, 0, 0], 0.35));
+    ctx.lineWidth = Math.max(0.4, s * 0.005);
+    for (let k = 0; k < 3; k++) {
+      const cx = s * (0.3 + k * 0.2);
+      const cy = s * (0.35 + (k % 2) * 0.3);
+      for (let r0 = s * 0.12; r0 < s * 0.55; r0 += s * 0.055) {
+        ctx.beginPath();
+        for (let i = 0; i <= 64; i++) {
+          const a = (Math.PI * 2 * i) / 64;
+          const rr = r0 * (1 + Math.sin(a * (5 + k) + k) * 0.14);
+          const x = cx + Math.cos(a) * rr;
+          const y = cy + Math.sin(a) * rr * 0.82;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  if (detail >= 1) {
+    // 箔の虹。斜めの帯を薄く重ねて、光の角度で色が変わる紙に見せる
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const foilCols = ["rgba(120,190,255,0.14)", "rgba(255,180,220,0.12)", "rgba(180,255,200,0.1)"];
+    for (let i = 0; i < 3; i++) {
+      const g = ctx.createLinearGradient(-s * 0.2 + i * s * 0.3, 0, s * 0.3 + i * s * 0.3, s);
+      g.addColorStop(0, "rgba(255,255,255,0)");
+      g.addColorStop(0.5, foilCols[i]);
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, s, s);
+    }
+    ctx.restore();
+  }
+
+  // 期日が迫っているときだけ、被写体の外側から集中線
   if (!o.done && o.urgency > 0.5) {
     ctx.save();
     ctx.globalCompositeOperation = "multiply";
-    ctx.strokeStyle = `rgba(196,64,52,${0.1 + o.urgency * 0.16})`;
+    ctx.strokeStyle = `rgba(150,36,30,${0.1 + o.urgency * 0.16})`;
     ctx.lineWidth = Math.max(1, s * 0.026);
-    for (let i = 0; i < 14; i++) {
-      const a = (Math.PI * 2 * i) / 14 + rng() * 0.18;
+    for (let i = 0; i < 16; i++) {
+      const a = (Math.PI * 2 * i) / 16 + rng() * 0.16;
       ctx.beginPath();
       ctx.moveTo(s / 2 + Math.cos(a) * s * 0.62, s / 2 + Math.sin(a) * s * 0.62);
-      ctx.lineTo(s / 2 + Math.cos(a) * s * 0.95, s / 2 + Math.sin(a) * s * 0.95);
+      ctx.lineTo(s / 2 + Math.cos(a) * s * 0.98, s / 2 + Math.sin(a) * s * 0.98);
       ctx.stroke();
     }
     ctx.restore();
   }
 
-  // 被写体の落ち影。背景から少し浮かせて、平面的にならないようにする
-  // 被写体がホリゾントに落とす影。頭の周りに回すと灰色の輪に見えてしまうので、
-  // 右下(光源の反対側)の肩のあたりにだけ、ぼかした帯として置く
-  const cast = ctx.createRadialGradient(s * 0.66, s * 0.78, s * 0.02, s * 0.66, s * 0.78, s * 0.44);
-  cast.addColorStop(0, "rgba(18,24,40,0.26)");
-  cast.addColorStop(1, "rgba(18,24,40,0)");
+  // 被写体が背景に落とす影(光源は左上なので、右下へ流す)
+  const cast = ctx.createRadialGradient(s * 0.68, s * 0.8, s * 0.02, s * 0.66, s * 0.78, s * 0.46);
+  cast.addColorStop(0, "rgba(10,14,26,0.34)");
+  cast.addColorStop(1, "rgba(10,14,26,0)");
   ctx.fillStyle = cast;
   ctx.fillRect(0, 0, s, s);
 
+  // ============================================================
+  // 被写体
+  // ============================================================
   ctx.save();
   ctx.translate(s / 2, s * 0.6);
-  const u = s / 100; // 100を基準にした単位。以下は「顔の高さ100」で考えた寸法
+  ctx.scale(1.06, 1.06);
 
-  // ------------------------------------------------------------
-  // 胴(ユニフォーム)
-  // ------------------------------------------------------------
-  const shoulderY = 26 * u;
-  const bodyG = ctx.createLinearGradient(-40 * u, shoulderY, 40 * u, 62 * u);
-  bodyG.addColorStop(0, rgb(uniLit));
-  bodyG.addColorStop(0.45, rgb(uni));
-  bodyG.addColorStop(1, rgb(uniDim));
-  ctx.fillStyle = bodyG;
-  ctx.beginPath();
-  // なで肩の輪郭。楕円ではなく、肩先から袖へ落ちる線を描く
-  ctx.moveTo(-46 * u, 62 * u);
-  ctx.quadraticCurveTo(-44 * u, 30 * u, -22 * u, 24 * u);
-  ctx.quadraticCurveTo(-10 * u, 21 * u, 0, 21 * u);
-  ctx.quadraticCurveTo(10 * u, 21 * u, 22 * u, 24 * u);
-  ctx.quadraticCurveTo(44 * u, 30 * u, 46 * u, 62 * u);
-  ctx.closePath();
-  ctx.fill();
-
-  // ピンストライプ
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(-46 * u, 62 * u);
-  ctx.quadraticCurveTo(-44 * u, 30 * u, -22 * u, 24 * u);
-  ctx.quadraticCurveTo(-10 * u, 21 * u, 0, 21 * u);
-  ctx.quadraticCurveTo(10 * u, 21 * u, 22 * u, 24 * u);
-  ctx.quadraticCurveTo(44 * u, 30 * u, 46 * u, 62 * u);
-  ctx.closePath();
-  ctx.clip();
-  ctx.strokeStyle = "rgba(255,255,255,0.16)";
-  ctx.lineWidth = Math.max(0.6, 1.4 * u);
-  for (let x = -44; x <= 44; x += 11) {
+  // ---- 胴 ----
+  const bodyPath = () => {
     ctx.beginPath();
-    ctx.moveTo(x * u, 18 * u);
-    ctx.lineTo(x * u + 3 * u, 64 * u);
-    ctx.stroke();
-  }
-  // 肩の上面に当たる光
-  const shoulderLight = ctx.createLinearGradient(0, 20 * u, 0, 40 * u);
-  shoulderLight.addColorStop(0, "rgba(255,255,255,0.3)");
-  shoulderLight.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = shoulderLight;
-  ctx.fillRect(-46 * u, 20 * u, 92 * u, 22 * u);
-  ctx.restore();
-
-  // 襟と前立て(V字に開いた野球シャツの合わせ)
-  ctx.fillStyle = rgb(mix(uni, [255, 255, 255], 0.82));
-  ctx.beginPath();
-  ctx.moveTo(-14 * u, 24 * u);
-  ctx.lineTo(0, 44 * u);
-  ctx.lineTo(14 * u, 24 * u);
-  ctx.lineTo(9 * u, 22 * u);
-  ctx.lineTo(0, 37 * u);
-  ctx.lineTo(-9 * u, 22 * u);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = rgb(mix(uni, [255, 255, 255], 0.9));
-  ctx.fillRect(-2.2 * u, 40 * u, 4.4 * u, 24 * u);
-  ctx.fillStyle = rgba(uniDim, 0.5);
-  for (let i = 0; i < 2; i++) {
-    ctx.beginPath();
-    ctx.arc(0, (48 + i * 10) * u, 1.6 * u, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // 首(顎の下に濃い影を落として、頭と胴を切り離す)
-  ctx.fillStyle = rgb(skinDim);
-  roundRect(ctx, -9 * u, 6 * u, 18 * u, 22 * u, 5 * u);
-  ctx.fill();
-  const neckShade = ctx.createLinearGradient(0, 8 * u, 0, 26 * u);
-  neckShade.addColorStop(0, rgba(skinDeep, 0.85));
-  neckShade.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = neckShade;
-  roundRect(ctx, -9 * u, 6 * u, 18 * u, 22 * u, 5 * u);
-  ctx.fill();
-
-  // ------------------------------------------------------------
-  // 頭
-  // ------------------------------------------------------------
-  // 頭蓋は上が丸く、顎に向かって細くなる。左右非対称にせず、光だけで立体を作る
-  const headPath = () => {
-    ctx.beginPath();
-    ctx.moveTo(-23 * u, -14 * u);
-    ctx.quadraticCurveTo(-23 * u, -44 * u, 0, -44 * u);
-    ctx.quadraticCurveTo(23 * u, -44 * u, 23 * u, -14 * u);
-    ctx.quadraticCurveTo(23 * u, 2 * u, 15 * u, 11 * u);
-    ctx.quadraticCurveTo(8 * u, 18 * u, 0, 18 * u);
-    ctx.quadraticCurveTo(-8 * u, 18 * u, -15 * u, 11 * u);
-    ctx.quadraticCurveTo(-23 * u, 2 * u, -23 * u, -14 * u);
+    ctx.moveTo(-48 * u, 64 * u);
+    ctx.quadraticCurveTo(-46 * u, 30 * u, -23 * u, 24 * u);
+    ctx.quadraticCurveTo(-10 * u, 20.5 * u, 0, 20.5 * u);
+    ctx.quadraticCurveTo(10 * u, 20.5 * u, 23 * u, 24 * u);
+    ctx.quadraticCurveTo(46 * u, 30 * u, 48 * u, 64 * u);
     ctx.closePath();
   };
-  // 耳(頭より先に描いて、頭の下に潜り込ませる)
-  ctx.fillStyle = rgb(skinDim);
-  for (const dx of [-22.5, 22.5]) {
+  const bodyG = ctx.createLinearGradient(-42 * u, 22 * u, 44 * u, 60 * u);
+  bodyG.addColorStop(0, rgb(uniLit));
+  bodyG.addColorStop(0.4, rgb(uni));
+  bodyG.addColorStop(1, rgb(uniDeep));
+  ctx.fillStyle = bodyG;
+  bodyPath();
+  ctx.fill();
+
+  ctx.save();
+  bodyPath();
+  ctx.clip();
+  if (detail >= 2) {
+    // 布の織り。極細の斜めの網で、平らな面に生地の感じを出す
+    ctx.globalAlpha = 0.1;
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = Math.max(0.4, 0.7 * u);
+    for (let i = -60; i < 60; i += 3) {
+      ctx.beginPath();
+      ctx.moveTo(i * u, 18 * u);
+      ctx.lineTo((i + 26) * u, 66 * u);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (detail >= 1) {
+    // ピンストライプ
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.lineWidth = Math.max(0.6, 1.3 * u);
+    for (let x = -46; x <= 46; x += 11) {
+      ctx.beginPath();
+      ctx.moveTo(x * u, 18 * u);
+      ctx.lineTo(x * u + 3 * u, 66 * u);
+      ctx.stroke();
+    }
+  }
+  // 肩の上面に当たる光
+  const shoulderLit = ctx.createLinearGradient(0, 19 * u, 0, 40 * u);
+  shoulderLit.addColorStop(0, "rgba(255,255,255,0.4)");
+  shoulderLit.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = shoulderLit;
+  ctx.fillRect(-48 * u, 19 * u, 96 * u, 24 * u);
+  // 右肩の陰(光源の反対側)
+  const shoulderShade = ctx.createLinearGradient(18 * u, 0, 48 * u, 0);
+  shoulderShade.addColorStop(0, "rgba(0,0,0,0)");
+  shoulderShade.addColorStop(1, "rgba(0,0,0,0.34)");
+  ctx.fillStyle = shoulderShade;
+  ctx.fillRect(-48 * u, 18 * u, 96 * u, 50 * u);
+  // 襟が胸に落とす影(接触影)。これがあると襟が「乗っている」ではなく「付いている」になる
+  const collarAo = ctx.createRadialGradient(0, 26 * u, 2 * u, 0, 30 * u, 26 * u);
+  collarAo.addColorStop(0, "rgba(0,0,0,0.42)");
+  collarAo.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = collarAo;
+  ctx.fillRect(-48 * u, 18 * u, 96 * u, 40 * u);
+  ctx.restore();
+
+  // 襟(厚みのある2枚)と前立て
+  ctx.fillStyle = rgb(mix(uni, [255, 255, 255], 0.86));
+  ctx.beginPath();
+  ctx.moveTo(-15 * u, 23 * u);
+  ctx.lineTo(0, 45 * u);
+  ctx.lineTo(15 * u, 23 * u);
+  ctx.lineTo(9.5 * u, 21.5 * u);
+  ctx.lineTo(0, 38 * u);
+  ctx.lineTo(-9.5 * u, 21.5 * u);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = rgba(uniDeep, 0.45);
+  ctx.lineWidth = Math.max(0.5, 0.9 * u);
+  ctx.stroke();
+  if (detail >= 1) {
+    // 前立てと縫い目
+    ctx.fillStyle = rgb(mix(uni, [255, 255, 255], 0.92));
+    ctx.fillRect(-2.4 * u, 41 * u, 4.8 * u, 24 * u);
+    ctx.strokeStyle = rgba(uniDim, 0.5);
+    ctx.setLineDash([1.6 * u, 1.6 * u]);
+    ctx.lineWidth = Math.max(0.4, 0.7 * u);
     ctx.beginPath();
-    ctx.ellipse(dx * u, -6 * u, 4.2 * u, 6 * u, 0, 0, Math.PI * 2);
+    ctx.moveTo(-3.6 * u, 41 * u); ctx.lineTo(-3.6 * u, 66 * u);
+    ctx.moveTo(3.6 * u, 41 * u); ctx.lineTo(3.6 * u, 66 * u);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = rgba(uniDim, 0.6);
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      ctx.arc(0, (49 + i * 11) * u, 1.7 * u, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ---- 首 ----
+  ctx.fillStyle = rgb(skinDim);
+  roundRect(ctx, -9 * u, 4 * u, 18 * u, 24 * u, 5 * u);
+  ctx.fill();
+  // 顎が首に落とす影
+  const neckAo = ctx.createLinearGradient(0, 4 * u, 0, 24 * u);
+  neckAo.addColorStop(0, rgba(skinDeep, 0.95));
+  neckAo.addColorStop(0.7, "rgba(0,0,0,0)");
+  ctx.fillStyle = neckAo;
+  roundRect(ctx, -9 * u, 4 * u, 18 * u, 24 * u, 5 * u);
+  ctx.fill();
+
+  // ---- 頭 ----
+  ctx.save();
+  ctx.rotate(tilt);
+  ctx.translate(turn * 10 * u, 0);
+
+  const hw = 23 * faceW; // 顔の半幅
+  const chin = 18 * jawL; // 顎先
+  const headPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(-hw * u, -14 * u);
+    ctx.quadraticCurveTo(-hw * u, -44 * u, 0, -44 * u);
+    ctx.quadraticCurveTo(hw * u, -44 * u, hw * u, -14 * u);
+    ctx.quadraticCurveTo(hw * u, chin * 0.1 * u, hw * 0.66 * u, chin * 0.62 * u);
+    ctx.quadraticCurveTo(hw * 0.36 * u, chin * u, 0, chin * u);
+    ctx.quadraticCurveTo(-hw * 0.36 * u, chin * u, -hw * 0.66 * u, chin * 0.62 * u);
+    ctx.quadraticCurveTo(-hw * u, chin * 0.1 * u, -hw * u, -14 * u);
+    ctx.closePath();
+  };
+
+  // 耳(頭より先に、頭の下へ潜り込ませる)
+  for (const dx of [-1, 1] as const) {
+    ctx.fillStyle = rgb(skinDim);
+    ctx.beginPath();
+    ctx.ellipse(dx * (hw - 0.5) * u, -6 * u, 4.2 * earR * u, 6 * earR * u, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = rgba(skinDeep, 0.5);
+    ctx.beginPath();
+    ctx.ellipse(dx * (hw - 1) * u, -6 * u, 2.1 * earR * u, 3.4 * earR * u, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  const faceG = ctx.createLinearGradient(-18 * u, -40 * u, 22 * u, 20 * u);
+
+  // 顔の下地。左上からの主光を球として置く
+  const faceG = ctx.createRadialGradient(-9 * u, -26 * u, 2 * u, 0, -8 * u, 34 * u);
   faceG.addColorStop(0, rgb(skinLit));
   faceG.addColorStop(0.5, rgb(skin));
   faceG.addColorStop(1, rgb(skinDim));
@@ -1495,182 +1624,358 @@ export function paintScoutBust(
   ctx.save();
   headPath();
   ctx.clip();
-  // 右からの回り込み光(リムライト)
-  const rim = ctx.createLinearGradient(14 * u, 0, 28 * u, 0);
-  rim.addColorStop(0, "rgba(255,255,255,0)");
-  rim.addColorStop(1, "rgba(255,246,232,0.5)");
-  ctx.fillStyle = rim;
+
+  // 陰の境目(ターミネーター)。右側を面で落として球体感を作る
+  const term = ctx.createLinearGradient(2 * u, 0, (hw + 1) * u, 0);
+  term.addColorStop(0, "rgba(0,0,0,0)");
+  term.addColorStop(1, rgba(skinDeep, 0.5));
+  ctx.fillStyle = term;
   ctx.fillRect(-30 * u, -46 * u, 60 * u, 70 * u);
-  // 頬の血色
-  ctx.fillStyle = `rgba(226,132,110,${0.2 + heatT * 0.2})`;
-  for (const dx of [-15, 15]) {
+  // ユニフォームからの照り返し。顎の下だけをユニフォームの色で温める
+  const bounce = ctx.createLinearGradient(0, chin * u, 0, 2 * u);
+  bounce.addColorStop(0, rgba(uni, 0.32));
+  bounce.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = bounce;
+  ctx.fillRect(-30 * u, 0, 60 * u, chin * u);
+  // 帽子が落とす影。額から目元までを一段沈める
+  const capAo = ctx.createLinearGradient(0, -32 * u, 0, -10 * u);
+  capAo.addColorStop(0, rgba(skinDeep, 0.7));
+  capAo.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = capAo;
+  ctx.fillRect(-30 * u, -32 * u, 60 * u, 24 * u);
+  // 頬の血色。頬骨の上に薄く置く程度にとどめる
+  ctx.fillStyle = `rgba(216,120,102,${0.09 + heat * 0.11})`;
+  for (const dx of [-1, 1] as const) {
     ctx.beginPath();
-    ctx.ellipse(dx * u, 2 * u, 7 * u, 4.5 * u, 0, 0, Math.PI * 2);
+    ctx.ellipse(dx * hw * 0.6 * u, -1.5 * u, 6 * u, 3.4 * u, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // 眉庇の影(帽子が落とす影)。顔の上1/3を沈ませて、目元に落ち着きを出す
-  const browShade = ctx.createLinearGradient(0, -34 * u, 0, -8 * u);
-  browShade.addColorStop(0, rgba(skinDeep, 0.62));
-  browShade.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = browShade;
-  ctx.fillRect(-30 * u, -34 * u, 60 * u, 28 * u);
-  // 鼻。影と、稜線のハイライトの2枚だけで立てる
-  ctx.fillStyle = rgba(skinDim, 0.85);
+  // 鼻。右に影、下に小鼻の影。
+  // 稜線のハイライトは、縦長に入れると顔の真ん中に棒が立って見えるので、
+  // 鼻先のわずかな照りだけにとどめる
+  ctx.fillStyle = rgba(skinDeep, 0.34);
   ctx.beginPath();
-  ctx.moveTo(0, -12 * u);
-  ctx.quadraticCurveTo(4.5 * u, 0, 3.5 * u, 5 * u);
-  ctx.quadraticCurveTo(0, 8 * u, -3 * u, 5.5 * u);
-  ctx.quadraticCurveTo(-1 * u, 2 * u, -1 * u, -10 * u);
+  ctx.moveTo(0.8 * u, -5 * u);
+  ctx.quadraticCurveTo(4.6 * noseW * u, -0.5 * u, 3.4 * noseW * u, 4.4 * u);
+  ctx.quadraticCurveTo(0, 7 * u, -2.8 * noseW * u, 4.8 * u);
+  ctx.quadraticCurveTo(-0.8 * u, 1 * u, -0.6 * u, -4 * u);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = "rgba(255,250,240,0.5)";
+  ctx.fillStyle = "rgba(255,252,244,0.26)";
   ctx.beginPath();
-  ctx.ellipse(-0.5 * u, -3 * u, 1.6 * u, 7 * u, 0, 0, Math.PI * 2);
+  ctx.ellipse(-0.8 * u, 2.4 * u, 1.2 * u, 1.5 * u, 0, 0, Math.PI * 2);
   ctx.fill();
-  // 顎の下の影
-  const jaw = ctx.createLinearGradient(0, 8 * u, 0, 22 * u);
-  jaw.addColorStop(0, "rgba(0,0,0,0)");
-  jaw.addColorStop(1, rgba(skinDeep, 0.55));
-  ctx.fillStyle = jaw;
-  ctx.fillRect(-30 * u, 6 * u, 60 * u, 20 * u);
-  ctx.restore();
+  ctx.fillStyle = rgba(skinDeep, 0.36);
+  ctx.beginPath();
+  ctx.ellipse(0, 6 * u, 4.2 * noseW * u, 1.6 * u, 0, 0, Math.PI);
+  ctx.fill();
+  // 顎の下と、口の下のくぼみ
+  const jawAo = ctx.createLinearGradient(0, chin * 0.35 * u, 0, chin * 1.1 * u);
+  jawAo.addColorStop(0, "rgba(0,0,0,0)");
+  jawAo.addColorStop(1, rgba(skinDeep, 0.6));
+  ctx.fillStyle = jawAo;
+  ctx.fillRect(-30 * u, chin * 0.35 * u, 60 * u, chin * u);
+  // 頬骨と額の照り(鏡面)
+  ctx.fillStyle = "rgba(255,253,246,0.26)";
+  ctx.beginPath();
+  ctx.ellipse(-10 * u, -22 * u, 8 * u, 4.5 * u, -0.3, 0, Math.PI * 2);
+  ctx.fill();
 
-  // もみあげ・襟足の髪
-  ctx.save();
-  headPath();
-  ctx.clip();
-  ctx.fillStyle = rgb(hair);
-  for (const dir of [-1, 1]) {
+  // 髪。帽子の下からのぞく分だけを、面として置く。
+  // 束を何本も生やすと縮小したときに顔の上の引っかき傷に見えるので、
+  // もみあげは1枚の面、前髪は型ごとの輪郭で描く
+  const hairG = ctx.createLinearGradient(-hw * u, -28 * u, hw * u, -14 * u);
+  hairG.addColorStop(0, rgb(hairLit));
+  hairG.addColorStop(0.45, rgb(hair));
+  hairG.addColorStop(1, rgb(mix(hair, [0, 0, 0], 0.3)));
+  ctx.fillStyle = hairG;
+  // もみあげ
+  const burnLen = [2, 6, -2, 4][hairStyle];
+  for (const dir of [-1, 1] as const) {
     ctx.beginPath();
-    ctx.moveTo(dir * 23 * u, -22 * u);
-    ctx.quadraticCurveTo(dir * 23 * u, -8 * u, dir * 20 * u, -2 * u);
-    ctx.quadraticCurveTo(dir * 17.5 * u, -10 * u, dir * 18 * u, -22 * u);
+    ctx.moveTo(dir * hw * u, -27 * u);
+    ctx.lineTo(dir * hw * u, (-12 + burnLen) * u);
+    ctx.quadraticCurveTo(dir * (hw - 2.4) * u, (-15 + burnLen) * u, dir * (hw - 3.6) * u, -20 * u);
+    ctx.quadraticCurveTo(dir * (hw - 3.2) * u, -25 * u, dir * (hw - 4) * u, -27 * u);
     ctx.closePath();
     ctx.fill();
   }
+  // 前髪。帽子の縁(-19u あたり)より下へは決して降ろさない
+  ctx.beginPath();
+  if (hairStyle === 0) {
+    // まっすぐ下ろした前髪
+    ctx.moveTo(-hw * u, -28 * u);
+    ctx.quadraticCurveTo(-hw * 0.5 * u, -17.5 * u, 0, -18.5 * u);
+    ctx.quadraticCurveTo(hw * 0.5 * u, -19.5 * u, hw * u, -22 * u);
+  } else if (hairStyle === 1) {
+    // 右へ流した前髪
+    ctx.moveTo(-hw * u, -26 * u);
+    ctx.quadraticCurveTo(-hw * 0.2 * u, -25 * u, hw * 0.55 * u, -18.5 * u);
+    ctx.quadraticCurveTo(hw * 0.85 * u, -19.5 * u, hw * u, -23 * u);
+  } else if (hairStyle === 2) {
+    // 立てた前髪
+    ctx.moveTo(-hw * u, -25 * u);
+    for (let i = 0; i < 5; i++) {
+      const x0 = (-hw + (i * 2 * hw) / 5) * u;
+      const x1 = (-hw + ((i + 1) * 2 * hw) / 5) * u;
+      ctx.lineTo((x0 + x1) / 2, -19 * u);
+      ctx.lineTo(x1, -24 * u);
+    }
+  } else {
+    // 短く刈った髪(縁からわずかにのぞく)
+    ctx.moveTo(-hw * u, -27 * u);
+    ctx.quadraticCurveTo(0, -21 * u, hw * u, -25 * u);
+  }
+  ctx.lineTo(hw * u, -30 * u);
+  ctx.lineTo(-hw * u, -30 * u);
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 
-  // ------------------------------------------------------------
-  // 目
-  // ------------------------------------------------------------
+  // ---- 目 ----
   const eyeY = -8 * u;
-  const eyeOpen = o.done ? 0.35 : 1;
-  for (const dx of [-10.5, 10.5]) {
-    const ex = dx * u;
-    // 白目
-    ctx.fillStyle = "rgba(252,250,248,0.98)";
+  const open = o.done ? 0.3 : 1;
+  const gaze = turn * 6 * u;
+  const eyeRx = 5.1 * eyeR * u;
+  const eyeRy = 3.7 * eyeR * u * open;
+  const irisR = 2.9 * eyeR * u;
+  for (const dir of [-1, 1] as const) {
+    const ex = dir * eyeGap * u;
+    // 眼窩の影
+    ctx.fillStyle = rgba(skinDeep, 0.28);
     ctx.beginPath();
-    ctx.ellipse(ex, eyeY, 6 * u, 4.6 * u * eyeOpen, 0, 0, Math.PI * 2);
+    ctx.ellipse(ex, eyeY - 0.5 * u, eyeRx * 1.3, 6 * u, 0, 0, Math.PI * 2);
     ctx.fill();
-    // 虹彩と瞳
+    // 白目。上を暗くして、まぶたの落とす影を作る
+    const scl = ctx.createLinearGradient(0, eyeY - 5 * u, 0, eyeY + 4 * u);
+    scl.addColorStop(0, "rgb(210,202,196)");
+    scl.addColorStop(0.45, "rgb(250,248,246)");
+    scl.addColorStop(1, "rgb(230,224,220)");
+    ctx.fillStyle = scl;
+    ctx.beginPath();
+    ctx.ellipse(ex, eyeY, eyeRx, eyeRy, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.save();
     ctx.beginPath();
-    ctx.ellipse(ex, eyeY, 6 * u, 4.6 * u * eyeOpen, 0, 0, Math.PI * 2);
+    ctx.ellipse(ex, eyeY, eyeRx, eyeRy, 0, 0, Math.PI * 2);
     ctx.clip();
-    ctx.fillStyle = rgb(iris);
+    const ix = ex + gaze;
+    const iy = eyeY + 0.3 * u;
+    // 虹彩
+    const irisG = ctx.createRadialGradient(ix - 0.8 * u, iy - 0.8 * u, 0.4 * u, ix, iy + 0.4 * u, irisR);
+    irisG.addColorStop(0, rgb(irisLit));
+    irisG.addColorStop(1, rgb(iris));
+    ctx.fillStyle = irisG;
     ctx.beginPath();
-    ctx.arc(ex + (o.done ? 0 : 0.4 * u), eyeY + 0.4 * u, 3.4 * u, 0, Math.PI * 2);
+    ctx.arc(ix, iy, irisR, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "rgb(16,14,18)";
+    if (detail >= 2) {
+      // 放射の繊維。大きく出すときだけ
+      ctx.strokeStyle = rgba(mix(iris, [255, 255, 255], 0.5), 0.5);
+      ctx.lineWidth = Math.max(0.3, 0.4 * u);
+      for (let i = 0; i < 12; i++) {
+        const a = (Math.PI * 2 * i) / 12;
+        ctx.beginPath();
+        ctx.moveTo(ix + Math.cos(a) * irisR * 0.4, iy + Math.sin(a) * irisR * 0.4);
+        ctx.lineTo(ix + Math.cos(a) * irisR * 0.92, iy + Math.sin(a) * irisR * 0.92);
+        ctx.stroke();
+      }
+    }
+    // 外周の濃い輪(リンバルリング)
+    ctx.strokeStyle = rgba(mix(iris, [0, 0, 0], 0.55), 0.85);
+    ctx.lineWidth = Math.max(0.5, 0.8 * u);
     ctx.beginPath();
-    ctx.arc(ex + (o.done ? 0 : 0.4 * u), eyeY + 0.4 * u, 1.7 * u, 0, Math.PI * 2);
+    ctx.arc(ix, iy, irisR * 0.95, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgb(14,12,16)";
+    ctx.beginPath();
+    ctx.arc(ix, iy, irisR * 0.48, 0, Math.PI * 2);
     ctx.fill();
-    // まぶたの影
-    ctx.fillStyle = "rgba(40,26,20,0.3)";
-    ctx.fillRect(ex - 7 * u, eyeY - 6 * u, 14 * u, 3.4 * u);
+    // まぶたが白目に落とす影
+    ctx.fillStyle = "rgba(48,32,26,0.32)";
+    ctx.fillRect(ex - eyeRx * 1.2, eyeY - 6.5 * u, eyeRx * 2.4, 3.2 * u);
     ctx.restore();
-    // キャッチライト。これが入るだけで目に生気が出る
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
+
+    // キャッチライト
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.beginPath();
-    ctx.arc(ex + 1.7 * u, eyeY - 1.4 * u, 1.25 * u, 0, Math.PI * 2);
+    ctx.arc(ix - 1.4 * u, eyeY - 1.4 * u, 1.25 * u, 0, Math.PI * 2);
     ctx.fill();
-    // 上まぶたの線
-    ctx.strokeStyle = "rgba(48,32,26,0.75)";
-    ctx.lineWidth = Math.max(0.7, 1.5 * u);
+    if (detail >= 1) {
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.beginPath();
+      ctx.arc(ix + 1.7 * u, eyeY + 1.5 * u, 0.65 * u, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 上まつげ(太く)と下まぶたの反射
+    ctx.strokeStyle = "rgba(38,24,20,0.9)";
+    ctx.lineWidth = Math.max(0.9, 1.8 * u);
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.ellipse(ex, eyeY, 6 * u, 4.6 * u * eyeOpen, 0, Math.PI * 1.02, Math.PI * 1.98);
+    ctx.ellipse(ex, eyeY, eyeRx, eyeRy, 0, Math.PI * 1.03, Math.PI * 1.97);
     ctx.stroke();
-  }
-  // 眉。期日の切迫でつり上がり、完了で下がる
-  const browTilt = o.done ? -0.12 : o.urgency > 0.7 ? 0.42 : o.urgency > 0.4 ? 0.2 : 0.06;
-  ctx.strokeStyle = rgb(hair);
-  ctx.lineWidth = Math.max(1.1, 2.8 * u);
-  ctx.lineCap = "round";
-  for (const dir of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(dir * 16 * u, eyeY - 8 * u + dir * browTilt * 4 * u);
-    ctx.quadraticCurveTo(dir * 10 * u, eyeY - 11 * u, dir * 5 * u, eyeY - 8.5 * u - dir * browTilt * 4 * u);
-    ctx.stroke();
+    if (detail >= 1) {
+      ctx.strokeStyle = "rgba(255,250,244,0.5)";
+      ctx.lineWidth = Math.max(0.4, 0.7 * u);
+      ctx.beginPath();
+      ctx.ellipse(ex, eyeY + 0.6 * u, eyeRx * 0.9, eyeRy * 0.9, 0, Math.PI * 0.12, Math.PI * 0.88);
+      ctx.stroke();
+    }
   }
 
-  // 口
-  ctx.strokeStyle = "rgba(120,58,48,0.9)";
-  ctx.lineWidth = Math.max(1, 2.2 * u);
+  // 眉。表情は期日の切迫と完了状態だけで決まる(乱数は形の太さにしか関わらない)
+  const browTilt = o.done ? -0.1 : o.urgency > 0.7 ? 0.4 : o.urgency > 0.4 ? 0.2 : 0.05;
+  for (const dir of [-1, 1] as const) {
+    const strands = detail >= 1 ? 6 : 3;
+    for (let i = 0; i < strands; i++) {
+      const t = i / (strands - 1);
+      const x0 = dir * (eyeGap + 6 - t * 11) * u;
+      const y0 = eyeY - 8 * u + dir * browTilt * (1 - t) * 4 * u - t * 1.6 * u;
+      ctx.strokeStyle = rgba(mix(hair, hairLit, t * 0.3), 0.92);
+      ctx.lineWidth = Math.max(0.7, (2.4 - t * 0.9) * browW * u);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x0, y0 + 1.4 * u);
+      ctx.quadraticCurveTo(x0 - dir * 1.5 * u, y0 - 1.6 * u, x0 - dir * 2.6 * u, y0 - 1.2 * u);
+      ctx.stroke();
+    }
+  }
+
+  // ---- 口 ----
+  const mouthY = chin * 0.5 * u;
+  const mw = 6.6 * mouthW * u;
+  const curve = o.done ? 3.4 * u : o.urgency > 0.7 ? -3 * u : 1.3 * u;
+  // 上唇(暗い) → 下唇(明るい) → 下唇の照り
+  ctx.fillStyle = rgba(skinDeep, 0.72);
   ctx.beginPath();
-  const curve = o.done ? 4 * u : o.urgency > 0.7 ? -3.5 * u : 1.5 * u;
-  ctx.moveTo(-6.5 * u, 9 * u);
-  ctx.quadraticCurveTo(0, 9 * u + curve, 6.5 * u, 9 * u);
-  ctx.stroke();
+  ctx.moveTo(-mw, mouthY);
+  ctx.quadraticCurveTo(0, mouthY + curve, mw, mouthY);
+  ctx.quadraticCurveTo(0, mouthY + curve - 1.8 * u, -mw, mouthY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = rgba(mix(skin, [216, 128, 116], 0.5), 0.75);
+  ctx.beginPath();
+  ctx.moveTo(-mw * 0.8, mouthY + 0.6 * u);
+  ctx.quadraticCurveTo(0, mouthY + curve + 2.6 * u, mw * 0.8, mouthY + 0.6 * u);
+  ctx.quadraticCurveTo(0, mouthY + curve + 0.8 * u, -mw * 0.8, mouthY + 0.6 * u);
+  ctx.closePath();
+  ctx.fill();
+  if (detail >= 1) {
+    ctx.fillStyle = "rgba(255,250,244,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(-1 * u, mouthY + curve * 0.55 + 1.6 * u, 2 * u, 0.8 * u, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-  // ------------------------------------------------------------
-  // 帽子
-  // ------------------------------------------------------------
-  // つば。正面から左右対称に描くと鉢巻きに見えてしまうので、
-  // 選手の立ち絵と同じく右前へ張り出させ、少しだけ顔を振った形にする。
-  // 実際の帽子と同じく、つばを先に描いてから根元をクラウンで覆う
-  const brimY = -25 * u; // クラウンの下端。つばの一番低い所が眉(-16u)より上に来る高さ
+  // ---- 帽子 ----
+  // かぶり方の癖を少しだけ付ける。回転の中心は頭のてっぺんではなく鉢のあたり
+  ctx.save();
+  ctx.translate(0, -30 * u);
+  ctx.rotate(capTilt);
+  ctx.translate(0, 30 * u);
+
+  const cw = hw + 2.5; // 帽子の半幅(顔より少し大きい)
+  // つばを先に描き、根元をクラウンで覆う(実際の帽子と同じ順)
+  const brimY = -25 * u;
   const brimG = ctx.createLinearGradient(0, brimY - 4 * u, 0, brimY + 12 * u);
-  brimG.addColorStop(0, rgb(mix(uni, [255, 255, 255], 0.34)));
-  brimG.addColorStop(0.4, rgb(uni));
-  brimG.addColorStop(1, rgb(mix(uni, [8, 12, 24], 0.62)));
+  brimG.addColorStop(0, rgb(mix(uni, [255, 255, 255], 0.36)));
+  brimG.addColorStop(0.38, rgb(uni));
+  brimG.addColorStop(1, rgb(uniDeep));
   ctx.fillStyle = brimG;
   ctx.beginPath();
-  ctx.moveTo(-26 * u, brimY - 3 * u);
-  ctx.quadraticCurveTo(2 * u, brimY + 9 * u, 33 * u, brimY + 1 * u);
-  ctx.quadraticCurveTo(28 * u, brimY + 4.5 * u, 20 * u, brimY + 5.5 * u);
-  ctx.quadraticCurveTo(0, brimY + 6.5 * u, -26 * u, brimY + 2.5 * u);
+  ctx.moveTo(-cw * u, brimY - 3 * u);
+  ctx.quadraticCurveTo(2 * u, brimY + 9 * u, (cw + 7) * u, brimY + 1 * u);
+  ctx.quadraticCurveTo((cw + 2) * u, brimY + 4.5 * u, cw * 0.78 * u, brimY + 5.5 * u);
+  ctx.quadraticCurveTo(0, brimY + 6.5 * u, -cw * u, brimY + 2.5 * u);
   ctx.closePath();
   ctx.fill();
-  // つばが額に落とす影。これがあると「乗っている」ではなく「かぶっている」に見える
-  ctx.save();
-  headPath();
-  ctx.clip();
-  ctx.fillStyle = "rgba(72,44,32,0.32)";
-  ctx.beginPath();
-  ctx.ellipse(3 * u, brimY + 6 * u, 24 * u, 6 * u, 0, 0, Math.PI);
+  if (detail >= 1) {
+    // つばの縁の縫い目
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.setLineDash([1.4 * u, 1.4 * u]);
+    ctx.lineWidth = Math.max(0.4, 0.6 * u);
+    ctx.beginPath();
+    ctx.moveTo(-(cw - 2) * u, brimY - 1.4 * u);
+    ctx.quadraticCurveTo(2 * u, brimY + 7.6 * u, (cw + 5) * u, brimY + 1.2 * u);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // クラウン
+  const capPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(-(cw - 0.5) * u, -24 * u);
+    ctx.quadraticCurveTo(-(cw + 1) * u, -50 * u, 0, -50 * u);
+    ctx.quadraticCurveTo((cw + 1) * u, -50 * u, (cw - 0.5) * u, -24 * u);
+    ctx.closePath();
+  };
+  const capG = ctx.createRadialGradient(-10 * u, -44 * u, 1 * u, 0, -34 * u, 32 * u);
+  capG.addColorStop(0, rgb(mix(uni, [255, 255, 255], 0.55)));
+  capG.addColorStop(0.5, rgb(uni));
+  capG.addColorStop(1, rgb(uniDeep));
+  ctx.fillStyle = capG;
+  capPath();
   ctx.fill();
+
+  ctx.save();
+  capPath();
+  ctx.clip();
+  if (detail >= 1) {
+    // 6枚はぎのパネル縫い
+    ctx.strokeStyle = rgba(uniDeep, 0.6);
+    ctx.lineWidth = Math.max(0.5, 1 * u);
+    for (const dx of [-16, -8, 8, 16]) {
+      ctx.beginPath();
+      ctx.moveTo(dx * u, -24 * u);
+      ctx.quadraticCurveTo(dx * 1.15 * u, -43 * u, 0, -49 * u);
+      ctx.stroke();
+    }
+    // 通気孔
+    ctx.fillStyle = rgba(uniDeep, 0.7);
+    for (const dx of [-12, 12]) {
+      ctx.beginPath();
+      ctx.arc(dx * u, -34 * u, 1 * u, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // 右側の陰
+  const capShade = ctx.createLinearGradient(4 * u, 0, (cw + 2) * u, 0);
+  capShade.addColorStop(0, "rgba(0,0,0,0)");
+  capShade.addColorStop(1, "rgba(0,0,0,0.4)");
+  ctx.fillStyle = capShade;
+  ctx.fillRect(-(cw + 3) * u, -52 * u, (cw + 3) * 2 * u, 30 * u);
+  // 帽子の艶(細い弧)
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = Math.max(1, 2.6 * u);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.ellipse(-3 * u, -37 * u, 19 * u, 12 * u, -0.24, Math.PI * 1.12, Math.PI * 1.62);
+  ctx.stroke();
   ctx.restore();
 
-  const capG = ctx.createLinearGradient(-20 * u, -50 * u, 20 * u, -20 * u);
-  capG.addColorStop(0, rgb(mix(uni, [255, 255, 255], 0.5)));
-  capG.addColorStop(0.55, rgb(uni));
-  capG.addColorStop(1, rgb(uniDim));
-  // クラウン
-  ctx.fillStyle = capG;
+  // てっぺんのボタンと、正面の星
+  ctx.fillStyle = rgb(mix(uni, [255, 255, 255], 0.4));
   ctx.beginPath();
-  ctx.moveTo(-25.5 * u, -24 * u);
-  ctx.quadraticCurveTo(-26.5 * u, -50 * u, 0, -50 * u);
-  ctx.quadraticCurveTo(26.5 * u, -50 * u, 25.5 * u, -24 * u);
+  ctx.arc(0, -49.5 * u, 2.3 * u, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.beginPath();
+  ctx.arc(-0.7 * u, -50.2 * u, 1 * u, 0, Math.PI * 2);
+  ctx.fill();
+  const star = 4.8 * u;
+  ctx.fillStyle = "rgba(20,24,40,0.28)";
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + (Math.PI * 2 * i) / 5;
+    ctx.lineTo(Math.cos(a) * star + 0.6 * u, -36.4 * u + Math.sin(a) * star);
+    const a2 = a + Math.PI / 5;
+    ctx.lineTo(Math.cos(a2) * star * 0.44 + 0.6 * u, -36.4 * u + Math.sin(a2) * star * 0.44);
+  }
   ctx.closePath();
   ctx.fill();
-  // パネルの縫い目
-  ctx.strokeStyle = rgba(uniDim, 0.55);
-  ctx.lineWidth = Math.max(0.6, 1.2 * u);
-  for (const dx of [-9, 9]) {
-    ctx.beginPath();
-    ctx.moveTo(dx * u, -24 * u);
-    ctx.quadraticCurveTo(dx * 1.1 * u, -43 * u, 0, -49 * u);
-    ctx.stroke();
-  }
-  // てっぺんのボタン
-  ctx.fillStyle = rgb(mix(uni, [255, 255, 255], 0.35));
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.beginPath();
-  ctx.arc(0, -49.5 * u, 2.2 * u, 0, Math.PI * 2);
-  ctx.fill();
-  // 正面のチームマーク
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.beginPath();
-  const star = 4.6 * u;
   for (let i = 0; i < 5; i++) {
     const a = -Math.PI / 2 + (Math.PI * 2 * i) / 5;
     ctx.lineTo(Math.cos(a) * star, -37 * u + Math.sin(a) * star);
@@ -1679,48 +1984,89 @@ export function paintScoutBust(
   }
   ctx.closePath();
   ctx.fill();
-  // クラウンの艶
-  const capGloss = ctx.createLinearGradient(-20 * u, -48 * u, -4 * u, -26 * u);
-  capGloss.addColorStop(0, "rgba(255,255,255,0.42)");
-  capGloss.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = capGloss;
-  ctx.beginPath();
-  ctx.moveTo(-23.5 * u, -26 * u);
-  ctx.quadraticCurveTo(-25 * u, -48 * u, -4 * u, -49 * u);
-  ctx.quadraticCurveTo(-13 * u, -41 * u, -13 * u, -26 * u);
-  ctx.closePath();
-  ctx.fill();
 
-  ctx.restore();
+  ctx.restore(); // 帽子のかぶり方
+  ctx.restore(); // 頭の傾き
+  ctx.restore(); // 被写体
 
-  // ------------------------------------------------------------
-  // 仕上げ: 印刷物らしい網点と、斜めの照りを薄くのせる
-  // ------------------------------------------------------------
-  ctx.save();
-  ctx.globalAlpha = 0.06;
-  ctx.fillStyle = "rgb(20,26,44)";
-  const dot = Math.max(1, s * 0.028);
-  for (let y = 0; y < s; y += dot * 2) {
-    for (let x = (Math.round(y / (dot * 2)) % 2) * dot; x < s; x += dot * 2) {
-      ctx.fillRect(x, y, dot * 0.85, dot * 0.85);
+  // ============================================================
+  // 台紙の仕上げ
+  // ============================================================
+  if (detail >= 2) {
+    // 印刷の網点
+    ctx.save();
+    ctx.globalAlpha = 0.03;
+    ctx.fillStyle = "rgb(18,24,42)";
+    const dot = Math.max(1, s * 0.012);
+    for (let y = 0; y < s; y += dot * 2) {
+      for (let x = (Math.round(y / (dot * 2)) % 2) * dot; x < s; x += dot * 2) {
+        ctx.fillRect(x, y, dot * 0.8, dot * 0.8);
+      }
     }
+    ctx.restore();
   }
-  ctx.restore();
+  // 表面の照り
   const sheen = ctx.createLinearGradient(0, 0, s, s);
-  sheen.addColorStop(0, "rgba(255,255,255,0.16)");
-  sheen.addColorStop(0.4, "rgba(255,255,255,0)");
-  sheen.addColorStop(1, "rgba(255,255,255,0.08)");
+  sheen.addColorStop(0, "rgba(255,255,255,0.22)");
+  sheen.addColorStop(0.42, "rgba(255,255,255,0)");
+  sheen.addColorStop(1, "rgba(255,255,255,0.1)");
   ctx.fillStyle = sheen;
   ctx.fillRect(0, 0, s, s);
 
-  // 台紙の縁。階級の色があればそれで、無ければアクセント色で締める
-  const frame = o.grade ? rankCssColor(o.grade) : rgba(o.accent, 0.55);
-  ctx.strokeStyle = typeof frame === "string" ? frame : rgba(o.accent, 0.55);
-  ctx.lineWidth = Math.max(1, s * 0.022);
-  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, s - ctx.lineWidth, s - ctx.lineWidth);
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
-  ctx.lineWidth = Math.max(0.6, s * 0.012);
-  ctx.strokeRect(s * 0.035, s * 0.035, s * 0.93, s * 0.93);
+  // 縁。小さいときは評価の色の1本だけにする。
+  // 面取りと切り欠きまで入れると、54pxでは絵より枠のほうが太くなってしまう
+  // 評価の色は記章と揃える。
+  // (rankCssColor はCSSの linear-gradient を返すのでCanvasには渡せない。
+  //  無効な値を strokeStyle に入れても例外にならず黙って無視されるため、
+  //  ここでは2色を受け取ってCanvasの勾配を組み直す)
+  let rimCol: string | CanvasGradient = rgba(o.accent, 0.7);
+  if (o.grade) {
+    const [light, dark] = rankColorPair(o.grade);
+    const rg = ctx.createLinearGradient(0, 0, 0, s);
+    rg.addColorStop(0, rgb(mix(light, [255, 255, 255], 0.25)));
+    rg.addColorStop(0.5, rgb(light));
+    rg.addColorStop(1, rgb(dark));
+    rimCol = rg;
+  }
+  if (detail === 0) {
+    ctx.strokeStyle = rimCol;
+    ctx.lineWidth = Math.max(1.5, s * 0.05);
+    ctx.strokeRect(s * 0.025, s * 0.025, s * 0.95, s * 0.95);
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = Math.max(0.6, s * 0.014);
+    ctx.strokeRect(s * 0.075, s * 0.075, s * 0.85, s * 0.85);
+  } else {
+    const bevel = Math.max(1.5, s * 0.055);
+    const bg1 = ctx.createLinearGradient(0, 0, s, s);
+    bg1.addColorStop(0, "rgba(255,255,255,0.85)");
+    bg1.addColorStop(0.5, "rgba(255,255,255,0.25)");
+    bg1.addColorStop(1, "rgba(40,50,70,0.5)");
+    ctx.strokeStyle = bg1;
+    ctx.lineWidth = bevel;
+    ctx.strokeRect(bevel / 2, bevel / 2, s - bevel, s - bevel);
+    ctx.strokeStyle = rimCol;
+    ctx.lineWidth = Math.max(1, s * 0.024);
+    ctx.strokeRect(bevel * 0.95, bevel * 0.95, s - bevel * 1.9, s - bevel * 1.9);
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.lineWidth = Math.max(0.5, s * 0.008);
+    ctx.strokeRect(bevel * 1.35, bevel * 1.35, s - bevel * 2.7, s - bevel * 2.7);
+    if (detail >= 2) {
+      // 四隅の切り欠き。名鑑の台紙らしさを足す
+      ctx.strokeStyle = "rgba(255,255,255,0.38)";
+      ctx.lineWidth = Math.max(0.6, s * 0.012);
+      const c0 = bevel * 1.35;
+      const cl = s * 0.09;
+      for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
+        const x = sx > 0 ? c0 : s - c0;
+        const y = sy > 0 ? c0 : s - c0;
+        ctx.beginPath();
+        ctx.moveTo(x + sx * cl, y);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x, y + sy * cl);
+        ctx.stroke();
+      }
+    }
+  }
 }
 
 // ============================================================
