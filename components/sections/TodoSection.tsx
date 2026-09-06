@@ -171,6 +171,7 @@ export default function TodoSection({
   const [view, setView] = useState<ViewKey>("myday");
   const [showCsvToolsStr] = useSetting("csvTools.todo", "true");
   const showCsvTools = showCsvToolsStr === "true";
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [bottomViewBarStr] = useSetting("todo.bottomViewBar", "false");
   const bottomViewBar = bottomViewBarStr === "true";
   const [showProjectsViewStr] = useSetting("todo.showProjectsView", "false");
@@ -462,6 +463,12 @@ export default function TodoSection({
 
   const searchActive =
     searchQuery.trim() !== "" || filterTag !== "" || filterTagsMulti.length > 0 || filterCategory !== "" || filterCustomer !== "";
+  // 折りたたんだ状態でも「今いくつ条件が効いているか」だけはボタンに出す
+  const activeFilterCount =
+    (searchQuery.trim() !== "" ? 1 : 0) +
+    (filterTag !== "" || filterTagsMulti.length > 0 ? 1 : 0) +
+    (filterCategory !== "" ? 1 : 0) +
+    (filterCustomer !== "" ? 1 : 0);
 
   const visibleTasks = useMemo(() => {
     let filtered: TodoTask[];
@@ -1147,7 +1154,23 @@ export default function TodoSection({
         )}
       </div>
 
+      {/* 検索・3つの絞り込み・保存済みビューで画面の上半分が埋まり、肝心のタスクが
+          見えるまでスクロールが要るため、条件を何も使っていない間は折りたたんでおく。
+          絞り込み中は開いたままにして、何で絞っているか隠れないようにする */}
       <div className="flex flex-wrap items-center gap-2">
+        <button
+          className={searchActive ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => setFiltersOpen((v) => !v)}
+          aria-expanded={filtersOpen || searchActive}
+        >
+          🔍 絞り込み{activeFilterCount > 0 ? `（${activeFilterCount}）` : ""} {filtersOpen || searchActive ? "▲" : "▼"}
+        </button>
+        {!filtersOpen && !searchActive && savedViews.length > 0 && (
+          <span className="text-xs text-cream/40">保存済みビュー {savedViews.length}件</span>
+        )}
+      </div>
+
+      <div className={`flex-wrap items-center gap-2 ${filtersOpen || searchActive ? "flex" : "hidden"}`}>
         <input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -1217,7 +1240,8 @@ export default function TodoSection({
         )}
       </div>
 
-      {(savedViews.length > 0 || filterTag || filterTagsMulti.length > 0 || filterCategory || filterCustomer) && (
+      {(filtersOpen || searchActive) &&
+        (savedViews.length > 0 || filterTag || filterTagsMulti.length > 0 || filterCategory || filterCustomer) && (
         <div className="flex flex-wrap items-center gap-2">
           {savedViews.length > 0 && <span className="text-xs text-cream/40">保存済みビュー:</span>}
           {savedViews.map((v) => (

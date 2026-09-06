@@ -143,8 +143,33 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
     setZIndexById((prev) => ({ ...prev, [id]: zCounterRef.current }));
   }
 
-  const [zoomStr, setZoomStr] = useSetting("board.zoom", "1");
-  const zoom = clampMemoZoom(Number(zoomStr) || 1);
+  // ボードの幅(1400px)は狭い画面には収まらない。初期値を空にしておき、まだ倍率を
+  // 選んでいない間は画面幅に収まる倍率を自動で当てる(横スクロールしないと付箋の
+  // 右半分が見えない、という初見の詰まりを無くすため)。-/+や「幅に合わせる」を
+  // 押した時点でその値が保存され、以後は自動調整しない
+  const [zoomStr, setZoomStr] = useSetting("board.zoom", "");
+  const boardViewportRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  useEffect(() => {
+    const el = boardViewportRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setViewportWidth(el.clientWidth));
+    ro.observe(el);
+    setViewportWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  // 何も置いていない右側の余白まで含めて縮めると字が読めない大きさになるので、
+  // 実際に付箋・カードが置かれている範囲の右端までが収まればよいことにする。
+  // 拡大方向には自動で動かさず(上限100%)、読めなくなる縮小も避ける(下限40%)
+  const contentRight = Math.max(
+    360,
+    ...(notes ?? []).map((n) => n.x + n.width),
+    ...(tasks ?? []).map((t) => (t.boardX ?? 0) + CARD_WIDTH),
+    ...(todos ?? []).map((t) => (t.boardX ?? 0) + CARD_WIDTH)
+  );
+  const fitZoom =
+    viewportWidth > 0 ? Math.min(1, Math.max(0.4, clampMemoZoom(viewportWidth / (contentRight + 24)))) : 1;
+  const zoom = zoomStr === "" ? fitZoom : clampMemoZoom(Number(zoomStr) || 1);
   function setZoom(z: number) {
     setZoomStr(String(clampMemoZoom(z)));
   }
@@ -236,6 +261,13 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
           <button className="btn-pill-outline px-2 py-1 text-xs" onClick={() => setZoom(zoom + 0.1)}>
             +
           </button>
+          <button
+            className="btn-pill-outline px-2 py-1 text-xs"
+            onClick={() => setZoomStr(String(fitZoom))}
+            title={`ボード全体の幅(${MEMO_BOARD_WIDTH}px)を画面に収める倍率にします`}
+          >
+            幅に合わせる
+          </button>
         </div>
       </div>
       <p className="flex flex-wrap items-center gap-2 px-1 text-xs text-cream/50">
@@ -259,7 +291,7 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
         </button>
       </div>
 
-      <div className="panel overflow-auto p-0" style={{ height: "70vh" }}>
+      <div ref={boardViewportRef} className="panel overflow-auto p-0" style={{ height: "70vh" }}>
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
           <div
             className="relative"

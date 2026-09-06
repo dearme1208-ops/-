@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
@@ -477,9 +477,105 @@ export default function SettingsSection() {
     setArchiveExported(false);
   }
 
+  // ---- 設定の検索・目次 ----
+  // 設定項目は数が多く、この画面だけで1万px近くになる。各項目はreturn直下の
+  // <div className="panel">が1つずつ対応しているので、それをDOMの直接の子として走査し、
+  // 見出し(h3)を目次に、本文の文字列を検索対象にする。JSXを組み替えずに済ませるため、
+  // 絞り込みは各パネルのstyle.displayを直接切り替える方式にしてある
+  const panelsRef = useRef<HTMLDivElement>(null);
+  const [settingsQuery, setSettingsQuery] = useState("");
+  const [showSettingsIndex, setShowSettingsIndex] = useState(false);
+  const [settingsHeadings, setSettingsHeadings] = useState<string[]>([]);
+  const [matchedHeadings, setMatchedHeadings] = useState<string[]>([]);
+
+  function settingPanels(): HTMLElement[] {
+    const root = panelsRef.current;
+    if (!root) return [];
+    return [...root.children].filter(
+      (el): el is HTMLElement => el instanceof HTMLElement && el.classList.contains("panel") && !el.hasAttribute("data-settings-nav")
+    );
+  }
+
+  // 中身の描画が終わってから見出しを拾う。設定値によって出入りするパネルもあるので
+  // 描画のたびに拾い直すが、毎回新しい配列を入れると更新が止まらなくなるため、
+  // 中身が変わった時だけ差し替える
+  useEffect(() => {
+    const heads = settingPanels()
+      .map((el) => el.querySelector("h3")?.textContent?.trim() ?? "")
+      .filter(Boolean);
+    setSettingsHeadings((prev) => (prev.join(" ") === heads.join(" ") ? prev : heads));
+  });
+
+  // 検索の絞り込み。Reactはこれらのパネルにstyleを渡していないため、ここで直接
+  // display を書き換えても再描画で消えない。描画のたびに当て直して自己修復させる
+  useLayoutEffect(() => {
+    const q = settingsQuery.trim().toLowerCase();
+    const matched: string[] = [];
+    for (const el of settingPanels()) {
+      const heading = el.querySelector("h3")?.textContent?.trim() ?? "";
+      const hit = q === "" || (el.textContent ?? "").toLowerCase().includes(q);
+      el.style.display = hit ? "" : "none";
+      if (hit && heading) matched.push(heading);
+    }
+    setMatchedHeadings((prev) => (prev.join("\u0000") === matched.join("\u0000") ? prev : matched));
+  });
+
+  function scrollToSetting(heading: string) {
+    const target = settingPanels().find((el) => el.querySelector("h3")?.textContent?.trim() === heading);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    // どこへ飛んだか分かるように一瞬だけ縁を光らせる
+    target.animate(
+      [{ boxShadow: "0 0 0 2px rgb(var(--accent-rgb) / 0.9)" }, { boxShadow: "0 0 0 2px rgb(var(--accent-rgb) / 0)" }],
+      { duration: 1400, easing: "ease-out" }
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={panelsRef}>
       <h2 className="font-display text-lg font-bold">設定</h2>
+
+      {/* 設定は30項目以上あって縦に1万px近くなるため、目的の項目まで辿り着くための
+          検索と目次を先頭に置く。各項目は下のパネルの直接の子として並んでいるので、
+          検索は見出し・本文の文字列で絞り込み、目次は見出しをそのまま並べる */}
+      <div className="panel space-y-2 p-4" data-settings-nav>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={settingsQuery}
+            onChange={(e) => setSettingsQuery(e.target.value)}
+            placeholder="🔍 設定を検索（例: 通知、色、残業）"
+            className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+          {settingsQuery && (
+            <button className="btn-pill-outline text-xs" onClick={() => setSettingsQuery("")}>
+              クリア
+            </button>
+          )}
+          <button className="btn-pill-outline text-xs" onClick={() => setShowSettingsIndex((v) => !v)}>
+            目次 {showSettingsIndex ? "▲" : "▼"}
+          </button>
+        </div>
+        {settingsQuery && (
+          <p className="text-xs text-cream/50 tabular-nums">
+            {matchedHeadings.length > 0
+              ? `${matchedHeadings.length}件の設定が該当しました。`
+              : "該当する設定がありません。別の言葉でお試しください。"}
+          </p>
+        )}
+        {showSettingsIndex && (
+          <div className="flex flex-wrap gap-1.5">
+            {(settingsQuery ? matchedHeadings : settingsHeadings).map((h) => (
+              <button
+                key={h}
+                className="btn-pill-outline px-2.5 py-1 text-[11px]"
+                onClick={() => scrollToSetting(h)}
+              >
+                {h}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="panel space-y-3 p-4">
         <h3 className="font-display text-sm font-bold text-cream/80">未計測時間の自動計測</h3>
