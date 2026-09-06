@@ -2502,6 +2502,7 @@ function TaskRow({
             seed={`${task.category ?? "候補"}/${task.title}`}
             urgency={scout.urgency}
             done={task.completed}
+            grade={scout.grade}
             size={54}
             className="block overflow-hidden rounded-lg"
           />

@@ -252,19 +252,22 @@ export function ScoutBust({
   seed,
   urgency,
   done,
+  grade,
   size = 44,
   className,
 }: {
   seed: string;
   urgency: number;
   done: boolean;
+  /** S〜Cの評価。台紙の縁の色に使う */
+  grade?: string;
   size?: number;
   className?: string;
 }) {
   const ref = useFixedCanvas(
     size,
-    (ctx) => paintScoutBust(ctx, { size, seed, urgency, done, accent: readPalette().accent }),
-    [seed, Math.round(urgency * 20), done]
+    (ctx) => paintScoutBust(ctx, { size, seed, urgency, done, grade, accent: readPalette().accent }),
+    [seed, Math.round(urgency * 20), done, grade]
   );
   return <canvas ref={ref} className={className} aria-hidden />;
 }
