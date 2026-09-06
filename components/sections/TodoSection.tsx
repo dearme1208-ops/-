@@ -187,6 +187,18 @@ export default function TodoSection({
   // まとめて開く(常時表示だと入力欄が多く、狭い画面では特に圧迫感があったため)
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  // 「追加して続ける」で件名欄へ戻すための参照
+  const newTaskTitleRef = useRef<HTMLInputElement>(null);
+  // ポップアップはEscでも閉じられるようにする。入力内容は消さずに残すので、
+  // 誤って閉じてももう一度開けば続きから打てる
+  useEffect(() => {
+    if (!showAddTaskForm) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowAddTaskForm(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showAddTaskForm]);
   // タスク追加欄でどのリストに追加するかを選べるようにする。閲覧中のビューが特定の
   // リストに紐付いていない(マイデイ・重要・期日・期限切れ・検索結果)場合、既定では
   // 先頭のリストに入ってしまうため、明示的に選び直せるようにしておく
@@ -699,7 +711,10 @@ export default function TodoSection({
     return mode || undefined;
   }
 
-  async function addTask() {
+  // keepOpen を立てると、追加したあともポップアップを開いたままにして続けて入力できる。
+  // そのときは追加先リスト・対応状況・分類・客先を残す(同じ属性のものを何件も
+  // 続けて入れることが多いため)。閉じる場合はすべて初期状態へ戻す
+  async function addTask(options?: { keepOpen?: boolean }) {
     if (!newTaskTitle.trim()) return;
     const targetListId = newTaskListId || currentListId || lists?.[0]?.id;
     if (!targetListId) return;
@@ -731,12 +746,18 @@ export default function TodoSection({
     setNewTaskTitle("");
     setNewTaskAction("");
     setNewTaskDueDate("");
+    if (options?.keepOpen) {
+      // 続けて入力する場合は、件名欄へ戻してすぐ次を打てるようにする
+      newTaskTitleRef.current?.focus();
+      return;
+    }
     setNewTaskTagMode(NO_TAG_VALUE);
     setNewTaskCustomTag("");
     setNewTaskCategoryMode(NO_CATEGORY_VALUE);
     setNewTaskCustomCategory("");
     setNewTaskCustomerMode(NO_CUSTOMER_VALUE);
     setNewTaskCustomCustomer("");
+    setShowAddTaskForm(false);
   }
 
   // 期日を入れずに追加したタスクを一番上に置くため、同じリストの既存タスク(トップレベルのみ)の
@@ -1370,121 +1391,159 @@ export default function TodoSection({
           </div>
         </div>
 
-        {!showAddTaskForm && (
-          <div className="mb-3">
-            <button className="btn-pill-outline text-sm" onClick={() => setShowAddTaskForm(true)}>
-              + タスクを追加
-            </button>
-          </div>
-        )}
-        {showAddTaskForm && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <input
-            autoFocus
-            value={newTaskTitle}
-            onChange={(e) => setNewTaskTitle(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addTask()}
-            placeholder="件名"
-            className="min-w-[10rem] flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          />
-          <input
-            value={newTaskAction}
-            onChange={(e) => setNewTaskAction(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addTask()}
-            placeholder="アクション（任意）"
-            className="min-w-[8rem] flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          />
-          <input
-            type="date"
-            value={newTaskDueDate}
-            onChange={(e) => setNewTaskDueDate(e.target.value)}
-            title="期日（任意）。設定するとリスト内で期日順の位置に入ります"
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
-          />
-          {(lists ?? []).length > 1 && (
-            <select
-              value={newTaskListId || currentListId || lists?.[0]?.id || ""}
-              onChange={(e) => setNewTaskListId(e.target.value)}
-              title="追加先のリスト"
-              className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
-            >
-              {(lists ?? []).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.title}へ追加
-                </option>
-              ))}
-            </select>
-          )}
-          <select
-            value={newTaskTagMode}
-            onChange={(e) => setNewTaskTagMode(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
-          >
-            <option value={NO_TAG_VALUE}>対応状況なし</option>
-            {tagOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-            <option value={CUSTOM_TAG_VALUE}>＋ 新しい対応状況...</option>
-          </select>
-          {newTaskTagMode === CUSTOM_TAG_VALUE && (
-            <input
-              value={newTaskCustomTag}
-              onChange={(e) => setNewTaskCustomTag(e.target.value)}
-              placeholder="対応状況名"
-              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
-            />
-          )}
-          <select
-            value={newTaskCategoryMode}
-            onChange={(e) => setNewTaskCategoryMode(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
-          >
-            <option value={NO_CATEGORY_VALUE}>分類なし</option>
-            {categoryOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-            <option value={CUSTOM_CATEGORY_VALUE}>＋ 新しい分類...</option>
-          </select>
-          {newTaskCategoryMode === CUSTOM_CATEGORY_VALUE && (
-            <input
-              value={newTaskCustomCategory}
-              onChange={(e) => setNewTaskCustomCategory(e.target.value)}
-              placeholder="分類名"
-              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
-            />
-          )}
-          <select
-            value={newTaskCustomerMode}
-            onChange={(e) => setNewTaskCustomerMode(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
-          >
-            <option value={NO_CUSTOMER_VALUE}>客先なし</option>
-            {customerOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-            <option value={CUSTOM_CUSTOMER_VALUE}>＋ 新しい客先...</option>
-          </select>
-          {newTaskCustomerMode === CUSTOM_CUSTOMER_VALUE && (
-            <input
-              value={newTaskCustomCustomer}
-              onChange={(e) => setNewTaskCustomCustomer(e.target.value)}
-              placeholder="客先名"
-              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream"
-            />
-          )}
-          <button className="btn-pill text-sm" onClick={addTask} disabled={!newTaskTitle.trim()}>
-            追加
-          </button>
-          <button className="btn-pill-outline text-xs" onClick={() => setShowAddTaskForm(false)} aria-label="閉じる">
-            ×
+        <div className="mb-3">
+          <button className="btn-pill-outline text-sm" onClick={() => setShowAddTaskForm(true)}>
+            + タスクを追加
           </button>
         </div>
+        {/* 入力欄は一覧の中に並べず、独立したポップアップで受ける。
+            件名のほかに期日・対応状況・分類・客先と入力欄が多く、一覧の上に
+            横並びで畳み込むと折り返して読みにくいうえ、一覧そのものを押し下げていた */}
+        {showAddTaskForm && (
+          <Modal title="タスクを追加" onClose={() => setShowAddTaskForm(false)}>
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-cream/60">件名</span>
+                <input
+                  ref={newTaskTitleRef}
+                  autoFocus
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addTask()}
+                  placeholder="やることを一言で"
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-cream/60">アクション（任意）</span>
+                <input
+                  value={newTaskAction}
+                  onChange={(e) => setNewTaskAction(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addTask()}
+                  placeholder="次にとる具体的な動き"
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-cream/60">期日（任意）</span>
+                <span className="-mt-0.5 text-[11px] text-cream/40">
+                  設定するとリスト内で期日順の位置に入ります
+                </span>
+                <input
+                  type="date"
+                  value={newTaskDueDate}
+                  onChange={(e) => setNewTaskDueDate(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+              </label>
+              {(lists ?? []).length > 1 && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-cream/60">追加先のリスト</span>
+                  <select
+                    value={newTaskListId || currentListId || lists?.[0]?.id || ""}
+                    onChange={(e) => setNewTaskListId(e.target.value)}
+                    className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                  >
+                    {(lists ?? []).map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-cream/60">対応状況</span>
+                <select
+                  value={newTaskTagMode}
+                  onChange={(e) => setNewTaskTagMode(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                >
+                  <option value={NO_TAG_VALUE}>対応状況なし</option>
+                  {tagOptions.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_TAG_VALUE}>＋ 新しい対応状況...</option>
+                </select>
+              </label>
+              {newTaskTagMode === CUSTOM_TAG_VALUE && (
+                <input
+                  value={newTaskCustomTag}
+                  onChange={(e) => setNewTaskCustomTag(e.target.value)}
+                  placeholder="対応状況名"
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+              )}
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-cream/60">分類</span>
+                <select
+                  value={newTaskCategoryMode}
+                  onChange={(e) => setNewTaskCategoryMode(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                >
+                  <option value={NO_CATEGORY_VALUE}>分類なし</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_CATEGORY_VALUE}>＋ 新しい分類...</option>
+                </select>
+              </label>
+              {newTaskCategoryMode === CUSTOM_CATEGORY_VALUE && (
+                <input
+                  value={newTaskCustomCategory}
+                  onChange={(e) => setNewTaskCustomCategory(e.target.value)}
+                  placeholder="分類名"
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+              )}
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-cream/60">客先</span>
+                <select
+                  value={newTaskCustomerMode}
+                  onChange={(e) => setNewTaskCustomerMode(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                >
+                  <option value={NO_CUSTOMER_VALUE}>客先なし</option>
+                  {customerOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_CUSTOMER_VALUE}>＋ 新しい客先...</option>
+                </select>
+              </label>
+              {newTaskCustomerMode === CUSTOM_CUSTOMER_VALUE && (
+                <input
+                  value={newTaskCustomCustomer}
+                  onChange={(e) => setNewTaskCustomCustomer(e.target.value)}
+                  placeholder="客先名"
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+              )}
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <button className="btn-pill text-sm" onClick={() => addTask()} disabled={!newTaskTitle.trim()}>
+                  追加
+                </button>
+                {/* 続けて何件も入れることのほうが多いので、閉じずに次を入力できる道も残す。
+                    リスト・対応状況・分類・客先はそのままにして、件名だけ空にする */}
+                <button
+                  className="btn-pill-outline text-sm"
+                  onClick={() => addTask({ keepOpen: true })}
+                  disabled={!newTaskTitle.trim()}
+                  title="追加したあともこの画面を開いたままにして、続けて入力します"
+                >
+                  追加して続ける
+                </button>
+                <button className="btn-pill-outline text-sm" onClick={() => setShowAddTaskForm(false)}>
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </Modal>
         )}
 
         {/* 育成選手モード: 一覧を読み下す前に、スカウト部の状況を一枚で見せる。
