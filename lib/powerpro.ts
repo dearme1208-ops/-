@@ -763,3 +763,115 @@ export function buildStamina(workedSeconds: number, standardHours: number, reste
       (restedItems > 0 ? `、休憩の消化 ${restedItems}件で ${recovered}% 回復` : ""),
   };
 }
+
+// ============================================================
+// ドラフトボード(スカウトリストの見出し)
+// ============================================================
+// ToDo一覧を「スカウト部が今どういう状況か」の一枚にまとめる。
+// 階級ごとの人数と、いま最優先の1件が分かれば、リストを読む前に状況が掴める。
+
+export interface ScoutBoardTier {
+  grade: string;
+  count: number;
+}
+
+export interface ScoutBoard {
+  tiers: ScoutBoardTier[];
+  /** いま最優先の1件。無ければnull */
+  top: {
+    title: string;
+    category: string | null;
+    grade: string;
+    urgency: number;
+    label: string;
+    labelPlain: string;
+    /** 期日までの日数。期日なしはnull */
+    days: number | null;
+  } | null;
+  /** 交渉中(未完了)の件数 */
+  active: number;
+  /** 契約済(完了)の件数 */
+  signed: number;
+}
+
+export function buildScoutBoard(todos: TodoTask[], today: string): ScoutBoard {
+  // サブタスクは1人の候補ではなく視察項目なので、親だけを数える
+  const parents = todos.filter((t) => !t.parentTaskId);
+  const active = parents.filter((t) => !t.completed);
+  const counts = new Map<string, number>([
+    ["S", 0],
+    ["A", 0],
+    ["B", 0],
+    ["C", 0],
+  ]);
+  let top: ScoutBoard["top"] = null;
+  let topUrgency = -1;
+  for (const t of active) {
+    const g = scoutGradeOf(t, today);
+    counts.set(g.grade, (counts.get(g.grade) ?? 0) + 1);
+    if (g.urgency > topUrgency) {
+      topUrgency = g.urgency;
+      const days = t.dueDate
+        ? Math.round(
+            (new Date(t.dueDate + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000
+          )
+        : null;
+      top = {
+        title: t.title,
+        category: t.category ?? null,
+        grade: g.grade,
+        urgency: g.urgency,
+        label: g.label,
+        labelPlain: g.labelPlain,
+        days,
+      };
+    }
+  }
+  return {
+    tiers: [...counts.entries()].map(([grade, count]) => ({ grade, count })),
+    top,
+    active: active.length,
+    signed: parents.length - active.length,
+  };
+}
+
+// ============================================================
+// 順位表(契約案件の見出し)
+// ============================================================
+// 案件を勝率順に並べた勝敗表。段階の消化がそのまま勝敗になるので、
+// どの案件が走っていてどれが止まっているかが、順位という一列で分かる。
+
+export interface StandingRow {
+  id: string;
+  title: string;
+  wins: number;
+  losses: number;
+  remaining: number;
+  games: number;
+  winRate: number;
+  standing: string;
+  standingPlain: string;
+  daysLeft: number | null;
+}
+
+export function buildStandings(projects: ProjectItem[], today: string): StandingRow[] {
+  return projects
+    .filter((p) => !p.completedAt)
+    .map((p) => {
+      const pe = buildPennant(p, today);
+      return {
+        id: p.id,
+        title: p.title,
+        wins: pe.wins,
+        losses: pe.losses,
+        remaining: pe.remaining,
+        games: pe.games,
+        winRate: pe.winRate,
+        standing: pe.standing,
+        standingPlain: pe.standingPlain,
+        daysLeft: pe.daysLeft,
+      };
+    })
+    // 勝率の高い順。同率なら期日が近いほうを上に置く(順位表としての読み方に合わせる)
+    .sort((a, b) => b.winRate - a.winRate || (a.daysLeft ?? 9999) - (b.daysLeft ?? 9999));
+}

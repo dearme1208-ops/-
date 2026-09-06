@@ -90,6 +90,19 @@ export interface PowerproWords {
 
   // スカウト(ToDo) / ペナント(案件)
   scoutBadge: (grade: string) => string;
+  draftTitle: string;
+  draftTarget: string;
+  draftActive: string;
+  draftSigned: string;
+  draftNoTarget: string;
+  standingsTitle: string;
+  standingsTeam: string;
+  standingsWin: string;
+  standingsLose: string;
+  standingsRest: string;
+  standingsRate: string;
+  standingsDays: string;
+  standingsEmpty: string;
   winLossLabel: (w: number, l: number) => string;
   pennantLabel: string;
 
@@ -192,6 +205,19 @@ const THEMED: PowerproWords = {
   basisLabel: "根拠",
 
   scoutBadge: (g) => `評価${g}`,
+  draftTitle: "スカウト部　ドラフトボード",
+  draftTarget: "最優先ターゲット",
+  draftActive: "交渉中",
+  draftSigned: "契約済",
+  draftNoTarget: "追いかけている候補はいません",
+  standingsTitle: "ペナントレース　順位表",
+  standingsTeam: "案件",
+  standingsWin: "勝",
+  standingsLose: "敗",
+  standingsRest: "残",
+  standingsRate: "勝率",
+  standingsDays: "期日まで",
+  standingsEmpty: "進行中の案件はありません",
   winLossLabel: (w, l) => `${w}勝${l}敗`,
   pennantLabel: "ペナント",
 
@@ -297,6 +323,19 @@ const PLAIN: PowerproWords = {
   basisLabel: "根拠",
 
   scoutBadge: (g) => `優先${g}`,
+  draftTitle: "ToDo の状況",
+  draftTarget: "最優先の1件",
+  draftActive: "未完了",
+  draftSigned: "完了",
+  draftNoTarget: "未完了のToDoはありません",
+  standingsTitle: "案件の進捗一覧",
+  standingsTeam: "案件",
+  standingsWin: "完了",
+  standingsLose: "超過",
+  standingsRest: "残",
+  standingsRate: "消化率",
+  standingsDays: "期日まで",
+  standingsEmpty: "進行中の案件はありません",
   winLossLabel: (w, l) => `完了${w} / 超過${l}`,
   pennantLabel: "段階",
 

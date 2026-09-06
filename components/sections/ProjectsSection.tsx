@@ -29,9 +29,9 @@ import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
 import BranchTree from "@/components/hayarigami/BranchTree";
 import type { BranchNode } from "@/lib/hayarigamiArt";
-import { buildPennant } from "@/lib/powerpro";
+import { buildPennant, buildStandings } from "@/lib/powerpro";
 import { powerproWordsFor } from "@/lib/powerproWords";
-import { PennantBar } from "@/components/powerpro/PowerproCanvas";
+import { PennantBar, Standings } from "@/components/powerpro/PowerproCanvas";
 
 type ViewMode = "gantt" | "calendar" | "tree" | "ppm";
 const TREE_LEAF_LIMIT = 15;
@@ -140,7 +140,7 @@ export default function ProjectsSection({
       };
     });
   }, [clients, projects, linkedTodoTasksForClients, records, today]);
-  const { themedMode } = useVisualMode();
+  const { themedMode, wordingEnabled } = useVisualMode();
 
   // 本日タブの案件バッジの「編集」から遷移してきた場合、該当案件の編集ダイアログを自動的に開く。
   // 開いたら親側の保持値を消費済みにしてもらう(再遷移時の再発火防止)
@@ -683,6 +683,29 @@ export default function ProjectsSection({
         </div>
       )}
 
+
+      {/* 育成選手モード: 一覧の前に順位表を置く。段階の消化を勝敗に見立てて勝率順に並べるので、
+          走っている案件と止まっている案件が一列で分かる */}
+      {themedMode === "powerpro" && (() => {
+        const PW = powerproWordsFor(wordingEnabled);
+        const rows = buildStandings(projects ?? [], today);
+        return (
+          <Standings
+            rows={rows}
+            labels={{
+              title: PW.standingsTitle,
+              team: PW.standingsTeam,
+              win: PW.standingsWin,
+              lose: PW.standingsLose,
+              rest: PW.standingsRest,
+              rate: PW.standingsRate,
+              days: PW.standingsDays,
+              empty: PW.standingsEmpty,
+            }}
+            className="mb-3 overflow-hidden rounded-xl"
+          />
+        );
+      })()}
 
       <div className="panel divide-y divide-cream/10">
         {activeRows.map(({ project, overdue, dueToday, daysLeft, paceWarning, forecast }) => (

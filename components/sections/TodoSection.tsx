@@ -41,9 +41,9 @@ import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/p
 import { foafNumberOf } from "@/lib/hayarigami";
 import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
-import { scoutGradeOf } from "@/lib/powerpro";
+import { buildScoutBoard, scoutGradeOf } from "@/lib/powerpro";
 import { powerproWordsFor } from "@/lib/powerproWords";
-import { ScoutBust } from "@/components/powerpro/PowerproCanvas";
+import { DraftBoard, RankEmblem, ScoutBust } from "@/components/powerpro/PowerproCanvas";
 import { rankCssColor } from "@/lib/powerproArt";
 import { readFileAsDataUrl } from "@/lib/mailImport";
 import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
@@ -290,6 +290,9 @@ export default function TodoSection({
   const [ganttAnchor, setGanttAnchor] = useSetting("todo.ganttAnchor", "today");
 
   const today = todayStr();
+
+  // ドラフトボード(育成選手モードの見出し)で使う。行側とは別に、一覧の親でも参照する
+  const { themedMode: sectionThemedMode, wordingEnabled: sectionWording } = useVisualMode();
 
   const lists = useLiveQuery(() => db.todoLists.orderBy("order").toArray(), []);
   const allTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
@@ -1455,6 +1458,34 @@ export default function TodoSection({
         </div>
         )}
 
+        {/* 育成選手モード: 一覧を読み下す前に、スカウト部の状況を一枚で見せる。
+            階級ごとの人数と最優先ターゲットが分かれば、どこに人が溜まっているかが形で掴める */}
+        {sectionThemedMode === "powerpro" && (() => {
+          const board = buildScoutBoard(allTasks ?? [], today);
+          const PW = powerproWordsFor(sectionWording);
+          const top = board.top;
+          return (
+            <DraftBoard
+              tiers={board.tiers}
+              topName={top?.title ?? null}
+              topCategory={top?.category ?? null}
+              topGrade={top?.grade ?? "C"}
+              topDays={top?.days ?? null}
+              topLabel={top ? (sectionWording ? top.label : top.labelPlain) : ""}
+              active={board.active}
+              signed={board.signed}
+              labels={{
+                title: PW.draftTitle,
+                target: PW.draftTarget,
+                active: PW.draftActive,
+                signed: PW.draftSigned,
+                noTarget: PW.draftNoTarget,
+              }}
+              className="mb-3 overflow-hidden rounded-xl"
+            />
+          );
+        })()}
+
         {displayMode === "calendar" ? (
           <TodoCalendarView tasks={tasksForTimeline} subtasks={subtasksForTimeline} today={today} />
         ) : displayMode === "tree" ? (
@@ -2396,9 +2427,22 @@ function TaskRow({
   return (
     <div
       title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
-      className={`flex items-center gap-2 rounded-lg border border-cream/25 bg-ink/70 px-3 py-2 shadow-sm transition-[opacity,filter] ${
-        task.completed ? "opacity-50" : agingClass
-      } ${overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""}`}
+      className={`flex items-center gap-2 border-cream/25 bg-ink/70 shadow-sm transition-[opacity,filter] ${
+        powerproMode ? "gap-2.5 rounded-xl border-y border-r py-2.5 pl-0 pr-3" : "rounded-lg border px-3 py-2"
+      } ${task.completed ? "opacity-50" : agingClass} ${
+        overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""
+      }`}
+      style={
+        powerproMode && scout
+          ? {
+              // 左端に階級色の帯。名鑑をめくったとき、色だけで階級が拾えるようにする
+              borderLeft: "6px solid transparent",
+              borderImage: `${rankCssColor(scout.grade)} 1`,
+              borderImageSlice: 1,
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 2px 10px -6px rgba(10,16,32,.6)",
+            }
+          : undefined
+      }
     >
       {hayarigamiMode && (
         <SceneCanvas
@@ -2409,13 +2453,25 @@ function TaskRow({
         />
       )}
       {powerproMode && scout && (
-        <ScoutBust
-          seed={`${task.category ?? "候補"}/${task.title}`}
-          urgency={scout.urgency}
-          done={task.completed}
-          size={44}
-          className="shrink-0 overflow-hidden rounded-lg border border-cream/20 shadow-[0_2px_0_rgba(12,28,60,0.15)]"
-        />
+        <div className="relative ml-2.5 shrink-0">
+          <ScoutBust
+            seed={`${task.category ?? "候補"}/${task.title}`}
+            urgency={scout.urgency}
+            done={task.completed}
+            size={54}
+            className="block overflow-hidden rounded-lg"
+          />
+          <span
+            className="pointer-events-none absolute inset-0 rounded-lg"
+            style={{ boxShadow: "inset 0 0 0 1px rgba(201,162,39,.6), 0 2px 8px -4px rgba(10,16,32,.7)" }}
+          />
+          {/* 階級は平たい札ではなく、盾の記章で出す */}
+          <RankEmblem
+            rank={scout.grade}
+            size={24}
+            className="absolute -bottom-1.5 -right-1.5 drop-shadow-[0_1px_2px_rgba(0,0,0,.5)]"
+          />
+        </div>
       )}
       <button
         onClick={onToggleComplete}
@@ -2437,12 +2493,13 @@ function TaskRow({
           {powerproMode && scout && (
             <>
               <span
-                className="rounded px-1.5 py-0.5 text-[10px] font-black text-white shadow-[0_1px_0_rgba(12,28,60,0.25)]"
-                style={{ background: rankCssColor(scout.grade) }}
+                className="rounded-full px-2 py-0.5 text-[10px] font-black tracking-wider"
+                style={{
+                  border: "1px solid rgba(201,162,39,.5)",
+                  background: "linear-gradient(180deg, rgba(255,240,186,.14), rgba(201,162,39,.08))",
+                  color: "rgb(var(--cream-rgb) / .8)",
+                }}
               >
-                {powerproWordsFor(wordingEnabled).scoutBadge(scout.grade)}
-              </span>
-              <span className="rounded-full border border-cream/20 bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/55">
                 {wordingEnabled ? scout.label : scout.labelPlain}
               </span>
             </>

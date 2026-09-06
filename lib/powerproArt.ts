@@ -1647,3 +1647,300 @@ export function paintCardBase(
   ctx.fillStyle = rgb(light);
   ctx.fillRect(0, h - 3, w * 0.5, 3);
 }
+
+// ============================================================
+// ドラフトボード(スカウトリストの見出し)
+// ============================================================
+// 球団のスカウト部が壁に掛けている board のつもりで描く。
+// 左に最優先ターゲットの札、右に階級ごとの人数。
+// 一覧を読み下す前に「今どこに人が溜まっているか」が形で分かるようにする。
+
+export interface DraftBoardOptions {
+  width: number;
+  height: number;
+  tiers: { grade: string; count: number }[];
+  topName: string | null;
+  topCategory: string | null;
+  topGrade: string;
+  /** 期日までの日数。nullは期日なし */
+  topDays: number | null;
+  topLabel: string;
+  active: number;
+  signed: number;
+  labels: { title: string; target: string; active: string; signed: string; noTarget: string };
+  accent: Rgb;
+}
+
+export function draftBoardHeight(): number {
+  return 172;
+}
+
+export function paintDraftBoard(ctx: CanvasRenderingContext2D, o: DraftBoardOptions) {
+  const { width: w, height: h } = o;
+  ctx.clearRect(0, 0, w, h);
+
+  // 盤面。濃紺のフェルトに金の縁
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, "rgb(24,32,52)");
+  g.addColorStop(1, "rgb(10,14,26)");
+  ctx.fillStyle = g;
+  roundRect(ctx, 0, 0, w, h, 8);
+  ctx.fill();
+  // チームカラーを上端から薄く流す
+  const tint = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+  tint.addColorStop(0, rgba(o.accent, 0.22));
+  tint.addColorStop(1, rgba(o.accent, 0));
+  ctx.fillStyle = tint;
+  roundRect(ctx, 0, 0, w, h, 8);
+  ctx.fill();
+  goldHairline(ctx, 0, 0, w, h, 8, 0.5);
+
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+
+  // 見出し
+  ctx.fillStyle = "rgba(226,203,131,0.95)";
+  ctx.font = "bold 10px system-ui, sans-serif";
+  ctx.fillText(o.labels.title, 14, 13);
+  // 見出しの下に金の罫
+  const rule = ctx.createLinearGradient(14, 0, w - 14, 0);
+  rule.addColorStop(0, "rgba(201,162,39,0)");
+  rule.addColorStop(0.5, "rgba(255,240,186,0.75)");
+  rule.addColorStop(1, "rgba(201,162,39,0)");
+  ctx.fillStyle = rule;
+  ctx.fillRect(14, 30, w - 28, 1);
+
+  // ---- 左: 最優先ターゲット ----
+  const leftW = Math.min(w * 0.56, w - 132);
+  ctx.fillStyle = "rgba(178,192,214,0.55)";
+  ctx.font = "bold 9px system-ui, sans-serif";
+  ctx.fillText(o.labels.target, 14, 40);
+
+  if (o.topName === null) {
+    ctx.fillStyle = "rgba(178,192,214,0.5)";
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText(o.labels.noTarget, 14, 62);
+  } else {
+    // ランクの盾
+    const emblem = 48;
+    ctx.save();
+    ctx.translate(14, 56);
+    paintRankEmblem(ctx, { size: emblem, rank: o.topGrade });
+    ctx.restore();
+
+    const tx = 14 + emblem + 10;
+    const maxW = leftW - (emblem + 24);
+    if (o.topCategory) {
+      ctx.fillStyle = "rgba(178,192,214,0.5)";
+      ctx.font = "10px system-ui, sans-serif";
+      ctx.fillText(fitText(ctx, o.topCategory, maxW), tx, 58);
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = "bold 15px system-ui, sans-serif";
+    ctx.fillText(fitText(ctx, o.topName, maxW), tx, o.topCategory ? 72 : 66);
+
+    // 交渉期限。過ぎているものは赤く光らせる
+    const over = o.topDays !== null && o.topDays < 0;
+    const color = over ? "rgba(255,120,104,0.95)" : "rgba(255,214,84,0.95)";
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
+    ctx.font = "bold 13px ui-monospace, monospace";
+    ctx.fillText(fitText(ctx, o.topLabel, maxW), tx, o.topCategory ? 94 : 88);
+    ctx.shadowBlur = 0;
+  }
+
+  // ---- 右: 階級ごとの人数 ----
+  const rx = w - 118;
+  const ry = 42;
+  const rowH = 22;
+  for (let i = 0; i < o.tiers.length; i++) {
+    const t = o.tiers[i];
+    const y = ry + rowH * i;
+    // 階級の札
+    const [light, dark] = RANK_COLOR[t.grade] ?? RANK_COLOR.G;
+    const chipG = ctx.createLinearGradient(0, y, 0, y + 15);
+    chipG.addColorStop(0, rgb(light));
+    chipG.addColorStop(1, rgb(dark));
+    ctx.fillStyle = chipG;
+    roundRect(ctx, rx, y, 20, 15, 3);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = "900 10px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(t.grade, rx + 10, y + 3);
+
+    // 人数ぶんの目盛り。棒ではなく刻みにして、名鑑の余白を活かす
+    ctx.textAlign = "left";
+    const barX = rx + 26;
+    const barW = 60;
+    const max = Math.max(1, ...o.tiers.map((x) => x.count));
+    const fill = (t.count / max) * barW;
+    ctx.fillStyle = "rgba(150,170,204,0.16)";
+    roundRect(ctx, barX, y + 4.5, barW, 6, 3);
+    ctx.fill();
+    if (fill > 0.5) {
+      ctx.fillStyle = rgba(light, 0.9);
+      roundRect(ctx, barX, y + 4.5, Math.max(3, fill), 6, 3);
+      ctx.fill();
+    }
+    ctx.fillStyle = "rgba(226,232,244,0.85)";
+    ctx.font = "bold 10px ui-monospace, monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(String(t.count), w - 12, y + 3);
+    ctx.textAlign = "left";
+  }
+
+  // ---- 下段: 交渉中 / 契約済 ----
+  ctx.fillStyle = "rgba(178,192,214,0.5)";
+  ctx.font = "9px system-ui, sans-serif";
+  const footY = h - 30;
+  ctx.fillText(o.labels.active, 14, footY);
+  ctx.fillStyle = "rgba(255,214,84,0.95)";
+  ctx.font = "bold 14px ui-monospace, monospace";
+  ctx.fillText(String(o.active), 14, footY + 11);
+  const activeW = ctx.measureText(String(o.active)).width;
+  ctx.fillStyle = "rgba(178,192,214,0.5)";
+  ctx.font = "9px system-ui, sans-serif";
+  ctx.fillText(o.labels.signed, 14 + activeW + 18, footY);
+  ctx.fillStyle = "rgba(126,220,158,0.9)";
+  ctx.font = "bold 14px ui-monospace, monospace";
+  ctx.fillText(String(o.signed), 14 + activeW + 18, footY + 11);
+
+  gloss(ctx, 0, 0, w, h, 8, 0.08);
+}
+
+/** 与えられた幅に収まるよう、末尾を…で詰める */
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + "…").width > maxWidth) t = t.slice(0, -1);
+  return t + "…";
+}
+
+// ============================================================
+// 順位表(契約案件の見出し)
+// ============================================================
+// 段階の消化を勝敗に見立てた、球団の順位表。
+// 勝率順に並ぶので、走っている案件と止まっている案件が一列で分かる。
+
+export interface StandingsOptions {
+  width: number;
+  height: number;
+  rows: {
+    title: string;
+    wins: number;
+    losses: number;
+    remaining: number;
+    winRate: number;
+    standing: string;
+    daysLeft: number | null;
+  }[];
+  labels: { title: string; team: string; win: string; lose: string; rest: string; rate: string; days: string; empty: string };
+  accent: Rgb;
+}
+
+export function standingsHeight(rowCount: number): number {
+  return 46 + Math.max(1, rowCount) * 26 + 10;
+}
+
+export function paintStandings(ctx: CanvasRenderingContext2D, o: StandingsOptions) {
+  const { width: w, height: h } = o;
+  ctx.clearRect(0, 0, w, h);
+
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, "rgb(24,32,52)");
+  g.addColorStop(1, "rgb(10,14,26)");
+  ctx.fillStyle = g;
+  roundRect(ctx, 0, 0, w, h, 8);
+  ctx.fill();
+  const tint = ctx.createLinearGradient(0, 0, 0, h * 0.36);
+  tint.addColorStop(0, rgba(o.accent, 0.2));
+  tint.addColorStop(1, rgba(o.accent, 0));
+  ctx.fillStyle = tint;
+  roundRect(ctx, 0, 0, w, h, 8);
+  ctx.fill();
+  goldHairline(ctx, 0, 0, w, h, 8, 0.5);
+
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(226,203,131,0.95)";
+  ctx.font = "bold 10px system-ui, sans-serif";
+  ctx.fillText(o.labels.title, 12, 11);
+
+  // 列の位置。右から 残 / 敗 / 勝 を積み、勝率をいちばん右に置く
+  const colRate = w - 14;
+  const colRest = colRate - 44;
+  const colLose = colRest - 26;
+  const colWin = colLose - 26;
+  const nameRight = colWin - 34;
+
+  // 見出し行
+  const headY = 28;
+  ctx.font = "bold 9px system-ui, sans-serif";
+  ctx.fillStyle = "rgba(150,170,204,0.6)";
+  ctx.fillText(o.labels.team, 30, headY);
+  ctx.textAlign = "right";
+  ctx.fillText(o.labels.win, colWin, headY);
+  ctx.fillText(o.labels.lose, colLose, headY);
+  ctx.fillText(o.labels.rest, colRest, headY);
+  ctx.fillText(o.labels.rate, colRate, headY);
+  ctx.textAlign = "left";
+
+  const rule = ctx.createLinearGradient(12, 0, w - 12, 0);
+  rule.addColorStop(0, "rgba(201,162,39,0)");
+  rule.addColorStop(0.5, "rgba(255,240,186,0.6)");
+  rule.addColorStop(1, "rgba(201,162,39,0)");
+  ctx.fillStyle = rule;
+  ctx.fillRect(12, 41, w - 24, 1);
+
+  if (o.rows.length === 0) {
+    ctx.fillStyle = "rgba(178,192,214,0.5)";
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText(o.labels.empty, 14, 54);
+    return;
+  }
+
+  o.rows.forEach((r, i) => {
+    const y = 48 + i * 26;
+    // 1行おきに薄く敷いて、目が横に流れるようにする
+    if (i % 2 === 1) {
+      ctx.fillStyle = "rgba(150,170,204,0.05)";
+      ctx.fillRect(8, y - 3, w - 16, 24);
+    }
+    // 順位。首位だけ金にする
+    const top = i === 0;
+    ctx.fillStyle = top ? "rgba(255,240,186,0.95)" : "rgba(150,170,204,0.6)";
+    ctx.font = `bold ${top ? 13 : 11}px ui-monospace, monospace`;
+    ctx.textAlign = "left";
+    ctx.fillText(String(i + 1), 12, y + (top ? 1 : 2));
+
+    ctx.fillStyle = "rgba(240,244,252,0.92)";
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.fillText(fitText(ctx, r.title, nameRight - 30), 30, y + 1);
+
+    ctx.textAlign = "right";
+    ctx.font = "bold 12px ui-monospace, monospace";
+    ctx.fillStyle = "rgba(126,220,158,0.92)";
+    ctx.fillText(String(r.wins), colWin, y + 1);
+    ctx.fillStyle = r.losses > 0 ? "rgba(255,120,104,0.92)" : "rgba(150,170,204,0.45)";
+    ctx.fillText(String(r.losses), colLose, y + 1);
+    ctx.fillStyle = "rgba(178,192,214,0.7)";
+    ctx.fillText(String(r.remaining), colRest, y + 1);
+
+    // 勝率。野球の表記に合わせて .000 形式
+    ctx.fillStyle = "rgba(255,214,84,0.95)";
+    ctx.fillText(r.winRate.toFixed(3).replace(/^0/, ""), colRate, y + 1);
+
+    // 期日までの日数を、名前の下に小さく
+    if (r.daysLeft !== null) {
+      ctx.textAlign = "left";
+      ctx.font = "9px system-ui, sans-serif";
+      ctx.fillStyle = r.daysLeft < 0 ? "rgba(255,120,104,0.85)" : "rgba(150,170,204,0.5)";
+      ctx.fillText(`${o.labels.days} ${r.daysLeft}`, 30, y + 13);
+    }
+    ctx.textAlign = "left";
+  });
+
+  gloss(ctx, 0, 0, w, h, 8, 0.06);
+}

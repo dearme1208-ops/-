@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   paintAbilityHex,
   paintCardBase,
+  paintDraftBoard,
+  paintStandings,
   paintGauge,
   paintLineScore,
   paintPennantBar,
@@ -11,7 +13,9 @@ import {
   paintRankEmblem,
   paintScoutBust,
   paintStadium,
+  draftBoardHeight,
   lineScoreHeight,
+  standingsHeight,
   pennantBarHeight,
   readPalette,
   EXP_COLOR,
@@ -361,6 +365,87 @@ export function LineScore({
   return (
     <div ref={wrapRef} className={className}>
       <canvas ref={canvasRef} className="block w-full" role="img" aria-label={labels.inning} />
+    </div>
+  );
+}
+
+// ---- ドラフトボード(スカウトリストの見出し) ----
+export function DraftBoard({
+  tiers,
+  topName,
+  topCategory,
+  topGrade,
+  topDays,
+  topLabel,
+  active,
+  signed,
+  labels,
+  className,
+}: {
+  tiers: { grade: string; count: number }[];
+  topName: string | null;
+  topCategory: string | null;
+  topGrade: string;
+  topDays: number | null;
+  topLabel: string;
+  active: number;
+  signed: number;
+  labels: { title: string; target: string; active: string; signed: string; noTarget: string };
+  className?: string;
+}) {
+  const { wrapRef, canvasRef } = useMeasuredCanvas(
+    () => draftBoardHeight(),
+    (ctx, width, height) =>
+      paintDraftBoard(ctx, {
+        width,
+        height,
+        tiers,
+        topName,
+        topCategory,
+        topGrade,
+        topDays,
+        topLabel,
+        active,
+        signed,
+        labels,
+        accent: readPalette().accent,
+      }),
+    [tiers.map((t) => `${t.grade}${t.count}`).join(","), topName, topGrade, topDays, topLabel, active, signed, labels.title]
+  );
+  return (
+    <div ref={wrapRef} className={className}>
+      <canvas ref={canvasRef} className="block w-full" role="img" aria-label={labels.title} />
+    </div>
+  );
+}
+
+// ---- 順位表(契約案件の見出し) ----
+export function Standings({
+  rows,
+  labels,
+  className,
+}: {
+  rows: {
+    title: string;
+    wins: number;
+    losses: number;
+    remaining: number;
+    winRate: number;
+    standing: string;
+    daysLeft: number | null;
+  }[];
+  labels: { title: string; team: string; win: string; lose: string; rest: string; rate: string; days: string; empty: string };
+  className?: string;
+}) {
+  const { wrapRef, canvasRef } = useMeasuredCanvas(
+    () => standingsHeight(rows.length),
+    (ctx, width, height) =>
+      paintStandings(ctx, { width, height, rows, labels, accent: readPalette().accent }),
+    [rows.map((r) => `${r.title}${r.wins}${r.losses}${r.remaining}${r.daysLeft}`).join("|"), labels.title]
+  );
+  return (
+    <div ref={wrapRef} className={className}>
+      <canvas ref={canvasRef} className="block w-full" role="img" aria-label={labels.title} />
     </div>
   );
 }
