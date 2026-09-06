@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useLiveQuery } from "dexie-react-hooks";
 import TabNav, { TabDef } from "@/components/TabNav";
 import { db } from "@/lib/db";
-import { useSetting } from "@/lib/settings";
+import { useSetting, useSettingLoaded } from "@/lib/settings";
 import { finishDailyTask } from "@/lib/tasks";
 import { todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
@@ -90,6 +90,13 @@ export default function HomePage() {
   // 編集ダイアログを開いた状態にするための橋渡し。上と同じ仕組み
   const [pendingProjectEditId, setPendingProjectEditId] = useState<string | null>(null);
   const { mode, wordingMode } = useVisualMode();
+  // 起動直後は本文をCSSで伏せてある(html[data-booting])。最初に描画されるHTMLは
+  // 必ずOFFモードの姿になるため、そのまま見せると一瞬だけ違うモードの画面が映る。
+  // 演出テーマの設定を読み終えた時点で伏せを外す
+  const themeSettingLoaded = useSettingLoaded("theme.visualMode");
+  useEffect(() => {
+    if (themeSettingLoaded) document.documentElement.removeAttribute("data-booting");
+  }, [themeSettingLoaded]);
   const [powerproMenuStr] = useSetting("powerpro.mainMenu", "true");
   // メインメニューを出すのは育成選手モードで、設定がONのときだけ
   const usePowerproMenu = mode === "powerpro" && powerproMenuStr === "true";

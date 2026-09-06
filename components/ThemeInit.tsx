@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useSetting } from "@/lib/settings";
+import { writeBootSnapshot } from "@/lib/boot";
 import { DEFAULT_ACCENT_RGB, DEFAULT_CUSTOM_CREAM_RGB, DEFAULT_CUSTOM_INK_RGB, DEFAULT_CUSTOM_PANEL_RGB } from "@/lib/theme";
 
 // 設定されたアクセントカラーをCSS変数として<html>に反映する。
@@ -17,6 +18,7 @@ export default function ThemeInit() {
 
   useEffect(() => {
     document.documentElement.style.setProperty("--accent-rgb", accentRgb);
+    writeBootSnapshot({ accentRgb });
   }, [accentRgb]);
 
   useEffect(() => {
@@ -25,10 +27,13 @@ export default function ThemeInit() {
       root.setProperty("--ink-rgb", customInkRgb);
       root.setProperty("--cream-rgb", customCreamRgb);
       root.setProperty("--panel-rgb", customPanelRgb);
+      writeBootSnapshot({ inkRgb: customInkRgb, creamRgb: customCreamRgb, panelRgb: customPanelRgb });
     } else {
       root.removeProperty("--ink-rgb");
       root.removeProperty("--cream-rgb");
       root.removeProperty("--panel-rgb");
+      // カスタム以外では上書きを消すので、控えからも消しておく
+      writeBootSnapshot({ inkRgb: "", creamRgb: "", panelRgb: "" });
     }
   }, [visualMode, customInkRgb, customCreamRgb, customPanelRgb]);
 

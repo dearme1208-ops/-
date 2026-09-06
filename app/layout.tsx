@@ -4,6 +4,7 @@ import "./globals.css";
 import HeaderArt from "@/components/HeaderArt";
 import BadgeUpdater from "@/components/BadgeUpdater";
 import AppTitle from "@/components/AppTitle";
+import { BOOT_INLINE_SCRIPT, BOOT_TITLE_SCRIPT } from "@/lib/boot";
 
 const oswald = Oswald({
   subsets: ["latin"],
@@ -107,11 +108,18 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
+    // 下の同期スクリプトが<html>へdata-visual-mode等を足すため、
+    // サーバーが出したHTMLとは属性が一致しなくなる。ここは意図した差分なので警告を抑える
     <html
       lang="ja"
+      suppressHydrationWarning
       className={`${oswald.variable} ${notoSansJp.variable} ${yomogi.variable} ${vt323.variable} ${anton.variable} ${specialElite.variable} ${notoSerifJp.variable} ${ibmPlexMono.variable} ${medievalSharp.variable}`}
     >
       <body className="min-h-screen bg-ink font-sans text-cream antialiased">
+        {/* 本文の解析より前に走らせ、前回の演出テーマ・配色・アプリ名を<html>へ当て直す。
+            設定はIndexedDBにあり読み出しが非同期なので、これが無いとどのモードでも
+            OFFモードの配色と標準の見出しが一瞬映ってしまう */}
+        <script dangerouslySetInnerHTML={{ __html: BOOT_INLINE_SCRIPT }} />
         <BadgeUpdater />
         {/* 演出テーマ(設定でON時のみCSSで可視化)の走査線・ノイズ・グリッドの
             オーバーレイ。常時DOMには存在させ、表示はCSS側(html[data-visual-mode])で切り替える */}
@@ -133,6 +141,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <AppTitle />
           </div>
         </header>
+        {/* 見出しの文字は<head>の時点ではまだ要素が無いので当てられない。
+            ヘッダーを組み立てた直後に、前回のアプリ名へ差し替える */}
+        <script dangerouslySetInnerHTML={{ __html: BOOT_TITLE_SCRIPT }} />
         <main className="mx-auto max-w-6xl px-4 pb-24 pt-4 sm:px-8">{children}</main>
       </body>
     </html>

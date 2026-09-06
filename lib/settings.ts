@@ -1,10 +1,41 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
+import { readBootSnapshot, type BootSnapshot } from "./boot";
 
 export function useSetting(key: string, defaultValue: string): [string, (value: string) => void] {
   const row = useLiveQuery(() => db.settings.get(key), [key]);
   const value = row?.value ?? defaultValue;
+  const setValue = (v: string) => {
+    db.settings.put({ key, value: v });
+  };
+  return [value, setValue];
+}
+
+// その設定がIndexedDBから読み終わったかどうか。
+// useLiveQueryは「読み込み中」も「行が無い」もundefinedで返してしまうので、
+// 必ずオブジェクトを返すクエリにして、undefined=読み込み中と区別できるようにする
+export function useSettingLoaded(key: string): boolean {
+  const row = useLiveQuery(async () => ({ value: (await db.settings.get(key))?.value ?? null }), [key]);
+  return row !== undefined;
+}
+
+// 起動直後の一瞬だけ、まだIndexedDBから読めていない設定の代わりに
+// localStorageの控え(lib/boot.ts)を使う版。見た目を決めてしまう設定にだけ使う。
+// これがないと、最初の描画が必ずOFFモードの姿になってしまう
+export function useBootSetting(
+  key: string,
+  defaultValue: string,
+  bootField: keyof BootSnapshot
+): [string, (value: string) => void] {
+  const row = useLiveQuery(async () => ({ value: (await db.settings.get(key))?.value ?? null }), [key]);
+  // 初回描画で使う控え。localStorageは同期で読めるのでDBの読み出しを待たなくてよい
+  const [booted] = useState<string | null>(() => {
+    const snap = readBootSnapshot();
+    const v = snap ? snap[bootField] : undefined;
+    return typeof v === "string" ? v : null;
+  });
+  const value = row !== undefined ? row.value ?? defaultValue : booted ?? defaultValue;
   const setValue = (v: string) => {
     db.settings.put({ key, value: v });
   };

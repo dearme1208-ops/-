@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useSetting } from "@/lib/settings";
+import { writeBootSnapshot } from "@/lib/boot";
 
 const THEMED_MODES = [
   "lobotomy",
@@ -33,10 +34,14 @@ export default function VisualModeInit() {
   useEffect(() => {
     const mode = THEMED_MODES.includes(visualMode) ? visualMode : "off";
     document.documentElement.setAttribute("data-visual-mode", mode);
+    // 次回の起動でこの姿を最初の描画から出せるよう、実際に当てた値を控えておく
+    writeBootSnapshot({ visualMode: mode });
   }, [visualMode]);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-wording", applyWording === "false" ? "off" : "on");
+    const wording = applyWording === "false" ? "off" : "on";
+    document.documentElement.setAttribute("data-wording", wording);
+    writeBootSnapshot({ wording });
   }, [applyWording]);
 
   return null;

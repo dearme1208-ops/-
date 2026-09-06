@@ -90,6 +90,11 @@ const THEMED_MODES: ThemedMode[] = [
   "mountain",
 ];
 
+/** 保存されている文字列を、実在する演出テーマへ正規化する */
+export function resolveVisualMode(raw: string): VisualMode {
+  return (THEMED_MODES as string[]).includes(raw) ? (raw as VisualMode) : "off";
+}
+
 export function useVisualMode(): {
   mode: VisualMode;
   lobotomyMode: boolean;
