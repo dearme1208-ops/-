@@ -11,7 +11,10 @@ export const MEMO_NOTE_COLORS: Record<string, { bg: string; border: string }> = 
 };
 export const DEFAULT_MEMO_NOTE_COLOR = "yellow";
 
-export const MEMO_PEN_COLORS = ["#1a1a1a", "#dc2626", "#2563eb", "#16a34a"];
+// ボードの地は暗い色なので、既定は黒ではなく白にする。
+// 以前は先頭(既定)が#1a1a1aで、地の#0f0f10とほぼ同じ濃さだったため、
+// 何も設定を変えずに手書きすると線が見えなかった
+export const MEMO_PEN_COLORS = ["#f2f2f0", "#ef4444", "#3b82f6", "#22c55e", "#1a1a1a"];
 export const DEFAULT_MEMO_PEN_COLOR = MEMO_PEN_COLORS[0];
 export const DEFAULT_MEMO_PEN_WIDTH = 3;
 

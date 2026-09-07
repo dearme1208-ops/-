@@ -11,17 +11,23 @@ import { completeTodoTask } from "@/lib/todo";
 import {
   clampMemoZoom,
   DEFAULT_MEMO_NOTE_COLOR,
+  DEFAULT_MEMO_PEN_COLOR,
+  DEFAULT_MEMO_PEN_WIDTH,
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
   MEMO_NOTE_COLORS,
+  MEMO_PEN_COLORS,
   memoNoteZIndex,
 } from "@/lib/memo";
+import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
-import type { DailyTask, MasterTask, MemoNote, TodoTask } from "@/lib/types";
+import StrokeLayer from "@/components/memo/StrokeLayer";
+import type { DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask } from "@/lib/types";
 
-// 「メモ・ToDo(マイデイ)・本日の作業」を1つの自由配置キャンバスにまとめて表示し、
-// その場で作業の開始/一時停止/完了やToDoの完了ができるようにしたビュー。
+// 「メモ・ToDo・案件・本日の作業」を1つの自由配置キャンバスにまとめて表示し、
+// その場で作業の開始/一時停止/完了、ToDoの完了、案件の段階の通過までできるようにしたビュー。
+// 付箋を足したり、カードの周りに手書きで書き込んだりもここで完結する。
 // 付箋はメモタブと同じdb.memoNotes/db.memoBoardsをそのまま共有するため、
 // どちらのタブで開いても同じ付箋が見える。本日の作業・ToDoは付箋のような
 // x/y座標を持たないため、この画面専用のboardX/boardYフィールドに位置を保存する
@@ -29,6 +35,7 @@ import type { DailyTask, MasterTask, MemoNote, TodoTask } from "@/lib/types";
 const CARD_WIDTH = 220;
 const TASK_CARD_HEIGHT = 110;
 const TODO_CARD_HEIGHT = 90;
+const PROJECT_CARD_HEIGHT = 132;
 const PLACEMENT_GRID = 30;
 const PLACEMENT_MARGIN = 10;
 
@@ -82,12 +89,24 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
     () => (selectedBoardId ? db.memoNotes.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as MemoNote[])),
     [selectedBoardId]
   );
+  const strokes = useLiveQuery(
+    () => (selectedBoardId ? db.memoStrokes.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as MemoStroke[])),
+    [selectedBoardId]
+  );
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
-  const todoTasks = useLiveQuery(() => db.todoTasks.where("myDayDate").equals(today).toArray(), [today]);
+  // ボードに置く分だけでなく、下の一覧から選んで置けるようにするため未完了は全件見る
+  const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
+  const projectItems = useLiveQuery(() => db.projects.toArray(), []);
   const favorites = useLiveQuery(() => db.masterTasks.filter((m) => m.isFavorite && !m.archived).toArray(), []);
 
   const tasks = (dailyTasks ?? []).filter((t) => !t.isProvisional && t.status !== "done");
-  const todos = (todoTasks ?? []).filter((t) => !t.completed);
+  // 未完了の親タスクだけを対象にする(サブタスクはカードにしない)
+  const openTodos = (todoTasks ?? []).filter((t) => !t.completed && !t.parentTaskId);
+  // ボードに出すのは「マイデイに入れたもの」と「一覧から置いたもの」
+  const todos = openTodos.filter((t) => t.myDayDate === today || t.boardX !== undefined);
+  const openProjects = (projectItems ?? []).filter((p) => !p.completedAt);
+  // 案件は数が多くなりがちなので、自動では置かず、置いたものだけを出す
+  const projects = openProjects.filter((p) => p.boardX !== undefined);
 
   // 新しく現れた(まだboardX/boardYを持たない)作業・ToDoカードに、既存の付箋/カードと
   // 重ならない位置を1回だけ自動で割り当てる。手動でドラッグして重ねるのはユーザーの
@@ -105,6 +124,7 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
 
     const occupied: BoardRect[] = [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT })),
       ...tasks
         .filter((t) => t.boardX !== undefined && t.boardY !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
@@ -126,7 +146,7 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, todos, notes, selectedBoardId, boards]);
+  }, [tasks, todos, projects, notes, selectedBoardId, boards]);
 
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -166,7 +186,8 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
     360,
     ...(notes ?? []).map((n) => n.x + n.width),
     ...(tasks ?? []).map((t) => (t.boardX ?? 0) + CARD_WIDTH),
-    ...(todos ?? []).map((t) => (t.boardX ?? 0) + CARD_WIDTH)
+    ...(todos ?? []).map((t) => (t.boardX ?? 0) + CARD_WIDTH),
+    ...projects.map((p) => (p.boardX ?? 0) + CARD_WIDTH)
   );
   const fitZoom =
     viewportWidth > 0 ? Math.min(1, Math.max(0.4, clampMemoZoom(viewportWidth / (contentRight + 24)))) : 1;
@@ -245,6 +266,106 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
   async function completeTodo(task: TodoTask) {
     await completeTodoTask(task, today);
   }
+  async function moveProject(id: string, x: number, y: number) {
+    await db.projects.update(id, { boardX: x, boardY: y });
+  }
+
+  // ------------------------------------------------------------
+  // 手書き
+  // ------------------------------------------------------------
+  const [penMode, setPenMode] = useState(false);
+  const [eraseMode, setEraseMode] = useState(false);
+  const [penColor, setPenColor] = useState(DEFAULT_MEMO_PEN_COLOR);
+  const [penWidth, setPenWidth] = useState(DEFAULT_MEMO_PEN_WIDTH);
+  function togglePen() {
+    setPenMode((v) => !v);
+    setEraseMode(false);
+  }
+  function toggleErase() {
+    setEraseMode((v) => !v);
+    setPenMode(false);
+  }
+  async function clearStrokes() {
+    if (!selectedBoardId || !strokes || strokes.length === 0) return;
+    if (!confirm("このボードの手書きをすべて消去します。よろしいですか?")) return;
+    await db.memoStrokes.where("boardId").equals(selectedBoardId).delete();
+  }
+
+  // ------------------------------------------------------------
+  // 付箋を足す
+  // ------------------------------------------------------------
+  // 重なり順は付箋のorderで持っているので、いま一番手前の値を控えておく
+  const maxNoteOrderRef = useRef(0);
+  useEffect(() => {
+    maxNoteOrderRef.current = (notes ?? []).reduce((m, n) => Math.max(m, n.order), 0);
+  }, [notes]);
+  async function addNote() {
+    if (!selectedBoardId) return;
+    maxNoteOrderRef.current += 1;
+    const width = 180;
+    const height = 140;
+    const occupied: BoardRect[] = [
+      ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
+      ...tasks
+        .filter((t) => t.boardX !== undefined)
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
+      ...todos
+        .filter((t) => t.boardX !== undefined)
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TODO_CARD_HEIGHT })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT })),
+    ];
+    const pos = findFreeSlot(occupied, width, height);
+    await db.memoNotes.add({
+      id: uid(),
+      boardId: selectedBoardId,
+      x: pos.x,
+      y: pos.y,
+      width,
+      height,
+      color: DEFAULT_MEMO_NOTE_COLOR,
+      text: "",
+      order: maxNoteOrderRef.current,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  }
+
+  // ------------------------------------------------------------
+  // 一覧からボードへ置く / ボードから外す
+  // ------------------------------------------------------------
+  // いま盤面が使っている場所。置き場所を探すときに毎回組み立てる
+  function occupiedRects(): BoardRect[] {
+    return [
+      ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
+      ...tasks
+        .filter((t) => t.boardX !== undefined)
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
+      ...todos
+        .filter((t) => t.boardX !== undefined)
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TODO_CARD_HEIGHT })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT })),
+    ];
+  }
+  async function placeTodo(todo: TodoTask) {
+    const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, TODO_CARD_HEIGHT);
+    await db.todoTasks.update(todo.id, { boardX: pos.x, boardY: pos.y });
+  }
+  async function placeProject(project: ProjectItem) {
+    const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, PROJECT_CARD_HEIGHT);
+    await db.projects.update(project.id, { boardX: pos.x, boardY: pos.y });
+  }
+  // ToDoを下げるときはマイデイからも外す。そうしないと、マイデイのものは
+  // 自動配置がすぐ置き直してしまい、下げたつもりが戻ってくる
+  async function removeTodo(todo: TodoTask) {
+    await db.todoTasks.update(todo.id, { boardX: undefined, boardY: undefined, myDayDate: undefined });
+  }
+  async function removeProject(project: ProjectItem) {
+    await db.projects.update(project.id, { boardX: undefined, boardY: undefined });
+  }
+
+  const [showPalette, setShowPalette] = useState(false);
+  const unplacedTodos = openTodos.filter((t) => t.myDayDate !== today && t.boardX === undefined);
+  const unplacedProjects = openProjects.filter((p) => p.boardX === undefined);
 
   return (
     <div className="space-y-3">
@@ -276,8 +397,93 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
           </button>
         </div>
       </div>
+      {/* 書き込みの道具。付箋・手書き・消しゴムをこの1列にまとめる */}
+      <div className="panel flex flex-wrap items-center gap-2 p-3">
+        <button className="btn-pill-outline text-xs" onClick={addNote}>
+          ＋ 付箋
+        </button>
+        <button className={penMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={togglePen}>
+          ✏️ 手書き: {penMode ? "ON" : "OFF"}
+        </button>
+        <button className={eraseMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={toggleErase}>
+          🧹 消しゴム: {eraseMode ? "ON" : "OFF"}
+        </button>
+        {penMode && (
+          <>
+            {MEMO_PEN_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setPenColor(c)}
+                className={`h-6 w-6 rounded-full border-2 ${penColor === c ? "border-cream" : "border-transparent"}`}
+                style={{ backgroundColor: c }}
+                aria-label={`ペンの色を${c}にする`}
+              />
+            ))}
+            <input
+              type="range"
+              min={1}
+              max={12}
+              value={penWidth}
+              onChange={(e) => setPenWidth(Number(e.target.value))}
+              className="w-24"
+              aria-label="ペンの太さ"
+            />
+            <span className="text-xs tabular-nums text-cream/50">{penWidth}px</span>
+          </>
+        )}
+        {(strokes ?? []).length > 0 && (
+          <button className="btn-pill-outline text-xs text-alert" onClick={clearStrokes}>
+            手書きを全消去
+          </button>
+        )}
+        <button
+          className={showPalette ? "btn-pill ml-auto text-xs" : "btn-pill-outline ml-auto text-xs"}
+          onClick={() => setShowPalette((v) => !v)}
+        >
+          🗂 一覧から置く（ToDo {unplacedTodos.length} / 案件 {unplacedProjects.length}）
+        </button>
+      </div>
+
+      {/* 一覧。まだ盤面に無いToDoと案件を並べ、押した順に空いている場所へ置いていく */}
+      {showPalette && (
+        <div className="panel space-y-3 p-3">
+          <div>
+            <h4 className="mb-1.5 text-xs font-bold text-cream/70">ToDo（未完了で、まだ置いていないもの）</h4>
+            {unplacedTodos.length === 0 ? (
+              <p className="text-xs text-cream/40">置けるToDoはありません。</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {unplacedTodos.map((t) => (
+                  <button key={t.id} className="btn-pill-outline text-xs" onClick={() => placeTodo(t)} title="ボードに置く">
+                    ＋ {t.title}
+                    {t.dueDate && <span className={t.dueDate < today ? "ml-1 text-alert" : "ml-1 text-cream/40"}>{t.dueDate}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <h4 className="mb-1.5 text-xs font-bold text-cream/70">案件（進行中で、まだ置いていないもの）</h4>
+            {unplacedProjects.length === 0 ? (
+              <p className="text-xs text-cream/40">置ける案件はありません。</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {unplacedProjects.map((p) => (
+                  <button key={p.id} className="btn-pill-outline text-xs" onClick={() => placeProject(p)} title="ボードに置く">
+                    ＋ {p.title}
+                    <span className={p.dueDate < today ? "ml-1 text-alert" : "ml-1 text-cream/40"}>{p.dueDate}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <p className="flex flex-wrap items-center gap-2 px-1 text-xs text-cream/50">
-        付箋はメモタブと同じものが表示されます。ToDoは「マイデイ」に入れたものだけをカード化しています。
+        付箋と手書きはメモタブと同じものです（どちらで書いても両方に出ます）。ToDoは「マイデイ」に入れたものが自動で並び、それ以外と案件は上の「一覧から置く」から置きます。カードの
+        <span className="text-cream">✕</span>
+        でボードから下げられます（ToDoはマイデイからも外れます。項目自体は消えません）。
         {onOpenTodo && (
           <button className="text-cream underline decoration-dotted underline-offset-2 hover:text-cream/70" onClick={onOpenTodo}>
             ToDoタブへ →
@@ -303,6 +509,17 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
             className="relative"
             style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
           >
+            {/* 手書きはカードの下に敷く。手書き/消しゴムがOFFの間は当たり判定を切ってあるので、
+                カードのドラッグや操作は今までどおりできる */}
+            <StrokeLayer
+              boardId={selectedBoardId}
+              strokes={strokes}
+              zoom={zoom}
+              penMode={penMode}
+              eraseMode={eraseMode}
+              penColor={penColor}
+              penWidth={penWidth}
+            />
             {(notes ?? []).map((note) => (
               <NoteCard
                 key={note.id}
@@ -334,11 +551,26 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
               <TodoCard
                 key={todo.id}
                 todo={todo}
+                today={today}
                 zoom={zoom}
                 zIndex={zIndexById[todo.id] ?? 1}
                 onDragEnd={moveTodo}
                 onComplete={() => completeTodo(todo)}
+                onRemove={() => removeTodo(todo)}
                 onFocus={() => bringToFront(todo.id)}
+              />
+            ))}
+            {projects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                today={today}
+                zoom={zoom}
+                zIndex={zIndexById[project.id] ?? 1}
+                onDragEnd={moveProject}
+                onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
+                onRemove={() => removeProject(project)}
+                onFocus={() => bringToFront(project.id)}
               />
             ))}
           </div>
@@ -607,17 +839,21 @@ function TaskCard({
 
 function TodoCard({
   todo,
+  today,
   zoom,
   zIndex,
   onDragEnd,
   onComplete,
+  onRemove,
   onFocus,
 }: {
   todo: TodoTask;
+  today: string;
   zoom: number;
   zIndex: number;
   onDragEnd: (id: string, x: number, y: number) => void;
   onComplete: () => void;
+  onRemove: () => void;
   onFocus: () => void;
 }) {
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
@@ -627,14 +863,18 @@ function TodoCard({
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(x, y, CARD_WIDTH, TODO_CARD_HEIGHT, zoom, (nx, ny) =>
     onDragEnd(todo.id, nx, ny)
   );
+  const overdue = !!todo.dueDate && todo.dueDate < today;
 
   return (
     <div
-      className="absolute flex flex-col gap-1 rounded-md border-2 border-cream/20 bg-ink/90 p-2 shadow-md"
+      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
+        overdue ? "border-alert/70" : "border-cream/20"
+      }`}
       style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, zIndex }}
       onPointerDownCapture={onFocus}
     >
       <DragHandle tone="dark" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
+      <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（マイデイからも外れます。ToDo自体は消えません）" />
       <div className="flex flex-1 items-start gap-2">
         <button
           onClick={onComplete}
@@ -643,7 +883,127 @@ function TodoCard({
         />
         <p className="min-w-0 flex-1 text-sm text-cream">{todo.title}</p>
       </div>
-      {todo.dueDate && <span className="text-[10px] text-cream/40">期日 {todo.dueDate}</span>}
+      {todo.dueDate && (
+        <span className={`text-[10px] ${overdue ? "font-bold text-alert" : "text-cream/40"}`}>
+          期日 {todo.dueDate}
+          {overdue && "（超過）"}
+        </span>
+      )}
     </div>
+  );
+}
+
+// 案件のカード。件名と期日に加えて、段階(マイルストーン)の進み具合と、
+// 次に通す段階をその場でチェックできるようにしてある。
+// 案件タブを開かずにボードの上だけで進捗を動かせるのが、このモードの狙いのひとつ
+function ProjectCard({
+  project,
+  today,
+  zoom,
+  zIndex,
+  onDragEnd,
+  onToggleStage,
+  onRemove,
+  onFocus,
+}: {
+  project: ProjectItem;
+  today: string;
+  zoom: number;
+  zIndex: number;
+  onDragEnd: (id: string, x: number, y: number) => void;
+  onToggleStage: (stageId: string) => void;
+  onRemove: () => void;
+  onFocus: () => void;
+}) {
+  const x = project.boardX ?? 40;
+  const y = project.boardY ?? 40;
+  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
+    x,
+    y,
+    CARD_WIDTH,
+    PROJECT_CARD_HEIGHT,
+    zoom,
+    (nx, ny) => onDragEnd(project.id, nx, ny)
+  );
+  const stages = project.stages ?? [];
+  const doneCount = stages.filter(isStageDone).length;
+  const progress = computeProjectProgress(stages);
+  const overdue = project.dueDate < today;
+  // 残っている段階のうち、上から3つだけ出す(カードの高さに収まる分)
+  const nextStages = stages.filter((st) => !isStageDone(st)).slice(0, 3);
+
+  return (
+    <div
+      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
+        overdue ? "border-alert/70" : "border-cream/20"
+      }`}
+      style={{ left, top, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT, zIndex }}
+      onPointerDownCapture={onFocus}
+    >
+      <DragHandle tone="dark" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
+      <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（案件自体は消えません）" />
+      <div className="flex items-baseline gap-1">
+        <span className="shrink-0 text-[9px] uppercase tracking-wider text-cream/35">案件</span>
+        <p className="min-w-0 flex-1 truncate text-sm font-bold text-cream" title={project.title}>
+          {project.title}
+        </p>
+      </div>
+      <div className="flex items-center gap-1 text-[10px]">
+        <span className={overdue ? "font-bold text-alert" : "text-cream/40"}>
+          期日 {project.dueDate}
+          {overdue && "（超過）"}
+        </span>
+        {stages.length > 0 && (
+          <span className="ml-auto shrink-0 tabular-nums text-cream/50">
+            {doneCount}/{stages.length}
+          </span>
+        )}
+      </div>
+      {progress !== null && (
+        <div className="h-1 w-full shrink-0 overflow-hidden rounded-full bg-cream/10">
+          <div className="h-full rounded-full bg-cream/50" style={{ width: `${Math.round(progress * 100)}%` }} />
+        </div>
+      )}
+      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+        {nextStages.length === 0 ? (
+          <p className="text-[10px] text-cream/30">{stages.length === 0 ? "段階は未設定です" : "残っている段階はありません"}</p>
+        ) : (
+          nextStages.map((st) => (
+            <button
+              key={st.id}
+              onClick={() => onToggleStage(st.id)}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
+              title="この段階を通過にする"
+            >
+              <span className="h-3 w-3 shrink-0 rounded-sm border border-cream/40" />
+              <span className="min-w-0 flex-1 truncate text-[11px] text-cream/80">{st.title}</span>
+              {st.dueDate && (
+                <span className={`shrink-0 text-[9px] ${st.dueDate < today ? "text-alert" : "text-cream/35"}`}>{st.dueDate}</span>
+              )}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// カードをボードから下げるボタン。掴む帯の上に重ねるので、ドラッグ用の
+// pointerdownは止めておく(付箋の最前面固定ボタンと同じ扱い)
+function BoardRemoveButton({ onRemove, title }: { onRemove: () => void; title: string }) {
+  return (
+    <button
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onRemove();
+      }}
+      className="absolute right-1 top-0.5 text-[11px] leading-none text-cream/35 hover:text-cream"
+      title={title}
+      aria-label={title}
+    >
+      ✕
+    </button>
   );
 }

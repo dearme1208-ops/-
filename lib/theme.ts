@@ -173,7 +173,9 @@ export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
   // 「分析してから結論と根拠を出す」1画面に統合した
   claude: ["today", "aggregation", "report", "settings"],
   zen: ["today", "settings"],
-  hub: ["today", "todo", "memo", "report", "settings"],
+  // ハブモードは統合ボードが主役だが、一覧をじっくり見たり項目を作ったりするための
+  // タブは残す(ボードに置けるのは既にある項目だけなので、作る場所が無いと行き詰まる)
+  hub: ["today", "todo", "projects", "memo", "report", "settings"],
   adventurer: [
     "today",
     "todo",

@@ -16,7 +16,6 @@ import {
   estimateTextNoteHeight,
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
-  MEMO_ERASER_RADIUS,
   MEMO_NOTE_COLORS,
   MEMO_NOTE_MIN_HEIGHT,
   MEMO_NOTE_MIN_WIDTH,
@@ -28,6 +27,7 @@ import {
 import { formatMailNoteText, parseMsgFile, readFileAsDataUrl } from "@/lib/mailImport";
 import type { MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
+import StrokeLayer from "@/components/memo/StrokeLayer";
 
 // 直前に削除した付箋/手書き/連結を一時的に保持しておき、トーストから元に戻せるようにする
 type MemoUndoEntry =
@@ -311,9 +311,6 @@ export default function MemoSection() {
     container.scrollTop = boardY * zoom - container.clientHeight / 2;
   }
 
-  // 描画中のストローク座標。React stateにせず、pointermoveのたびに再レンダーが
-  // 走らないようにする(タッチペンでの手書きが重くならないようにするための要)
-  const drawingRef = useRef<{ x: number; y: number }[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mailFileInputRef = useRef<HTMLInputElement>(null);
   const [voiceListening, setVoiceListening] = useState(false);
@@ -325,130 +322,6 @@ export default function MemoSection() {
   useEffect(() => {
     maxOrderRef.current = (notes ?? []).reduce((m, n) => Math.max(m, n.order), 0);
   }, [notes]);
-
-  // devicePixelRatio対応。手書き線がぼやけないよう、内部解像度だけ上げてCSS表示サイズは固定する
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = MEMO_BOARD_WIDTH * dpr;
-    canvas.height = MEMO_BOARD_HEIGHT * dpr;
-    canvas.style.width = `${MEMO_BOARD_WIDTH}px`;
-    canvas.style.height = `${MEMO_BOARD_HEIGHT}px`;
-    const ctx = canvas.getContext("2d");
-    if (ctx) ctx.scale(dpr, dpr);
-  }, [selectedBoardId]);
-
-  // 保存済みのストロークが変わるたびに全描画し直す(通常のノート数・線数であれば軽い処理)
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, MEMO_BOARD_WIDTH, MEMO_BOARD_HEIGHT);
-    for (const s of strokes ?? []) {
-      if (s.points.length < 2) continue;
-      ctx.beginPath();
-      ctx.strokeStyle = s.color;
-      ctx.lineWidth = s.width;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.moveTo(s.points[0].x, s.points[0].y);
-      for (const p of s.points.slice(1)) ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-    }
-  }, [strokes]);
-
-  // offsetX/offsetYはCSSのtransform: scale()配下での挙動がブラウザによって
-  // 一貫しないため、getBoundingClientRect()から自前でズーム込みのボード論理座標に
-  // 変換する(ズームしても手書きの座標が狂わないようにするための要)
-  function getBoardPoint(clientX: number, clientY: number): { x: number; y: number } {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom };
-  }
-
-  // 消しゴムでなぞった軌跡上にあるストロークを丸ごと削除する。1回のドラッグで消した分は
-  // まとめて1件のUndoエントリにする
-  const erasedIdsRef = useRef<Set<string>>(new Set());
-  const erasedStrokesRef = useRef<MemoStroke[]>([]);
-  function eraseAt(point: { x: number; y: number }) {
-    for (const s of strokes ?? []) {
-      if (erasedIdsRef.current.has(s.id)) continue;
-      const hit = s.points.some((p) => Math.hypot(p.x - point.x, p.y - point.y) <= MEMO_ERASER_RADIUS);
-      if (hit) {
-        erasedIdsRef.current.add(s.id);
-        erasedStrokesRef.current.push(s);
-        db.memoStrokes.delete(s.id);
-      }
-    }
-  }
-  function handleErasePointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!eraseMode) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.setPointerCapture(e.pointerId);
-    erasedIdsRef.current = new Set();
-    erasedStrokesRef.current = [];
-    eraseAt(getBoardPoint(e.clientX, e.clientY));
-  }
-  function handleErasePointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!eraseMode || e.buttons !== 1) return;
-    eraseAt(getBoardPoint(e.clientX, e.clientY));
-  }
-  function handleErasePointerUp() {
-    if (erasedStrokesRef.current.length > 0) {
-      pushUndo({ type: "strokes", strokes: erasedStrokesRef.current, label: `手書き${erasedStrokesRef.current.length}本を消しました` });
-    }
-    erasedIdsRef.current = new Set();
-    erasedStrokesRef.current = [];
-  }
-  function handleCanvasPointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (eraseMode) return handleErasePointerDown(e);
-    return handlePenPointerDown(e);
-  }
-  function handleCanvasPointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (eraseMode) return handleErasePointerMove(e);
-    return handlePenPointerMove(e);
-  }
-  function handleCanvasPointerUp(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (eraseMode) return handleErasePointerUp();
-    return handlePenPointerUp();
-  }
-
-  function handlePenPointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!penMode) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.setPointerCapture(e.pointerId);
-    const point = getBoardPoint(e.clientX, e.clientY);
-    drawingRef.current = [point];
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.beginPath();
-      ctx.strokeStyle = penColor;
-      ctx.lineWidth = penWidth;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.moveTo(point.x, point.y);
-    }
-  }
-  function handlePenPointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!drawingRef.current) return;
-    const point = getBoardPoint(e.clientX, e.clientY);
-    drawingRef.current.push(point);
-    const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) {
-      ctx.lineTo(point.x, point.y);
-      ctx.stroke();
-    }
-  }
-  async function handlePenPointerUp() {
-    const points = drawingRef.current;
-    drawingRef.current = null;
-    if (!points || points.length < 2 || !selectedBoardId) return;
-    await db.memoStrokes.add({ id: uid(), boardId: selectedBoardId, points, color: penColor, width: penWidth, createdAt: Date.now() });
-  }
 
   async function undoLastStroke() {
     if (!strokes || strokes.length === 0) return;
@@ -1023,20 +896,18 @@ export default function MemoSection() {
               className="relative bg-[#0f0f10]"
               style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
             >
-              <canvas
-                ref={canvasRef}
-                width={MEMO_BOARD_WIDTH}
-                height={MEMO_BOARD_HEIGHT}
-                className="absolute left-0 top-0"
-                style={{
-                  touchAction: "none",
-                  pointerEvents: penMode || eraseMode ? "auto" : "none",
-                  cursor: eraseMode ? "cell" : undefined,
-                }}
-                onPointerDown={handleCanvasPointerDown}
-                onPointerMove={handleCanvasPointerMove}
-                onPointerUp={handleCanvasPointerUp}
-                onPointerCancel={handleCanvasPointerUp}
+              <StrokeLayer
+                boardId={selectedBoardId}
+                strokes={strokes}
+                zoom={zoom}
+                penMode={penMode}
+                eraseMode={eraseMode}
+                penColor={penColor}
+                penWidth={penWidth}
+                canvasRef={canvasRef}
+                onErased={(removed) =>
+                  pushUndo({ type: "strokes", strokes: removed, label: `手書き${removed.length}本を消しました` })
+                }
               />
               <svg
                 className="absolute left-0 top-0"
