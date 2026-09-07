@@ -171,11 +171,11 @@ export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
   // 数字を並べるだけでは読み手が結論を出す作業を丸ごと引き受けることになる。
   // そこでaggregationタブの中身をClaudeInsightsSectionに差し替え、
   // 「分析してから結論と根拠を出す」1画面に統合した
-  claude: ["today", "aggregation", "report", "settings"],
-  zen: ["today", "settings"],
+  claude: ["today", "aggregation", "report", "appearance", "settings"],
+  zen: ["today", "appearance", "settings"],
   // ハブモードは統合ボードが主役だが、一覧をじっくり見たり項目を作ったりするための
   // タブは残す(ボードに置けるのは既にある項目だけなので、作る場所が無いと行き詰まる)
-  hub: ["today", "todo", "projects", "memo", "report", "settings"],
+  hub: ["today", "todo", "projects", "memo", "report", "appearance", "settings"],
   adventurer: [
     "today",
     "todo",
@@ -189,6 +189,7 @@ export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
     "memo",
     "report",
     "records",
+    "appearance",
     "settings",
   ],
 };
@@ -579,6 +580,7 @@ export type TabKey =
   | "board"
   | "report"
   | "records"
+  | "appearance"
   | "settings";
 
 export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
@@ -600,6 +602,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "統合作戦盤",
     report: "日次・週次・月次報告書",
     records: "記録の改竄",
+    appearance: "運用形態選択",
     settings: "管理局設定",
   },
   va11halla: {
@@ -620,6 +623,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "カウンター全景",
     report: "日次・週次・月次売上報告",
     records: "伝票の修正",
+    appearance: "営業形態選択",
     settings: "バーの設定",
   },
   persona5: {
@@ -640,6 +644,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "アジトの作戦盤",
     report: "怪盗団 日報・週報・月報",
     records: "記録の書き換え",
+    appearance: "変装",
     settings: "アジト設定",
   },
   natsuyasumi: {
@@ -660,6 +665,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "自由帳",
     report: "今日・週・月のふりかえり",
     records: "日記の書き直し",
+    appearance: "きせかえ",
     settings: "ふでばこ",
   },
   claude: {
@@ -680,6 +686,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "ボード",
     report: "レポート",
     records: "ログ編集",
+    appearance: "モード選択",
     settings: "設定",
   },
   // 禅モードは「今」タブと「設定」タブしか表示しないため、他のラベルは
@@ -702,6 +709,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "見渡す場",
     report: "ふりかえり",
     records: "記録",
+    appearance: "衣替え",
     settings: "設定",
   },
   // ターミナルモード: 引き算の禅モードとは正反対に、あらゆるタブを証券端末/管制室の
@@ -724,6 +732,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "OVERVIEW",
     report: "DIGEST",
     records: "LEDGER",
+    appearance: "MODE SELECT",
     settings: "CONFIG",
   },
   // 冒険者風: RPGの世界に丸ごとなりきったタブ名。危機感より冒険のワクワク感を強調する。
@@ -748,6 +757,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "冒険の作戦盤",
     report: "日々・週間・月間の冒険記",
     records: "記録の書き換え",
+    appearance: "転職",
     settings: "冒険の設定",
   },
   // ハブモード: 「本日の作業」タブの中身そのものが統合ボード(メモ・ToDo・本日の作業を
@@ -771,6 +781,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "統合ボード",
     report: "レポート",
     records: "実績編集",
+    appearance: "モード選択",
     settings: "設定",
   },
   // 図書館モード: 「本日の作業」画面の操作感自体をカード目録風のスワイプ・書架演出に
@@ -793,6 +804,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "閲覧室",
     report: "日報・週報・月報",
     records: "台帳の訂正",
+    appearance: "館内モード選択",
     settings: "司書設定",
   },
   // パワプロ風モード: 育成ゲームの選手育成画面になぞらえたモード。「本日の作業」タブが
@@ -815,6 +827,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "作戦ボード",
     report: "日誌・週間・月間成績",
     records: "成績の訂正",
+    appearance: "モード選択",
     settings: "監督設定",
   },
   hayarigami: {
@@ -835,6 +848,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "捜査本部ボード",
     report: "日次・週次・月次 捜査報告書",
     records: "供述の訂正",
+    appearance: "捜査モード選択",
     settings: "捜査環境設定",
   },
   mountain: {
@@ -855,6 +869,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     board: "作戦テーブル",
     report: "山行報告書",
     records: "行動記録の訂正",
+    appearance: "登山スタイル選択",
     settings: "装備と設定",
   },
 };

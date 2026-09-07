@@ -51,6 +51,7 @@ const AttentionSection = dynamic(() => import("@/components/sections/AttentionSe
 const ReportSection = dynamic(() => import("@/components/sections/ReportSection"), { ssr: false });
 const RecordsSection = dynamic(() => import("@/components/sections/RecordsSection"), { ssr: false });
 const SettingsSection = dynamic(() => import("@/components/sections/SettingsSection"), { ssr: false });
+const AppearanceSection = dynamic(() => import("@/components/sections/AppearanceSection"), { ssr: false });
 const OvertimeSection = dynamic(() => import("@/components/sections/OvertimeSection"), { ssr: false });
 const YearlyChartSection = dynamic(() => import("@/components/sections/YearlyChartSection"), { ssr: false });
 const MandalaSection = dynamic(() => import("@/components/sections/MandalaSection"), { ssr: false });
@@ -75,6 +76,7 @@ const TABS: TabDef[] = [
   { key: "board", label: "統合ボード" },
   { key: "report", label: "日報・週報・月報" },
   { key: "records", label: "実績編集" },
+  { key: "appearance", label: "モード選択" },
   { key: "settings", label: "設定" },
 ];
 
@@ -293,6 +295,7 @@ export default function HomePage() {
         />
       )}
       {active === "records" && <RecordsSection />}
+      {active === "appearance" && <AppearanceSection />}
       {active === "settings" && <SettingsSection />}
       </>
       )}
