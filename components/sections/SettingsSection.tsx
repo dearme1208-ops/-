@@ -21,6 +21,7 @@ import {
   rgbSpaceToHex,
 } from "@/lib/theme";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
+import { normalizeAddTaskStyle } from "@/components/sections/AddTaskDialog";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { parseCategoryRates, serializeCategoryRates } from "@/lib/cost";
 import type { BreakRange } from "@/lib/types";
@@ -91,6 +92,8 @@ export default function SettingsSection() {
   const [quickStartEnabledStr, setQuickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
   const quickStartEnabled = quickStartEnabledStr === "true";
   const [emphasizeRunningStr, setEmphasizeRunningStr] = useSetting("today.emphasizeRunning", "false");
+  const [addTaskStyleStr, setAddTaskStyle] = useSetting("today.addTaskStyle", "tabs");
+  const addTaskStyle = normalizeAddTaskStyle(addTaskStyleStr);
   const emphasizeRunning = emphasizeRunningStr === "true";
   const [showStatusPanelStr, setShowStatusPanelStr] = useSetting("today.showStatusPanel", "true");
   const showStatusPanel = showStatusPanelStr === "true";
@@ -1117,6 +1120,43 @@ export default function SettingsSection() {
             <b className="text-cream">T</b> = トラブル発生
           </p>
         )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">作業の追加画面</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={addTaskStyle === "tabs" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setAddTaskStyle("tabs")}
+          >
+            タブで切り替え
+          </button>
+          <button
+            className={addTaskStyle === "menu" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setAddTaskStyle("menu")}
+          >
+            メニューから選ぶ
+          </button>
+          <button
+            className={addTaskStyle === "single" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setAddTaskStyle("single")}
+          >
+            1枚にまとめる
+          </button>
+        </div>
+        <p className="text-xs text-cream/50">
+          「本日の作業」の<b className="text-cream">＋ 突発作業を追加</b>を押したときに出る画面の作りを選びます。追加そのものの扱い（「予定」を設定するか、同じ作業の残り想定時間の繰り越し、未計測との重なりの確認、自由入力したものを作業マスタへ登録）は、どれを選んでも変わりません。
+        </p>
+        <p className="text-xs text-cream/50">
+          <b className="text-cream">タブで切り替え</b>=
+          「マスタから選択」「自由入力」をタブで行き来する従来の形です。
+          <br />
+          <b className="text-cream">メニューから選ぶ</b>=
+          最初に「どこから追加しますか」と聞き、作業マスタ／お気に入り／自由入力のどれかを選んでから、その専用の画面に進みます。演出テーマの育成選手モードと同じ流れです。
+          <br />
+          <b className="text-cream">1枚にまとめる</b>=
+          マスタの検索・一覧と、業務区分＋詳細作業名の直接入力を1つの画面に載せます。画面を切り替えずに済むぶん縦に長くなります。演出テーマの登山モードと同じ形です。
+        </p>
       </div>
 
       <div className="panel space-y-3 p-4">
