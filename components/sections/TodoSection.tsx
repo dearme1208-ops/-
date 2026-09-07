@@ -211,6 +211,10 @@ export default function TodoSection({
   const [newTaskCustomCategory, setNewTaskCustomCategory] = useState("");
   const [newTaskCustomerMode, setNewTaskCustomerMode] = useState<string>(NO_CUSTOMER_VALUE);
   const [newTaskCustomCustomer, setNewTaskCustomCustomer] = useState("");
+  // 登録時に決めておくサブタスクの下書き。親タスクがまだ存在しないので、
+  // 保存せず名前だけを並べておき、追加した瞬間に親と一緒に書き込む
+  const [newTaskSubtasks, setNewTaskSubtasks] = useState<string[]>([]);
+  const [newTaskSubtaskDraft, setNewTaskSubtaskDraft] = useState("");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -711,6 +715,14 @@ export default function TodoSection({
     return mode || undefined;
   }
 
+  // 入力中のサブタスク名を1行として確定する
+  function commitSubtaskDraft() {
+    const title = newTaskSubtaskDraft.trim();
+    if (!title) return;
+    setNewTaskSubtasks((prev) => [...prev, title]);
+    setNewTaskSubtaskDraft("");
+  }
+
   // keepOpen を立てると、追加したあともポップアップを開いたままにして続けて入力できる。
   // そのときは追加先リスト・対応状況・分類・客先を残す(同じ属性のものを何件も
   // 続けて入れることが多いため)。閉じる場合はすべて初期状態へ戻す
@@ -743,9 +755,28 @@ export default function TodoSection({
       myDayDate: view === "myday" ? today : undefined,
     };
     await db.todoTasks.add(task);
+    // 下書きしておいたサブタスクを、親と同じリストに、打った順のまま付ける
+    const drafts = [...newTaskSubtasks, newTaskSubtaskDraft.trim()].filter((t) => t !== "");
+    if (drafts.length > 0) {
+      await db.todoTasks.bulkAdd(
+        drafts.map((title, i) => ({
+          id: uid(),
+          listId: targetListId,
+          parentTaskId: id,
+          title,
+          important: false,
+          completed: false,
+          order: i,
+          createdAt: Date.now(),
+        }))
+      );
+    }
     setNewTaskTitle("");
     setNewTaskAction("");
     setNewTaskDueDate("");
+    // サブタスクは1件ごとに違うので、続けて入力する場合も必ず空にする
+    setNewTaskSubtasks([]);
+    setNewTaskSubtaskDraft("");
     if (options?.keepOpen) {
       // 続けて入力する場合は、件名欄へ戻してすぐ次を打てるようにする
       newTaskTitleRef.current?.focus();
@@ -1524,6 +1555,55 @@ export default function TodoSection({
                   className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
                 />
               )}
+              {/* サブタスクは登録時にまとめて決められるようにする。
+                  やることを書き出す時点で手順が頭にあることが多く、
+                  追加してから詳細を開き直して1件ずつ足すのは二度手間になるため。
+                  親タスクがまだ無いので、ここでは名前を並べておくだけにして、
+                  「追加」を押した瞬間に親と一緒に書き込む */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-cream/60">サブタスク（任意）</span>
+                {newTaskSubtasks.map((sub, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-cream/30">└</span>
+                    <input
+                      value={sub}
+                      onChange={(e) =>
+                        setNewTaskSubtasks((prev) => prev.map((s, j) => (j === i ? e.target.value : s)))
+                      }
+                      className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
+                    />
+                    <button
+                      className="text-cream/40 hover:text-alert"
+                      onClick={() => setNewTaskSubtasks((prev) => prev.filter((_, j) => j !== i))}
+                      aria-label={`${sub}を外す`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2">
+                  <span className="text-cream/30">└</span>
+                  <input
+                    value={newTaskSubtaskDraft}
+                    onChange={(e) => setNewTaskSubtaskDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      // ここでのEnterは「次のサブタスクへ」。タスクそのものの追加は起こさない
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      commitSubtaskDraft();
+                    }}
+                    placeholder="手順を1行ずつ（Enterで次の行）"
+                    className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
+                  />
+                  <button
+                    className="btn-pill-outline text-xs"
+                    onClick={commitSubtaskDraft}
+                    disabled={!newTaskSubtaskDraft.trim()}
+                  >
+                    行を足す
+                  </button>
+                </div>
+              </div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <button className="btn-pill text-sm" onClick={() => addTask()} disabled={!newTaskTitle.trim()}>
                   追加
