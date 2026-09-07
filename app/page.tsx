@@ -22,6 +22,7 @@ import TodoReminderModal from "@/components/TodoReminderModal";
 import TodoReminderPopup from "@/components/TodoReminderPopup";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
+import { menuSkinFor } from "@/lib/mainMenu";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
 const ClaudeWorkspaceSection = dynamic(() => import("@/components/sections/ClaudeWorkspaceSection"), { ssr: false });
@@ -29,7 +30,7 @@ const ZenSection = dynamic(() => import("@/components/sections/ZenSection"), { s
 const TerminalDashboardSection = dynamic(() => import("@/components/sections/TerminalDashboardSection"), { ssr: false });
 const PowerproTrainingSection = dynamic(() => import("@/components/sections/PowerproTrainingSection"), { ssr: false });
 const MountainSection = dynamic(() => import("@/components/sections/MountainSection"), { ssr: false });
-const PowerproMenuSection = dynamic(() => import("@/components/sections/PowerproMenuSection"), { ssr: false });
+const MainMenuSection = dynamic(() => import("@/components/sections/MainMenuSection"), { ssr: false });
 const HayarigamiSection = dynamic(() => import("@/components/sections/HayarigamiSection"), { ssr: false });
 const LobotomySection = dynamic(() => import("@/components/sections/LobotomySection"), { ssr: false });
 const LibrarySection = dynamic(() => import("@/components/sections/LibrarySection"), { ssr: false });
@@ -97,10 +98,12 @@ export default function HomePage() {
   useEffect(() => {
     if (themeSettingLoaded) document.documentElement.removeAttribute("data-booting");
   }, [themeSettingLoaded]);
-  const [powerproMenuStr] = useSetting("powerpro.mainMenu", "true");
-  // メインメニューを出すのは育成選手モードで、設定がONのときだけ
-  const usePowerproMenu = mode === "powerpro" && powerproMenuStr === "true";
-  const showMenu = usePowerproMenu && menuOpen;
+  // 設定のキーは育成選手モード専用だった頃のまま。名前を変えると、以前OFFにした人の
+  // 設定が読めなくなってメニューが勝手に復活してしまうので、キーはそのままにしてある
+  const [mainMenuStr] = useSetting("powerpro.mainMenu", "true");
+  // メニューを出せるモードで、設定がONのときだけ
+  const useMainMenu = menuSkinFor(mode) !== null && mainMenuStr === "true";
+  const showMenu = useMainMenu && menuOpen;
   const tabs = useMemo(() => {
     const allKeys = TABS.map((t) => t.key as TabKey);
     const visibleKeys = new Set(visibleTabKeys(mode, allKeys));
@@ -186,10 +189,10 @@ export default function HomePage() {
           setActive("todo");
         }}
       />
-      {/* 育成選手モードのメインメニュー中はタブ列を隠し、メニューだけを見せる。
-          モードへ入ったら、タブ列の上に「◀ メニュー」を出して戻れるようにする */}
+      {/* モード選択メニュー中はタブ列を隠し、メニューだけを見せる。
+          タブへ入ったら、タブ列の上に「◀ メニュー」を出して戻れるようにする */}
       {showMenu ? (
-        <PowerproMenuSection
+        <MainMenuSection
           onEnter={(tab) => {
             setActive(tab);
             setMenuOpen(false);
@@ -197,7 +200,7 @@ export default function HomePage() {
         />
       ) : (
         <>
-          {usePowerproMenu && (
+          {useMainMenu && (
             <button
               className="btn-pill-outline mb-1 self-start text-xs"
               onClick={() => setMenuOpen(true)}

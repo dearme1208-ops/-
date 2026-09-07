@@ -2012,17 +2012,26 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">育成選手モードのメインメニュー</h3>
+        <h3 className="font-display text-sm font-bold text-cream/80">モード選択メニュー</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             className={powerproMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setPowerproMenuStr(powerproMenu ? "false" : "true")}
           >
-            メインメニューから入る: {powerproMenu ? "ON" : "OFF"}
+            メニューから入る: {powerproMenu ? "ON" : "OFF"}
           </button>
         </div>
         <p className="text-xs text-cream/50">
-          ONにすると、育成選手モードのときだけ、家庭用野球ゲームのモード選択画面のような<b>メインメニュー</b>が最初に出ます。18のタブが4列のタイルで並び、1回押すと下の帯に説明が出て、もう1回押すとその画面に入ります。入った先の左上の「◀ メニュー」で戻れます。タイルの下に出る件数（本日の消化、期限切れのToDo、期日超過の案件など）はすべて実際の数え上げです。OFFにすると、これまで通りタブを直接切り替える形になります（この設定は育成選手モード以外には影響しません）。
+          ONにすると、家庭用ゲームのモード選択画面のような<b>メニュー</b>が最初に出ます。タブが4列のタイルで並び、1回押すと下の帯に説明が出て、もう1回押すとその画面に入ります。入った先の左上の「◀ メニュー」で戻れます。タイルの下に出る件数（本日の消化、期限切れのToDo、期日超過の案件など）はすべて実際の数え上げです。OFFにすると、これまで通りタブを直接切り替える形になります。
+        </p>
+        <p className="text-xs text-cream/50">
+          メニューが出るのは<b className="text-cream">
+            育成選手・ロボトミー風・VA-11 HALL-A風・ペルソナ5風・端末風・冒険者・図書館・流行り神風・登山・ぼくのなつやすみ風
+          </b>
+          の10モードです。並ぶタイルと件数はどのモードでも同じで、モードごとに変わるのはタイルの輪郭と質感（角丸／名刺／傾き／計器の画面、照りの有無）、上段と側帯に出る数字の呼び名、進行状況の言い回しだけです。演出テーマの文言をOFFにしている場合は、形と色はそのままに呼び名だけ元に戻ります。
+        </p>
+        <p className="text-xs text-cream/50">
+          Claudeモード・禅モード・ハブモードには出ません。この3つはタブを4つ・2つ・5つに絞り込むことそのものが狙いのモードで、「どのタブへ行くか選ぶ」入口を挟むと逆向きになるためです。演出テーマがOFFのとき（通常のモード）にも出ません。
         </p>
       </div>
 

@@ -29,6 +29,48 @@ export function squircle(ctx: CanvasRenderingContext2D, x: number, y: number, w:
   ctx.closePath();
 }
 
+/** タイルの輪郭。モードごとに手触りを変えるため、形を差し替えられるようにしてある */
+export type TileShape = "squircle" | "card" | "slant" | "screen";
+
+export function tilePath(
+  ctx: CanvasRenderingContext2D,
+  shape: TileShape,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+) {
+  if (shape === "squircle") {
+    squircle(ctx, x, y, w, h, w * 0.24);
+    return;
+  }
+  if (shape === "card") {
+    // 名刺や蔵書票のような、角のわずかに落ちた矩形
+    squircle(ctx, x, y, w, h, w * 0.08);
+    return;
+  }
+  if (shape === "slant") {
+    // 上辺を右へずらした平行四辺形。走っているような傾きを出す
+    const lean = w * 0.12;
+    ctx.beginPath();
+    ctx.moveTo(x + lean, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w - lean, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.closePath();
+    return;
+  }
+  // screen: 右上の角を切り落とした、計器や端末の画面のような形
+  const cut = w * 0.2;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + w - cut, y);
+  ctx.lineTo(x + w, y + cut);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.closePath();
+}
+
 // ============================================================
 // 記号(グリフ)
 // ============================================================
@@ -468,6 +510,10 @@ export interface ModeIconOptions {
   spark: boolean;
   /** 下端の帯に出す数値(未完了件数など)。nullなら帯を出さない */
   badge: { label: string; value: string; ratio: number } | null;
+  /** タイルの輪郭。既定は角丸(パワプロ) */
+  shape?: TileShape;
+  /** 表面の質感。gloss=ガラスの照り、matte=艶を消して走査線を薄く重ねる */
+  chrome?: "gloss" | "matte";
 }
 
 export function paintModeIcon(ctx: CanvasRenderingContext2D, o: ModeIconOptions) {
@@ -476,41 +522,52 @@ export function paintModeIcon(ctx: CanvasRenderingContext2D, o: ModeIconOptions)
   const pad = 3;
   const w = s - pad * 2;
   const r = w * 0.24;
+  const shape = o.shape ?? "squircle";
+  const matte = o.chrome === "matte";
 
   // ---- 落ち影 ----
   ctx.save();
   ctx.shadowColor = "rgba(12,20,40,0.42)";
   ctx.shadowBlur = s * 0.1;
   ctx.shadowOffsetY = s * 0.045;
-  squircle(ctx, pad, pad, w, w, r);
+  tilePath(ctx, shape, pad, pad, w, w);
   ctx.fillStyle = rgb(o.color);
   ctx.fill();
   ctx.restore();
 
   // ---- 下地のグラデーション(上が明るく、下が沈む) ----
   const g = ctx.createLinearGradient(0, pad, 0, pad + w);
-  g.addColorStop(0, rgb(mix(o.color, [255, 255, 255], 0.34)));
+  g.addColorStop(0, rgb(mix(o.color, [255, 255, 255], matte ? 0.16 : 0.34)));
   g.addColorStop(0.5, rgb(o.color));
-  g.addColorStop(1, rgb(mix(o.color, [0, 0, 0], 0.3)));
-  squircle(ctx, pad, pad, w, w, r);
+  g.addColorStop(1, rgb(mix(o.color, [0, 0, 0], matte ? 0.2 : 0.3)));
+  tilePath(ctx, shape, pad, pad, w, w);
   ctx.fillStyle = g;
   ctx.fill();
 
-  // ---- 上半分のガラス光沢 ----
   ctx.save();
-  squircle(ctx, pad, pad, w, w, r);
+  tilePath(ctx, shape, pad, pad, w, w);
   ctx.clip();
-  const gl = ctx.createLinearGradient(0, pad, 0, pad + w * 0.52);
-  gl.addColorStop(0, "rgba(255,255,255,0.42)");
-  gl.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = gl;
-  ctx.beginPath();
-  ctx.moveTo(pad, pad);
-  ctx.lineTo(pad + w, pad);
-  ctx.lineTo(pad + w, pad + w * 0.46);
-  ctx.quadraticCurveTo(pad + w * 0.5, pad + w * 0.62, pad, pad + w * 0.42);
-  ctx.closePath();
-  ctx.fill();
+  if (matte) {
+    // ---- 走査線(艶消し) ----
+    // 端末や計器の画面らしさを、照りではなく細い横線で出す
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    for (let y = pad; y < pad + w; y += Math.max(2, w * 0.055)) {
+      ctx.fillRect(pad, y, w, Math.max(0.7, w * 0.014));
+    }
+  } else {
+    // ---- 上半分のガラス光沢 ----
+    const gl = ctx.createLinearGradient(0, pad, 0, pad + w * 0.52);
+    gl.addColorStop(0, "rgba(255,255,255,0.42)");
+    gl.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gl;
+    ctx.beginPath();
+    ctx.moveTo(pad, pad);
+    ctx.lineTo(pad + w, pad);
+    ctx.lineTo(pad + w, pad + w * 0.46);
+    ctx.quadraticCurveTo(pad + w * 0.5, pad + w * 0.62, pad, pad + w * 0.42);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   // ---- 記号 ----
   ctx.save();
@@ -574,14 +631,14 @@ export function paintModeIcon(ctx: CanvasRenderingContext2D, o: ModeIconOptions)
   ctx.restore();
 
   // ---- 内側の締め線 ----
-  squircle(ctx, pad + 1.5, pad + 1.5, w - 3, w - 3, r - 1.5);
+  tilePath(ctx, shape, pad + 1.5, pad + 1.5, w - 3, w - 3);
   ctx.strokeStyle = "rgba(255,255,255,0.35)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
   // ---- 選択中の縁取り ----
   if (o.selected) {
-    squircle(ctx, pad - 1, pad - 1, w + 2, w + 2, r + 1);
+    tilePath(ctx, shape, pad - 1, pad - 1, w + 2, w + 2);
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 3;
     ctx.stroke();
