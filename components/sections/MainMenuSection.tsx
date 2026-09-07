@@ -168,7 +168,11 @@ export default function MainMenuSection({ onEnter }: { onEnter: (tab: TabKey) =>
 
         {/* ================= 中央: モードのタイル ================= */}
         <div className="min-w-0 flex-1">
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+          {/* 4列固定だと、ページ幅いっぱいに広がるパソコン版でタイルが際限なく巨大化してしまう
+              (スマホ幅では左右の柱が無く4列がちょうど良い大きさに収まる一方、パソコン幅では
+              柱を差し引いた残りをたった4つで分け合うことになるため)。画面が広がった分は
+              タイルを大きくするのではなく列数を増やして吸収する。18枚が6列でちょうど3段に揃う */}
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2 md:grid-cols-5 lg:grid-cols-6">
             {entries.map((entry) => (
               <ModeTile
                 key={entry.key}
