@@ -323,6 +323,9 @@ export interface MemoNote {
   color: string; // MEMO_NOTE_COLORSのキー
   text: string;
   order: number; // 重なった際の前後関係(ドラッグ/新規作成のたびに最前面へ)
+  // 最前面に固定。ほかの付箋をいくら前に出しても、この付箋は必ずその上に出る。
+  // メモタブと統合ボードで同じ付箋を共有しているので、固定もどちらにも効く
+  pinned?: boolean;
   createdAt: number;
   updatedAt: number;
   isChecklist?: boolean; // trueの場合、textではなくchecklistItemsを表示する

@@ -21,6 +21,7 @@ import {
   MEMO_NOTE_MIN_HEIGHT,
   MEMO_NOTE_MIN_WIDTH,
   MEMO_PEN_COLORS,
+  memoNoteZIndex,
   parseMemoBoardImport,
   serializeMemoBoard,
 } from "@/lib/memo";
@@ -523,6 +524,16 @@ export default function MemoSection() {
   async function bringToFront(id: string) {
     maxOrderRef.current += 1;
     await db.memoNotes.update(id, { order: maxOrderRef.current });
+  }
+  // 最前面固定。固定した時点でも一番手前へ出しておく(固定した付箋どうしの
+  // 前後関係はこれまでどおりorderで決まるので、いま固定したものが最も手前になる)
+  async function togglePin(note: MemoNote) {
+    if (note.pinned) {
+      await db.memoNotes.update(note.id, { pinned: false });
+      return;
+    }
+    maxOrderRef.current += 1;
+    await db.memoNotes.update(note.id, { pinned: true, order: maxOrderRef.current });
   }
   async function moveNote(id: string, x: number, y: number) {
     await db.memoNotes.update(id, { x, y, updatedAt: Date.now() });
@@ -1063,6 +1074,7 @@ export default function MemoSection() {
                   onSelectConnect={() => selectNoteForConnect(note.id)}
                   onConvertTodo={() => convertNoteToTodo(note)}
                   onConvertProject={() => convertNoteToProject(note)}
+                  onTogglePin={() => togglePin(note)}
                   onDuplicate={() => duplicateNote(note)}
                   onToggleChecklist={() => toggleChecklistMode(note)}
                   onUpdateChecklistItems={(items) => updateChecklistItems(note.id, items)}
@@ -1168,6 +1180,7 @@ function StickyNoteCard({
   onCommitText,
   onDelete,
   onColorChange,
+  onTogglePin,
   onFocusNote,
   onSelectConnect,
   onConvertTodo,
@@ -1188,6 +1201,7 @@ function StickyNoteCard({
   onCommitText: (id: string, text: string) => void;
   onDelete: (id: string) => void;
   onColorChange: (id: string, color: string) => void;
+  onTogglePin: () => void;
   onFocusNote: () => void;
   onSelectConnect: () => void;
   onConvertTodo: () => void;
@@ -1283,7 +1297,7 @@ function StickyNoteCard({
         top,
         width,
         height,
-        zIndex: note.order,
+        zIndex: memoNoteZIndex(note.pinned, note.order),
         pointerEvents: penMode || eraseMode ? "none" : "auto",
         backgroundColor: colors.bg,
         borderColor: isConnectSource ? "#fff" : isHighlighted ? "#38bdf8" : colors.border,
@@ -1301,20 +1315,37 @@ function StickyNoteCard({
         onPointerCancel={handleHeaderPointerUp}
       >
         <span className="text-[10px] text-black/40">⠿</span>
-        <button
-          // 親ヘッダーのonPointerDown(ドラッグ用のsetPointerCapture)にバブリングすると、
-          // 以降のclickイベントまでヘッダー側へ奪われてボタンのonClickが発火しなくなるため、
-          // ここで先に止めておく
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(note.id);
-          }}
-          className="text-[10px] leading-none text-black/40 hover:text-red-600"
-          aria-label="付箋を削除"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* 最前面固定。ほかの付箋を掴んで前に出しても、この付箋は隠れない */}
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin();
+            }}
+            // 絵文字は文字色を変えても色が変わらないので、状態は濃さ(opacity)で示す
+            className={`text-[11px] leading-none ${note.pinned ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
+            title={note.pinned ? "最前面固定を解除する" : "最前面に固定する"}
+            aria-label={note.pinned ? "最前面固定を解除する" : "最前面に固定する"}
+            aria-pressed={!!note.pinned}
+          >
+            📌
+          </button>
+          <button
+            // 親ヘッダーのonPointerDown(ドラッグ用のsetPointerCapture)にバブリングすると、
+            // 以降のclickイベントまでヘッダー側へ奪われてボタンのonClickが発火しなくなるため、
+            // ここで先に止めておく
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(note.id);
+            }}
+            className="text-[10px] leading-none text-black/40 hover:text-red-600"
+            aria-label="付箋を削除"
+          >
+            ✕
+          </button>
+        </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 px-1.5 pb-1">
         <div className="flex items-center gap-1">

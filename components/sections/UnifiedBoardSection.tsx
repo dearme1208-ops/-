@@ -14,6 +14,7 @@ import {
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
   MEMO_NOTE_COLORS,
+  memoNoteZIndex,
 } from "@/lib/memo";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
@@ -180,6 +181,11 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
   async function growNote(id: string, height: number) {
     await db.memoNotes.update(id, { height, updatedAt: Date.now() });
   }
+  // 最前面固定。メモタブと同じ付箋を見ているので、どちらで固定してもどちらにも効く
+  async function togglePin(note: MemoNote) {
+    await db.memoNotes.update(note.id, { pinned: !note.pinned });
+    if (!note.pinned) bringToFront(note.id);
+  }
   async function commitNoteText(note: MemoNote, text: string) {
     if (text === note.text) return;
     await db.memoNotes.update(note.id, { text, updatedAt: Date.now() });
@@ -302,10 +308,11 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
                 key={note.id}
                 note={note}
                 zoom={zoom}
-                zIndex={zIndexById[note.id] ?? 1}
+                zIndex={memoNoteZIndex(note.pinned, zIndexById[note.id] ?? 1)}
                 onDragEnd={moveNote}
                 onCommitText={commitNoteText}
                 onGrow={growNote}
+                onTogglePin={() => togglePin(note)}
                 onFocus={() => bringToFront(note.id)}
               />
             ))}
@@ -443,6 +450,7 @@ function NoteCard({
   onCommitText,
   onFocus,
   onGrow,
+  onTogglePin,
 }: {
   note: MemoNote;
   zoom: number;
@@ -451,6 +459,7 @@ function NoteCard({
   onCommitText: (note: MemoNote, text: string) => void;
   onFocus: () => void;
   onGrow: (id: string, height: number) => void;
+  onTogglePin: () => void;
 }) {
   const [text, setText] = useState(note.text);
   const idRef = useRef(note.id);
@@ -477,6 +486,23 @@ function NoteCard({
       onPointerDownCapture={onFocus}
     >
       <DragHandle tone="light" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
+      {/* 最前面固定。掴む帯の上に重ねるので、ドラッグ用のpointerdownは止めておく */}
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onTogglePin();
+        }}
+        // 絵文字は文字色を変えても色が変わらないので、状態は濃さ(opacity)で示す
+        className={`absolute right-1 top-0.5 text-[11px] leading-none ${
+          note.pinned ? "opacity-100" : "opacity-40 hover:opacity-100"
+        }`}
+        title={note.pinned ? "最前面固定を解除する" : "最前面に固定する"}
+        aria-label={note.pinned ? "最前面固定を解除する" : "最前面に固定する"}
+        aria-pressed={!!note.pinned}
+      >
+        📌
+      </button>
       <textarea
         value={text}
         onChange={(e) => {

@@ -28,6 +28,20 @@ export function clampMemoZoom(z: number): number {
   return Math.max(MEMO_MIN_ZOOM, Math.min(MEMO_MAX_ZOOM, z));
 }
 
+// 最前面固定の付箋を、通常の付箋より確実に上へ出すための下駄。
+// 通常の重なり順は「掴むたびに1つ増える」カウンタなので、現実的に到達しない値を選ぶ
+export const MEMO_PINNED_Z_BASE = 1_000_000;
+
+/**
+ * 付箋の重なり順(CSSのz-index)。
+ * baseはその画面での通常の重なり順(メモタブは保存されたorder、統合ボードは
+ * その場限りのカウンタ)。固定した付箋は下駄を履かせて、常に通常の付箋より上に出す。
+ * 固定した付箋どうしの前後関係は、これまでどおりbaseの大小で決まる。
+ */
+export function memoNoteZIndex(pinned: boolean | undefined, base: number): number {
+  return pinned ? MEMO_PINNED_Z_BASE + base : base;
+}
+
 // 付箋の高さを内容量から見積もる。ヘッダー(掴み手・削除)と色/操作ボタンの行は
 // 内容に関わらず常に必要な分(目安70px)として、そこにテキストの行数/チェックリストの
 // 項目数に応じた分を積み上げる。幅は既存の付箋と揃えたいので固定のままにする
