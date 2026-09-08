@@ -307,7 +307,8 @@ export default function UnifiedBoardSection({
     const segments = [...task.segments, { start: Date.now() }];
     await db.dailyTasks.update(task.id, { segments, status: "running" });
   }
-  async function completeTask(task: DailyTask) {
+  async function completeTask(task: DailyTask, skipConfirm = false) {
+    if (!skipConfirm && !confirm(`「${task.category} / ${task.name}」を完了にしますか?`)) return;
     await finishDailyTask(task);
   }
 
@@ -341,7 +342,8 @@ export default function UnifiedBoardSection({
   async function moveTodo(id: string, x: number, y: number) {
     await db.todoTasks.update(id, { boardX: x, boardY: y });
   }
-  async function completeTodo(task: TodoTask) {
+  async function completeTodo(task: TodoTask, skipConfirm = false) {
+    if (!skipConfirm && !confirm(`「${task.title}」を完了にしますか?`)) return;
     await completeTodoTask(task, today);
   }
   async function moveProject(id: string, x: number, y: number) {
@@ -441,7 +443,8 @@ export default function UnifiedBoardSection({
   async function moveShape(id: string, x: number, y: number) {
     await db.boardShapes.update(id, { x, y });
   }
-  async function removeShape(id: string) {
+  async function removeShape(id: string, skipConfirm = false) {
+    if (!skipConfirm && !confirm("この図形を削除します。よろしいですか?")) return;
     await db.boardShapes.delete(id);
   }
   async function setShapeColor(id: string, color: string) {
@@ -489,10 +492,12 @@ export default function UnifiedBoardSection({
   }
   // ToDoを下げるときはマイデイからも外す。そうしないと、マイデイのものは
   // 自動配置がすぐ置き直してしまい、下げたつもりが戻ってくる
-  async function removeTodo(todo: TodoTask) {
+  async function removeTodo(todo: TodoTask, skipConfirm = false) {
+    if (!skipConfirm && !confirm(`「${todo.title}」をボードから下げますか?(マイデイからも外れます。ToDo自体は消えません)`)) return;
     await db.todoTasks.update(todo.id, { boardX: undefined, boardY: undefined, myDayDate: undefined });
   }
-  async function removeProject(project: ProjectItem) {
+  async function removeProject(project: ProjectItem, skipConfirm = false) {
+    if (!skipConfirm && !confirm(`「${project.title}」をボードから下げますか?(案件自体は消えません)`)) return;
     await db.projects.update(project.id, { boardX: undefined, boardY: undefined });
   }
 
@@ -679,18 +684,23 @@ export default function UnifiedBoardSection({
         }
       } else if (e.key === "Delete") {
         e.preventDefault();
-        for (const it of boardItems) {
-          if (!selectedIds.has(it.id) || it.locked) continue;
-          // ToDo/案件は「盤面から下げる」までで、項目自体は消さない(カードの✕ボタンと同じ扱い)。
-          // 本日の作業・付箋はこの一覧からの削除に対応する個別操作が無いため、対象から外す
+        // ToDo/案件は「盤面から下げる」までで、項目自体は消さない(カードの✕ボタンと同じ扱い)。
+        // 本日の作業・付箋はこの一覧からの削除に対応する個別操作が無いため、対象から外す
+        const targets = boardItems.filter(
+          (it) => selectedIds.has(it.id) && !it.locked && (it.kind === "todo" || it.kind === "project" || it.kind === "shape")
+        );
+        if (targets.length === 0) return;
+        // 複数選択している場合、1件ずつ確認すると煩雑なのでまとめて1回だけ確認する
+        if (!confirm(`選択中の${targets.length}件をボードから下げる/削除します。よろしいですか?`)) return;
+        for (const it of targets) {
           if (it.kind === "todo") {
             const todo = todos.find((t) => t.id === it.id);
-            if (todo) removeTodo(todo);
+            if (todo) removeTodo(todo, true);
           } else if (it.kind === "project") {
             const project = projects.find((p) => p.id === it.id);
-            if (project) removeProject(project);
+            if (project) removeProject(project, true);
           } else if (it.kind === "shape") {
-            removeShape(it.id);
+            removeShape(it.id, true);
           }
         }
         setSelectedIds(new Set());

@@ -31,6 +31,7 @@ export default function MasterSection() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [showNew, setShowNew] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [newName, setNewName] = useState("");
   const [newEstimate, setNewEstimate] = useState("00:10:00");
@@ -128,6 +129,7 @@ export default function MasterSection() {
     const filtered = tasks.filter((t) => {
       if (!showArchived && t.archived) return false;
       if (showArchived && !t.archived) return false;
+      if (showFavoritesOnly && !t.isFavorite) return false;
       if (search.trim() === "") return true;
       return t.category.includes(search) || t.name.includes(search);
     });
@@ -154,7 +156,7 @@ export default function MasterSection() {
         category,
         items: sortItems(items),
       }));
-  }, [tasks, search, sortKey, showArchived]);
+  }, [tasks, search, sortKey, showArchived, showFavoritesOnly]);
 
   // 作業マスタに設定した取引先(clientId)の括りごとに、紐づく実績(WorkRecord.masterTaskId経由)を
   // 合算する。取引先が未設定の作業マスタの実績は「未設定」としてまとめる
@@ -330,6 +332,12 @@ export default function MasterSection() {
             onClick={() => setShowArchived((v) => !v)}
           >
             アーカイブ済みを表示
+          </button>
+          <button
+            className={showFavoritesOnly ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+            onClick={() => setShowFavoritesOnly((v) => !v)}
+          >
+            ★ お気に入りのみ
           </button>
           <button className="btn-pill text-sm" onClick={() => setShowNew((v) => !v)}>
             + 新規作業を追加
