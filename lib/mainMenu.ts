@@ -1,5 +1,5 @@
 import type { ThemedMode, VisualMode } from "./theme";
-import type { TileShape } from "./powerproMenuArt";
+import type { Rgb, TileShape } from "./powerproMenuArt";
 
 // モード選択メニュー(タブに入る前に出る、家庭用ゲームのモード選択画面のような入口)。
 //
@@ -33,6 +33,38 @@ export interface MenuSkin {
   portrait: boolean;
   /** 濃紺の専用配色を使うか。育成選手モードだけ、元の見た目をそのまま残す */
   navyFrame: boolean;
+  /**
+   * タイルの色調。そのモードを代表する4〜5色を並べたもので、18枚のタイルには
+   * この中を等間隔でつないだ色が順に配られる(paletteColorFor参照)。
+   * 未指定(パワプロ)の場合はMENU_ENTRIESの色をそのまま使う。
+   * パワプロの明るい原色は野球ゲームの育成メニューには合うが、他のモードに
+   * そのまま使うと世界観と色合いが噛み合わない(ロボトミー風が虹色になる、等)ため、
+   * モードごとに実際に使われている配色(CSSのアクセント色・専用パレット)から取っている
+   */
+  tilePalette?: Rgb[];
+}
+
+function mixRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t),
+  ];
+}
+
+/**
+ * タイルの色を、そのモードのtilePaletteから等間隔に取り出す。
+ * 代表色を順につないだ連続した帯として扱うことで、18枚それぞれに違う色を配りながら、
+ * どの2枚を並べてもそのモードの色調から外れないようにしている。
+ * tilePaletteを持たないモード(パワプロ)では、渡されたfallback(MENU_ENTRIESの色)をそのまま返す
+ */
+export function paletteColorFor(skin: MenuSkin, index: number, total: number, fallback: Rgb): Rgb {
+  const anchors = skin.tilePalette;
+  if (!anchors || anchors.length === 0 || total <= 1) return fallback;
+  const t = (index / (total - 1)) * (anchors.length - 1);
+  const i0 = Math.floor(t);
+  const i1 = Math.min(i0 + 1, anchors.length - 1);
+  return mixRgb(anchors[i0], anchors[i1], t - i0);
 }
 
 /** 演出テーマ文言をオフにしたときの呼び名。図(タイル・枠・形)は変えず、言葉だけ元に戻す */
@@ -71,6 +103,15 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "matte",
     portrait: false,
     navyFrame: false,
+    // 血の赤(基調のアクセント色そのもの)・くすんだオリーブ黄(タイトル画面の色)・
+    // 異常体を思わせる紫・鋼鉄グレー・警告アンバー
+    tilePalette: [
+      [194, 59, 59],
+      [140, 142, 88],
+      [107, 72, 124],
+      [86, 92, 104],
+      [186, 110, 46],
+    ],
   },
   va11halla: {
     eyebrow: "BOOT MENU",
@@ -83,6 +124,14 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "gloss",
     portrait: false,
     navyFrame: false,
+    // ネオンサインの配色。ピンクとシアンは専用のCSS変数と同じ値
+    tilePalette: [
+      [255, 45, 149],
+      [0, 229, 255],
+      [138, 66, 214],
+      [255, 176, 54],
+      [70, 110, 230],
+    ],
   },
   persona5: {
     eyebrow: "MENU",
@@ -95,6 +144,15 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "gloss",
     portrait: false,
     navyFrame: false,
+    // 黒地に赤・白を基調にした切り絵風の配色に合わせ、赤と黒の濃淡を主体にする。
+    // 金とスレートを少しだけ混ぜ、18枚が赤一色に埋もれないようにしている
+    tilePalette: [
+      [217, 35, 35],
+      [46, 46, 52],
+      [104, 26, 32],
+      [176, 140, 54],
+      [70, 74, 86],
+    ],
   },
   terminal: {
     eyebrow: "SYSTEM",
@@ -107,6 +165,14 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "matte",
     portrait: false,
     navyFrame: false,
+    // 証券端末風の値上がり/値下がり色(専用CSS変数)そのままに、黒鉛グレーを添える
+    tilePalette: [
+      [255, 176, 0],
+      [47, 227, 130],
+      [64, 220, 255],
+      [255, 77, 90],
+      [78, 86, 94],
+    ],
   },
   adventurer: {
     eyebrow: "ギルド掲示板",
@@ -119,6 +185,15 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "gloss",
     portrait: false,
     navyFrame: false,
+    // RPGのステータス画面でおなじみの配色(HP=緑、MP=青、危険=赤、ゴールド、レア=紫)を
+    // そのまま流用。専用CSS変数(--adv-*)と同じ値
+    tilePalette: [
+      [214, 158, 40],
+      [74, 168, 90],
+      [66, 120, 200],
+      [196, 60, 48],
+      [138, 92, 196],
+    ],
   },
   library: {
     eyebrow: "目録",
@@ -131,6 +206,14 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "matte",
     portrait: false,
     navyFrame: false,
+    // 書棚に並ぶ革表紙の色。基調の革茶に、臙脂・深緑・紺の布装丁と金の箔押しを添える
+    tilePalette: [
+      [122, 74, 42],
+      [110, 40, 40],
+      [64, 92, 68],
+      [58, 78, 116],
+      [176, 140, 70],
+    ],
   },
   hayarigami: {
     eyebrow: "捜査ファイル",
@@ -143,6 +226,15 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "matte",
     portrait: false,
     navyFrame: false,
+    // 血の赤(基調のアクセント色)を軸に、打撲のような紫・灰・錆・ほぼ黒を添えた
+    // 彩度の低い配色。ホラーサウンドノベルの禍々しさを崩さないようにしている
+    tilePalette: [
+      [176, 26, 38],
+      [96, 64, 98],
+      [96, 92, 90],
+      [150, 80, 40],
+      [62, 48, 46],
+    ],
   },
   mountain: {
     eyebrow: "登山口",
@@ -155,6 +247,14 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "matte",
     portrait: false,
     navyFrame: false,
+    // 朝焼けのオレンジ(基調のアクセント色)・氷河の青・松の緑・岩のグレー・赤土
+    tilePalette: [
+      [232, 138, 74],
+      [92, 142, 190],
+      [72, 112, 82],
+      [112, 118, 126],
+      [150, 112, 92],
+    ],
   },
   natsuyasumi: {
     eyebrow: "きょうは なにする?",
@@ -167,6 +267,14 @@ export const MENU_SKINS: Partial<Record<ThemedMode, MenuSkin>> = {
     chrome: "gloss",
     portrait: false,
     navyFrame: false,
+    // 太陽・海・葉の専用CSS変数の色に、スイカの赤と麦わら帽子の色を添える
+    tilePalette: [
+      [235, 170, 60],
+      [92, 177, 206],
+      [98, 152, 72],
+      [222, 92, 82],
+      [178, 142, 92],
+    ],
   },
 };
 

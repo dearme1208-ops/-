@@ -12,8 +12,8 @@ import { buildAbilities, buildCondition, buildTurnState, playerRankOf } from "@/
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { readPalette, paintPlayer, paintRankEmblem } from "@/lib/powerproArt";
 import { MENU_ENTRIES, buildMenuBadges, todayWorkedSeconds, type MenuBadge } from "@/lib/powerproMenu";
-import { paintModeIcon, type TileShape } from "@/lib/powerproMenuArt";
-import { PLAIN_MENU_WORDS, menuSkinFor, type MenuSkin } from "@/lib/mainMenu";
+import { paintModeIcon, type Rgb, type TileShape } from "@/lib/powerproMenuArt";
+import { PLAIN_MENU_WORDS, menuSkinFor, paletteColorFor, type MenuSkin } from "@/lib/mainMenu";
 
 // モード選択メニュー。タブへ入る前の入口になる画面。
 //
@@ -93,6 +93,16 @@ export default function MainMenuSection({ onEnter }: { onEnter: (tab: TabKey) =>
   );
 
   const focusedEntry = entries.find((e) => e.key === focused) ?? entries[0];
+  // タイルの色。MENU_ENTRIESの色(育成選手モード向けの原色)をそのまま他のモードに
+  // 使うと世界観と噛み合わないため、モードごとの色調(skin.tilePalette)から
+  // 実際に塗る色を並べ直す。パワプロはtilePaletteを持たないので元の色のまま
+  const tileColors = useMemo(() => {
+    const map = new Map<TabKey, Rgb>();
+    entries.forEach((entry, i) => {
+      map.set(entry.key, paletteColorFor(skin, i, entries.length, entry.color));
+    });
+    return map;
+  }, [entries, skin]);
   const standardHours = Math.max(1, Number(standardHoursStr) || 8);
   const staminaPct = Math.max(0, Math.min(100, Math.round(100 - (workedSeconds / (standardHours * 3600)) * 100)));
 
@@ -177,6 +187,7 @@ export default function MainMenuSection({ onEnter }: { onEnter: (tab: TabKey) =>
               <ModeTile
                 key={entry.key}
                 entry={entry}
+                color={tileColors.get(entry.key) ?? entry.color}
                 label={tabLabel(entry.key, wordingMode, entry.plainLabel)}
                 badge={badges.get(entry.key) ?? null}
                 selected={focused === entry.key}
@@ -214,7 +225,7 @@ export default function MainMenuSection({ onEnter }: { onEnter: (tab: TabKey) =>
         <div className={`flex items-center gap-2 px-3 py-2 ${barClass}`}>
           <span
             className="h-3 w-3 shrink-0 rounded-sm"
-            style={{ background: `rgb(${focusedEntry.color.join(",")})` }}
+            style={{ background: `rgb(${(tileColors.get(focusedEntry.key) ?? focusedEntry.color).join(",")})` }}
           />
           <span className="shrink-0 font-display text-sm font-bold">
             {tabLabel(focusedEntry.key, wordingMode, focusedEntry.plainLabel)}
@@ -272,6 +283,7 @@ function RailStat({ label, value, navy }: { label: string; value: string; navy: 
 // 家庭用ゲームのカーソル操作をそのまま指の操作に置き換えている
 function ModeTile({
   entry,
+  color,
   label,
   badge,
   selected,
@@ -281,6 +293,8 @@ function ModeTile({
   onEnter,
 }: {
   entry: (typeof MENU_ENTRIES)[number];
+  /** 塗る色。モードごとの色調に合わせて呼び出し側で計算済みのものを渡す(entry.colorは直接使わない) */
+  color: Rgb;
   label: string;
   badge: MenuBadge | null;
   selected: boolean;
@@ -317,14 +331,14 @@ function ModeTile({
     paintModeIcon(ctx, {
       size,
       glyph: entry.glyph,
-      color: entry.color,
+      color,
       selected,
       spark: badge?.spark ?? false,
       badge: badge ? { label: badge.label, value: badge.value, ratio: badge.ratio } : null,
       shape,
       chrome,
     });
-  }, [size, entry.glyph, entry.color, selected, badge, shape, chrome]);
+  }, [size, entry.glyph, color, selected, badge, shape, chrome]);
 
   return (
     // 拡大は絵だけでなくボタン全体に掛ける。絵にだけ掛けると、選択中のタイルが
