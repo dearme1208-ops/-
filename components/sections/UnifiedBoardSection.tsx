@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
@@ -107,6 +107,22 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
   const openProjects = (projectItems ?? []).filter((p) => !p.completedAt);
   // 案件は数が多くなりがちなので、自動では置かず、置いたものだけを出す
   const projects = openProjects.filter((p) => p.boardX !== undefined);
+
+  // 親タスクごとのサブタスク件数(完了/全体)。カード自体はサブタスクを置かないため、
+  // 「これはサブタスク持ちの親タスクだ」と分かるように、一覧のボタンとカードの両方に添える。
+  // これが無いと、サブタスクをいくつも抱えたタスクと単発のタスクが見た目上まったく
+  // 区別できなかった(タイトルの文字列だけが頼りになってしまう)
+  const subtaskStats = useMemo(() => {
+    const map = new Map<string, { done: number; total: number }>();
+    for (const t of todoTasks ?? []) {
+      if (!t.parentTaskId) continue;
+      const stat = map.get(t.parentTaskId) ?? { done: 0, total: 0 };
+      stat.total += 1;
+      if (t.completed) stat.done += 1;
+      map.set(t.parentTaskId, stat);
+    }
+    return map;
+  }, [todoTasks]);
 
   // 新しく現れた(まだboardX/boardYを持たない)作業・ToDoカードに、既存の付箋/カードと
   // 重ならない位置を1回だけ自動で割り当てる。手動でドラッグして重ねるのはユーザーの
@@ -453,12 +469,22 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
               <p className="text-xs text-cream/40">置けるToDoはありません。</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
-                {unplacedTodos.map((t) => (
-                  <button key={t.id} className="btn-pill-outline text-xs" onClick={() => placeTodo(t)} title="ボードに置く">
-                    ＋ {t.title}
-                    {t.dueDate && <span className={t.dueDate < today ? "ml-1 text-alert" : "ml-1 text-cream/40"}>{t.dueDate}</span>}
-                  </button>
-                ))}
+                {unplacedTodos.map((t) => {
+                  const stat = subtaskStats.get(t.id);
+                  return (
+                    <button key={t.id} className="btn-pill-outline text-xs" onClick={() => placeTodo(t)} title="ボードに置く">
+                      ＋ {t.title}
+                      {/* サブタスクを持つ親タスクだと分かるようにする。単発のタスクとの
+                          唯一の見分け方がタイトルの文字列だけ、という状態を無くすため */}
+                      {stat && (
+                        <span className="ml-1 text-cream/40">
+                          （サブタスク {stat.done}/{stat.total}）
+                        </span>
+                      )}
+                      {t.dueDate && <span className={t.dueDate < today ? "ml-1 text-alert" : "ml-1 text-cream/40"}>{t.dueDate}</span>}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -552,6 +578,7 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
                 key={todo.id}
                 todo={todo}
                 today={today}
+                subtaskStat={subtaskStats.get(todo.id) ?? null}
                 zoom={zoom}
                 zIndex={zIndexById[todo.id] ?? 1}
                 onDragEnd={moveTodo}
@@ -840,6 +867,7 @@ function TaskCard({
 function TodoCard({
   todo,
   today,
+  subtaskStat,
   zoom,
   zIndex,
   onDragEnd,
@@ -849,6 +877,8 @@ function TodoCard({
 }: {
   todo: TodoTask;
   today: string;
+  /** サブタスクを持つ場合の完了/全体件数。持たない単発のタスクならnull */
+  subtaskStat: { done: number; total: number } | null;
   zoom: number;
   zIndex: number;
   onDragEnd: (id: string, x: number, y: number) => void;
@@ -883,11 +913,22 @@ function TodoCard({
         />
         <p className="min-w-0 flex-1 text-sm text-cream">{todo.title}</p>
       </div>
-      {todo.dueDate && (
-        <span className={`text-[10px] ${overdue ? "font-bold text-alert" : "text-cream/40"}`}>
-          期日 {todo.dueDate}
-          {overdue && "（超過）"}
-        </span>
+      {(todo.dueDate || subtaskStat) && (
+        <div className="flex flex-wrap items-center gap-x-1.5 text-[10px]">
+          {todo.dueDate && (
+            <span className={overdue ? "font-bold text-alert" : "text-cream/40"}>
+              期日 {todo.dueDate}
+              {overdue && "（超過）"}
+            </span>
+          )}
+          {/* サブタスクを持つ親タスクだと分かるようにする。カード自体はサブタスクを
+              置かないため、これが無いと単発のタスクと見た目上まったく区別できなかった */}
+          {subtaskStat && (
+            <span className="text-cream/40">
+              サブタスク {subtaskStat.done}/{subtaskStat.total}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
