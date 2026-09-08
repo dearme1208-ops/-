@@ -15,6 +15,7 @@ import {
   boardBackgroundCss,
   clampMemoZoom,
   DEFAULT_BOARD_BACKGROUND,
+  DEFAULT_BOARD_SHAPE_OPACITY,
   DEFAULT_MEMO_NOTE_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
   DEFAULT_MEMO_PEN_WIDTH,
@@ -26,6 +27,7 @@ import {
   type BoardBackgroundKind,
 } from "@/lib/memo";
 import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
+import { exportElementToPng } from "@/lib/pdfExport";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import StrokeLayer from "@/components/memo/StrokeLayer";
@@ -44,12 +46,24 @@ const TODO_CARD_HEIGHT = 90;
 const PROJECT_CARD_HEIGHT = 132;
 const PLACEMENT_GRID = 30;
 const PLACEMENT_MARGIN = 10;
+const MINIMAP_WIDTH = 180;
+const MINIMAP_HEIGHT = Math.round((MINIMAP_WIDTH * MEMO_BOARD_HEIGHT) / MEMO_BOARD_WIDTH);
 
 interface BoardRect {
   x: number;
   y: number;
   width: number;
   height: number;
+}
+
+// 種類をまたいでボード上のアイテムを扱うための共通の形。整列・検索・複数選択・
+// 矢印キー移動・削除キーなど、カードの種類を問わない操作の土台にする
+type BoardItemKind = "task" | "todo" | "project" | "note" | "shape";
+interface BoardItem extends BoardRect {
+  kind: BoardItemKind;
+  id: string;
+  label: string; // 検索対象の文字列。無ければ空文字
+  locked: boolean;
 }
 
 function rectsOverlap(a: BoardRect, b: BoardRect): boolean {
@@ -113,9 +127,14 @@ export default function UnifiedBoardSection({
     () => (selectedBoardId ? db.boardShapes.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as BoardShape[])),
     [selectedBoardId]
   );
-  // ボードの地の模様(無地/方眼紙/ドット)。データではなく見た目だけの設定なので
-  // 演出テーマとは独立してユーザー設定として持つ
-  const [backgroundStr, setBackgroundStr] = useSetting("board.background", DEFAULT_BOARD_BACKGROUND as string);
+  // ボードの地の模様(無地/方眼紙/ドット/罫線/チェック)。データではなく見た目だけの
+  // 設定なので演出テーマとは独立してユーザー設定として持つ。メモ帳(ボード)ごとに
+  // 使い分けたいことがある(例: 作業用は方眼紙、日記用は罫線)ため、選択中のボードID
+  // をキーに含めて保存する
+  const [backgroundStr, setBackgroundStr] = useSetting(
+    `board.background.${selectedBoardId || "default"}`,
+    DEFAULT_BOARD_BACKGROUND as string
+  );
   const background: BoardBackgroundKind = (BOARD_BACKGROUND_KINDS as readonly string[]).includes(backgroundStr)
     ? (backgroundStr as BoardBackgroundKind)
     : DEFAULT_BOARD_BACKGROUND;
@@ -210,16 +229,32 @@ export default function UnifiedBoardSection({
   // 選んでいない間は画面幅に収まる倍率を自動で当てる(横スクロールしないと付箋の
   // 右半分が見えない、という初見の詰まりを無くすため)。-/+や「幅に合わせる」を
   // 押した時点でその値が保存され、以後は自動調整しない
-  const [zoomStr, setZoomStr] = useSetting("board.zoom", "");
+  const [zoomStr, setZoomStr] = useSetting(`board.zoom.${selectedBoardId || "default"}`, "");
   const boardViewportRef = useRef<HTMLDivElement>(null);
+  const boardCanvasRef = useRef<HTMLDivElement>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   useEffect(() => {
     const el = boardViewportRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setViewportWidth(el.clientWidth));
+    const ro = new ResizeObserver(() => {
+      setViewportWidth(el.clientWidth);
+      setViewportHeight(el.clientHeight);
+    });
     ro.observe(el);
     setViewportWidth(el.clientWidth);
+    setViewportHeight(el.clientHeight);
     return () => ro.disconnect();
+  }, []);
+  // ミニマップに「今どこを見ているか」の枠を出すため、スクロール位置も追う
+  const [scrollPos, setScrollPos] = useState({ left: 0, top: 0 });
+  useEffect(() => {
+    const el = boardViewportRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollPos({ left: el.scrollLeft, top: el.scrollTop });
+    el.addEventListener("scroll", onScroll);
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
   }, []);
   // 何も置いていない右側の余白まで含めて縮めると字が読めない大きさになるので、
   // 実際に付箋・カードが置かれている範囲の右端までが収まればよいことにする。
@@ -412,6 +447,12 @@ export default function UnifiedBoardSection({
   async function setShapeColor(id: string, color: string) {
     await db.boardShapes.update(id, { color });
   }
+  async function setShapeOpacity(id: string, opacity: number) {
+    await db.boardShapes.update(id, { opacity });
+  }
+  async function setShapeLabel(id: string, label: string) {
+    await db.boardShapes.update(id, { label });
+  }
   // 線・矢印だけ、伸縮の代わりに向き(横⇔縦)をワンタップで切り替えられるようにする
   async function rotateShape(shape: BoardShape) {
     await db.boardShapes.update(shape.id, { width: shape.height, height: shape.width });
@@ -453,6 +494,244 @@ export default function UnifiedBoardSection({
   }
   async function removeProject(project: ProjectItem) {
     await db.projects.update(project.id, { boardX: undefined, boardY: undefined });
+  }
+
+  // ------------------------------------------------------------
+  // ボード上の全アイテムを種類を問わず横断的に扱う一覧。
+  // 整列・検索・複数選択・矢印キー移動・削除キーの土台になる
+  // ------------------------------------------------------------
+  const boardItems: BoardItem[] = useMemo(() => {
+    const items: BoardItem[] = [];
+    for (const t of tasks) {
+      if (t.boardX === undefined || t.boardY === undefined) continue;
+      items.push({
+        kind: "task",
+        id: t.id,
+        x: t.boardX,
+        y: t.boardY,
+        width: CARD_WIDTH,
+        height: TASK_CARD_HEIGHT,
+        label: `${t.category} ${t.name}`,
+        locked: !!t.boardLocked,
+      });
+    }
+    for (const t of todos) {
+      if (t.boardX === undefined || t.boardY === undefined) continue;
+      items.push({ kind: "todo", id: t.id, x: t.boardX, y: t.boardY, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, label: t.title, locked: !!t.boardLocked });
+    }
+    for (const p of projects) {
+      if (p.boardX === undefined || p.boardY === undefined) continue;
+      items.push({ kind: "project", id: p.id, x: p.boardX, y: p.boardY, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT, label: p.title, locked: !!p.boardLocked });
+    }
+    for (const n of notes ?? []) {
+      const label = n.isChecklist ? (n.checklistItems ?? []).map((i) => i.text).join(" ") : n.text;
+      items.push({ kind: "note", id: n.id, x: n.x, y: n.y, width: n.width, height: n.height, label, locked: !!n.boardLocked });
+    }
+    for (const s of shapes ?? []) {
+      items.push({ kind: "shape", id: s.id, x: s.x, y: s.y, width: s.width, height: s.height, label: s.label ?? "", locked: !!s.boardLocked });
+    }
+    return items;
+  }, [tasks, todos, projects, notes, shapes]);
+
+  function moveBoardItemByKind(kind: BoardItemKind, id: string, x: number, y: number) {
+    if (kind === "task") return moveTask(id, x, y);
+    if (kind === "todo") return moveTodo(id, x, y);
+    if (kind === "project") return moveProject(id, x, y);
+    if (kind === "note") return moveNote(id, x, y);
+    return moveShape(id, x, y);
+  }
+  async function toggleBoardLock(kind: BoardItemKind, id: string, currentlyLocked: boolean) {
+    const boardLocked = !currentlyLocked;
+    if (kind === "task") await db.dailyTasks.update(id, { boardLocked });
+    else if (kind === "todo") await db.todoTasks.update(id, { boardLocked });
+    else if (kind === "project") await db.projects.update(id, { boardLocked });
+    else if (kind === "note") await db.memoNotes.update(id, { boardLocked });
+    else await db.boardShapes.update(id, { boardLocked });
+  }
+  // 複数選択している状態で、そのうちの1枚をドラッグしたら他の選択中アイテムも
+  // 同じ分だけまとめて動かす。ドラッグ中に追従はさせず(各カードは独立した状態を
+  // 持つため)、離した瞬間にまとめて反映する簡略化した仕組み
+  function handleItemDragEnd(kind: BoardItemKind, id: string, newX: number, newY: number) {
+    const item = boardItems.find((it) => it.id === id);
+    if (!item) return;
+    const dx = newX - item.x;
+    const dy = newY - item.y;
+    moveBoardItemByKind(kind, id, newX, newY);
+    if (selectedIds.has(id) && selectedIds.size > 1) {
+      for (const other of boardItems) {
+        if (other.id === id || other.locked || !selectedIds.has(other.id)) continue;
+        const nx = Math.max(0, Math.min(MEMO_BOARD_WIDTH - other.width, other.x + dx));
+        const ny = Math.max(0, Math.min(MEMO_BOARD_HEIGHT - other.height, other.y + dy));
+        moveBoardItemByKind(other.kind, other.id, nx, ny);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------
+  // 複数選択(クリック・Shift+クリック・ラバーバンド範囲選択)
+  // ------------------------------------------------------------
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  function selectItem(id: string, additive: boolean) {
+    setSelectedIds((prev) => {
+      if (additive) {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }
+      return new Set([id]);
+    });
+  }
+  const [selectionBox, setSelectionBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  function onCanvasPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (e.target !== e.currentTarget) return;
+    if (penMode || eraseMode) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
+    setSelectionBox({ x0: x, y0: y, x1: x, y1: y });
+    if (!e.shiftKey) setSelectedIds(new Set());
+  }
+  function onCanvasPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!selectionBox) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
+    setSelectionBox((b) => (b ? { ...b, x1: x, y1: y } : null));
+  }
+  function onCanvasPointerUp() {
+    if (!selectionBox) return;
+    const minX = Math.min(selectionBox.x0, selectionBox.x1);
+    const maxX = Math.max(selectionBox.x0, selectionBox.x1);
+    const minY = Math.min(selectionBox.y0, selectionBox.y1);
+    const maxY = Math.max(selectionBox.y0, selectionBox.y1);
+    const hits = boardItems.filter((it) => it.x < maxX && it.x + it.width > minX && it.y < maxY && it.y + it.height > minY);
+    if (hits.length > 0) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        hits.forEach((h) => next.add(h.id));
+        return next;
+      });
+    }
+    setSelectionBox(null);
+  }
+
+  // ------------------------------------------------------------
+  // 検索・ハイライト。件名/本文/ラベルに一致するものだけ目立たせ、他は薄くする
+  // ------------------------------------------------------------
+  const [boardSearchQuery, setBoardSearchQuery] = useState("");
+  const boardSearchActive = boardSearchQuery.trim() !== "";
+  const matchingIds = useMemo(() => {
+    if (!boardSearchActive) return null;
+    const q = boardSearchQuery.trim().toLowerCase();
+    return new Set(boardItems.filter((it) => it.label.toLowerCase().includes(q)).map((it) => it.id));
+  }, [boardSearchActive, boardSearchQuery, boardItems]);
+
+  // ------------------------------------------------------------
+  // 整列。ドラッグで散らかった配置を、現在の並び(上から左から)を保ったまま
+  // グリッド状に並べ直す。ロック中のカードは動かさない
+  // ------------------------------------------------------------
+  async function alignBoardItems() {
+    const sorted = boardItems.filter((it) => !it.locked).sort((a, b) => a.y - b.y || a.x - b.x);
+    const cols = Math.max(1, Math.floor((MEMO_BOARD_WIDTH - PLACEMENT_MARGIN) / (CARD_WIDTH + PLACEMENT_MARGIN)));
+    let x = 20;
+    let y = 20;
+    let col = 0;
+    let rowHeight = 0;
+    for (const it of sorted) {
+      if (col >= cols) {
+        col = 0;
+        x = 20;
+        y += rowHeight + PLACEMENT_MARGIN;
+        rowHeight = 0;
+      }
+      await moveBoardItemByKind(it.kind, it.id, x, y);
+      rowHeight = Math.max(rowHeight, it.height);
+      x += it.width + PLACEMENT_MARGIN;
+      col++;
+    }
+  }
+
+  // ------------------------------------------------------------
+  // キーボード操作。矢印キーで選択中アイテムを移動、Deleteで盤面から下げる/消す。
+  // 入力欄にフォーカスしている間は文字入力を邪魔しないよう何もしない
+  // ------------------------------------------------------------
+  useEffect(() => {
+    function isTypingTarget(el: Element | null): boolean {
+      if (!el) return false;
+      const tag = el.tagName.toLowerCase();
+      return tag === "input" || tag === "textarea" || (el as HTMLElement).isContentEditable;
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (selectedIds.size === 0) return;
+      if (isTypingTarget(document.activeElement)) return;
+      if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const step = e.shiftKey ? 1 : 10;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        for (const it of boardItems) {
+          if (!selectedIds.has(it.id) || it.locked) continue;
+          const nx = Math.max(0, Math.min(MEMO_BOARD_WIDTH - it.width, it.x + dx));
+          const ny = Math.max(0, Math.min(MEMO_BOARD_HEIGHT - it.height, it.y + dy));
+          moveBoardItemByKind(it.kind, it.id, nx, ny);
+        }
+      } else if (e.key === "Delete") {
+        e.preventDefault();
+        for (const it of boardItems) {
+          if (!selectedIds.has(it.id) || it.locked) continue;
+          // ToDo/案件は「盤面から下げる」までで、項目自体は消さない(カードの✕ボタンと同じ扱い)。
+          // 本日の作業・付箋はこの一覧からの削除に対応する個別操作が無いため、対象から外す
+          if (it.kind === "todo") {
+            const todo = todos.find((t) => t.id === it.id);
+            if (todo) removeTodo(todo);
+          } else if (it.kind === "project") {
+            const project = projects.find((p) => p.id === it.id);
+            if (project) removeProject(project);
+          } else if (it.kind === "shape") {
+            removeShape(it.id);
+          }
+        }
+        setSelectedIds(new Set());
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedIds, boardItems, todos, projects]);
+
+  // ------------------------------------------------------------
+  // ミニマップ。拡大しているときに盤面のどこを見ているか分かるようにし、
+  // クリック/ドラッグでそこへ表示位置を移動できるようにする
+  // ------------------------------------------------------------
+  const minimapScale = MINIMAP_WIDTH / MEMO_BOARD_WIDTH;
+  function panToMinimapPoint(clientX: number, clientY: number, el: HTMLDivElement) {
+    const vp = boardViewportRef.current;
+    if (!vp) return;
+    const rect = el.getBoundingClientRect();
+    const boardX = (clientX - rect.left) / minimapScale;
+    const boardY = (clientY - rect.top) / minimapScale;
+    vp.scrollLeft = Math.max(0, boardX * zoom - vp.clientWidth / 2);
+    vp.scrollTop = Math.max(0, boardY * zoom - vp.clientHeight / 2);
+  }
+  const [minimapDragging, setMinimapDragging] = useState(false);
+
+  // ------------------------------------------------------------
+  // 画像として書き出し(共有・記録用)。今の拡大率に関わらず、盤面全体を等倍で書き出す
+  // ------------------------------------------------------------
+  const [exportingImage, setExportingImage] = useState(false);
+  async function exportBoardImage() {
+    if (!boardCanvasRef.current || exportingImage) return;
+    setExportingImage(true);
+    try {
+      const boardTitle = (boards ?? []).find((b) => b.id === selectedBoardId)?.title ?? "board";
+      await exportElementToPng(boardCanvasRef.current, `board_${boardTitle}_${today}.png`, {
+        width: MEMO_BOARD_WIDTH,
+        height: MEMO_BOARD_HEIGHT,
+      });
+    } finally {
+      setExportingImage(false);
+    }
   }
 
   // 全画面表示。ページのヘッダーやタブ列も含めて画面いっぱいに広げ、盤面をできるだけ
@@ -593,6 +872,40 @@ export default function UnifiedBoardSection({
         </button>
       </div>
 
+      {/* 検索・整列・選択操作。件名/本文/ラベルで探して目立たせたり、散らかった配置を
+          グリッド状に並べ直したりする。複数選択はカードをShift+クリック、または
+          何もない盤面をドラッグして範囲選択する */}
+      <div className="panel flex flex-wrap items-center gap-2 p-3">
+        <input
+          value={boardSearchQuery}
+          onChange={(e) => setBoardSearchQuery(e.target.value)}
+          placeholder="🔍 件名・本文・ラベルで検索"
+          className="w-56 rounded-lg border border-cream/20 bg-ink px-3 py-1.5 text-xs text-cream"
+        />
+        {boardSearchActive && (
+          <>
+            <span className="text-xs text-cream/50">{matchingIds?.size ?? 0}件ヒット</span>
+            <button className="btn-pill-outline text-xs" onClick={() => setBoardSearchQuery("")}>
+              クリア
+            </button>
+          </>
+        )}
+        <button className="btn-pill-outline text-xs" onClick={alignBoardItems} title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)">
+          🧹 整列
+        </button>
+        <button className="btn-pill-outline text-xs" onClick={exportBoardImage} disabled={exportingImage} title="盤面全体を画像(.png)として保存します">
+          {exportingImage ? "書き出し中…" : "📷 画像として保存"}
+        </button>
+        {selectedIds.size > 0 && (
+          <span className="ml-auto flex items-center gap-2 text-xs text-cream/60">
+            {selectedIds.size}件選択中(矢印キーで移動・Deleteで下げる/消す)
+            <button className="btn-pill-outline text-xs" onClick={() => setSelectedIds(new Set())}>
+              選択解除
+            </button>
+          </span>
+        )}
+      </div>
+
       {/* 一覧。まだ盤面に無いToDoと案件を並べ、押した順に空いている場所へ置いていく */}
       {showPalette && (
         <div className="panel space-y-3 p-3">
@@ -666,13 +979,15 @@ export default function UnifiedBoardSection({
         </div>
       )}
 
+      <div className={fullscreen ? "flex min-h-0 flex-1 items-start gap-2" : "flex items-start gap-2"}>
       <div
         ref={boardViewportRef}
-        className={fullscreen ? "panel min-h-0 flex-1 overflow-auto p-0" : "panel overflow-auto p-0"}
+        className={fullscreen ? "panel min-h-0 min-w-0 flex-1 overflow-auto p-0" : "panel min-w-0 flex-1 overflow-auto p-0"}
         style={fullscreen ? undefined : { height: "70vh" }}
       >
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
           <div
+            ref={boardCanvasRef}
             className="relative"
             style={{
               width: MEMO_BOARD_WIDTH,
@@ -681,6 +996,10 @@ export default function UnifiedBoardSection({
               transformOrigin: "0 0",
               ...boardBackgroundCss(background),
             }}
+            onPointerDown={onCanvasPointerDown}
+            onPointerMove={onCanvasPointerMove}
+            onPointerUp={onCanvasPointerUp}
+            onPointerCancel={onCanvasPointerUp}
           >
             {/* 手書きはカードの下に敷く。手書き/消しゴムがOFFの間は当たり判定を切ってあるので、
                 カードのドラッグや操作は今までどおりできる */}
@@ -693,6 +1012,18 @@ export default function UnifiedBoardSection({
               penColor={penColor}
               penWidth={penWidth}
             />
+            {/* ラバーバンド範囲選択中の枠 */}
+            {selectionBox && (
+              <div
+                className="pointer-events-none absolute border border-dashed border-cream/70 bg-cream/10"
+                style={{
+                  left: Math.min(selectionBox.x0, selectionBox.x1),
+                  top: Math.min(selectionBox.y0, selectionBox.y1),
+                  width: Math.abs(selectionBox.x1 - selectionBox.x0),
+                  height: Math.abs(selectionBox.y1 - selectionBox.y0),
+                }}
+              />
+            )}
             {/* 図形はグルーピング・囲み用の飾りなので、付箋やカードより下(DOM上で先)に描く */}
             {(shapes ?? []).map((shape) => (
               <ShapeElement
@@ -700,10 +1031,17 @@ export default function UnifiedBoardSection({
                 shape={shape}
                 zoom={zoom}
                 zIndex={zIndexById[shape.id] ?? 1}
-                onDragEnd={moveShape}
+                selected={selectedIds.has(shape.id)}
+                matched={matchingIds?.has(shape.id) ?? false}
+                dimmed={boardSearchActive && !(matchingIds?.has(shape.id) ?? false)}
+                onSelect={(additive) => selectItem(shape.id, additive)}
+                onDragEnd={(id, x, y) => handleItemDragEnd("shape", id, x, y)}
                 onRemove={() => removeShape(shape.id)}
                 onColorChange={(color) => setShapeColor(shape.id, color)}
+                onOpacityChange={(opacity) => setShapeOpacity(shape.id, opacity)}
+                onLabelChange={(label) => setShapeLabel(shape.id, label)}
                 onRotate={() => rotateShape(shape)}
+                onToggleLock={() => toggleBoardLock("shape", shape.id, !!shape.boardLocked)}
                 onFocus={() => bringToFront(shape.id)}
               />
             ))}
@@ -713,10 +1051,15 @@ export default function UnifiedBoardSection({
                 note={note}
                 zoom={zoom}
                 zIndex={memoNoteZIndex(note.pinned, zIndexById[note.id] ?? 1)}
-                onDragEnd={moveNote}
+                selected={selectedIds.has(note.id)}
+                matched={matchingIds?.has(note.id) ?? false}
+                dimmed={boardSearchActive && !(matchingIds?.has(note.id) ?? false)}
+                onSelect={(additive) => selectItem(note.id, additive)}
+                onDragEnd={(id, x, y) => handleItemDragEnd("note", id, x, y)}
                 onCommitText={commitNoteText}
                 onGrow={growNote}
                 onTogglePin={() => togglePin(note)}
+                onToggleLock={() => toggleBoardLock("note", note.id, !!note.boardLocked)}
                 onFocus={() => bringToFront(note.id)}
               />
             ))}
@@ -727,10 +1070,15 @@ export default function UnifiedBoardSection({
                 now={now}
                 zoom={zoom}
                 zIndex={zIndexById[task.id] ?? 1}
-                onDragEnd={moveTask}
+                selected={selectedIds.has(task.id)}
+                matched={matchingIds?.has(task.id) ?? false}
+                dimmed={boardSearchActive && !(matchingIds?.has(task.id) ?? false)}
+                onSelect={(additive) => selectItem(task.id, additive)}
+                onDragEnd={(id, x, y) => handleItemDragEnd("task", id, x, y)}
                 onStart={() => startTask(task)}
                 onPause={() => pauseTask(task)}
                 onComplete={() => completeTask(task)}
+                onToggleLock={() => toggleBoardLock("task", task.id, !!task.boardLocked)}
                 onFocus={() => bringToFront(task.id)}
               />
             ))}
@@ -742,9 +1090,14 @@ export default function UnifiedBoardSection({
                 subtaskStat={subtaskStats.get(todo.id) ?? null}
                 zoom={zoom}
                 zIndex={zIndexById[todo.id] ?? 1}
-                onDragEnd={moveTodo}
+                selected={selectedIds.has(todo.id)}
+                matched={matchingIds?.has(todo.id) ?? false}
+                dimmed={boardSearchActive && !(matchingIds?.has(todo.id) ?? false)}
+                onSelect={(additive) => selectItem(todo.id, additive)}
+                onDragEnd={(id, x, y) => handleItemDragEnd("todo", id, x, y)}
                 onComplete={() => completeTodo(todo)}
                 onRemove={() => removeTodo(todo)}
+                onToggleLock={() => toggleBoardLock("todo", todo.id, !!todo.boardLocked)}
                 onFocus={() => bringToFront(todo.id)}
                 onOpenDetail={onOpenTodoDetail ? () => onOpenTodoDetail(todo.id) : undefined}
               />
@@ -756,15 +1109,64 @@ export default function UnifiedBoardSection({
                 today={today}
                 zoom={zoom}
                 zIndex={zIndexById[project.id] ?? 1}
-                onDragEnd={moveProject}
+                selected={selectedIds.has(project.id)}
+                matched={matchingIds?.has(project.id) ?? false}
+                dimmed={boardSearchActive && !(matchingIds?.has(project.id) ?? false)}
+                onSelect={(additive) => selectItem(project.id, additive)}
+                onDragEnd={(id, x, y) => handleItemDragEnd("project", id, x, y)}
                 onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
                 onRemove={() => removeProject(project)}
+                onToggleLock={() => toggleBoardLock("project", project.id, !!project.boardLocked)}
                 onFocus={() => bringToFront(project.id)}
                 onOpenDetail={onOpenProjectEdit ? () => onOpenProjectEdit(project.id) : undefined}
               />
             ))}
           </div>
         </div>
+      </div>
+
+      {/* ミニマップ。拡大しているときに今どこを見ているか分かるようにし、クリック/
+          ドラッグでそこへ移動できる。狭い画面では場所を取りすぎるため隠す */}
+      <div className="panel hidden shrink-0 self-start p-2 sm:block">
+        <p className="mb-1 text-[10px] text-cream/40">ミニマップ</p>
+        <div
+          className="relative cursor-pointer overflow-hidden rounded bg-black/30"
+          style={{ width: MINIMAP_WIDTH, height: MINIMAP_HEIGHT, touchAction: "none" }}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setMinimapDragging(true);
+            panToMinimapPoint(e.clientX, e.clientY, e.currentTarget);
+          }}
+          onPointerMove={(e) => {
+            if (minimapDragging) panToMinimapPoint(e.clientX, e.clientY, e.currentTarget);
+          }}
+          onPointerUp={() => setMinimapDragging(false)}
+          onPointerCancel={() => setMinimapDragging(false)}
+        >
+          {boardItems.map((it) => (
+            <div
+              key={it.id}
+              className="absolute rounded-sm bg-cream/50"
+              style={{
+                left: it.x * minimapScale,
+                top: it.y * minimapScale,
+                width: Math.max(2, it.width * minimapScale),
+                height: Math.max(2, it.height * minimapScale),
+              }}
+            />
+          ))}
+          {/* 今見えている範囲の枠 */}
+          <div
+            className="pointer-events-none absolute border border-cream/70"
+            style={{
+              left: (scrollPos.left / zoom) * minimapScale,
+              top: (scrollPos.top / zoom) * minimapScale,
+              width: Math.min(MINIMAP_WIDTH, (viewportWidth / zoom) * minimapScale),
+              height: Math.min(MINIMAP_HEIGHT, (viewportHeight / zoom) * minimapScale),
+            }}
+          />
+        </div>
+      </div>
       </div>
 
       {showMasterPicker && (
@@ -799,36 +1201,69 @@ export default function UnifiedBoardSection({
 }
 
 // ボード上での自由配置に共通する、ヘッダー部分を掴んでのドラッグ処理。移動確定は
-// pointerup時のみ行い、ドラッグ中はローカルのoffsetだけで見た目を動かす(付箋のドラッグと同じ方式)
-function useBoardDrag(x: number, y: number, width: number, height: number, zoom: number, onDragEnd: (x: number, y: number) => void) {
+// pointerup時のみ行い、ドラッグ中はローカルのoffsetだけで見た目を動かす(付箋のドラッグと同じ方式)。
+// ロックしたカードは掴んでも動かないようにする(呼び出し側で条件分岐せずに済むよう、
+// ここで一括してno-opにする)。またドラッグ開始をstopPropagationし、盤面の空き地への
+// pointerdownで始まる範囲選択(ラバーバンド)と競合しないようにする
+function useBoardDrag(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  zoom: number,
+  onDragEnd: (x: number, y: number) => void,
+  locked?: boolean
+) {
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  // dragOffsetの最新値をrefでも持つ。pointerup時にstateのクロージャを読むと、
+  // 直前のpointermoveのsetDragOffsetがまだ描画に反映されていない場合に古い値を
+  // つかんでしまう(結果、移動量0で確定してしまう)ことがあるため、常に同期的に
+  // 最新の値を読めるrefの方を確定処理に使う
+  const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    if (locked) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragStartRef.current = { x: e.clientX, y: e.clientY };
+    dragOffsetRef.current = { dx: 0, dy: 0 };
     setDragOffset({ dx: 0, dy: 0 });
   }
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
     if (!dragStartRef.current) return;
-    setDragOffset({ dx: (e.clientX - dragStartRef.current.x) / zoom, dy: (e.clientY - dragStartRef.current.y) / zoom });
+    const next = { dx: (e.clientX - dragStartRef.current.x) / zoom, dy: (e.clientY - dragStartRef.current.y) / zoom };
+    dragOffsetRef.current = next;
+    setDragOffset(next);
   }
   function onPointerUp() {
-    if (!dragStartRef.current || !dragOffset) {
+    const offset = dragOffsetRef.current;
+    if (!dragStartRef.current || !offset) {
       dragStartRef.current = null;
+      dragOffsetRef.current = null;
       setDragOffset(null);
       return;
     }
-    const newX = Math.max(0, Math.min(MEMO_BOARD_WIDTH - width, x + dragOffset.dx));
-    const newY = Math.max(0, Math.min(MEMO_BOARD_HEIGHT - height, y + dragOffset.dy));
+    const newX = Math.max(0, Math.min(MEMO_BOARD_WIDTH - width, x + offset.dx));
+    const newY = Math.max(0, Math.min(MEMO_BOARD_HEIGHT - height, y + offset.dy));
     onDragEnd(newX, newY);
     dragStartRef.current = null;
+    dragOffsetRef.current = null;
     setDragOffset(null);
   }
 
   const left = x + (dragOffset?.dx ?? 0);
   const top = y + (dragOffset?.dy ?? 0);
   return { left, top, onPointerDown, onPointerMove, onPointerUp };
+}
+
+// 選択中/検索一致・不一致の見た目(枠線と不透明度)をカード種別を問わず共通にする
+function boardItemVisualStyle(selected: boolean, matched: boolean, dimmed: boolean): { outline?: string; outlineOffset?: string; opacity?: number } {
+  return {
+    outline: matched ? "2px solid #fbbf24" : selected ? "2px solid #7dd3fc" : undefined,
+    outlineOffset: matched || selected ? "2px" : undefined,
+    opacity: dimmed ? 0.25 : 1,
+  };
 }
 
 // カード上部の「掴む場所」。暗い背景でも見失わないよう、カード本体より一段
@@ -864,91 +1299,153 @@ function DragHandle({
   );
 }
 
-// 囲み線・グルーピング用の単純な図形。付箋のような文字入力は持たず、
-// 位置のドラッグ・色変更・削除(・線/矢印だけ向きの変更)だけができる
+// 囲み線・グルーピング用の単純な図形。付箋と違って本文は持たないが、短いラベルと
+// 塗りの濃さは変えられる。位置のドラッグ・色変更・削除(・線/矢印だけ向きの変更)ができる
 function ShapeElement({
   shape,
   zoom,
   zIndex,
+  selected,
+  matched,
+  dimmed,
+  onSelect,
   onDragEnd,
   onRemove,
   onColorChange,
+  onOpacityChange,
+  onLabelChange,
   onRotate,
+  onToggleLock,
   onFocus,
 }: {
   shape: BoardShape;
   zoom: number;
   zIndex: number;
+  selected: boolean;
+  matched: boolean;
+  dimmed: boolean;
+  onSelect: (additive: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onRemove: () => void;
   onColorChange: (color: string) => void;
+  onOpacityChange: (opacity: number) => void;
+  onLabelChange: (label: string) => void;
   onRotate: () => void;
+  onToggleLock: () => void;
   onFocus: () => void;
 }) {
+  const locked = !!shape.boardLocked;
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     shape.x,
     shape.y,
     shape.width,
     shape.height,
     zoom,
-    (x, y) => onDragEnd(shape.id, x, y)
+    (x, y) => onDragEnd(shape.id, x, y),
+    locked
   );
   const colors = MEMO_NOTE_COLORS[shape.color] ?? MEMO_NOTE_COLORS[DEFAULT_MEMO_NOTE_COLOR];
   const isLineLike = shape.type === "line" || shape.type === "arrow";
   const arrowMarkerId = `board-shape-arrow-${shape.id}`;
+  const opacity = shape.opacity ?? DEFAULT_BOARD_SHAPE_OPACITY;
+  const fillAlphaHex = Math.round(opacity * 255)
+    .toString(16)
+    .padStart(2, "0");
+
+  const [label, setLabel] = useState(shape.label ?? "");
+  const idRef = useRef(shape.id);
+  useEffect(() => {
+    if (idRef.current !== shape.id) {
+      idRef.current = shape.id;
+      setLabel(shape.label ?? "");
+    }
+  }, [shape.id, shape.label]);
+
+  const labelInput = (
+    <input
+      value={label}
+      onChange={(e) => setLabel(e.target.value)}
+      onBlur={() => {
+        if (label !== (shape.label ?? "")) onLabelChange(label);
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      placeholder="ラベル"
+      className="w-full bg-transparent text-center text-xs text-ink/70 outline-none placeholder:text-ink/30"
+    />
+  );
 
   return (
-    <div className="absolute" style={{ left, top, width: shape.width, height: shape.height, zIndex }} onPointerDownCapture={onFocus}>
-      {/* 図形本体全体が掴んで動かせる領域。操作ボタンは外に浮かせてあるので重ならない */}
+    <div
+      className="absolute"
+      style={{ left, top, width: shape.width, height: shape.height, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
+      onPointerDownCapture={onFocus}
+    >
+      {/* 図形本体全体が掴んで動かせる領域。操作ボタンは外に浮かせてあるので重ならない。
+          ロック中はカーソルで分かるようにし、ドラッグはuseBoardDrag側でno-opになる */}
       <div
-        className="absolute inset-0 cursor-grab active:cursor-grabbing"
+        className={locked ? "absolute inset-0 cursor-not-allowed" : "absolute inset-0 cursor-grab active:cursor-grabbing"}
         style={{ touchAction: "none" }}
-        title="ドラッグで移動できます"
+        title={locked ? "ロック中です(🔒で解除できます)" : "ドラッグで移動できます"}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onClick={(e) => onSelect(e.shiftKey)}
       >
         {shape.type === "rect" && (
-          <div className="h-full w-full rounded-md border-2" style={{ borderColor: colors.border, backgroundColor: `${colors.bg}66` }} />
+          <div
+            className="flex h-full w-full items-center justify-center rounded-md border-2 px-2"
+            style={{ borderColor: colors.border, backgroundColor: `${colors.bg}${fillAlphaHex}` }}
+          >
+            {labelInput}
+          </div>
         )}
         {shape.type === "circle" && (
-          <div className="h-full w-full rounded-full border-2" style={{ borderColor: colors.border, backgroundColor: `${colors.bg}66` }} />
+          <div
+            className="flex h-full w-full items-center justify-center rounded-full border-2 px-4"
+            style={{ borderColor: colors.border, backgroundColor: `${colors.bg}${fillAlphaHex}` }}
+          >
+            {labelInput}
+          </div>
         )}
         {isLineLike && (
-          <svg width={shape.width} height={shape.height} className="h-full w-full overflow-visible">
-            <defs>
-              <marker id={arrowMarkerId} markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
-                <path d="M0,0 L8,4 L0,8 z" fill={colors.border} />
-              </marker>
-            </defs>
-            {shape.width >= shape.height ? (
-              <line
-                x1={6}
-                y1={shape.height / 2}
-                x2={Math.max(6, shape.width - 6)}
-                y2={shape.height / 2}
-                stroke={colors.border}
-                strokeWidth={3}
-                markerEnd={shape.type === "arrow" ? `url(#${arrowMarkerId})` : undefined}
-              />
-            ) : (
-              <line
-                x1={shape.width / 2}
-                y1={6}
-                x2={shape.width / 2}
-                y2={Math.max(6, shape.height - 6)}
-                stroke={colors.border}
-                strokeWidth={3}
-                markerEnd={shape.type === "arrow" ? `url(#${arrowMarkerId})` : undefined}
-              />
-            )}
-          </svg>
+          <>
+            <svg width={shape.width} height={shape.height} className="h-full w-full overflow-visible">
+              <defs>
+                <marker id={arrowMarkerId} markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
+                  <path d="M0,0 L8,4 L0,8 z" fill={colors.border} />
+                </marker>
+              </defs>
+              {shape.width >= shape.height ? (
+                <line
+                  x1={6}
+                  y1={shape.height / 2}
+                  x2={Math.max(6, shape.width - 6)}
+                  y2={shape.height / 2}
+                  stroke={colors.border}
+                  strokeWidth={3}
+                  markerEnd={shape.type === "arrow" ? `url(#${arrowMarkerId})` : undefined}
+                />
+              ) : (
+                <line
+                  x1={shape.width / 2}
+                  y1={6}
+                  x2={shape.width / 2}
+                  y2={Math.max(6, shape.height - 6)}
+                  stroke={colors.border}
+                  strokeWidth={3}
+                  markerEnd={shape.type === "arrow" ? `url(#${arrowMarkerId})` : undefined}
+                />
+              )}
+            </svg>
+            {/* 線・矢印はSVGの上に重ねてラベルを置く(中央寄せの帯) */}
+            <div className="absolute inset-x-1 top-1/2 -translate-y-1/2">{labelInput}</div>
+          </>
         )}
       </div>
-      {/* 操作(色・向き・削除)は図形の上に小さく浮かせる。図形本体とは重ならないので
+      {/* 操作(色・濃さ・向き・削除)は図形の上に小さく浮かせる。図形本体とは重ならないので
           ドラッグの当たり判定と競合しない */}
-      <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
+      <div className="absolute -top-6 left-0 flex flex-wrap items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
         {isLineLike && (
           <button onClick={onRotate} className="text-[11px] leading-none text-cream/70 hover:text-cream" title="向きを変える(横⇔縦)">
             ⟳
@@ -963,6 +1460,25 @@ function ShapeElement({
             aria-label={`色を${key}にする`}
           />
         ))}
+        <input
+          type="range"
+          min={0.1}
+          max={1}
+          step={0.1}
+          value={opacity}
+          onChange={(e) => onOpacityChange(Number(e.target.value))}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="h-3 w-10"
+          title="塗りの濃さ"
+          aria-label="塗りの濃さ"
+        />
+        <button
+          onClick={onToggleLock}
+          className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
+          title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
+        >
+          {locked ? "🔒" : "🔓"}
+        </button>
         <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="図形を削除">
           ✕
         </button>
@@ -975,21 +1491,32 @@ function NoteCard({
   note,
   zoom,
   zIndex,
+  selected,
+  matched,
+  dimmed,
+  onSelect,
   onDragEnd,
   onCommitText,
   onFocus,
   onGrow,
   onTogglePin,
+  onToggleLock,
 }: {
   note: MemoNote;
   zoom: number;
   zIndex: number;
+  selected: boolean;
+  matched: boolean;
+  dimmed: boolean;
+  onSelect: (additive: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onCommitText: (note: MemoNote, text: string) => void;
   onFocus: () => void;
   onGrow: (id: string, height: number) => void;
   onTogglePin: () => void;
+  onToggleLock: () => void;
 }) {
+  const locked = !!note.boardLocked;
   const [text, setText] = useState(note.text);
   const idRef = useRef(note.id);
   useEffect(() => {
@@ -1004,18 +1531,40 @@ function NoteCard({
     note.width,
     note.height,
     zoom,
-    (x, y) => onDragEnd(note.id, x, y)
+    (x, y) => onDragEnd(note.id, x, y),
+    locked
   );
   const colors = MEMO_NOTE_COLORS[note.color] ?? MEMO_NOTE_COLORS[DEFAULT_MEMO_NOTE_COLOR];
 
   return (
     <div
       className="absolute flex flex-col rounded-md border-2 shadow-md"
-      style={{ left, top, width: note.width, height: note.height, backgroundColor: colors.bg, borderColor: colors.border, zIndex }}
+      style={{
+        left,
+        top,
+        width: note.width,
+        height: note.height,
+        backgroundColor: colors.bg,
+        borderColor: colors.border,
+        zIndex,
+        ...boardItemVisualStyle(selected, matched, dimmed),
+      }}
       onPointerDownCapture={onFocus}
+      onClick={(e) => onSelect(e.shiftKey)}
     >
       <DragHandle tone="light" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
-      {/* 最前面固定。掴む帯の上に重ねるので、ドラッグ用のpointerdownは止めておく */}
+      {/* ロック・最前面固定。掴む帯の上に重ねるので、ドラッグ用のpointerdownは止めておく */}
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleLock();
+        }}
+        className={`absolute right-8 top-0.5 text-[11px] leading-none ${locked ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
+        title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
+      >
+        {locked ? "🔒" : "🔓"}
+      </button>
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -1068,28 +1617,45 @@ function TaskCard({
   now,
   zoom,
   zIndex,
+  selected,
+  matched,
+  dimmed,
+  onSelect,
   onDragEnd,
   onStart,
   onPause,
   onComplete,
+  onToggleLock,
   onFocus,
 }: {
   task: DailyTask;
   now: number;
   zoom: number;
   zIndex: number;
+  selected: boolean;
+  matched: boolean;
+  dimmed: boolean;
+  onSelect: (additive: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onStart: () => void;
   onPause: () => void;
   onComplete: () => void;
+  onToggleLock: () => void;
   onFocus: () => void;
 }) {
+  const locked = !!task.boardLocked;
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
   const x = task.boardX ?? 40;
   const y = task.boardY ?? 40;
-  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(x, y, CARD_WIDTH, TASK_CARD_HEIGHT, zoom, (nx, ny) =>
-    onDragEnd(task.id, nx, ny)
+  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
+    x,
+    y,
+    CARD_WIDTH,
+    TASK_CARD_HEIGHT,
+    zoom,
+    (nx, ny) => onDragEnd(task.id, nx, ny),
+    locked
   );
   const elapsedMs = segmentsAccumulatedMs(task, now);
   const running = task.status === "running";
@@ -1097,13 +1663,16 @@ function TaskCard({
   return (
     <div
       className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${running ? "border-alert" : "border-cream/20"}`}
-      style={{ left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT, zIndex }}
+      style={{ left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
+      onClick={(e) => onSelect(e.shiftKey)}
     >
       <div
-        className="-mx-2 -mt-2 mb-1 flex shrink-0 cursor-grab items-center justify-between rounded-t bg-cream/10 px-2 py-1 active:cursor-grabbing"
+        className={`-mx-2 -mt-2 mb-1 flex shrink-0 items-center justify-between rounded-t bg-cream/10 px-2 py-1 ${
+          locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"
+        }`}
         style={{ touchAction: "none" }}
-        title="ドラッグで移動できます"
+        title={locked ? "ロック中です(🔒で解除できます)" : "ドラッグで移動できます"}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -1111,7 +1680,17 @@ function TaskCard({
       >
         <span className="text-[10px] text-cream/50">{running ? "🔴 計測中" : task.status === "paused" ? "一時停止中" : "未着手"}</span>
         <span className="font-display text-xs font-bold tabular-nums text-cream/80">{formatMsClock(elapsedMs)}</span>
-        <span className="text-[10px] leading-none tracking-widest text-cream/30">⠿</span>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleLock();
+          }}
+          className={`text-[11px] leading-none ${locked ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
+          title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
+        >
+          {locked ? "🔒" : "🔓"}
+        </button>
       </div>
       <p className="min-w-0 flex-1 truncate text-sm text-cream" title={`${task.category} / ${task.name}`}>
         <span className="text-cream/50">{task.category}</span> {task.name}
@@ -1140,9 +1719,14 @@ function TodoCard({
   subtaskStat,
   zoom,
   zIndex,
+  selected,
+  matched,
+  dimmed,
+  onSelect,
   onDragEnd,
   onComplete,
   onRemove,
+  onToggleLock,
   onFocus,
   onOpenDetail,
 }: {
@@ -1152,19 +1736,31 @@ function TodoCard({
   subtaskStat: { done: number; total: number } | null;
   zoom: number;
   zIndex: number;
+  selected: boolean;
+  matched: boolean;
+  dimmed: boolean;
+  onSelect: (additive: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onComplete: () => void;
   onRemove: () => void;
+  onToggleLock: () => void;
   onFocus: () => void;
   /** 件名を押した時に、ToDoタブでこの項目の詳細を開く。未指定なら件名はただの文字のまま */
   onOpenDetail?: () => void;
 }) {
+  const locked = !!todo.boardLocked;
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
   const x = todo.boardX ?? 40;
   const y = todo.boardY ?? 40;
-  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(x, y, CARD_WIDTH, TODO_CARD_HEIGHT, zoom, (nx, ny) =>
-    onDragEnd(todo.id, nx, ny)
+  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
+    x,
+    y,
+    CARD_WIDTH,
+    TODO_CARD_HEIGHT,
+    zoom,
+    (nx, ny) => onDragEnd(todo.id, nx, ny),
+    locked
   );
   const overdue = !!todo.dueDate && todo.dueDate < today;
 
@@ -1173,14 +1769,34 @@ function TodoCard({
       className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
         overdue ? "border-alert/70" : "border-cream/20"
       }`}
-      style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, zIndex }}
+      style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
+      onClick={(e) => onSelect(e.shiftKey)}
     >
-      <DragHandle tone="dark" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
+      <DragHandle
+        tone="dark"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      />
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleLock();
+        }}
+        className={`absolute right-6 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
+      >
+        {locked ? "🔒" : "🔓"}
+      </button>
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（マイデイからも外れます。ToDo自体は消えません）" />
       <div className="flex flex-1 items-start gap-2">
         <button
-          onClick={onComplete}
+          onClick={(e) => {
+            e.stopPropagation();
+            onComplete();
+          }}
           aria-label="完了"
           className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-cream/40"
         />
@@ -1226,9 +1842,14 @@ function ProjectCard({
   today,
   zoom,
   zIndex,
+  selected,
+  matched,
+  dimmed,
+  onSelect,
   onDragEnd,
   onToggleStage,
   onRemove,
+  onToggleLock,
   onFocus,
   onOpenDetail,
 }: {
@@ -1236,13 +1857,19 @@ function ProjectCard({
   today: string;
   zoom: number;
   zIndex: number;
+  selected: boolean;
+  matched: boolean;
+  dimmed: boolean;
+  onSelect: (additive: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onToggleStage: (stageId: string) => void;
   onRemove: () => void;
+  onToggleLock: () => void;
   onFocus: () => void;
   /** 件名を押した時に、案件タブでこの案件の編集を開く。未指定なら件名はただの文字のまま */
   onOpenDetail?: () => void;
 }) {
+  const locked = !!project.boardLocked;
   const x = project.boardX ?? 40;
   const y = project.boardY ?? 40;
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
@@ -1251,7 +1878,8 @@ function ProjectCard({
     CARD_WIDTH,
     PROJECT_CARD_HEIGHT,
     zoom,
-    (nx, ny) => onDragEnd(project.id, nx, ny)
+    (nx, ny) => onDragEnd(project.id, nx, ny),
+    locked
   );
   const stages = project.stages ?? [];
   const doneCount = stages.filter(isStageDone).length;
@@ -1265,10 +1893,22 @@ function ProjectCard({
       className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
         overdue ? "border-alert/70" : "border-cream/20"
       }`}
-      style={{ left, top, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT, zIndex }}
+      style={{ left, top, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
+      onClick={(e) => onSelect(e.shiftKey)}
     >
       <DragHandle tone="dark" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleLock();
+        }}
+        className={`absolute right-6 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
+      >
+        {locked ? "🔒" : "🔓"}
+      </button>
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（案件自体は消えません）" />
       <div className="flex items-baseline gap-1">
         <span className="shrink-0 text-[9px] uppercase tracking-wider text-cream/35">案件</span>

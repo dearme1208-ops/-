@@ -116,6 +116,7 @@ export interface DailyTask {
   // 記録するため、「直近に何かを止めた時刻」の判定(未計測の自動仮計測の起点など)に使う
   boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。日付が変わればタスク自体が
   boardY?: number; // 入れ替わるため、位置も自然にリセットされる(付箋のようにずっと保持はしない)
+  boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
 }
 
 export interface WorkRecord {
@@ -208,6 +209,7 @@ export interface ProjectItem {
   // 統合ボード上での位置。ボードに置いていない案件では未設定のまま
   boardX?: number;
   boardY?: number;
+  boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
   // ---- 経営分析フレームワーク(任意)。案件を1つの「事業」に見立てて、
   // ITパスポート試験にも出るような定番の戦略分析を書き留められるようにしたもの。
   // すべて空欄可(未入力の案件では分析タブを開いても何も表示されない) ----
@@ -285,6 +287,7 @@ export interface TodoTask {
   reminderFiredAt?: number; // 上記の通知を実際に表示した時刻。二重に通知しないためのフラグ(reminderAtを再設定するとクリアされる)
   boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。付箋と違いこちらは
   boardY?: number; // ToDo自体が残り続ける限り保持する(マイデイから外れると自然に表示対象から外れる)
+  boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
   imageDataUrl?: string; // タスク(サブタスクを含む)に添付した画像。1枚のみ、data URLとしてそのまま保存する
 }
 
@@ -329,6 +332,7 @@ export interface MemoNote {
   // 最前面に固定。ほかの付箋をいくら前に出しても、この付箋は必ずその上に出る。
   // メモタブと統合ボードで同じ付箋を共有しているので、固定もどちらにも効く
   pinned?: boolean;
+  boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
   createdAt: number;
   updatedAt: number;
   isChecklist?: boolean; // trueの場合、textではなくchecklistItemsを表示する
@@ -365,8 +369,8 @@ export interface MemoConnector {
 
 export type BoardShapeType = "rect" | "circle" | "line" | "arrow";
 
-// 統合ボード上に置く単純な図形(囲み線・グルーピング用)。付箋と違って文字は持たない。
-// 付箋・手書きと同じくメモ帳(boardId)単位で持たせてある
+// 統合ボード上に置く単純な図形(囲み線・グルーピング用)。付箋と違って本文は持たないが、
+// 短いラベルだけは添えられる。付箋・手書きと同じくメモ帳(boardId)単位で持たせてある
 export interface BoardShape {
   id: string;
   boardId: string;
@@ -376,6 +380,9 @@ export interface BoardShape {
   width: number; // rect/circleは幅。line/arrowは終点までのx方向の距離
   height: number; // rect/circleは高さ。line/arrowは終点までのy方向の距離
   color: string; // MEMO_NOTE_COLORSのキー
+  opacity?: number; // 塗りの濃さ(0〜1)。未設定は既定値(lib/memo.tsのDEFAULT_BOARD_SHAPE_OPACITY)扱い
+  label?: string; // 図形に添える短いラベル(囲んでいる範囲の見出しなど)
   order: number; // 重なり順
   createdAt: number;
+  boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
 }

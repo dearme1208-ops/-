@@ -23,13 +23,15 @@ export const MEMO_BOARD_HEIGHT = 1000;
 
 // ボードの地の模様。カードの位置合わせの目安になるだけで、データとは無関係な
 // 見た目だけの切り替え(演出テーマにも依存しない)
-export const BOARD_BACKGROUND_KINDS = ["none", "grid", "dots"] as const;
+export const BOARD_BACKGROUND_KINDS = ["none", "grid", "dots", "lines", "checker"] as const;
 export type BoardBackgroundKind = (typeof BOARD_BACKGROUND_KINDS)[number];
 export const DEFAULT_BOARD_BACKGROUND: BoardBackgroundKind = "none";
 export const BOARD_BACKGROUND_LABELS: Record<BoardBackgroundKind, string> = {
   none: "無地",
   grid: "方眼紙",
   dots: "ドットグリッド",
+  lines: "罫線ノート",
+  checker: "チェック柄",
 };
 
 // CSSのbackground-imageで表現する。画像を持ち込まずグラデーションだけで描くので、
@@ -37,6 +39,7 @@ export const BOARD_BACKGROUND_LABELS: Record<BoardBackgroundKind, string> = {
 export function boardBackgroundCss(kind: BoardBackgroundKind): { backgroundImage?: string; backgroundSize?: string } {
   const line = "rgba(242,242,240,0.14)";
   const dot = "rgba(242,242,240,0.22)";
+  const check = "rgba(242,242,240,0.06)";
   if (kind === "grid") {
     return {
       backgroundImage: `linear-gradient(${line} 1px, transparent 1px), linear-gradient(90deg, ${line} 1px, transparent 1px)`,
@@ -47,6 +50,18 @@ export function boardBackgroundCss(kind: BoardBackgroundKind): { backgroundImage
     return {
       backgroundImage: `radial-gradient(${dot} 1.5px, transparent 1.5px)`,
       backgroundSize: "28px 28px",
+    };
+  }
+  if (kind === "lines") {
+    return {
+      backgroundImage: `linear-gradient(${line} 1px, transparent 1px)`,
+      backgroundSize: "100% 32px",
+    };
+  }
+  if (kind === "checker") {
+    return {
+      backgroundImage: `linear-gradient(45deg, ${check} 25%, transparent 25%), linear-gradient(-45deg, ${check} 25%, transparent 25%), linear-gradient(45deg, transparent 75%, ${check} 75%), linear-gradient(-45deg, transparent 75%, ${check} 75%)`,
+      backgroundSize: "32px 32px",
     };
   }
   return {};
@@ -60,6 +75,7 @@ export const BOARD_SHAPE_DEFAULT_SIZE: Record<"rect" | "circle" | "line" | "arro
   line: { width: 220, height: 40 },
   arrow: { width: 220, height: 40 },
 };
+export const DEFAULT_BOARD_SHAPE_OPACITY = 0.4;
 
 export const MEMO_NOTE_MIN_WIDTH = 100;
 export const MEMO_NOTE_MIN_HEIGHT = 80;

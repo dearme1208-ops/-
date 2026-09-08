@@ -45,3 +45,31 @@ export async function exportElementToPdf(element: HTMLElement, filename: string)
 
   pdf.save(filename);
 }
+
+// 画面上の要素をそのままPNG画像として保存する(共有・記録用)。CSSのtransform(拡大縮小)は
+// 見た目どおり反映されてしまうため、クローンした要素だけscale(1)に戻して常に等倍で書き出す
+export async function exportElementToPng(
+  element: HTMLElement,
+  filename: string,
+  options?: { width?: number; height?: number; backgroundColor?: string }
+): Promise<void> {
+  const canvas = await html2canvas(element, {
+    backgroundColor: options?.backgroundColor ?? "#0f0f10",
+    useCORS: true,
+    width: options?.width,
+    height: options?.height,
+    onclone: (_doc, el) => {
+      (el as HTMLElement).style.transform = "scale(1)";
+    },
+  });
+  const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
