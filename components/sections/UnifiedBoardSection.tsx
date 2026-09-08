@@ -455,12 +455,25 @@ export default function UnifiedBoardSection({
     await db.projects.update(project.id, { boardX: undefined, boardY: undefined });
   }
 
+  // 全画面表示。ページのヘッダーやタブ列も含めて画面いっぱいに広げ、盤面をできるだけ
+  // 大きく使えるようにする(CSSでの上乗せ表示。ブラウザのFullscreen APIは
+  // PWA/一部環境で使えないことがあるため、それに依存しない作りにしてある)
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
   const [showPalette, setShowPalette] = useState(false);
   const unplacedTodos = openTodos.filter((t) => t.myDayDate !== today && t.boardX === undefined);
   const unplacedProjects = openProjects.filter((p) => p.boardX === undefined);
 
   return (
-    <div className="space-y-3">
+    <div className={fullscreen ? "fixed inset-0 z-50 flex flex-col gap-3 overflow-y-auto bg-ink p-3" : "space-y-3"}>
       <div className="panel flex flex-wrap items-center gap-2 p-3">
         <span className="text-xs text-cream/50">メモ帳:</span>
         {(boards ?? []).map((b) => (
@@ -486,6 +499,13 @@ export default function UnifiedBoardSection({
             title={`ボード全体の幅(${MEMO_BOARD_WIDTH}px)を画面に収める倍率にします`}
           >
             幅に合わせる
+          </button>
+          <button
+            className={fullscreen ? "btn-pill px-2 py-1 text-xs" : "btn-pill-outline px-2 py-1 text-xs"}
+            onClick={() => setFullscreen((v) => !v)}
+            title={fullscreen ? "全画面表示を終了します(Escでも終了できます)" : "タブ列などを隠し、盤面を画面いっぱいに表示します"}
+          >
+            {fullscreen ? "✕ 全画面終了" : "⛶ 全画面"}
           </button>
         </div>
       </div>
@@ -619,30 +639,38 @@ export default function UnifiedBoardSection({
         </div>
       )}
 
-      <p className="flex flex-wrap items-center gap-2 px-1 text-xs text-cream/50">
-        付箋と手書きはメモタブと同じものです（どちらで書いても両方に出ます）。ToDoは「マイデイ」に入れたものが自動で並び、それ以外と案件は上の「一覧から置く」から置きます。カードの
-        <span className="text-cream">✕</span>
-        でボードから下げられます（ToDoはマイデイからも外れます。項目自体は消えません）。
-        {onOpenTodo && (
-          <button className="text-cream underline decoration-dotted underline-offset-2 hover:text-cream/70" onClick={onOpenTodo}>
-            ToDoタブへ →
-          </button>
-        )}
-      </p>
+      {!fullscreen && (
+        <p className="flex flex-wrap items-center gap-2 px-1 text-xs text-cream/50">
+          付箋と手書きはメモタブと同じものです（どちらで書いても両方に出ます）。ToDoは「マイデイ」に入れたものが自動で並び、それ以外と案件は上の「一覧から置く」から置きます。カードの
+          <span className="text-cream">✕</span>
+          でボードから下げられます（ToDoはマイデイからも外れます。項目自体は消えません）。
+          {onOpenTodo && (
+            <button className="text-cream underline decoration-dotted underline-offset-2 hover:text-cream/70" onClick={onOpenTodo}>
+              ToDoタブへ →
+            </button>
+          )}
+        </p>
+      )}
 
-      <div className="panel flex flex-wrap items-center gap-2 p-3">
-        <span className="text-xs text-cream/50">作業を開始:</span>
-        {(favorites ?? []).map((f) => (
-          <button key={f.id} className="btn-pill-outline text-xs" onClick={() => startFromMaster(f)}>
-            ★ {f.category} / {f.name}
+      {!fullscreen && (
+        <div className="panel flex flex-wrap items-center gap-2 p-3">
+          <span className="text-xs text-cream/50">作業を開始:</span>
+          {(favorites ?? []).map((f) => (
+            <button key={f.id} className="btn-pill-outline text-xs" onClick={() => startFromMaster(f)}>
+              ★ {f.category} / {f.name}
+            </button>
+          ))}
+          <button className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
+            ＋ マスタから選択
           </button>
-        ))}
-        <button className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
-          ＋ マスタから選択
-        </button>
-      </div>
+        </div>
+      )}
 
-      <div ref={boardViewportRef} className="panel overflow-auto p-0" style={{ height: "70vh" }}>
+      <div
+        ref={boardViewportRef}
+        className={fullscreen ? "panel min-h-0 flex-1 overflow-auto p-0" : "panel overflow-auto p-0"}
+        style={fullscreen ? undefined : { height: "70vh" }}
+      >
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
           <div
             className="relative"
