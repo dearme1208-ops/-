@@ -21,6 +21,46 @@ export const DEFAULT_MEMO_PEN_WIDTH = 3;
 export const MEMO_BOARD_WIDTH = 1400;
 export const MEMO_BOARD_HEIGHT = 1000;
 
+// ボードの地の模様。カードの位置合わせの目安になるだけで、データとは無関係な
+// 見た目だけの切り替え(演出テーマにも依存しない)
+export const BOARD_BACKGROUND_KINDS = ["none", "grid", "dots"] as const;
+export type BoardBackgroundKind = (typeof BOARD_BACKGROUND_KINDS)[number];
+export const DEFAULT_BOARD_BACKGROUND: BoardBackgroundKind = "none";
+export const BOARD_BACKGROUND_LABELS: Record<BoardBackgroundKind, string> = {
+  none: "無地",
+  grid: "方眼紙",
+  dots: "ドットグリッド",
+};
+
+// CSSのbackground-imageで表現する。画像を持ち込まずグラデーションだけで描くので、
+// 軽量でどの演出テーマの地色の上でも同じ見え方になる
+export function boardBackgroundCss(kind: BoardBackgroundKind): { backgroundImage?: string; backgroundSize?: string } {
+  const line = "rgba(242,242,240,0.14)";
+  const dot = "rgba(242,242,240,0.22)";
+  if (kind === "grid") {
+    return {
+      backgroundImage: `linear-gradient(${line} 1px, transparent 1px), linear-gradient(90deg, ${line} 1px, transparent 1px)`,
+      backgroundSize: "40px 40px",
+    };
+  }
+  if (kind === "dots") {
+    return {
+      backgroundImage: `radial-gradient(${dot} 1.5px, transparent 1.5px)`,
+      backgroundSize: "28px 28px",
+    };
+  }
+  return {};
+}
+
+// 図形の既定サイズ。付箋と同じく「まずは決まった大きさで置いて、位置だけドラッグで
+// 動かす」形にしてあるため(伸縮はできない)、種類ごとに使いやすい大きさを決め打ちする
+export const BOARD_SHAPE_DEFAULT_SIZE: Record<"rect" | "circle" | "line" | "arrow", { width: number; height: number }> = {
+  rect: { width: 200, height: 130 },
+  circle: { width: 150, height: 150 },
+  line: { width: 220, height: 40 },
+  arrow: { width: 220, height: 40 },
+};
+
 export const MEMO_NOTE_MIN_WIDTH = 100;
 export const MEMO_NOTE_MIN_HEIGHT = 80;
 

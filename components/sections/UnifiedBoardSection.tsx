@@ -9,7 +9,12 @@ import { formatMsClock, todayStr } from "@/lib/time";
 import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
 import { completeTodoTask } from "@/lib/todo";
 import {
+  BOARD_BACKGROUND_KINDS,
+  BOARD_BACKGROUND_LABELS,
+  BOARD_SHAPE_DEFAULT_SIZE,
+  boardBackgroundCss,
   clampMemoZoom,
+  DEFAULT_BOARD_BACKGROUND,
   DEFAULT_MEMO_NOTE_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
   DEFAULT_MEMO_PEN_WIDTH,
@@ -18,12 +23,13 @@ import {
   MEMO_NOTE_COLORS,
   MEMO_PEN_COLORS,
   memoNoteZIndex,
+  type BoardBackgroundKind,
 } from "@/lib/memo";
 import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import StrokeLayer from "@/components/memo/StrokeLayer";
-import type { DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask } from "@/lib/types";
+import type { BoardShape, BoardShapeType, DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask } from "@/lib/types";
 
 // 「メモ・ToDo・案件・本日の作業」を1つの自由配置キャンバスにまとめて表示し、
 // その場で作業の開始/一時停止/完了、ToDoの完了、案件の段階の通過までできるようにしたビュー。
@@ -103,6 +109,16 @@ export default function UnifiedBoardSection({
     () => (selectedBoardId ? db.memoStrokes.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as MemoStroke[])),
     [selectedBoardId]
   );
+  const shapes = useLiveQuery(
+    () => (selectedBoardId ? db.boardShapes.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as BoardShape[])),
+    [selectedBoardId]
+  );
+  // ボードの地の模様(無地/方眼紙/ドット)。データではなく見た目だけの設定なので
+  // 演出テーマとは独立してユーザー設定として持つ
+  const [backgroundStr, setBackgroundStr] = useSetting("board.background", DEFAULT_BOARD_BACKGROUND as string);
+  const background: BoardBackgroundKind = (BOARD_BACKGROUND_KINDS as readonly string[]).includes(backgroundStr)
+    ? (backgroundStr as BoardBackgroundKind)
+    : DEFAULT_BOARD_BACKGROUND;
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   // ボードに置く分だけでなく、下の一覧から選んで置けるようにするため未完了は全件見る
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
@@ -211,6 +227,7 @@ export default function UnifiedBoardSection({
   const contentRight = Math.max(
     360,
     ...(notes ?? []).map((n) => n.x + n.width),
+    ...(shapes ?? []).map((s) => s.x + s.width),
     ...(tasks ?? []).map((t) => (t.boardX ?? 0) + CARD_WIDTH),
     ...(todos ?? []).map((t) => (t.boardX ?? 0) + CARD_WIDTH),
     ...projects.map((p) => (p.boardX ?? 0) + CARD_WIDTH)
@@ -357,12 +374,57 @@ export default function UnifiedBoardSection({
   }
 
   // ------------------------------------------------------------
+  // 図形を足す(四角・円・線・矢印。囲み線やグルーピング用の飾りで、文字は持たない)
+  // ------------------------------------------------------------
+  const maxShapeOrderRef = useRef(0);
+  useEffect(() => {
+    maxShapeOrderRef.current = (shapes ?? []).reduce((m, s) => Math.max(m, s.order), 0);
+  }, [shapes]);
+  const [showShapeMenu, setShowShapeMenu] = useState(false);
+  async function addShape(type: BoardShapeType) {
+    if (!selectedBoardId) return;
+    maxShapeOrderRef.current += 1;
+    const { width, height } = BOARD_SHAPE_DEFAULT_SIZE[type];
+    const pos = findFreeSlot(occupiedRects(), width, height);
+    const id = uid();
+    await db.boardShapes.add({
+      id,
+      boardId: selectedBoardId,
+      type,
+      x: pos.x,
+      y: pos.y,
+      width,
+      height,
+      color: DEFAULT_MEMO_NOTE_COLOR,
+      order: maxShapeOrderRef.current,
+      createdAt: Date.now(),
+    });
+    // 置いたばかりの図形が他のカードの下に隠れないようにする
+    bringToFront(id);
+    setShowShapeMenu(false);
+  }
+  async function moveShape(id: string, x: number, y: number) {
+    await db.boardShapes.update(id, { x, y });
+  }
+  async function removeShape(id: string) {
+    await db.boardShapes.delete(id);
+  }
+  async function setShapeColor(id: string, color: string) {
+    await db.boardShapes.update(id, { color });
+  }
+  // 線・矢印だけ、伸縮の代わりに向き(横⇔縦)をワンタップで切り替えられるようにする
+  async function rotateShape(shape: BoardShape) {
+    await db.boardShapes.update(shape.id, { width: shape.height, height: shape.width });
+  }
+
+  // ------------------------------------------------------------
   // 一覧からボードへ置く / ボードから外す
   // ------------------------------------------------------------
   // いま盤面が使っている場所。置き場所を探すときに毎回組み立てる
   function occupiedRects(): BoardRect[] {
     return [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
+      ...(shapes ?? []).map((s) => ({ x: s.x, y: s.y, width: s.width, height: s.height })),
       ...tasks
         .filter((t) => t.boardX !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
@@ -427,11 +489,48 @@ export default function UnifiedBoardSection({
           </button>
         </div>
       </div>
-      {/* 書き込みの道具。付箋・手書き・消しゴムをこの1列にまとめる */}
+      {/* ボードの地の模様。見た目だけの切り替えで、カードの位置や重なりには影響しない */}
+      <div className="panel flex flex-wrap items-center gap-2 p-3">
+        <span className="text-xs text-cream/50">背景:</span>
+        {BOARD_BACKGROUND_KINDS.map((kind) => (
+          <button
+            key={kind}
+            className={background === kind ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setBackgroundStr(kind)}
+          >
+            {BOARD_BACKGROUND_LABELS[kind]}
+          </button>
+        ))}
+      </div>
+      {/* 書き込みの道具。付箋・図形・手書き・消しゴムをこの1列にまとめる */}
       <div className="panel flex flex-wrap items-center gap-2 p-3">
         <button className="btn-pill-outline text-xs" onClick={addNote}>
           ＋ 付箋
         </button>
+        <div className="relative">
+          <button
+            className={showShapeMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowShapeMenu((v) => !v)}
+          >
+            ＋ 図形
+          </button>
+          {showShapeMenu && (
+            <div className="absolute left-0 top-full z-10 mt-1 flex gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+              <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("rect")}>
+                ▭ 四角
+              </button>
+              <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("circle")}>
+                ○ 円
+              </button>
+              <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("line")}>
+                ─ 線
+              </button>
+              <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("arrow")}>
+                → 矢印
+              </button>
+            </div>
+          )}
+        </div>
         <button className={penMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={togglePen}>
           ✏️ 手書き: {penMode ? "ON" : "OFF"}
         </button>
@@ -547,7 +646,13 @@ export default function UnifiedBoardSection({
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
           <div
             className="relative"
-            style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
+            style={{
+              width: MEMO_BOARD_WIDTH,
+              height: MEMO_BOARD_HEIGHT,
+              transform: `scale(${zoom})`,
+              transformOrigin: "0 0",
+              ...boardBackgroundCss(background),
+            }}
           >
             {/* 手書きはカードの下に敷く。手書き/消しゴムがOFFの間は当たり判定を切ってあるので、
                 カードのドラッグや操作は今までどおりできる */}
@@ -560,6 +665,20 @@ export default function UnifiedBoardSection({
               penColor={penColor}
               penWidth={penWidth}
             />
+            {/* 図形はグルーピング・囲み用の飾りなので、付箋やカードより下(DOM上で先)に描く */}
+            {(shapes ?? []).map((shape) => (
+              <ShapeElement
+                key={shape.id}
+                shape={shape}
+                zoom={zoom}
+                zIndex={zIndexById[shape.id] ?? 1}
+                onDragEnd={moveShape}
+                onRemove={() => removeShape(shape.id)}
+                onColorChange={(color) => setShapeColor(shape.id, color)}
+                onRotate={() => rotateShape(shape)}
+                onFocus={() => bringToFront(shape.id)}
+              />
+            ))}
             {(notes ?? []).map((note) => (
               <NoteCard
                 key={note.id}
@@ -713,6 +832,113 @@ function DragHandle({
       <span className={`text-[11px] leading-none tracking-widest ${tone === "light" ? "text-ink/50" : "text-cream/50"}`}>
         ⠿ ⠿ ⠿
       </span>
+    </div>
+  );
+}
+
+// 囲み線・グルーピング用の単純な図形。付箋のような文字入力は持たず、
+// 位置のドラッグ・色変更・削除(・線/矢印だけ向きの変更)だけができる
+function ShapeElement({
+  shape,
+  zoom,
+  zIndex,
+  onDragEnd,
+  onRemove,
+  onColorChange,
+  onRotate,
+  onFocus,
+}: {
+  shape: BoardShape;
+  zoom: number;
+  zIndex: number;
+  onDragEnd: (id: string, x: number, y: number) => void;
+  onRemove: () => void;
+  onColorChange: (color: string) => void;
+  onRotate: () => void;
+  onFocus: () => void;
+}) {
+  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
+    shape.x,
+    shape.y,
+    shape.width,
+    shape.height,
+    zoom,
+    (x, y) => onDragEnd(shape.id, x, y)
+  );
+  const colors = MEMO_NOTE_COLORS[shape.color] ?? MEMO_NOTE_COLORS[DEFAULT_MEMO_NOTE_COLOR];
+  const isLineLike = shape.type === "line" || shape.type === "arrow";
+  const arrowMarkerId = `board-shape-arrow-${shape.id}`;
+
+  return (
+    <div className="absolute" style={{ left, top, width: shape.width, height: shape.height, zIndex }} onPointerDownCapture={onFocus}>
+      {/* 図形本体全体が掴んで動かせる領域。操作ボタンは外に浮かせてあるので重ならない */}
+      <div
+        className="absolute inset-0 cursor-grab active:cursor-grabbing"
+        style={{ touchAction: "none" }}
+        title="ドラッグで移動できます"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        {shape.type === "rect" && (
+          <div className="h-full w-full rounded-md border-2" style={{ borderColor: colors.border, backgroundColor: `${colors.bg}66` }} />
+        )}
+        {shape.type === "circle" && (
+          <div className="h-full w-full rounded-full border-2" style={{ borderColor: colors.border, backgroundColor: `${colors.bg}66` }} />
+        )}
+        {isLineLike && (
+          <svg width={shape.width} height={shape.height} className="h-full w-full overflow-visible">
+            <defs>
+              <marker id={arrowMarkerId} markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill={colors.border} />
+              </marker>
+            </defs>
+            {shape.width >= shape.height ? (
+              <line
+                x1={6}
+                y1={shape.height / 2}
+                x2={Math.max(6, shape.width - 6)}
+                y2={shape.height / 2}
+                stroke={colors.border}
+                strokeWidth={3}
+                markerEnd={shape.type === "arrow" ? `url(#${arrowMarkerId})` : undefined}
+              />
+            ) : (
+              <line
+                x1={shape.width / 2}
+                y1={6}
+                x2={shape.width / 2}
+                y2={Math.max(6, shape.height - 6)}
+                stroke={colors.border}
+                strokeWidth={3}
+                markerEnd={shape.type === "arrow" ? `url(#${arrowMarkerId})` : undefined}
+              />
+            )}
+          </svg>
+        )}
+      </div>
+      {/* 操作(色・向き・削除)は図形の上に小さく浮かせる。図形本体とは重ならないので
+          ドラッグの当たり判定と競合しない */}
+      <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
+        {isLineLike && (
+          <button onClick={onRotate} className="text-[11px] leading-none text-cream/70 hover:text-cream" title="向きを変える(横⇔縦)">
+            ⟳
+          </button>
+        )}
+        {Object.entries(MEMO_NOTE_COLORS).map(([key, c]) => (
+          <button
+            key={key}
+            onClick={() => onColorChange(key)}
+            className="h-3 w-3 shrink-0 rounded-full border"
+            style={{ backgroundColor: c.border, borderColor: shape.color === key ? "#f2f2f0" : "transparent" }}
+            aria-label={`色を${key}にする`}
+          />
+        ))}
+        <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="図形を削除">
+          ✕
+        </button>
+      </div>
     </div>
   );
 }

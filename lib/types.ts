@@ -362,3 +362,20 @@ export interface MemoConnector {
   createdAt: number;
   label?: string; // 線に添える短いラベル(「原因」「対応」等)
 }
+
+export type BoardShapeType = "rect" | "circle" | "line" | "arrow";
+
+// 統合ボード上に置く単純な図形(囲み線・グルーピング用)。付箋と違って文字は持たない。
+// 付箋・手書きと同じくメモ帳(boardId)単位で持たせてある
+export interface BoardShape {
+  id: string;
+  boardId: string;
+  type: BoardShapeType;
+  x: number; // 左上(rect/circle)、または始点(line/arrow)のボード内px位置
+  y: number;
+  width: number; // rect/circleは幅。line/arrowは終点までのx方向の距離
+  height: number; // rect/circleは高さ。line/arrowは終点までのy方向の距離
+  color: string; // MEMO_NOTE_COLORSのキー
+  order: number; // 重なり順
+  createdAt: number;
+}
