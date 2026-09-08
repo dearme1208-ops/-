@@ -69,7 +69,17 @@ function findFreeSlot(occupied: BoardRect[], width: number, height: number): { x
   return { x: MEMO_BOARD_WIDTH - width, y: MEMO_BOARD_HEIGHT - height };
 }
 
-export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () => void }) {
+export default function UnifiedBoardSection({
+  onOpenTodo,
+  onOpenTodoDetail,
+  onOpenProjectEdit,
+}: {
+  onOpenTodo?: () => void;
+  /** ToDoカードの件名を押した時に、ToDoタブへ切り替えつつその項目の詳細を開く */
+  onOpenTodoDetail?: (taskId: string) => void;
+  /** 案件カードの件名を押した時に、案件タブへ切り替えつつその案件の編集を開く */
+  onOpenProjectEdit?: (projectId: string) => void;
+}) {
   const today = todayStr();
   const boards = useLiveQuery(() => db.memoBoards.orderBy("order").toArray(), []);
   const [selectedBoardId, setSelectedBoardId] = useSetting("memo.selectedBoardId", "");
@@ -585,6 +595,7 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
                 onComplete={() => completeTodo(todo)}
                 onRemove={() => removeTodo(todo)}
                 onFocus={() => bringToFront(todo.id)}
+                onOpenDetail={onOpenTodoDetail ? () => onOpenTodoDetail(todo.id) : undefined}
               />
             ))}
             {projects.map((project) => (
@@ -598,6 +609,7 @@ export default function UnifiedBoardSection({ onOpenTodo }: { onOpenTodo?: () =>
                 onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
                 onRemove={() => removeProject(project)}
                 onFocus={() => bringToFront(project.id)}
+                onOpenDetail={onOpenProjectEdit ? () => onOpenProjectEdit(project.id) : undefined}
               />
             ))}
           </div>
@@ -874,6 +886,7 @@ function TodoCard({
   onComplete,
   onRemove,
   onFocus,
+  onOpenDetail,
 }: {
   todo: TodoTask;
   today: string;
@@ -885,6 +898,8 @@ function TodoCard({
   onComplete: () => void;
   onRemove: () => void;
   onFocus: () => void;
+  /** 件名を押した時に、ToDoタブでこの項目の詳細を開く。未指定なら件名はただの文字のまま */
+  onOpenDetail?: () => void;
 }) {
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
@@ -911,7 +926,18 @@ function TodoCard({
           aria-label="完了"
           className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-cream/40"
         />
-        <p className="min-w-0 flex-1 text-sm text-cream">{todo.title}</p>
+        {onOpenDetail ? (
+          <button
+            onClick={onOpenDetail}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="min-w-0 flex-1 truncate text-left text-sm text-cream hover:underline"
+            title="ToDoタブでこの項目を開く"
+          >
+            {todo.title}
+          </button>
+        ) : (
+          <p className="min-w-0 flex-1 text-sm text-cream">{todo.title}</p>
+        )}
       </div>
       {(todo.dueDate || subtaskStat) && (
         <div className="flex flex-wrap items-center gap-x-1.5 text-[10px]">
@@ -946,6 +972,7 @@ function ProjectCard({
   onToggleStage,
   onRemove,
   onFocus,
+  onOpenDetail,
 }: {
   project: ProjectItem;
   today: string;
@@ -955,6 +982,8 @@ function ProjectCard({
   onToggleStage: (stageId: string) => void;
   onRemove: () => void;
   onFocus: () => void;
+  /** 件名を押した時に、案件タブでこの案件の編集を開く。未指定なら件名はただの文字のまま */
+  onOpenDetail?: () => void;
 }) {
   const x = project.boardX ?? 40;
   const y = project.boardY ?? 40;
@@ -985,9 +1014,20 @@ function ProjectCard({
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（案件自体は消えません）" />
       <div className="flex items-baseline gap-1">
         <span className="shrink-0 text-[9px] uppercase tracking-wider text-cream/35">案件</span>
-        <p className="min-w-0 flex-1 truncate text-sm font-bold text-cream" title={project.title}>
-          {project.title}
-        </p>
+        {onOpenDetail ? (
+          <button
+            onClick={onOpenDetail}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="min-w-0 flex-1 truncate text-left text-sm font-bold text-cream hover:underline"
+            title="案件タブでこの案件を開く"
+          >
+            {project.title}
+          </button>
+        ) : (
+          <p className="min-w-0 flex-1 truncate text-sm font-bold text-cream" title={project.title}>
+            {project.title}
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-1 text-[10px]">
         <span className={overdue ? "font-bold text-alert" : "text-cream/40"}>

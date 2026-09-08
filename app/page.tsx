@@ -220,7 +220,19 @@ export default function HomePage() {
       {active === "today" && mode === "zen" && <ZenSection />}
       {active === "today" && mode === "terminal" && <TerminalDashboardSection />}
       {active === "today" && mode === "adventurer" && <AdventurerQuestSection />}
-      {active === "today" && mode === "hub" && <UnifiedBoardSection onOpenTodo={() => setActive("todo")} />}
+      {active === "today" && mode === "hub" && (
+        <UnifiedBoardSection
+          onOpenTodo={() => setActive("todo")}
+          onOpenTodoDetail={(taskId) => {
+            setPendingTodoDetailId(taskId);
+            setActive("todo");
+          }}
+          onOpenProjectEdit={(projectId) => {
+            setPendingProjectEditId(projectId);
+            setActive("projects");
+          }}
+        />
+      )}
       {active === "today" && mode === "powerpro" && <PowerproTrainingSection />}
       {active === "today" && mode === "mountain" && <MountainSection />}
       {active === "today" && mode === "hayarigami" && <HayarigamiSection />}
@@ -284,7 +296,19 @@ export default function HomePage() {
         />
       )}
       {active === "memo" && <MemoSection />}
-      {active === "board" && <UnifiedBoardSection onOpenTodo={() => setActive("todo")} />}
+      {active === "board" && (
+        <UnifiedBoardSection
+          onOpenTodo={() => setActive("todo")}
+          onOpenTodoDetail={(taskId) => {
+            setPendingTodoDetailId(taskId);
+            setActive("todo");
+          }}
+          onOpenProjectEdit={(projectId) => {
+            setPendingProjectEditId(projectId);
+            setActive("projects");
+          }}
+        />
+      )}
       {active === "report" && mode === "claude" && <ClaudeReportSection />}
       {active === "report" && mode !== "claude" && (
         <ReportSection
