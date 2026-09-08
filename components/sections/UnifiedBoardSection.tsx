@@ -75,7 +75,7 @@ export default function UnifiedBoardSection({
   onOpenProjectEdit,
 }: {
   onOpenTodo?: () => void;
-  /** ToDoカードの件名を押した時に、ToDoタブへ切り替えつつその項目の詳細を開く */
+  /** ToDoカードの件名を押した時に、ToDoタブへ切り替えつつその項目に絞り込んだ一覧を見せる */
   onOpenTodoDetail?: (taskId: string) => void;
   /** 案件カードの件名を押した時に、案件タブへ切り替えつつその案件の編集を開く */
   onOpenProjectEdit?: (projectId: string) => void;
@@ -375,10 +375,14 @@ export default function UnifiedBoardSection({
   async function placeTodo(todo: TodoTask) {
     const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, TODO_CARD_HEIGHT);
     await db.todoTasks.update(todo.id, { boardX: pos.x, boardY: pos.y });
+    // 置いた直後は最前面にする。他のカードが既に手前へ来ていると、
+    // 置いたばかりのカードがその下に隠れて見えなくなっていたため
+    bringToFront(todo.id);
   }
   async function placeProject(project: ProjectItem) {
     const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, PROJECT_CARD_HEIGHT);
     await db.projects.update(project.id, { boardX: pos.x, boardY: pos.y });
+    bringToFront(project.id);
   }
   // ToDoを下げるときはマイデイからも外す。そうしないと、マイデイのものは
   // 自動配置がすぐ置き直してしまい、下げたつもりが戻ってくる

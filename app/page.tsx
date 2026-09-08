@@ -92,6 +92,10 @@ export default function HomePage() {
   // 本日タブに表示された案件バッジの「編集」から、案件タブへ切り替えつつ該当案件の
   // 編集ダイアログを開いた状態にするための橋渡し。上と同じ仕組み
   const [pendingProjectEditId, setPendingProjectEditId] = useState<string | null>(null);
+  // 統合ボードに置いたToDoカードの件名から、ToDoタブへ切り替えつつ検索欄でその項目に
+  // 絞り込んだ状態にするための橋渡し。詳細ダイアログは開かず一覧の中で見せたいという
+  // 要望のため、上のpendingTodoDetailIdとは別に持つ
+  const [pendingTodoFilterId, setPendingTodoFilterId] = useState<string | null>(null);
   const { mode, wordingMode } = useVisualMode();
   // 起動直後は本文をCSSで伏せてある(html[data-booting])。最初に描画されるHTMLは
   // 必ずOFFモードの姿になるため、そのまま見せると一瞬だけ違うモードの画面が映る。
@@ -224,7 +228,7 @@ export default function HomePage() {
         <UnifiedBoardSection
           onOpenTodo={() => setActive("todo")}
           onOpenTodoDetail={(taskId) => {
-            setPendingTodoDetailId(taskId);
+            setPendingTodoFilterId(taskId);
             setActive("todo");
           }}
           onOpenProjectEdit={(projectId) => {
@@ -267,6 +271,8 @@ export default function HomePage() {
         <TodoSection
           initialDetailTaskId={pendingTodoDetailId}
           onInitialDetailConsumed={() => setPendingTodoDetailId(null)}
+          initialFilterTaskId={pendingTodoFilterId}
+          onInitialFilterConsumed={() => setPendingTodoFilterId(null)}
         />
       )}
       {active === "projects" && (
@@ -300,7 +306,7 @@ export default function HomePage() {
         <UnifiedBoardSection
           onOpenTodo={() => setActive("todo")}
           onOpenTodoDetail={(taskId) => {
-            setPendingTodoDetailId(taskId);
+            setPendingTodoFilterId(taskId);
             setActive("todo");
           }}
           onOpenProjectEdit={(projectId) => {

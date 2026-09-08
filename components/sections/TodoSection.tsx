@@ -163,11 +163,17 @@ function normalizeUrl(url: string): string {
 export default function TodoSection({
   initialDetailTaskId,
   onInitialDetailConsumed,
+  initialFilterTaskId,
+  onInitialFilterConsumed,
 }: {
   // 他タブ(期日リマインダーポップアップ等)から「このタスクの詳細を開いた状態でToDoタブを表示したい」
   // という要求を受け取るための初期値。consumeされたら親側でnullに戻してもらう
   initialDetailTaskId?: string | null;
   onInitialDetailConsumed?: () => void;
+  // ハブモードのボードから「このタスクだけに絞り込んだ状態でToDoタブを見たい」という
+  // 要求を受け取るための初期値。詳細ダイアログは開かず、検索欄にタイトルを入れて一覧の中で見せる
+  initialFilterTaskId?: string | null;
+  onInitialFilterConsumed?: () => void;
 } = {}) {
   const [view, setView] = useState<ViewKey>("myday");
   const [showCsvToolsStr] = useSetting("csvTools.todo", "true");
@@ -343,6 +349,22 @@ export default function TodoSection({
     onInitialDetailConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDetailTaskId]);
+
+  // ハブモードのボードから遷移してきた場合、詳細ダイアログではなく検索欄に件名を
+  // 入れて絞り込んだ状態で一覧に見せる(ビューは問わず全リスト横断で探せる検索の
+  // 仕組みをそのまま使う)。allTasksの読み込みを待ってから消費する
+  useEffect(() => {
+    if (!initialFilterTaskId || allTasks === undefined) return;
+    const target = allTasks.find((t) => t.id === initialFilterTaskId);
+    setFilterTag("");
+    setFilterTagsMulti([]);
+    setFilterCategory("");
+    setFilterCustomer("");
+    setSearchQuery(target ? target.title : "");
+    setFiltersOpen(true);
+    onInitialFilterConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFilterTaskId, allTasks]);
 
   useEffect(() => {
     if (view.startsWith("list:") && lists && lists.length > 0) {
