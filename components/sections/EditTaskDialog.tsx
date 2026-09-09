@@ -52,16 +52,32 @@ export default function EditTaskDialog({
   // 一時停止区間と矛盾する時刻に化けてしまうのを防ぐ）
   const [startTouched, setStartTouched] = useState(false);
   const [endTouched, setEndTouched] = useState(false);
+  // 「前の作業の終了時刻を使う」ボタンを押した際は、入力欄の表示用文字列(HH:MMまでしか
+  // 持てず秒が丸まる)とは別に、前の作業の終了時刻を秒まで正確なepoch値のまま覚えておく。
+  // 入力欄をその後さらに手で触った場合はこの値を捨て、通常どおり入力欄の値(分単位)を使う
+  const [preciseStart, setPreciseStart] = useState<number | null>(null);
   const [note, setNote] = useState(task.note ?? "");
   const [showMasterPicker, setShowMasterPicker] = useState(false);
   const [troubleDetailOptionsJson] = useSetting("trouble.detailOptions", JSON.stringify(DEFAULT_TROUBLE_DETAIL_OPTIONS));
   const troubleDetailOptions = useMemo(() => parsePresetList(troubleDetailOptionsJson), [troubleDetailOptionsJson]);
 
+  function useStartTime(hm: string) {
+    setStartTime(hm);
+    setStartTouched(true);
+    setPreciseStart(null);
+  }
+  function usePreviousEndAsStart(endedAt: number) {
+    setStartTime(formatClock(endedAt));
+    setStartTouched(true);
+    setPreciseStart(endedAt);
+  }
+
   // 開始・終了それぞれ、編集していなければ元の値(秒まで正確)、編集していれば
   // 入力欄のHH:MMをこの作業の日付にあてはめた値を使う。開始が終了以降になって
   // しまう場合は、日をまたいで前日から始まっていたとみなし開始日を1日前にずらす
-  // （例: 前日20:40〜日付が変わった後の0:12、といった作業を登録できるようにするため）
-  const rawStart = startTouched ? toEpoch(task.date, startTime) : originalStart;
+  // （例: 前日20:40〜日付が変わった後の0:12、といった作業を登録できるようにするため）。
+  // ただし「前の作業の終了時刻を使う」で入れた場合は、丸めずpreciseStartをそのまま使う
+  const rawStart = startTouched ? (preciseStart ?? toEpoch(task.date, startTime)) : originalStart;
   const rawEnd = endTouched ? toEpoch(task.date, endTime) : originalEnd;
   const crossesMidnight = rawStart >= rawEnd;
   const resolvedStart = crossesMidnight ? rawStart - DAY_MS : rawStart;
@@ -145,10 +161,7 @@ export default function EditTaskDialog({
               <input
                 type="time"
                 value={startTime}
-                onChange={(e) => {
-                  setStartTime(e.target.value);
-                  setStartTouched(true);
-                }}
+                onChange={(e) => useStartTime(e.target.value)}
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
               {previousTaskEndedAt != null && (
@@ -156,10 +169,7 @@ export default function EditTaskDialog({
                   type="button"
                   className="btn-pill-outline text-xs"
                   title="直前に完了した作業の終了時刻を開始時刻として使います"
-                  onClick={() => {
-                    setStartTime(formatClock(previousTaskEndedAt));
-                    setStartTouched(true);
-                  }}
+                  onClick={() => usePreviousEndAsStart(previousTaskEndedAt)}
                 >
                   前の作業の終了({formatClock(previousTaskEndedAt)})を使う
                 </button>
@@ -214,10 +224,7 @@ export default function EditTaskDialog({
               <input
                 type="time"
                 value={startTime}
-                onChange={(e) => {
-                  setStartTime(e.target.value);
-                  setStartTouched(true);
-                }}
+                onChange={(e) => useStartTime(e.target.value)}
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
               {previousTaskEndedAt != null && (
@@ -225,10 +232,7 @@ export default function EditTaskDialog({
                   type="button"
                   className="btn-pill-outline text-xs"
                   title="直前に完了した作業の終了時刻を開始時刻として使います"
-                  onClick={() => {
-                    setStartTime(formatClock(previousTaskEndedAt));
-                    setStartTouched(true);
-                  }}
+                  onClick={() => usePreviousEndAsStart(previousTaskEndedAt)}
                 >
                   前の作業の終了({formatClock(previousTaskEndedAt)})を使う
                 </button>
