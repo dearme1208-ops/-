@@ -11,14 +11,17 @@ import { showUndoToast } from "@/lib/toast";
 import {
   clampMemoZoom,
   DEFAULT_MEMO_NOTE_COLOR,
+  DEFAULT_MEMO_NOTE_TEXT_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
   DEFAULT_MEMO_PEN_WIDTH,
+  estimateChecklistNoteHeight,
   estimateTextNoteHeight,
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
   MEMO_NOTE_COLORS,
   MEMO_NOTE_MIN_HEIGHT,
   MEMO_NOTE_MIN_WIDTH,
+  MEMO_NOTE_TEXT_COLORS,
   MEMO_PEN_COLORS,
   memoNoteZIndex,
   parseMemoBoardImport,
@@ -434,6 +437,22 @@ export default function MemoSection() {
   }
   async function setNoteColor(id: string, color: string) {
     await db.memoNotes.update(id, { color });
+  }
+  async function setNoteTextColor(id: string, textColor: string) {
+    await db.memoNotes.update(id, { textColor });
+  }
+  // 自動サイズON/OFFの切り替え。ONにした瞬間、今の中身に合わせた高さへ揃えておく
+  // (以降は文字量/項目数が変わるたびにStickyNoteCard側のuseEffectが追従させる)
+  async function toggleAutoSize(note: MemoNote) {
+    const autoSize = !note.autoSize;
+    if (!autoSize) {
+      await db.memoNotes.update(note.id, { autoSize });
+      return;
+    }
+    const height = note.isChecklist
+      ? estimateChecklistNoteHeight((note.checklistItems ?? []).length)
+      : estimateTextNoteHeight(note.text);
+    await db.memoNotes.update(note.id, { autoSize, height });
   }
   async function duplicateNote(note: MemoNote) {
     if (!confirm("この付箋を複製しますか?")) return;
@@ -941,6 +960,8 @@ export default function MemoSection() {
                   onCommitText={commitNoteText}
                   onDelete={deleteNote}
                   onColorChange={setNoteColor}
+                  onTextColorChange={setNoteTextColor}
+                  onToggleAutoSize={() => toggleAutoSize(note)}
                   onFocusNote={() => bringToFront(note.id)}
                   onSelectConnect={() => selectNoteForConnect(note.id)}
                   onConvertTodo={() => convertNoteToTodo(note)}
@@ -1051,6 +1072,8 @@ function StickyNoteCard({
   onCommitText,
   onDelete,
   onColorChange,
+  onTextColorChange,
+  onToggleAutoSize,
   onTogglePin,
   onFocusNote,
   onSelectConnect,
@@ -1072,6 +1095,8 @@ function StickyNoteCard({
   onCommitText: (id: string, text: string) => void;
   onDelete: (id: string) => void;
   onColorChange: (id: string, color: string) => void;
+  onTextColorChange: (id: string, color: string) => void;
+  onToggleAutoSize: () => void;
   onTogglePin: () => void;
   onFocusNote: () => void;
   onSelectConnect: () => void;
@@ -1092,6 +1117,19 @@ function StickyNoteCard({
       setText(note.text);
     }
   }, [note.id, note.text]);
+
+  // 自動サイズON中は、文字量(チェックリストなら項目数)が変わるたびに高さを
+  // 実際の中身に合わせて増減させる。OFF中は従来通り(手動リサイズ+はみ出し時だけ自動拡大)のまま
+  useEffect(() => {
+    if (!note.autoSize) return;
+    const target = note.isChecklist
+      ? estimateChecklistNoteHeight((note.checklistItems ?? []).length)
+      : estimateTextNoteHeight(text);
+    if (Math.abs(target - note.height) > 1) {
+      onResizeEnd(note.id, note.width, target);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.autoSize, note.isChecklist, note.checklistItems, text, note.width]);
 
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -1280,6 +1318,36 @@ function StickyNoteCard({
           </button>
         </div>
       </div>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 px-1.5 pb-1">
+        <div className="flex items-center gap-1">
+          <span className="text-[9px] leading-none text-black/40">文字色</span>
+          {Object.keys(MEMO_NOTE_TEXT_COLORS).map((c) => (
+            <button
+              key={c}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTextColorChange(note.id, c);
+              }}
+              className={`h-3 w-3 shrink-0 rounded-full border ${
+                (note.textColor ?? DEFAULT_MEMO_NOTE_TEXT_COLOR) === c ? "border-black/60" : "border-black/20"
+              }`}
+              style={{ backgroundColor: MEMO_NOTE_TEXT_COLORS[c] }}
+              aria-label={`文字色を${c}にする`}
+            />
+          ))}
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleAutoSize();
+          }}
+          className={`text-[10px] leading-none ${note.autoSize ? "font-bold opacity-100" : "opacity-50 hover:opacity-80"}`}
+          title={note.autoSize ? "自動サイズ調整をやめて手動リサイズに戻す" : "文字量(項目数)に応じて高さを自動で合わせる"}
+          aria-pressed={!!note.autoSize}
+        >
+          ↕ 自動サイズ
+        </button>
+      </div>
       {note.isChecklist ? (
         <ChecklistBody
           items={note.checklistItems ?? []}
@@ -1292,9 +1360,10 @@ function StickyNoteCard({
           value={text}
           onChange={(e) => {
             setText(e.target.value);
-            // 入力中の文章がこの付箋の高さに収まらなくなったら、はみ出した分だけ
-            // 自動で高さを広げる(手動で縮めたサイズより小さくはしない。縮めたい場合は
-            // 右下のハンドルで手動リサイズする)
+            // 自動サイズON中は上のuseEffectが高さを合わせるので、ここでは何もしない。
+            // OFF中は従来通り、入力中の文章がはみ出した分だけ自動で高さを広げる
+            // (手動で縮めたサイズより小さくはしない。縮めたい場合は右下のハンドルで手動リサイズする)
+            if (note.autoSize) return;
             const ta = e.target;
             const overflow = ta.scrollHeight - ta.clientHeight;
             if (overflow > 2) {
@@ -1306,7 +1375,8 @@ function StickyNoteCard({
           onBlur={() => onCommitText(note.id, text)}
           placeholder="メモ..."
           readOnly={connectMode}
-          className="min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm text-black/80 outline-none"
+          style={{ color: MEMO_NOTE_TEXT_COLORS[note.textColor ?? DEFAULT_MEMO_NOTE_TEXT_COLOR] }}
+          className="min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none"
         />
       )}
       {note.mailFileDataUrl && (
@@ -1321,7 +1391,7 @@ function StickyNoteCard({
           📧 元のメールを開く
         </a>
       )}
-      {!penMode && !connectMode && (
+      {!penMode && !connectMode && !note.autoSize && (
         <div
           className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
           style={{ touchAction: "none" }}

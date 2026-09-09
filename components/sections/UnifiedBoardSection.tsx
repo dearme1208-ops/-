@@ -17,11 +17,15 @@ import {
   DEFAULT_BOARD_BACKGROUND,
   DEFAULT_BOARD_SHAPE_OPACITY,
   DEFAULT_MEMO_NOTE_COLOR,
+  DEFAULT_MEMO_NOTE_TEXT_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
   DEFAULT_MEMO_PEN_WIDTH,
+  estimateChecklistNoteHeight,
+  estimateTextNoteHeight,
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
   MEMO_NOTE_COLORS,
+  MEMO_NOTE_TEXT_COLORS,
   MEMO_PEN_COLORS,
   memoNoteZIndex,
   type BoardBackgroundKind,
@@ -280,14 +284,26 @@ export default function UnifiedBoardSection({
   async function growNote(id: string, height: number) {
     await db.memoNotes.update(id, { height, updatedAt: Date.now() });
   }
-  // 最前面固定。メモタブと同じ付箋を見ているので、どちらで固定してもどちらにも効く
-  async function togglePin(note: MemoNote) {
-    await db.memoNotes.update(note.id, { pinned: !note.pinned });
-    if (!note.pinned) bringToFront(note.id);
-  }
   async function commitNoteText(note: MemoNote, text: string) {
     if (text === note.text) return;
     await db.memoNotes.update(note.id, { text, updatedAt: Date.now() });
+  }
+  async function setNoteColor(id: string, color: string) {
+    await db.memoNotes.update(id, { color });
+  }
+  async function setNoteTextColor(id: string, textColor: string) {
+    await db.memoNotes.update(id, { textColor });
+  }
+  async function toggleNoteAutoSize(note: MemoNote) {
+    const autoSize = !note.autoSize;
+    if (!autoSize) {
+      await db.memoNotes.update(note.id, { autoSize });
+      return;
+    }
+    const height = note.isChecklist
+      ? estimateChecklistNoteHeight((note.checklistItems ?? []).length)
+      : estimateTextNoteHeight(note.text);
+    await db.memoNotes.update(note.id, { autoSize, height });
   }
 
   async function moveTask(id: string, x: number, y: number) {
@@ -552,6 +568,17 @@ export default function UnifiedBoardSection({
     else if (kind === "project") await db.projects.update(id, { boardLocked });
     else if (kind === "note") await db.memoNotes.update(id, { boardLocked });
     else await db.boardShapes.update(id, { boardLocked });
+  }
+  // 最前面固定。付箋はメモタブと共有しているpinnedフィールド、それ以外(本日の作業・
+  // ToDo・案件・図形)はこのボード専用のboardPinnedフィールドを使う
+  async function toggleBoardPin(kind: BoardItemKind, id: string, currentlyPinned: boolean) {
+    const pin = !currentlyPinned;
+    if (kind === "note") await db.memoNotes.update(id, { pinned: pin });
+    else if (kind === "task") await db.dailyTasks.update(id, { boardPinned: pin });
+    else if (kind === "todo") await db.todoTasks.update(id, { boardPinned: pin });
+    else if (kind === "project") await db.projects.update(id, { boardPinned: pin });
+    else await db.boardShapes.update(id, { boardPinned: pin });
+    if (pin) bringToFront(id);
   }
   // 複数選択している状態で、そのうちの1枚をドラッグしたら他の選択中アイテムも
   // 同じ分だけまとめて動かす。ドラッグ中に追従はさせず(各カードは独立した状態を
@@ -1040,7 +1067,7 @@ export default function UnifiedBoardSection({
                 key={shape.id}
                 shape={shape}
                 zoom={zoom}
-                zIndex={zIndexById[shape.id] ?? 1}
+                zIndex={memoNoteZIndex(shape.boardPinned, zIndexById[shape.id] ?? 1)}
                 selected={selectedIds.has(shape.id)}
                 matched={matchingIds?.has(shape.id) ?? false}
                 dimmed={boardSearchActive && !(matchingIds?.has(shape.id) ?? false)}
@@ -1052,6 +1079,7 @@ export default function UnifiedBoardSection({
                 onLabelChange={(label) => setShapeLabel(shape.id, label)}
                 onRotate={() => rotateShape(shape)}
                 onToggleLock={() => toggleBoardLock("shape", shape.id, !!shape.boardLocked)}
+                onTogglePin={() => toggleBoardPin("shape", shape.id, !!shape.boardPinned)}
                 onFocus={() => bringToFront(shape.id)}
               />
             ))}
@@ -1068,7 +1096,10 @@ export default function UnifiedBoardSection({
                 onDragEnd={(id, x, y) => handleItemDragEnd("note", id, x, y)}
                 onCommitText={commitNoteText}
                 onGrow={growNote}
-                onTogglePin={() => togglePin(note)}
+                onColorChange={setNoteColor}
+                onTextColorChange={setNoteTextColor}
+                onToggleAutoSize={() => toggleNoteAutoSize(note)}
+                onTogglePin={() => toggleBoardPin("note", note.id, !!note.pinned)}
                 onToggleLock={() => toggleBoardLock("note", note.id, !!note.boardLocked)}
                 onFocus={() => bringToFront(note.id)}
               />
@@ -1079,7 +1110,7 @@ export default function UnifiedBoardSection({
                 task={task}
                 now={now}
                 zoom={zoom}
-                zIndex={zIndexById[task.id] ?? 1}
+                zIndex={memoNoteZIndex(task.boardPinned, zIndexById[task.id] ?? 1)}
                 selected={selectedIds.has(task.id)}
                 matched={matchingIds?.has(task.id) ?? false}
                 dimmed={boardSearchActive && !(matchingIds?.has(task.id) ?? false)}
@@ -1089,6 +1120,7 @@ export default function UnifiedBoardSection({
                 onPause={() => pauseTask(task)}
                 onComplete={() => completeTask(task)}
                 onToggleLock={() => toggleBoardLock("task", task.id, !!task.boardLocked)}
+                onTogglePin={() => toggleBoardPin("task", task.id, !!task.boardPinned)}
                 onFocus={() => bringToFront(task.id)}
               />
             ))}
@@ -1099,7 +1131,7 @@ export default function UnifiedBoardSection({
                 today={today}
                 subtaskStat={subtaskStats.get(todo.id) ?? null}
                 zoom={zoom}
-                zIndex={zIndexById[todo.id] ?? 1}
+                zIndex={memoNoteZIndex(todo.boardPinned, zIndexById[todo.id] ?? 1)}
                 selected={selectedIds.has(todo.id)}
                 matched={matchingIds?.has(todo.id) ?? false}
                 dimmed={boardSearchActive && !(matchingIds?.has(todo.id) ?? false)}
@@ -1108,6 +1140,7 @@ export default function UnifiedBoardSection({
                 onComplete={() => completeTodo(todo)}
                 onRemove={() => removeTodo(todo)}
                 onToggleLock={() => toggleBoardLock("todo", todo.id, !!todo.boardLocked)}
+                onTogglePin={() => toggleBoardPin("todo", todo.id, !!todo.boardPinned)}
                 onFocus={() => bringToFront(todo.id)}
                 onOpenDetail={onOpenTodoDetail ? () => onOpenTodoDetail(todo.id) : undefined}
               />
@@ -1118,7 +1151,7 @@ export default function UnifiedBoardSection({
                 project={project}
                 today={today}
                 zoom={zoom}
-                zIndex={zIndexById[project.id] ?? 1}
+                zIndex={memoNoteZIndex(project.boardPinned, zIndexById[project.id] ?? 1)}
                 selected={selectedIds.has(project.id)}
                 matched={matchingIds?.has(project.id) ?? false}
                 dimmed={boardSearchActive && !(matchingIds?.has(project.id) ?? false)}
@@ -1127,6 +1160,7 @@ export default function UnifiedBoardSection({
                 onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
                 onRemove={() => removeProject(project)}
                 onToggleLock={() => toggleBoardLock("project", project.id, !!project.boardLocked)}
+                onTogglePin={() => toggleBoardPin("project", project.id, !!project.boardPinned)}
                 onFocus={() => bringToFront(project.id)}
                 onOpenDetail={onOpenProjectEdit ? () => onOpenProjectEdit(project.id) : undefined}
               />
@@ -1326,6 +1360,7 @@ function ShapeElement({
   onLabelChange,
   onRotate,
   onToggleLock,
+  onTogglePin,
   onFocus,
 }: {
   shape: BoardShape;
@@ -1342,9 +1377,11 @@ function ShapeElement({
   onLabelChange: (label: string) => void;
   onRotate: () => void;
   onToggleLock: () => void;
+  onTogglePin: () => void;
   onFocus: () => void;
 }) {
   const locked = !!shape.boardLocked;
+  const pinned = !!shape.boardPinned;
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     shape.x,
     shape.y,
@@ -1489,6 +1526,14 @@ function ShapeElement({
         >
           {locked ? "🔒" : "🔓"}
         </button>
+        <button
+          onClick={onTogglePin}
+          className={`text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/60 hover:text-cream"}`}
+          title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
+          aria-pressed={pinned}
+        >
+          📌
+        </button>
         <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="図形を削除">
           ✕
         </button>
@@ -1509,6 +1554,9 @@ function NoteCard({
   onCommitText,
   onFocus,
   onGrow,
+  onColorChange,
+  onTextColorChange,
+  onToggleAutoSize,
   onTogglePin,
   onToggleLock,
 }: {
@@ -1523,6 +1571,9 @@ function NoteCard({
   onCommitText: (note: MemoNote, text: string) => void;
   onFocus: () => void;
   onGrow: (id: string, height: number) => void;
+  onColorChange: (id: string, color: string) => void;
+  onTextColorChange: (id: string, color: string) => void;
+  onToggleAutoSize: () => void;
   onTogglePin: () => void;
   onToggleLock: () => void;
 }) {
@@ -1535,6 +1586,18 @@ function NoteCard({
       setText(note.text);
     }
   }, [note.id, note.text]);
+  // 自動サイズON中は、文字量(チェックリストなら項目数)が変わるたびに高さを
+  // 実際の中身に合わせて増減させる。OFF中は従来通り(はみ出した時だけ自動拡大)のまま
+  useEffect(() => {
+    if (!note.autoSize) return;
+    const target = note.isChecklist
+      ? estimateChecklistNoteHeight((note.checklistItems ?? []).length)
+      : estimateTextNoteHeight(text);
+    if (Math.abs(target - note.height) > 1) {
+      onGrow(note.id, target);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.autoSize, note.isChecklist, note.checklistItems, text]);
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     note.x,
     note.y,
@@ -1591,11 +1654,56 @@ function NoteCard({
       >
         📌
       </button>
+      <div className="flex shrink-0 flex-wrap items-center gap-1 px-1.5 pb-1 pt-1">
+        {Object.keys(MEMO_NOTE_COLORS).map((c) => (
+          <button
+            key={c}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onColorChange(note.id, c);
+            }}
+            className={`h-3 w-3 shrink-0 rounded-full border ${note.color === c ? "border-ink" : "border-ink/20"}`}
+            style={{ backgroundColor: MEMO_NOTE_COLORS[c].bg }}
+            aria-label={`付箋の色を${c}にする`}
+          />
+        ))}
+        <span className="mx-0.5 h-3 w-px bg-ink/20" />
+        {Object.keys(MEMO_NOTE_TEXT_COLORS).map((c) => (
+          <button
+            key={c}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTextColorChange(note.id, c);
+            }}
+            className={`h-3 w-3 shrink-0 rounded-full border ${
+              (note.textColor ?? DEFAULT_MEMO_NOTE_TEXT_COLOR) === c ? "border-ink" : "border-ink/20"
+            }`}
+            style={{ backgroundColor: MEMO_NOTE_TEXT_COLORS[c] }}
+            aria-label={`文字色を${c}にする`}
+          />
+        ))}
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleAutoSize();
+          }}
+          className={`ml-auto text-[9px] leading-none ${note.autoSize ? "font-bold text-ink" : "text-ink/40 hover:text-ink/70"}`}
+          title={note.autoSize ? "自動サイズ調整をやめる(手動で高さを調整できるようにする)" : "文字量に応じて高さを自動で合わせる"}
+          aria-pressed={!!note.autoSize}
+        >
+          ↕自動
+        </button>
+      </div>
       <textarea
         value={text}
         onChange={(e) => {
           setText(e.target.value);
-          // 入力中の文章がこの付箋の高さに収まらなくなったら、はみ出した分だけ自動で広げる
+          // 自動サイズON中は上のuseEffectが高さを合わせるので、ここでは何もしない。
+          // OFF中は従来通り、入力中の文章がはみ出した分だけ自動で高さを広げる
+          if (note.autoSize) return;
           const ta = e.target;
           const overflow = ta.scrollHeight - ta.clientHeight;
           if (overflow > 2) {
@@ -1603,7 +1711,8 @@ function NoteCard({
           }
         }}
         onBlur={() => onCommitText(note, text)}
-        className="min-h-0 flex-1 resize-none bg-transparent px-2 pb-2 text-sm text-ink outline-none"
+        style={{ color: MEMO_NOTE_TEXT_COLORS[note.textColor ?? DEFAULT_MEMO_NOTE_TEXT_COLOR] }}
+        className="min-h-0 flex-1 resize-none bg-transparent px-2 pb-2 text-sm outline-none"
         placeholder="付箋のメモ..."
       />
       {note.mailFileDataUrl && (
@@ -1636,6 +1745,7 @@ function TaskCard({
   onPause,
   onComplete,
   onToggleLock,
+  onTogglePin,
   onFocus,
 }: {
   task: DailyTask;
@@ -1651,9 +1761,11 @@ function TaskCard({
   onPause: () => void;
   onComplete: () => void;
   onToggleLock: () => void;
+  onTogglePin: () => void;
   onFocus: () => void;
 }) {
   const locked = !!task.boardLocked;
+  const pinned = !!task.boardPinned;
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
   const x = task.boardX ?? 40;
@@ -1701,6 +1813,18 @@ function TaskCard({
         >
           {locked ? "🔒" : "🔓"}
         </button>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin();
+          }}
+          className={`text-[11px] leading-none ${pinned ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
+          title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
+          aria-pressed={pinned}
+        >
+          📌
+        </button>
       </div>
       <p className="min-w-0 flex-1 truncate text-sm text-cream" title={`${task.category} / ${task.name}`}>
         <span className="text-cream/50">{task.category}</span> {task.name}
@@ -1737,6 +1861,7 @@ function TodoCard({
   onComplete,
   onRemove,
   onToggleLock,
+  onTogglePin,
   onFocus,
   onOpenDetail,
 }: {
@@ -1754,11 +1879,13 @@ function TodoCard({
   onComplete: () => void;
   onRemove: () => void;
   onToggleLock: () => void;
+  onTogglePin: () => void;
   onFocus: () => void;
   /** 件名を押した時に、ToDoタブでこの項目の詳細を開く。未指定なら件名はただの文字のまま */
   onOpenDetail?: () => void;
 }) {
   const locked = !!todo.boardLocked;
+  const pinned = !!todo.boardPinned;
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
   const x = todo.boardX ?? 40;
@@ -1795,10 +1922,22 @@ function TodoCard({
           e.stopPropagation();
           onToggleLock();
         }}
-        className={`absolute right-6 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        className={`absolute right-11 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
         title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
       >
         {locked ? "🔒" : "🔓"}
+      </button>
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onTogglePin();
+        }}
+        className={`absolute right-6 top-0.5 text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
+        aria-pressed={pinned}
+      >
+        📌
       </button>
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（マイデイからも外れます。ToDo自体は消えません）" />
       <div className="flex flex-1 items-start gap-2">
@@ -1860,6 +1999,7 @@ function ProjectCard({
   onToggleStage,
   onRemove,
   onToggleLock,
+  onTogglePin,
   onFocus,
   onOpenDetail,
 }: {
@@ -1875,11 +2015,13 @@ function ProjectCard({
   onToggleStage: (stageId: string) => void;
   onRemove: () => void;
   onToggleLock: () => void;
+  onTogglePin: () => void;
   onFocus: () => void;
   /** 件名を押した時に、案件タブでこの案件の編集を開く。未指定なら件名はただの文字のまま */
   onOpenDetail?: () => void;
 }) {
   const locked = !!project.boardLocked;
+  const pinned = !!project.boardPinned;
   const x = project.boardX ?? 40;
   const y = project.boardY ?? 40;
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
@@ -1914,10 +2056,22 @@ function ProjectCard({
           e.stopPropagation();
           onToggleLock();
         }}
-        className={`absolute right-6 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        className={`absolute right-11 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
         title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
       >
         {locked ? "🔒" : "🔓"}
+      </button>
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onTogglePin();
+        }}
+        className={`absolute right-6 top-0.5 text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
+        aria-pressed={pinned}
+      >
+        📌
       </button>
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（案件自体は消えません）" />
       <div className="flex items-baseline gap-1">

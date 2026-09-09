@@ -117,6 +117,7 @@ export interface DailyTask {
   boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。日付が変わればタスク自体が
   boardY?: number; // 入れ替わるため、位置も自然にリセットされる(付箋のようにずっと保持はしない)
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
+  boardPinned?: boolean; // trueの場合、統合ボード上で他のカードより必ず手前に表示される
 }
 
 export interface WorkRecord {
@@ -210,6 +211,7 @@ export interface ProjectItem {
   boardX?: number;
   boardY?: number;
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
+  boardPinned?: boolean; // trueの場合、統合ボード上で他のカードより必ず手前に表示される
   // ---- 経営分析フレームワーク(任意)。案件を1つの「事業」に見立てて、
   // ITパスポート試験にも出るような定番の戦略分析を書き留められるようにしたもの。
   // すべて空欄可(未入力の案件では分析タブを開いても何も表示されない) ----
@@ -288,6 +290,7 @@ export interface TodoTask {
   boardX?: number; // 統合ボード(UnifiedBoardSection)上の自由配置座標。付箋と違いこちらは
   boardY?: number; // ToDo自体が残り続ける限り保持する(マイデイから外れると自然に表示対象から外れる)
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
+  boardPinned?: boolean; // trueの場合、統合ボード上で他のカードより必ず手前に表示される
   imageDataUrl?: string; // タスク(サブタスクを含む)に添付した画像。1枚のみ、data URLとしてそのまま保存する
 }
 
@@ -327,12 +330,17 @@ export interface MemoNote {
   width: number;
   height: number;
   color: string; // MEMO_NOTE_COLORSのキー
+  textColor?: string; // MEMO_NOTE_TEXT_COLORSのキー。未設定は既定の濃い文字色
   text: string;
   order: number; // 重なった際の前後関係(ドラッグ/新規作成のたびに最前面へ)
   // 最前面に固定。ほかの付箋をいくら前に出しても、この付箋は必ずその上に出る。
   // メモタブと統合ボードで同じ付箋を共有しているので、固定もどちらにも効く
   pinned?: boolean;
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
+  // trueの場合、文字量(チェックリストなら項目数)に応じて高さを常に自動で合わせる
+  // (増減とも追従する)。falseまたは未設定なら従来通り、手動リサイズ+はみ出した分だけ
+  // 自動で広げる(縮めるのは手動のみ)動作のまま
+  autoSize?: boolean;
   createdAt: number;
   updatedAt: number;
   isChecklist?: boolean; // trueの場合、textではなくchecklistItemsを表示する
@@ -385,4 +393,5 @@ export interface BoardShape {
   order: number; // 重なり順
   createdAt: number;
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
+  boardPinned?: boolean; // trueの場合、統合ボード上で他のカードより必ず手前に表示される
 }

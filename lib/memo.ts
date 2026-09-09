@@ -11,6 +11,18 @@ export const MEMO_NOTE_COLORS: Record<string, { bg: string; border: string }> = 
 };
 export const DEFAULT_MEMO_NOTE_COLOR = "yellow";
 
+// 付箋の文字色プリセット。背景は薄いパステルで固定なので、どれを選んでも
+// 読みやすいよう十分に濃い色だけを並べている
+export const MEMO_NOTE_TEXT_COLORS: Record<string, string> = {
+  ink: "#1a1a1a",
+  red: "#b91c1c",
+  blue: "#1d4ed8",
+  green: "#15803d",
+  purple: "#7e22ce",
+  brown: "#92400e",
+};
+export const DEFAULT_MEMO_NOTE_TEXT_COLOR = "ink";
+
 // ボードの地は暗い色なので、既定は黒ではなく白にする。
 // 以前は先頭(既定)が#1a1a1aで、地の#0f0f10とほぼ同じ濃さだったため、
 // 何も設定を変えずに手書きすると線が見えなかった
