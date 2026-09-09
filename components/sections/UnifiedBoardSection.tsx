@@ -7,15 +7,19 @@ import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { formatMsClock, todayStr } from "@/lib/time";
 import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
-import { completeTodoTask } from "@/lib/todo";
+import { completeTodoTask, DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import {
   BOARD_BACKGROUND_KINDS,
   BOARD_BACKGROUND_LABELS,
   BOARD_SHAPE_DEFAULT_SIZE,
+  BOARD_STAMP_HEIGHT,
+  BOARD_STAMP_WIDTH,
+  BOARD_STAMP_Z_BASE,
   boardBackgroundCss,
   clampMemoZoom,
   DEFAULT_BOARD_BACKGROUND,
   DEFAULT_BOARD_SHAPE_OPACITY,
+  DEFAULT_BOARD_STAMP_COLOR,
   DEFAULT_MEMO_NOTE_COLOR,
   DEFAULT_MEMO_NOTE_TEXT_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
@@ -35,7 +39,7 @@ import { exportElementToPng } from "@/lib/pdfExport";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import StrokeLayer from "@/components/memo/StrokeLayer";
-import type { BoardShape, BoardShapeType, DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask } from "@/lib/types";
+import type { BoardShape, BoardShapeType, BoardStamp, DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask } from "@/lib/types";
 
 // 「メモ・ToDo・案件・本日の作業」を1つの自由配置キャンバスにまとめて表示し、
 // その場で作業の開始/一時停止/完了、ToDoの完了、案件の段階の通過までできるようにしたビュー。
@@ -131,6 +135,14 @@ export default function UnifiedBoardSection({
     () => (selectedBoardId ? db.boardShapes.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as BoardShape[])),
     [selectedBoardId]
   );
+  const stamps = useLiveQuery(
+    () => (selectedBoardId ? db.boardStamps.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as BoardStamp[])),
+    [selectedBoardId]
+  );
+  // スタンプの対応状況プリセットは、ToDoの「対応状況」設定タブでカスタマイズしている
+  // ものをそのまま流用する(スタンプ専用の設定を別途持つと二重管理になるため)
+  const [tagPresetsStr] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const stampPresets = parsePresetList(tagPresetsStr);
   // ボードの地の模様(無地/方眼紙/ドット/罫線/チェック)。データではなく見た目だけの
   // 設定なので演出テーマとは独立してユーザー設定として持つ。メモ帳(ボード)ごとに
   // 使い分けたいことがある(例: 作業用は方眼紙、日記用は罫線)ため、選択中のボードID
@@ -399,7 +411,8 @@ export default function UnifiedBoardSection({
     if (!selectedBoardId) return;
     maxNoteOrderRef.current += 1;
     const width = 180;
-    const height = 140;
+    // 自動サイズは新規付箋では既定でONにする(切り替えはいつでも可能)
+    const height = estimateTextNoteHeight("");
     const occupied: BoardRect[] = [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
       ...tasks
@@ -421,6 +434,7 @@ export default function UnifiedBoardSection({
       color: DEFAULT_MEMO_NOTE_COLOR,
       text: "",
       order: maxNoteOrderRef.current,
+      autoSize: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -598,6 +612,99 @@ export default function UnifiedBoardSection({
       }
     }
   }
+
+  // ------------------------------------------------------------
+  // スタンプ(対応状況などの一言を付箋・ToDo・案件・本日の作業・図形にくっ付ける)
+  // 位置はMemoConnectorと同じ考え方で、くっ付けている間は対象の現在位置+相対オフセット
+  // から毎回その場で計算する(固定のx/yを保存しないので、対象を動かすと自動で追従する)
+  // ------------------------------------------------------------
+  function stampTargetPosition(stamp: BoardStamp): { x: number; y: number } {
+    if (stamp.attachedToKind && stamp.attachedToId) {
+      const target = boardItems.find((it) => it.kind === stamp.attachedToKind && it.id === stamp.attachedToId);
+      if (target) return { x: target.x + (stamp.attachedDx ?? 0), y: target.y + (stamp.attachedDy ?? 0) };
+    }
+    return { x: stamp.x, y: stamp.y };
+  }
+  // ドラッグを離した位置が他のアイテムと重なっていれば、一番重なりが大きいものに
+  // くっ付ける。重ならなければくっ付けを外し、その場所を素の位置として覚える
+  function stampOverlapTarget(x: number, y: number): BoardItem | null {
+    let best: BoardItem | null = null;
+    let bestArea = 0;
+    for (const it of boardItems) {
+      const ox = Math.min(x + BOARD_STAMP_WIDTH, it.x + it.width) - Math.max(x, it.x);
+      const oy = Math.min(y + BOARD_STAMP_HEIGHT, it.y + it.height) - Math.max(y, it.y);
+      if (ox > 0 && oy > 0) {
+        const area = ox * oy;
+        if (area > bestArea) {
+          bestArea = area;
+          best = it;
+        }
+      }
+    }
+    return best;
+  }
+  const maxStampOrderRef = useRef(0);
+  useEffect(() => {
+    maxStampOrderRef.current = (stamps ?? []).reduce((m, s) => Math.max(m, s.order), 0);
+  }, [stamps]);
+  async function addStamp(text: string) {
+    if (!selectedBoardId || !text.trim()) return;
+    maxStampOrderRef.current += 1;
+    const pos = findFreeSlot(occupiedRects(), BOARD_STAMP_WIDTH, BOARD_STAMP_HEIGHT);
+    const id = uid();
+    await db.boardStamps.add({
+      id,
+      boardId: selectedBoardId,
+      text: text.trim(),
+      color: DEFAULT_BOARD_STAMP_COLOR,
+      x: pos.x,
+      y: pos.y,
+      width: BOARD_STAMP_WIDTH,
+      height: BOARD_STAMP_HEIGHT,
+      order: maxStampOrderRef.current,
+      createdAt: Date.now(),
+    });
+    bringToFront(id);
+    setShowStampMenu(false);
+    setCustomStampText("");
+  }
+  async function moveStamp(id: string, x: number, y: number) {
+    const target = stampOverlapTarget(x, y);
+    if (target) {
+      await db.boardStamps.update(id, {
+        attachedToKind: target.kind,
+        attachedToId: target.id,
+        attachedDx: x - target.x,
+        attachedDy: y - target.y,
+        x,
+        y,
+      });
+    } else {
+      await db.boardStamps.update(id, {
+        attachedToKind: undefined,
+        attachedToId: undefined,
+        attachedDx: undefined,
+        attachedDy: undefined,
+        x,
+        y,
+      });
+    }
+  }
+  async function removeStamp(id: string, skipConfirm = false) {
+    if (!skipConfirm && !confirm("このスタンプを削除します。よろしいですか?")) return;
+    await db.boardStamps.delete(id);
+  }
+  async function setStampColor(id: string, color: string) {
+    await db.boardStamps.update(id, { color });
+  }
+  async function setStampText(id: string, text: string) {
+    await db.boardStamps.update(id, { text });
+  }
+  async function toggleStampLock(id: string, currentlyLocked: boolean) {
+    await db.boardStamps.update(id, { boardLocked: !currentlyLocked });
+  }
+  const [showStampMenu, setShowStampMenu] = useState(false);
+  const [customStampText, setCustomStampText] = useState("");
 
   // ------------------------------------------------------------
   // 複数選択(クリック・Shift+クリック・ラバーバンド範囲選択)
@@ -864,6 +971,46 @@ export default function UnifiedBoardSection({
               <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("arrow")}>
                 → 矢印
               </button>
+            </div>
+          )}
+        </div>
+        <div className="relative">
+          <button
+            className={showStampMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowStampMenu((v) => !v)}
+            title="対応状況などの一言スタンプを、付箋やToDo・案件などに重ねてくっ付けられます"
+          >
+            ＋ スタンプ
+          </button>
+          {showStampMenu && (
+            <div className="absolute left-0 top-full z-10 mt-1 w-60 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
+              {stampPresets.length > 0 && (
+                <>
+                  <p className="mb-1 text-[10px] text-cream/40">対応状況から選ぶ</p>
+                  <div className="mb-2 flex flex-wrap gap-1">
+                    {stampPresets.map((preset) => (
+                      <button key={preset} className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addStamp(preset)}>
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <p className="mb-1 text-[10px] text-cream/40">自由入力</p>
+              <div className="flex gap-1">
+                <input
+                  value={customStampText}
+                  onChange={(e) => setCustomStampText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addStamp(customStampText);
+                  }}
+                  placeholder="一言を入力"
+                  className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                />
+                <button className="btn-pill-outline shrink-0 text-xs" onClick={() => addStamp(customStampText)}>
+                  追加
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1165,6 +1312,26 @@ export default function UnifiedBoardSection({
                 onOpenDetail={onOpenProjectEdit ? () => onOpenProjectEdit(project.id) : undefined}
               />
             ))}
+            {/* スタンプは付箋やカードに重ねてくっ付けるものなので、DOM上でも一番手前(最後)に描く */}
+            {(stamps ?? []).map((stamp) => {
+              const pos = stampTargetPosition(stamp);
+              return (
+                <StampElement
+                  key={stamp.id}
+                  stamp={stamp}
+                  x={pos.x}
+                  y={pos.y}
+                  zoom={zoom}
+                  zIndex={BOARD_STAMP_Z_BASE + (zIndexById[stamp.id] ?? 1)}
+                  onDragEnd={(id, dx, dy) => moveStamp(id, dx, dy)}
+                  onRemove={() => removeStamp(stamp.id)}
+                  onColorChange={(color) => setStampColor(stamp.id, color)}
+                  onTextChange={(text) => setStampText(stamp.id, text)}
+                  onToggleLock={() => toggleStampLock(stamp.id, !!stamp.boardLocked)}
+                  onFocus={() => bringToFront(stamp.id)}
+                />
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1535,6 +1702,106 @@ function ShapeElement({
           📌
         </button>
         <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="図形を削除">
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// スタンプ(対応状況などの一言)。小さな丸ラベルで、ドラッグして他のアイテムに
+// 重ねるとくっ付き(以後は対象にくっついて追従する)、何もない場所に離すと外れる。
+// 図形と違って囲み用の飾りではなく、対象そのものに添える一言なので、ピン留め(最前面
+// 固定)や向き変更・不透明度は持たない(対象が前面に来ればスタンプも自然に追従する)
+function StampElement({
+  stamp,
+  x,
+  y,
+  zoom,
+  zIndex,
+  onDragEnd,
+  onRemove,
+  onColorChange,
+  onTextChange,
+  onToggleLock,
+  onFocus,
+}: {
+  stamp: BoardStamp;
+  x: number;
+  y: number;
+  zoom: number;
+  zIndex: number;
+  onDragEnd: (id: string, x: number, y: number) => void;
+  onRemove: () => void;
+  onColorChange: (color: string) => void;
+  onTextChange: (text: string) => void;
+  onToggleLock: () => void;
+  onFocus: () => void;
+}) {
+  const locked = !!stamp.boardLocked;
+  const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
+    x,
+    y,
+    stamp.width,
+    stamp.height,
+    zoom,
+    (nx, ny) => onDragEnd(stamp.id, nx, ny),
+    locked
+  );
+  const colors = MEMO_NOTE_COLORS[stamp.color] ?? MEMO_NOTE_COLORS[DEFAULT_BOARD_STAMP_COLOR];
+
+  const [text, setText] = useState(stamp.text);
+  const idRef = useRef(stamp.id);
+  useEffect(() => {
+    if (idRef.current !== stamp.id) {
+      idRef.current = stamp.id;
+      setText(stamp.text);
+    }
+  }, [stamp.id, stamp.text]);
+
+  return (
+    <div className="absolute" style={{ left, top, width: stamp.width, height: stamp.height, zIndex }} onPointerDownCapture={onFocus}>
+      <div
+        className={
+          locked
+            ? "flex h-full w-full cursor-not-allowed items-center justify-center rounded-full border-2 px-2 shadow"
+            : "flex h-full w-full cursor-grab items-center justify-center rounded-full border-2 px-2 shadow active:cursor-grabbing"
+        }
+        style={{ borderColor: colors.border, backgroundColor: colors.bg, touchAction: "none" }}
+        title={locked ? "ロック中です(🔒で解除できます)" : "ドラッグして付箋やToDo・案件などに重ねるとくっ付きます"}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => {
+            if (text !== stamp.text) onTextChange(text);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="w-full bg-transparent text-center text-[11px] font-bold leading-none text-ink outline-none"
+        />
+      </div>
+      <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
+        {Object.entries(MEMO_NOTE_COLORS).map(([key, c]) => (
+          <button
+            key={key}
+            onClick={() => onColorChange(key)}
+            className="h-3 w-3 shrink-0 rounded-full border"
+            style={{ backgroundColor: c.border, borderColor: stamp.color === key ? "#f2f2f0" : "transparent" }}
+            aria-label={`色を${key}にする`}
+          />
+        ))}
+        <button
+          onClick={onToggleLock}
+          className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
+          title={locked ? "ロックを解除する" : "ロックする(くっ付けの解除・ドラッグを防ぐ)"}
+        >
+          {locked ? "🔒" : "🔓"}
+        </button>
+        <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="スタンプを削除">
           ✕
         </button>
       </div>

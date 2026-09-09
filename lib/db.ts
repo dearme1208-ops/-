@@ -19,6 +19,7 @@ import type {
   MemoConnector,
   Client,
   BoardShape,
+  BoardStamp,
 } from "./types";
 
 export class KouteiDB extends Dexie {
@@ -41,6 +42,7 @@ export class KouteiDB extends Dexie {
   memoConnectors!: Table<MemoConnector, string>;
   clients!: Table<Client, string>;
   boardShapes!: Table<BoardShape, string>;
+  boardStamps!: Table<BoardStamp, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -211,6 +213,28 @@ export class KouteiDB extends Dexie {
       memoConnectors: "id, boardId, fromNoteId, toNoteId",
       clients: "id, order",
       boardShapes: "id, boardId, order",
+    });
+    this.version(13).stores({
+      masterTasks: "id, category, name, isFavorite",
+      templateItems: "id, weekday, order",
+      dailyTasks: "id, date, status, order",
+      records: "id, date, category, name, masterTaskId, excludedFromStats",
+      settings: "key",
+      projects: "id, dueDate, createdAt",
+      todoLists: "id, order",
+      todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+      conditionLogs: "id, date, loggedAt",
+      geoPlaces: "id, createdAt",
+      weatherForecasts: "id, placeId, date",
+      weatherPlaces: "id, createdAt",
+      mandalaCharts: "id, createdAt",
+      memoBoards: "id, order",
+      memoNotes: "id, boardId, order",
+      memoStrokes: "id, boardId, createdAt",
+      memoConnectors: "id, boardId, fromNoteId, toNoteId",
+      clients: "id, order",
+      boardShapes: "id, boardId, order",
+      boardStamps: "id, boardId, order",
     });
   }
 }

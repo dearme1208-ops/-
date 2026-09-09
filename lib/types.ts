@@ -395,3 +395,26 @@ export interface BoardShape {
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
   boardPinned?: boolean; // trueの場合、統合ボード上で他のカードより必ず手前に表示される
 }
+
+// 対応状況(ToDoの「社内確認中」「保留」等、設定タブでカスタマイズ可能なプリセット)や
+// 自由入力の一言を、付箋やToDo・案件などにくっ付けられる小さなスタンプ。
+// くっつけた対象がある間は、位置を保存せず対象の現在位置からの相対オフセットだけを
+// 持つ(付箋を結ぶMemoConnectorと同じ考え方で、対象を動かすと自動的に追従する)
+export interface BoardStamp {
+  id: string;
+  boardId: string;
+  text: string; // 表示する文字。対応状況プリセットでも自由入力でも同じフィールド
+  color: string; // MEMO_NOTE_COLORSのキー
+  x: number; // くっつけていない場合のボード内px位置
+  y: number;
+  width: number;
+  height: number;
+  // くっつけた対象。指定されている間はattachedDx/Dyを対象の現在位置に加算して表示する
+  attachedToKind?: "note" | "task" | "todo" | "project" | "shape";
+  attachedToId?: string;
+  attachedDx?: number;
+  attachedDy?: number;
+  order: number;
+  createdAt: number;
+  boardLocked?: boolean; // trueの場合、統合ボード上でドラッグができない(くっつけ外れも防ぐ)
+}

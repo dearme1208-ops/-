@@ -8,8 +8,13 @@ import { useSetting } from "@/lib/settings";
 import { downloadTextFile } from "@/lib/report";
 import { createSpeechRecognition } from "@/lib/voice";
 import { showUndoToast } from "@/lib/toast";
+import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import {
+  BOARD_STAMP_HEIGHT,
+  BOARD_STAMP_WIDTH,
+  BOARD_STAMP_Z_BASE,
   clampMemoZoom,
+  DEFAULT_BOARD_STAMP_COLOR,
   DEFAULT_MEMO_NOTE_COLOR,
   DEFAULT_MEMO_NOTE_TEXT_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
@@ -28,7 +33,7 @@ import {
   serializeMemoBoard,
 } from "@/lib/memo";
 import { formatMailNoteText, parseMsgFile, readFileAsDataUrl } from "@/lib/mailImport";
-import type { MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
+import type { BoardStamp, MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
 import StrokeLayer from "@/components/memo/StrokeLayer";
 
@@ -76,6 +81,14 @@ export default function MemoSection() {
       selectedBoardId ? db.memoConnectors.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as MemoConnector[]),
     [selectedBoardId]
   );
+  const stamps = useLiveQuery(
+    () => (selectedBoardId ? db.boardStamps.where("boardId").equals(selectedBoardId).toArray() : Promise.resolve([] as BoardStamp[])),
+    [selectedBoardId]
+  );
+  // スタンプの対応状況プリセットは、ToDoの「対応状況」設定タブでカスタマイズしている
+  // ものをそのまま流用する(スタンプ専用の設定を別途持つと二重管理になるため)
+  const [tagPresetsStr] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const stampPresets = parsePresetList(tagPresetsStr);
   const notesById = new Map((notes ?? []).map((n) => [n.id, n]));
 
   const [penMode, setPenMode] = useState(false);
@@ -350,10 +363,12 @@ export default function MemoSection() {
       x: 40 + offset,
       y: 40 + offset,
       width: 220,
-      height: 160,
+      // 自動サイズは新規付箋では既定でONにする(切り替えはいつでも可能)
+      height: estimateTextNoteHeight(text),
       color: DEFAULT_MEMO_NOTE_COLOR,
       text,
       order: maxOrderRef.current,
+      autoSize: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -486,6 +501,101 @@ export default function MemoSection() {
   async function updateChecklistItems(id: string, items: MemoChecklistItem[]) {
     await db.memoNotes.update(id, { checklistItems: items, updatedAt: Date.now() });
   }
+
+  // ------------------------------------------------------------
+  // スタンプ(対応状況などの一言)。付箋に重ねてドラッグするとくっ付き(以後は
+  // MemoConnectorと同じ考え方で、くっ付けた付箋の現在位置+相対オフセットから
+  // 毎回その場で位置を計算する)、何もない場所へ離すとくっ付けが外れる。
+  // メモタブでは付箋以外(ToDo等)を扱わないため、くっ付け先は付箋に限る
+  // ------------------------------------------------------------
+  const maxStampOrderRef = useRef(0);
+  useEffect(() => {
+    maxStampOrderRef.current = (stamps ?? []).reduce((m, s) => Math.max(m, s.order), 0);
+  }, [stamps]);
+  function stampTargetPosition(stamp: BoardStamp): { x: number; y: number } {
+    if (stamp.attachedToId) {
+      const target = notesById.get(stamp.attachedToId);
+      if (target) return { x: target.x + (stamp.attachedDx ?? 0), y: target.y + (stamp.attachedDy ?? 0) };
+    }
+    return { x: stamp.x, y: stamp.y };
+  }
+  function stampOverlapNoteId(x: number, y: number): string | null {
+    let bestId: string | null = null;
+    let bestArea = 0;
+    for (const n of notes ?? []) {
+      const ox = Math.min(x + BOARD_STAMP_WIDTH, n.x + n.width) - Math.max(x, n.x);
+      const oy = Math.min(y + BOARD_STAMP_HEIGHT, n.y + n.height) - Math.max(y, n.y);
+      if (ox > 0 && oy > 0) {
+        const area = ox * oy;
+        if (area > bestArea) {
+          bestArea = area;
+          bestId = n.id;
+        }
+      }
+    }
+    return bestId;
+  }
+  async function addStamp(text: string) {
+    if (!selectedBoardId || !text.trim()) return;
+    maxStampOrderRef.current += 1;
+    const offset = (maxStampOrderRef.current * 20) % 220;
+    await db.boardStamps.add({
+      id: uid(),
+      boardId: selectedBoardId,
+      text: text.trim(),
+      color: DEFAULT_BOARD_STAMP_COLOR,
+      x: 40 + offset,
+      y: 300 + offset,
+      width: BOARD_STAMP_WIDTH,
+      height: BOARD_STAMP_HEIGHT,
+      order: maxStampOrderRef.current,
+      createdAt: Date.now(),
+    });
+    setShowStampMenu(false);
+    setCustomStampText("");
+  }
+  async function moveStamp(id: string, x: number, y: number) {
+    const targetId = stampOverlapNoteId(x, y);
+    if (targetId) {
+      const target = notesById.get(targetId)!;
+      await db.boardStamps.update(id, {
+        attachedToKind: "note",
+        attachedToId: targetId,
+        attachedDx: x - target.x,
+        attachedDy: y - target.y,
+        x,
+        y,
+      });
+    } else {
+      await db.boardStamps.update(id, {
+        attachedToKind: undefined,
+        attachedToId: undefined,
+        attachedDx: undefined,
+        attachedDy: undefined,
+        x,
+        y,
+      });
+    }
+  }
+  async function removeStamp(id: string, skipConfirm = false) {
+    if (!skipConfirm && !confirm("このスタンプを削除します。よろしいですか?")) return;
+    await db.boardStamps.delete(id);
+  }
+  async function setStampColor(id: string, color: string) {
+    await db.boardStamps.update(id, { color });
+  }
+  async function setStampText(id: string, text: string) {
+    await db.boardStamps.update(id, { text });
+  }
+  async function toggleStampLock(id: string, currentlyLocked: boolean) {
+    await db.boardStamps.update(id, { boardLocked: !currentlyLocked });
+  }
+  async function bringStampToFront(id: string) {
+    maxStampOrderRef.current += 1;
+    await db.boardStamps.update(id, { order: maxStampOrderRef.current });
+  }
+  const [showStampMenu, setShowStampMenu] = useState(false);
+  const [customStampText, setCustomStampText] = useState("");
 
   // 付箋のテキストを、そのままToDoの新規タスクとして追加する。既存のリストが
   // あればその先頭に、無ければ「タスク」という名前のリストを作って追加する
@@ -752,6 +862,46 @@ export default function MemoSection() {
         <button className="btn-pill-outline text-sm" onClick={() => addNote()}>
           + 付箋を追加
         </button>
+        <div className="relative">
+          <button
+            className={showStampMenu ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+            onClick={() => setShowStampMenu((v) => !v)}
+            title="対応状況などの一言スタンプを、付箋に重ねてくっ付けられます"
+          >
+            ＋ スタンプ
+          </button>
+          {showStampMenu && (
+            <div className="absolute left-0 top-full z-10 mt-1 w-60 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
+              {stampPresets.length > 0 && (
+                <>
+                  <p className="mb-1 text-[10px] text-cream/40">対応状況から選ぶ</p>
+                  <div className="mb-2 flex flex-wrap gap-1">
+                    {stampPresets.map((preset) => (
+                      <button key={preset} className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addStamp(preset)}>
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <p className="mb-1 text-[10px] text-cream/40">自由入力</p>
+              <div className="flex gap-1">
+                <input
+                  value={customStampText}
+                  onChange={(e) => setCustomStampText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addStamp(customStampText);
+                  }}
+                  placeholder="一言を入力"
+                  className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                />
+                <button className="btn-pill-outline shrink-0 text-xs" onClick={() => addStamp(customStampText)}>
+                  追加
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <button
           className="btn-pill-outline text-sm"
           onClick={() => mailFileInputRef.current?.click()}
@@ -972,6 +1122,27 @@ export default function MemoSection() {
                   onUpdateChecklistItems={(items) => updateChecklistItems(note.id, items)}
                 />
               ))}
+              {/* スタンプは付箋に重ねてくっ付けるものなので、付箋より後(DOM上でも手前)に描く */}
+              {(stamps ?? []).map((stamp) => {
+                const pos = stampTargetPosition(stamp);
+                return (
+                  <StampCard
+                    key={stamp.id}
+                    stamp={stamp}
+                    x={pos.x}
+                    y={pos.y}
+                    zoom={zoom}
+                    penMode={penMode}
+                    eraseMode={eraseMode}
+                    onDragEnd={(id, x, y) => moveStamp(id, x, y)}
+                    onRemove={() => removeStamp(stamp.id)}
+                    onColorChange={(color) => setStampColor(stamp.id, color)}
+                    onTextChange={(text) => setStampText(stamp.id, text)}
+                    onToggleLock={() => toggleStampLock(stamp.id, !!stamp.boardLocked)}
+                    onFocus={() => bringStampToFront(stamp.id)}
+                  />
+                );
+              })}
               {/* 連結の削除マーカー/ラベルは付箋より後(=DOM上でも手前)に描くことで、
                   付箋の下に隠れて読めなくなるのを防ぐ。線自体は付箋の裏を通っても違和感がないため
                   上のsvgのままにしてある */}
@@ -1405,6 +1576,136 @@ function StickyNoteCard({
           </svg>
         </div>
       )}
+    </div>
+  );
+}
+
+// スタンプ(対応状況などの一言)。小さな丸ラベルで、ドラッグして付箋に重ねると
+// くっ付き(以後は付箋にくっついて追従する)、何もない場所に離すと外れる
+function StampCard({
+  stamp,
+  x,
+  y,
+  zoom,
+  penMode,
+  eraseMode,
+  onDragEnd,
+  onRemove,
+  onColorChange,
+  onTextChange,
+  onToggleLock,
+  onFocus,
+}: {
+  stamp: BoardStamp;
+  x: number;
+  y: number;
+  zoom: number;
+  penMode: boolean;
+  eraseMode: boolean;
+  onDragEnd: (id: string, x: number, y: number) => void;
+  onRemove: () => void;
+  onColorChange: (color: string) => void;
+  onTextChange: (text: string) => void;
+  onToggleLock: () => void;
+  onFocus: () => void;
+}) {
+  const locked = !!stamp.boardLocked;
+  const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (penMode || eraseMode || locked) return;
+    onFocus();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    setDragOffset({ dx: 0, dy: 0 });
+  }
+  function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!dragStartRef.current) return;
+    setDragOffset({ dx: (e.clientX - dragStartRef.current.x) / zoom, dy: (e.clientY - dragStartRef.current.y) / zoom });
+  }
+  function onPointerUp() {
+    if (!dragStartRef.current || !dragOffset) {
+      dragStartRef.current = null;
+      setDragOffset(null);
+      return;
+    }
+    const newX = Math.max(0, Math.min(MEMO_BOARD_WIDTH - stamp.width, x + dragOffset.dx));
+    const newY = Math.max(0, Math.min(MEMO_BOARD_HEIGHT - stamp.height, y + dragOffset.dy));
+    onDragEnd(stamp.id, newX, newY);
+    dragStartRef.current = null;
+    setDragOffset(null);
+  }
+
+  const colors = MEMO_NOTE_COLORS[stamp.color] ?? MEMO_NOTE_COLORS[DEFAULT_BOARD_STAMP_COLOR];
+  const left = x + (dragOffset?.dx ?? 0);
+  const top = y + (dragOffset?.dy ?? 0);
+
+  const [text, setText] = useState(stamp.text);
+  const idRef = useRef(stamp.id);
+  useEffect(() => {
+    if (idRef.current !== stamp.id) {
+      idRef.current = stamp.id;
+      setText(stamp.text);
+    }
+  }, [stamp.id, stamp.text]);
+
+  return (
+    <div
+      className="absolute"
+      style={{
+        left,
+        top,
+        width: stamp.width,
+        height: stamp.height,
+        zIndex: BOARD_STAMP_Z_BASE + stamp.order,
+        pointerEvents: penMode || eraseMode ? "none" : "auto",
+      }}
+    >
+      <div
+        className={
+          locked
+            ? "flex h-full w-full cursor-not-allowed items-center justify-center rounded-full border-2 px-2 shadow"
+            : "flex h-full w-full cursor-grab items-center justify-center rounded-full border-2 px-2 shadow active:cursor-grabbing"
+        }
+        style={{ borderColor: colors.border, backgroundColor: colors.bg, touchAction: "none" }}
+        title={locked ? "ロック中です(🔒で解除できます)" : "ドラッグして付箋に重ねるとくっ付きます"}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => {
+            if (text !== stamp.text) onTextChange(text);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="w-full bg-transparent text-center text-[11px] font-bold leading-none text-ink outline-none"
+        />
+      </div>
+      <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
+        {Object.entries(MEMO_NOTE_COLORS).map(([key, c]) => (
+          <button
+            key={key}
+            onClick={() => onColorChange(key)}
+            className="h-3 w-3 shrink-0 rounded-full border"
+            style={{ backgroundColor: c.border, borderColor: stamp.color === key ? "#f2f2f0" : "transparent" }}
+            aria-label={`色を${key}にする`}
+          />
+        ))}
+        <button
+          onClick={onToggleLock}
+          className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
+          title={locked ? "ロックを解除する" : "ロックする(くっ付けの解除・ドラッグを防ぐ)"}
+        >
+          {locked ? "🔒" : "🔓"}
+        </button>
+        <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="スタンプを削除">
+          ✕
+        </button>
+      </div>
     </div>
   );
 }
