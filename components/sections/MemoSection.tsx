@@ -1613,7 +1613,14 @@ function StampCard({
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
+  // 色・ロック・削除の操作パネルを常時出しっぱなしにすると、スタンプはくっ付け先の
+  // 付箋に重ねて使うものなので、付箋の掴み手など他の操作と重なって邪魔になる。
+  // そのため、ほとんど動かさずに離した(=タップした)時だけ開閉するようにする
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const tapStartRef = useRef<{ x: number; y: number } | null>(null);
+
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    tapStartRef.current = { x: e.clientX, y: e.clientY };
     if (penMode || eraseMode || locked) return;
     onFocus();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -1624,15 +1631,25 @@ function StampCard({
     if (!dragStartRef.current) return;
     setDragOffset({ dx: (e.clientX - dragStartRef.current.x) / zoom, dy: (e.clientY - dragStartRef.current.y) / zoom });
   }
-  function onPointerUp() {
+  function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    const tapStart = tapStartRef.current;
+    tapStartRef.current = null;
     if (!dragStartRef.current || !dragOffset) {
       dragStartRef.current = null;
       setDragOffset(null);
-      return;
+    } else {
+      const newX = Math.max(0, Math.min(MEMO_BOARD_WIDTH - stamp.width, x + dragOffset.dx));
+      const newY = Math.max(0, Math.min(MEMO_BOARD_HEIGHT - stamp.height, y + dragOffset.dy));
+      onDragEnd(stamp.id, newX, newY);
+      dragStartRef.current = null;
+      setDragOffset(null);
     }
-    const newX = Math.max(0, Math.min(MEMO_BOARD_WIDTH - stamp.width, x + dragOffset.dx));
-    const newY = Math.max(0, Math.min(MEMO_BOARD_HEIGHT - stamp.height, y + dragOffset.dy));
-    onDragEnd(stamp.id, newX, newY);
+    if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 4) {
+      setControlsOpen((v) => !v);
+    }
+  }
+  function onPointerCancel() {
+    tapStartRef.current = null;
     dragStartRef.current = null;
     setDragOffset(null);
   }
@@ -1669,11 +1686,11 @@ function StampCard({
             : "flex h-full w-full cursor-grab items-center justify-center rounded-full border-2 px-2 shadow active:cursor-grabbing"
         }
         style={{ borderColor: colors.border, backgroundColor: colors.bg, touchAction: "none" }}
-        title={locked ? "ロック中です(🔒で解除できます)" : "ドラッグして付箋に重ねるとくっ付きます"}
+        title={locked ? "ロック中です(タップして🔒で解除できます)" : "ドラッグして付箋に重ねるとくっ付きます(タップで色・ロック・削除)"}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
       >
         <input
           value={text}
@@ -1685,6 +1702,7 @@ function StampCard({
           className="w-full bg-transparent text-center text-[11px] font-bold leading-none text-ink outline-none"
         />
       </div>
+      {controlsOpen && (
       <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
         {Object.entries(MEMO_NOTE_COLORS).map(([key, c]) => (
           <button
@@ -1706,6 +1724,7 @@ function StampCard({
           ✕
         </button>
       </div>
+      )}
     </div>
   );
 }

@@ -30,8 +30,8 @@ export const MEMO_PEN_COLORS = ["#f2f2f0", "#ef4444", "#3b82f6", "#22c55e", "#1a
 export const DEFAULT_MEMO_PEN_COLOR = MEMO_PEN_COLORS[0];
 export const DEFAULT_MEMO_PEN_WIDTH = 3;
 
-export const MEMO_BOARD_WIDTH = 1400;
-export const MEMO_BOARD_HEIGHT = 1000;
+export const MEMO_BOARD_WIDTH = 2200;
+export const MEMO_BOARD_HEIGHT = 1600;
 
 // ボードの地の模様。カードの位置合わせの目安になるだけで、データとは無関係な
 // 見た目だけの切り替え(演出テーマにも依存しない)

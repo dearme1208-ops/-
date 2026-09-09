@@ -241,7 +241,7 @@ export default function UnifiedBoardSection({
     setZIndexById((prev) => ({ ...prev, [id]: zCounterRef.current }));
   }
 
-  // ボードの幅(1400px)は狭い画面には収まらない。初期値を空にしておき、まだ倍率を
+  // ボードの幅(MEMO_BOARD_WIDTH)は狭い画面には収まらない。初期値を空にしておき、まだ倍率を
   // 選んでいない間は画面幅に収まる倍率を自動で当てる(横スクロールしないと付箋の
   // 右半分が見えない、という初見の詰まりを無くすため)。-/+や「幅に合わせる」を
   // 押した時点でその値が保存され、以後は自動調整しない
@@ -1759,6 +1759,28 @@ function StampElement({
     }
   }, [stamp.id, stamp.text]);
 
+  // 色・ロック・削除の操作パネルを常時出しっぱなしにすると、スタンプはくっ付け先の
+  // 付箋やカードに重ねて使うものなので、その掴み手など他の操作と重なって邪魔になる。
+  // そのため、ほとんど動かさずに離した(=タップした)時だけ開閉するようにする
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const tapStartRef = useRef<{ x: number; y: number } | null>(null);
+  function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    tapStartRef.current = { x: e.clientX, y: e.clientY };
+    onPointerDown(e);
+  }
+  function handlePointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+    const start = tapStartRef.current;
+    tapStartRef.current = null;
+    onPointerUp();
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) {
+      setControlsOpen((v) => !v);
+    }
+  }
+  function handlePointerCancel() {
+    tapStartRef.current = null;
+    onPointerUp();
+  }
+
   return (
     <div className="absolute" style={{ left, top, width: stamp.width, height: stamp.height, zIndex }} onPointerDownCapture={onFocus}>
       <div
@@ -1768,11 +1790,11 @@ function StampElement({
             : "flex h-full w-full cursor-grab items-center justify-center rounded-full border-2 px-2 shadow active:cursor-grabbing"
         }
         style={{ borderColor: colors.border, backgroundColor: colors.bg, touchAction: "none" }}
-        title={locked ? "ロック中です(🔒で解除できます)" : "ドラッグして付箋やToDo・案件などに重ねるとくっ付きます"}
-        onPointerDown={onPointerDown}
+        title={locked ? "ロック中です(タップして🔒で解除できます)" : "ドラッグして付箋やToDo・案件などに重ねるとくっ付きます(タップで色・ロック・削除)"}
+        onPointerDown={handlePointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
       >
         <input
           value={text}
@@ -1784,27 +1806,29 @@ function StampElement({
           className="w-full bg-transparent text-center text-[11px] font-bold leading-none text-ink outline-none"
         />
       </div>
-      <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
-        {Object.entries(MEMO_NOTE_COLORS).map(([key, c]) => (
+      {controlsOpen && (
+        <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
+          {Object.entries(MEMO_NOTE_COLORS).map(([key, c]) => (
+            <button
+              key={key}
+              onClick={() => onColorChange(key)}
+              className="h-3 w-3 shrink-0 rounded-full border"
+              style={{ backgroundColor: c.border, borderColor: stamp.color === key ? "#f2f2f0" : "transparent" }}
+              aria-label={`色を${key}にする`}
+            />
+          ))}
           <button
-            key={key}
-            onClick={() => onColorChange(key)}
-            className="h-3 w-3 shrink-0 rounded-full border"
-            style={{ backgroundColor: c.border, borderColor: stamp.color === key ? "#f2f2f0" : "transparent" }}
-            aria-label={`色を${key}にする`}
-          />
-        ))}
-        <button
-          onClick={onToggleLock}
-          className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
-          title={locked ? "ロックを解除する" : "ロックする(くっ付けの解除・ドラッグを防ぐ)"}
-        >
-          {locked ? "🔒" : "🔓"}
-        </button>
-        <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="スタンプを削除">
-          ✕
-        </button>
-      </div>
+            onClick={onToggleLock}
+            className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
+            title={locked ? "ロックを解除する" : "ロックする(くっ付けの解除・ドラッグを防ぐ)"}
+          >
+            {locked ? "🔒" : "🔓"}
+          </button>
+          <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="スタンプを削除">
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }
