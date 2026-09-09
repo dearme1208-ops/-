@@ -655,7 +655,15 @@ export default function HeaderArt() {
   if (customizable && customImage) {
     const zoom = Number(customZoom) || 100;
     return (
-      <div className="h-24 w-full overflow-hidden sm:h-28">
+      // ヘッダーの帯はheaderタグ自体が画面幅いっぱい(mainのmax-w-6xlの外)なので、
+      // 帯の横幅を無制限にw-fullのままにすると、広いPC画面ほど帯の縦横比が
+      // 極端に横長になり、object-fit:coverで画像の上下がほぼ全部切り落とされて
+      // 「一部だけ大きくズームされた」ような見え方になってしまう(拡大率の設定では
+      // 直せない。既に切り落とされた後の見た目をさらに拡大/縮小するだけのため)。
+      // 設定画面のプレビューはmain(max-w-6xl)の中で表示されるため、帯の実物も
+      // 同じ幅で頭打ちにしておくと、プレビューで追い込んだ位置・拡大率が
+      // PCの実際のヘッダーでもズレずに再現される
+      <div className="mx-auto h-24 w-full max-w-6xl overflow-hidden sm:h-28">
         <img
           src={customImage}
           alt=""
