@@ -1633,6 +1633,30 @@ export default function TodaySection({
   ) {
     const renamed = category !== task.category || name !== task.name;
 
+    if (task.status === "running" || task.status === "paused") {
+      // 計測中/一時停止中の作業は、まだ終了していないため開始時刻だけをさかのぼって
+      // 修正できるようにする(最初の区間のstartを動かすだけで、計測中の区間の経過分は
+      // segmentsAccumulatedMsが都度計算するため、accumulatedMsは確定済みの区間のみで
+      // 再計算すればよい)
+      let segments = task.segments;
+      if (startedAtOverride !== undefined && segments.length > 0) {
+        segments = segments.map((s, i) => (i === 0 ? { ...s, start: startedAtOverride } : s));
+        if (segments[0].end !== undefined && segments[0].end <= segments[0].start) {
+          alert("開始時刻の指定が不正です(この作業が最初に一時停止した時刻より後になっています)");
+          return;
+        }
+      }
+      const segmentsChanged = segments !== task.segments;
+      const taskUpdates: Partial<DailyTask> = { category, name, note, ...(renamed ? { masterTaskId: undefined } : {}) };
+      if (segmentsChanged) {
+        taskUpdates.segments = segments;
+        taskUpdates.startedAt = segments[0].start;
+        taskUpdates.accumulatedMs = segments.reduce((sum, s) => sum + (s.end !== undefined ? s.end - s.start : 0), 0);
+      }
+      await db.dailyTasks.update(task.id, taskUpdates);
+      return;
+    }
+
     if (task.status !== "done") {
       await db.dailyTasks.update(task.id, {
         category,

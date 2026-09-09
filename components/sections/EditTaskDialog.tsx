@@ -39,6 +39,10 @@ export default function EditTaskDialog({
   const [category, setCategory] = useState(task.category);
   const [name, setName] = useState(task.name);
   const fallbackNow = Date.now();
+  const isDone = task.status === "done";
+  // 計測中/一時停止中の作業は、まだ終了していないため開始時刻だけをさかのぼって
+  // 修正できるようにする(終了は完了後にこのダイアログの別枠で編集する)
+  const isInProgress = task.status === "running" || task.status === "paused";
   const originalStart = task.startedAt ?? task.segments[0]?.start ?? fallbackNow;
   const originalEnd = task.endedAt ?? task.segments[task.segments.length - 1]?.end ?? fallbackNow;
   const [startTime, setStartTime] = useState(formatClock(originalStart));
@@ -50,7 +54,6 @@ export default function EditTaskDialog({
   const [endTouched, setEndTouched] = useState(false);
   const [note, setNote] = useState(task.note ?? "");
   const [showMasterPicker, setShowMasterPicker] = useState(false);
-  const isDone = task.status === "done";
   const [troubleDetailOptionsJson] = useSetting("trouble.detailOptions", JSON.stringify(DEFAULT_TROUBLE_DETAIL_OPTIONS));
   const troubleDetailOptions = useMemo(() => parsePresetList(troubleDetailOptionsJson), [troubleDetailOptionsJson]);
 
@@ -65,22 +68,32 @@ export default function EditTaskDialog({
   const durationSeconds = Math.round((rawEnd - resolvedStart) / 1000);
   const invalidRange = isDone && durationSeconds <= 0;
 
+  // 計測中/一時停止中の作業では、開始時刻は「最初の区間が一時停止した時刻」(それが
+  // 無ければ現在時刻)より前でなければならない(それより後だと矛盾するため)
+  const firstSegmentBound = task.segments[0]?.end ?? fallbackNow;
+  const inProgressInvalid = isInProgress && resolvedStart >= firstSegmentBound;
+
   function save() {
     if (!category.trim() || !name.trim()) return;
-    if (invalidRange) return;
-    if (!isDone) {
-      onSave(category.trim(), name.trim(), undefined, note.trim() || undefined);
+    if (invalidRange || inProgressInvalid) return;
+    if (isDone) {
+      onSave(
+        category.trim(),
+        name.trim(),
+        undefined,
+        note.trim() || undefined,
+        startTouched ? resolvedStart : undefined,
+        endTouched ? rawEnd : undefined
+      );
       onClose();
       return;
     }
-    onSave(
-      category.trim(),
-      name.trim(),
-      undefined,
-      note.trim() || undefined,
-      startTouched ? resolvedStart : undefined,
-      endTouched ? rawEnd : undefined
-    );
+    if (isInProgress) {
+      onSave(category.trim(), name.trim(), undefined, note.trim() || undefined, startTouched ? resolvedStart : undefined);
+      onClose();
+      return;
+    }
+    onSave(category.trim(), name.trim(), undefined, note.trim() || undefined);
     onClose();
   }
 
@@ -186,6 +199,64 @@ export default function EditTaskDialog({
             )}
             <p className="mt-1 text-[10px] text-cream/40">
               開始か終了のどちらかを変更すると、実績時間はその差分から自動的に再計算されます。区分・作業名・時刻の変更は、紐づく実績（集計・ランキングなどに使われるデータ）にも反映されます。
+            </p>
+          </div>
+        )}
+        {isInProgress && (
+          <div>
+            <label className="mb-1 block text-xs text-cream/60">開始時刻</label>
+            {previousTaskEndedAt != null && (
+              <p className="mb-1 text-[11px] tabular-nums text-cream/50">
+                参考: 前の作業の終了時刻 {formatClock(previousTaskEndedAt)}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => {
+                  setStartTime(e.target.value);
+                  setStartTouched(true);
+                }}
+                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+              {previousTaskEndedAt != null && (
+                <button
+                  type="button"
+                  className="btn-pill-outline text-xs"
+                  title="直前に完了した作業の終了時刻を開始時刻として使います"
+                  onClick={() => {
+                    setStartTime(formatClock(previousTaskEndedAt));
+                    setStartTouched(true);
+                  }}
+                >
+                  前の作業の終了({formatClock(previousTaskEndedAt)})を使う
+                </button>
+              )}
+            </div>
+            {inProgressInvalid && (
+              <p className="mt-1 text-xs text-alert">
+                {task.segments[0]?.end !== undefined
+                  ? "この作業が最初に一時停止した時刻より前にしてください"
+                  : "現在時刻より前にしてください"}
+              </p>
+            )}
+            {crossesMidnight && !inProgressInvalid && (
+              <p className="mt-1 text-xs text-alert">前日の{startTime}から日をまたいで始まっていたものとして保存します。</p>
+            )}
+            {previousTaskEndedAt != null && !inProgressInvalid && (
+              <p className={`mt-1 text-xs tabular-nums ${resolvedStart < previousTaskEndedAt ? "text-alert" : "text-cream/50"}`}>
+                {resolvedStart < previousTaskEndedAt
+                  ? `⚠ 前の作業の終了(${formatClock(previousTaskEndedAt)})より${formatHms(
+                      Math.round((previousTaskEndedAt - resolvedStart) / 1000)
+                    )}早い開始です`
+                  : `前の作業の終了(${formatClock(previousTaskEndedAt)})から${formatHms(
+                      Math.round((resolvedStart - previousTaskEndedAt) / 1000)
+                    )}後の開始です`}
+              </p>
+            )}
+            <p className="mt-1 text-[10px] text-cream/40">
+              終了はまだ確定していないため編集できません(完了後に開始〜終了をまとめて編集できます)。
             </p>
           </div>
         )}
