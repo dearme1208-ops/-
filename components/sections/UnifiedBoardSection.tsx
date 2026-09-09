@@ -1761,8 +1761,22 @@ function StampElement({
 
   // 色・ロック・削除の操作パネルを常時出しっぱなしにすると、スタンプはくっ付け先の
   // 付箋やカードに重ねて使うものなので、その掴み手など他の操作と重なって邪魔になる。
-  // そのため、ほとんど動かさずに離した(=タップした)時だけ開閉するようにする
+  // そのため、ほとんど動かさずに離した(=タップした)時だけ開閉するようにする。
+  // また、開いたままボードの他の場所を操作すると邪魔なままになってしまうため、
+  // スタンプの外側をポインターダウンしたら自動で閉じる
   const [controlsOpen, setControlsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!controlsOpen) return;
+    function onDocPointerDown(e: PointerEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setControlsOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", onDocPointerDown);
+    return () => document.removeEventListener("pointerdown", onDocPointerDown);
+  }, [controlsOpen]);
+
   const tapStartRef = useRef<{ x: number; y: number } | null>(null);
   function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     tapStartRef.current = { x: e.clientX, y: e.clientY };
@@ -1781,30 +1795,49 @@ function StampElement({
     onPointerUp();
   }
 
+  // つかんで動かす場所は、文字入力欄と誤操作しないよう左右の細い帯にする
+  // (文字入力欄をタップ/クリックした時は編集だけを行い、ドラッグは始めない)
+  const grabHandleClassName = locked
+    ? "flex w-3 shrink-0 cursor-not-allowed items-center justify-center"
+    : "flex w-3 shrink-0 cursor-grab items-center justify-center active:cursor-grabbing";
+  const grabHandleTitle = locked
+    ? "ロック中です(タップして🔒で解除できます)"
+    : "ドラッグして付箋やToDo・案件などに重ねるとくっ付きます(タップで色・ロック・削除)";
+  const grabHandleProps = {
+    className: grabHandleClassName,
+    style: { touchAction: "none" as const },
+    title: grabHandleTitle,
+    onPointerDown: handlePointerDown,
+    onPointerMove: onPointerMove,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerCancel,
+  };
+
   return (
-    <div className="absolute" style={{ left, top, width: stamp.width, height: stamp.height, zIndex }} onPointerDownCapture={onFocus}>
+    <div
+      ref={wrapperRef}
+      className="absolute"
+      style={{ left, top, width: stamp.width, height: stamp.height, zIndex }}
+      onPointerDownCapture={onFocus}
+    >
       <div
-        className={
-          locked
-            ? "flex h-full w-full cursor-not-allowed items-center justify-center rounded-full border-2 px-2 shadow"
-            : "flex h-full w-full cursor-grab items-center justify-center rounded-full border-2 px-2 shadow active:cursor-grabbing"
-        }
-        style={{ borderColor: colors.border, backgroundColor: colors.bg, touchAction: "none" }}
-        title={locked ? "ロック中です(タップして🔒で解除できます)" : "ドラッグして付箋やToDo・案件などに重ねるとくっ付きます(タップで色・ロック・削除)"}
-        onPointerDown={handlePointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerCancel}
+        className="flex h-full w-full items-stretch overflow-hidden rounded-full border-2 shadow"
+        style={{ borderColor: colors.border, backgroundColor: colors.bg }}
       >
+        <div {...grabHandleProps}>
+          <span className="text-[9px] leading-none text-ink/40">⠿</span>
+        </div>
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onBlur={() => {
             if (text !== stamp.text) onTextChange(text);
           }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="w-full bg-transparent text-center text-[11px] font-bold leading-none text-ink outline-none"
+          className="w-0 flex-1 bg-transparent text-center text-[11px] font-bold leading-none text-ink outline-none"
         />
+        <div {...grabHandleProps}>
+          <span className="text-[9px] leading-none text-ink/40">⠿</span>
+        </div>
       </div>
       {controlsOpen && (
         <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
