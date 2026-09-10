@@ -5,9 +5,10 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
-import { formatMsClock, todayStr } from "@/lib/time";
-import { computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
+import { formatClock, formatMsClock, todayStr } from "@/lib/time";
+import { computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
 import { completeTodoTask, DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
+import { getRiskTier, useVisualMode } from "@/lib/theme";
 import {
   BOARD_BACKGROUND_KINDS,
   BOARD_BACKGROUND_LABELS,
@@ -42,6 +43,7 @@ import { exportElementToPng } from "@/lib/pdfExport";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import StrokeLayer from "@/components/memo/StrokeLayer";
+import RadialTimer from "@/components/ui/RadialTimer";
 import type { BoardShape, BoardShapeType, BoardStamp, DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask } from "@/lib/types";
 
 // 「メモ・ToDo・案件・本日の作業」を1つの自由配置キャンバスにまとめて表示し、
@@ -59,6 +61,18 @@ const PLACEMENT_GRID = 30;
 const PLACEMENT_MARGIN = 10;
 const MINIMAP_WIDTH = 180;
 const MINIMAP_HEIGHT = Math.round((MINIMAP_WIDTH * MEMO_BOARD_HEIGHT) / MEMO_BOARD_WIDTH);
+
+// ハブモード専用の時間軸モード。所定労働時間の帯を盤面の横幅いっぱいに描き、
+// 右端に「時刻がわからない作業」を集める帯を別途確保する
+const TIME_AXIS_HEIGHT = 28;
+const TIME_AXIS_LEFT_MARGIN = 20;
+const TIME_AXIS_UNSCHEDULED_WIDTH = 240;
+const TIME_AXIS_LANE_GAP = 20;
+
+function parseHM(hm: string): number {
+  const [h, m] = hm.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
 
 interface BoardRect {
   x: number;
@@ -112,6 +126,9 @@ export default function UnifiedBoardSection({
   onOpenProjectEdit?: (projectId: string) => void;
 }) {
   const today = todayStr();
+  // ハブモード専用の進化版機能(進捗リング・負荷ヒートマップ・自動連結線・時間軸モード)は
+  // このフラグでのみ出し分ける。統合ボードタブ自体は他のテーマでも共通の見た目のまま
+  const { hubMode } = useVisualMode();
   const boards = useLiveQuery(() => db.memoBoards.orderBy("order").toArray(), []);
   const [selectedBoardId, setSelectedBoardId] = useSetting("memo.selectedBoardId", "");
   useEffect(() => {
@@ -162,6 +179,9 @@ export default function UnifiedBoardSection({
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projectItems = useLiveQuery(() => db.projects.toArray(), []);
   const favorites = useLiveQuery(() => db.masterTasks.filter((m) => m.isFavorite && !m.archived).toArray(), []);
+  // ハブモードの進捗リング・負荷ヒートマップ用。全マスタを見て「予測」(マスタの平均想定時間)を
+  // 求める(TodaySectionの予測ロジックと同じcomputePredictedSecondsByTaskIdを流用する)
+  const allMasterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
 
   const tasks = (dailyTasks ?? []).filter((t) => !t.isProvisional && t.status !== "done");
   // 未完了の親タスクだけを対象にする(サブタスクはカードにしない)
@@ -233,6 +253,49 @@ export default function UnifiedBoardSection({
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  // ハブモード専用。「予測」(マスタの平均想定時間から、その日の各作業の残り想定を
+  // 求めたもの)を、進捗リングの残り時間表示と負荷ヒートマップの両方で使う
+  const predictedSecondsByTaskId = useMemo(() => {
+    if (!hubMode || !dailyTasks) return new Map<string, number>();
+    return computePredictedSecondsByTaskId(
+      dailyTasks.filter((t) => !t.isProvisional),
+      allMasterTasks ?? [],
+      now
+    );
+  }, [hubMode, dailyTasks, allMasterTasks, now]);
+
+  // 負荷ヒートマップ用。計測中かつ予測を超過している作業だけを対象に、超過度合いの
+  // 階級(0=順調〜4=要再編成)を求める。カード自体の色温度をこの階級で強調する
+  const riskLevelByTaskId = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!hubMode) return map;
+    for (const t of tasks) {
+      if (t.status !== "running") continue;
+      const predSec = predictedSecondsByTaskId.get(t.id) ?? 0;
+      if (predSec <= 0) continue;
+      const elapsedMs = segmentsAccumulatedMs(t, now);
+      const predMs = predSec * 1000;
+      if (elapsedMs <= predMs) continue;
+      map.set(t.id, getRiskTier(elapsedMs / predMs, "hub").level);
+    }
+    return map;
+  }, [hubMode, tasks, predictedSecondsByTaskId, now]);
+
+  // 進捗リング・時間軸モード共通。所定労働時間の開始/終了(本日の作業タブの設定と同じ)
+  const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
+  const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
+  const progressStats = useMemo(() => {
+    const today = (dailyTasks ?? []).filter((t) => !t.isProvisional);
+    const doneCount = today.filter((t) => t.status === "done").length;
+    const totalCount = today.length;
+    const overrunCount = tasks.filter((t) => riskLevelByTaskId.has(t.id)).length;
+    const [h, m] = standardWorkEnd.split(":").map(Number);
+    const workEndAt = new Date();
+    workEndAt.setHours(h, m, 0, 0);
+    const remainingMs = Math.max(0, workEndAt.getTime() - now);
+    return { doneCount, totalCount, overrunCount, remainingMs };
+  }, [dailyTasks, tasks, riskLevelByTaskId, standardWorkEnd, now]);
 
   // 付箋/本日の作業/ToDoカードを掴んだ際、他のカードの下に隠れたままにならないよう
   // 最前面に持ってくる。付箋・タスク・ToDoを1つの重なり順で扱うため、種類を問わず
@@ -579,6 +642,49 @@ export default function UnifiedBoardSection({
     return items;
   }, [tasks, todos, projects, notes, shapes]);
 
+  // ハブモード専用。案件→ToDo→作業のうち、両端が盤面に置かれているものどうしを
+  // 自動で線でつなぐための中心点ペア。作業がToDo経由で案件ともつながっている場合、
+  // 案件への直線は重ねて表示しない(ToDo経由の線だけで関係が辿れるため)
+  const autoConnectors = useMemo(() => {
+    if (!hubMode) return [] as { key: string; x1: number; y1: number; x2: number; y2: number }[];
+    const byKey = new Map(boardItems.map((it) => [`${it.kind}:${it.id}`, it]));
+    function center(it: BoardItem) {
+      return { x: it.x + it.width / 2, y: it.y + it.height / 2 };
+    }
+    const lines: { key: string; x1: number; y1: number; x2: number; y2: number }[] = [];
+    for (const t of todos) {
+      if (!t.projectId) continue;
+      const from = byKey.get(`todo:${t.id}`);
+      const to = byKey.get(`project:${t.projectId}`);
+      if (!from || !to) continue;
+      const c1 = center(from);
+      const c2 = center(to);
+      lines.push({ key: `todo-project:${t.id}`, x1: c1.x, y1: c1.y, x2: c2.x, y2: c2.y });
+    }
+    for (const t of tasks) {
+      const from = byKey.get(`task:${t.id}`);
+      if (!from) continue;
+      if (t.todoTaskId) {
+        const to = byKey.get(`todo:${t.todoTaskId}`);
+        if (to) {
+          const c1 = center(from);
+          const c2 = center(to);
+          lines.push({ key: `task-todo:${t.id}`, x1: c1.x, y1: c1.y, x2: c2.x, y2: c2.y });
+          continue;
+        }
+      }
+      if (t.projectId) {
+        const to = byKey.get(`project:${t.projectId}`);
+        if (to) {
+          const c1 = center(from);
+          const c2 = center(to);
+          lines.push({ key: `task-project:${t.id}`, x1: c1.x, y1: c1.y, x2: c2.x, y2: c2.y });
+        }
+      }
+    }
+    return lines;
+  }, [hubMode, boardItems, todos, tasks]);
+
   function moveBoardItemByKind(kind: BoardItemKind, id: string, x: number, y: number) {
     if (kind === "task") return moveTask(id, x, y);
     if (kind === "todo") return moveTodo(id, x, y);
@@ -800,6 +906,64 @@ export default function UnifiedBoardSection({
       rowHeight = Math.max(rowHeight, it.height);
       x += it.width + PLACEMENT_MARGIN;
       col++;
+    }
+  }
+
+  // ------------------------------------------------------------
+  // ハブモード専用。時間軸モード。盤面の上に所定労働時間の目盛りを表示し、
+  // 「時間軸で並べる」で作業カードを実際の開始時刻(計測中/一時停止中/完了済みは
+  // 最初の区間の開始時刻、未着手は予定時刻scheduledTimeがあればそれ)に沿って
+  // 横に並べ直す。時刻が分からない未着手の作業は右端の「未定」帯にまとめる
+  // ------------------------------------------------------------
+  const [timeAxisMode, setTimeAxisMode] = useState(false);
+  const timeAxisTicks = useMemo(() => {
+    if (!hubMode) return [] as { minutes: number; x: number; label: string }[];
+    const axisStart = parseHM(standardWorkStart);
+    const axisEnd = parseHM(standardWorkEnd);
+    const axisMinutes = Math.max(1, axisEnd - axisStart);
+    const axisWidth = MEMO_BOARD_WIDTH - TIME_AXIS_LEFT_MARGIN * 2 - TIME_AXIS_UNSCHEDULED_WIDTH;
+    const ticks: { minutes: number; x: number; label: string }[] = [];
+    for (let h = Math.ceil(axisStart / 60); h <= Math.floor(axisEnd / 60); h++) {
+      const minutes = h * 60;
+      const x = TIME_AXIS_LEFT_MARGIN + ((minutes - axisStart) / axisMinutes) * axisWidth;
+      ticks.push({ minutes, x, label: `${h}:00` });
+    }
+    return ticks;
+  }, [hubMode, standardWorkStart, standardWorkEnd]);
+  async function arrangeByTimeAxis() {
+    setTimeAxisMode(true);
+    const axisStart = parseHM(standardWorkStart);
+    const axisEnd = parseHM(standardWorkEnd);
+    const axisMinutes = Math.max(1, axisEnd - axisStart);
+    const axisWidth = MEMO_BOARD_WIDTH - TIME_AXIS_LEFT_MARGIN * 2 - TIME_AXIS_UNSCHEDULED_WIDTH;
+    const unscheduledX = MEMO_BOARD_WIDTH - TIME_AXIS_UNSCHEDULED_WIDTH + 10;
+    const placed = tasks
+      .filter((t) => !t.boardLocked)
+      .map((t) => {
+        let minutes: number | null = null;
+        if (t.segments[0]?.start !== undefined) {
+          const d = new Date(t.segments[0].start);
+          minutes = d.getHours() * 60 + d.getMinutes();
+        } else if (t.scheduledTime) {
+          minutes = parseHM(t.scheduledTime);
+        }
+        const x =
+          minutes === null
+            ? unscheduledX
+            : TIME_AXIS_LEFT_MARGIN + Math.max(0, Math.min(1, (minutes - axisStart) / axisMinutes)) * axisWidth;
+        return { id: t.id, x };
+      })
+      .sort((a, b) => a.x - b.x);
+    // 時間帯が重なるカードは、区間が空いている最初のレーンへ縦に振り分ける簡易な貪欲法
+    const laneEndX: number[] = [];
+    for (const p of placed) {
+      let lane = laneEndX.findIndex((endX) => endX + TIME_AXIS_LANE_GAP <= p.x);
+      if (lane === -1) {
+        lane = laneEndX.length;
+        laneEndX.push(0);
+      }
+      laneEndX[lane] = p.x + CARD_WIDTH;
+      await moveTask(p.id, Math.round(p.x), TIME_AXIS_HEIGHT + 20 + lane * (TASK_CARD_HEIGHT + TIME_AXIS_LANE_GAP));
     }
   }
 
@@ -1088,6 +1252,24 @@ export default function UnifiedBoardSection({
         <button className="btn-pill-outline text-xs" onClick={alignBoardItems} title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)">
           🧹 整列
         </button>
+        {hubMode && (
+          <>
+            <button
+              className={timeAxisMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setTimeAxisMode((v) => !v)}
+              title="所定労働時間の目盛りを盤面に表示します"
+            >
+              🕐 時間軸: {timeAxisMode ? "ON" : "OFF"}
+            </button>
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={arrangeByTimeAxis}
+              title="作業カードを開始時刻(未着手は予定時刻)に沿って横に並べ直します(ロック中は動きません)"
+            >
+              📐 時間軸で並べる
+            </button>
+          </>
+        )}
         <button className="btn-pill-outline text-xs" onClick={exportBoardImage} disabled={exportingImage} title="盤面全体を画像(.png)として保存します">
           {exportingImage ? "書き出し中…" : "📷 画像として保存"}
         </button>
@@ -1196,6 +1378,39 @@ export default function UnifiedBoardSection({
             onPointerUp={onCanvasPointerUp}
             onPointerCancel={onCanvasPointerUp}
           >
+            {/* ハブモードの時間軸モード。所定労働時間の目盛りと縦の目安線を盤面全体の
+                一番奥に敷く(見た目だけの参照線で、カードの位置を縛るものではない) */}
+            {hubMode && timeAxisMode && (
+              <div className="pointer-events-none absolute left-0 top-0" style={{ width: MEMO_BOARD_WIDTH, height: MEMO_BOARD_HEIGHT }}>
+                {timeAxisTicks.map((t) => (
+                  <div
+                    key={t.minutes}
+                    className="absolute top-0 border-l border-cream/10"
+                    style={{ left: t.x, height: MEMO_BOARD_HEIGHT }}
+                  />
+                ))}
+                <div
+                  className="absolute border-l border-dashed border-cream/20"
+                  style={{ left: MEMO_BOARD_WIDTH - TIME_AXIS_UNSCHEDULED_WIDTH, top: 0, height: MEMO_BOARD_HEIGHT }}
+                />
+                <div
+                  className="absolute left-0 top-0 border-b border-cream/15 bg-ink/50"
+                  style={{ width: MEMO_BOARD_WIDTH, height: TIME_AXIS_HEIGHT }}
+                >
+                  {timeAxisTicks.map((t) => (
+                    <span key={t.minutes} className="absolute top-1.5 text-[10px] tabular-nums text-cream/50" style={{ left: t.x + 3 }}>
+                      {t.label}
+                    </span>
+                  ))}
+                  <span
+                    className="absolute top-1.5 text-[10px] text-cream/40"
+                    style={{ left: MEMO_BOARD_WIDTH - TIME_AXIS_UNSCHEDULED_WIDTH + 10 }}
+                  >
+                    未定
+                  </span>
+                </div>
+              </div>
+            )}
             {/* 手書きはカードの下に敷く。手書き/消しゴムがOFFの間は当たり判定を切ってあるので、
                 カードのドラッグや操作は今までどおりできる */}
             <StrokeLayer
@@ -1207,6 +1422,30 @@ export default function UnifiedBoardSection({
               penColor={penColor}
               penWidth={penWidth}
             />
+            {/* ハブモード専用。案件⇔ToDo⇔作業のうち盤面に置かれているものどうしを、
+                手動のスタンプ/連結線とは別に自動で線でつなぐ。あくまで関係性を示す
+                飾りなので、保存はせず毎回boardItemsから作り直す・操作対象にもしない */}
+            {hubMode && autoConnectors.length > 0 && (
+              <svg
+                className="absolute left-0 top-0"
+                width={MEMO_BOARD_WIDTH}
+                height={MEMO_BOARD_HEIGHT}
+                style={{ pointerEvents: "none" }}
+              >
+                {autoConnectors.map((c) => (
+                  <line
+                    key={c.key}
+                    x1={c.x1}
+                    y1={c.y1}
+                    x2={c.x2}
+                    y2={c.y2}
+                    stroke="rgb(var(--accent-rgb) / 0.35)"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                  />
+                ))}
+              </svg>
+            )}
             {/* ラバーバンド範囲選択中の枠 */}
             {selectionBox && (
               <div
@@ -1269,6 +1508,7 @@ export default function UnifiedBoardSection({
                 task={task}
                 now={now}
                 zoom={zoom}
+                riskLevel={riskLevelByTaskId.get(task.id) ?? null}
                 zIndex={memoNoteZIndex(task.boardPinned, zIndexById[task.id] ?? 1)}
                 selected={selectedIds.has(task.id)}
                 matched={matchingIds?.has(task.id) ?? false}
@@ -1390,6 +1630,33 @@ export default function UnifiedBoardSection({
           />
         </div>
       </div>
+
+      {/* ハブモード専用。本日の完了率をリングで、所定労働時間の残り・超過中の件数を
+          数字で常駐表示する。盤面を見渡すだけで今の状況が一目でわかるようにする */}
+      {hubMode && (
+        <div className="panel hidden shrink-0 self-start p-2 sm:block">
+          <p className="mb-1 text-[10px] text-cream/40">本日の進捗</p>
+          <div className="relative flex items-center justify-center" style={{ width: MINIMAP_WIDTH }}>
+            <RadialTimer
+              progressPct={progressStats.totalCount > 0 ? (progressStats.doneCount / progressStats.totalCount) * 100 : 0}
+              overEstimate={progressStats.overrunCount > 0}
+              size={96}
+            />
+            <div className="absolute flex flex-col items-center">
+              <span className="font-display text-lg font-bold tabular-nums text-cream">
+                {progressStats.doneCount}/{progressStats.totalCount}
+              </span>
+              <span className="text-[9px] text-cream/50">完了</span>
+            </div>
+          </div>
+          <div className="mt-1.5 space-y-0.5 text-center text-[10px] tabular-nums text-cream/60">
+            <p>{standardWorkEnd}まで残り {formatMsClock(progressStats.remainingMs)}</p>
+            {progressStats.overrunCount > 0 && (
+              <p className="text-alert">超過中 {progressStats.overrunCount}件</p>
+            )}
+          </div>
+        </div>
+      )}
       </div>
 
       {showMasterPicker && (
@@ -2080,6 +2347,7 @@ function TaskCard({
   task,
   now,
   zoom,
+  riskLevel,
   zIndex,
   selected,
   matched,
@@ -2096,6 +2364,8 @@ function TaskCard({
   task: DailyTask;
   now: number;
   zoom: number;
+  /** ハブモードの負荷ヒートマップ用。超過度合いの階級(0=順調〜4=要再編成)。対象外はnull */
+  riskLevel: number | null;
   zIndex: number;
   selected: boolean;
   matched: boolean;
@@ -2134,6 +2404,15 @@ function TaskCard({
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
     >
+      {/* ハブモードの負荷ヒートマップ。超過度合いが大きいほど濃い赤に近づく色温度で
+          強調する。負のz-indexで、カード自体の地色の上・中身の文字の下に敷く */}
+      {riskLevel !== null && (
+        <div
+          className="pointer-events-none absolute inset-0 rounded-md"
+          style={{ zIndex: -1, backgroundColor: `rgba(var(--accent-rgb), ${0.1 + riskLevel * 0.09})` }}
+          title={`超過度合い: レベル${riskLevel}`}
+        />
+      )}
       <div
         className={`-mx-2 -mt-2 mb-1 flex shrink-0 items-center justify-between rounded-t bg-cream/10 px-2 py-1 ${
           locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"
