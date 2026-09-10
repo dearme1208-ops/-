@@ -3030,5 +3030,53 @@ html[data-high-contrast="true"] :focus-visible {
     border-color: rgb(var(--accent-rgb) / 0.6);
     outline: none;
   }
+
+  /* ハブモード専用。統合ボードの「ミッションコントロール」演出(スキャンライン走査・
+     警戒パルス・REC点滅)。クラス自体はJS側でhubModeの時だけ付与するため、ここでは
+     data-visual-mode条件を付けていない(他テーマ読み込み時もCSSは載るがクラスが
+     付かないので影響しない) */
+  @keyframes hub-scanline-sweep {
+    0% {
+      transform: translateY(-8%);
+      opacity: 0;
+    }
+    8% {
+      opacity: 0.9;
+    }
+    92% {
+      opacity: 0.9;
+    }
+    100% {
+      transform: translateY(108%);
+      opacity: 0;
+    }
+  }
+  .hub-hud-scanline {
+    animation: hub-scanline-sweep 6s linear infinite;
+  }
+  @keyframes hub-alert-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.55);
+    }
+    50% {
+      box-shadow: 0 0 0 7px rgb(var(--accent-rgb) / 0);
+    }
+  }
+  .hub-card-alert {
+    animation: hub-alert-pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes hub-rec-blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+  .hub-rec-dot {
+    animation: hub-rec-blink 1.2s ease-in-out infinite;
+  }
 }
 

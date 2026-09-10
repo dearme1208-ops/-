@@ -352,6 +352,26 @@ export default function UnifiedBoardSection({
     return { doneCount, totalCount, overrunCount, remainingMs };
   }, [dailyTasks, tasks, riskLevelByTaskId, standardWorkEnd, now]);
 
+  // ハブモード専用。ミッションコントロールHUDの総合ステータス表示用。計測中タスクの中で
+  // 最も超過している比率をもとに、盤面全体の「今の状況」をハブモードの階級(順調〜要再編成)
+  // 一言に要約する。計測中の超過が無ければ「順調」のまま
+  const overallStatus = useMemo(() => {
+    if (!hubMode) return null;
+    let maxRatio = 1;
+    for (const t of tasks) {
+      if (t.status !== "running") continue;
+      const predSec = predictedSecondsByTaskId.get(t.id) ?? 0;
+      if (predSec <= 0) continue;
+      const ratio = segmentsAccumulatedMs(t, now) / (predSec * 1000);
+      if (ratio > maxRatio) maxRatio = ratio;
+    }
+    return getRiskTier(maxRatio, "hub");
+  }, [hubMode, tasks, predictedSecondsByTaskId, now]);
+  // ミッションコントロールHUDの内訳表示用(進行中/待機中)。todaysStatsは完了/総数/超過を
+  // 既に持っているので、そこから引き算するだけで済む
+  const runningCount = tasks.filter((t) => t.status === "running").length;
+  const waitingCount = Math.max(0, progressStats.totalCount - progressStats.doneCount - runningCount);
+
   // 付箋/本日の作業/ToDoカードを掴んだ際、他のカードの下に隠れたままにならないよう
   // 最前面に持ってくる。付箋・タスク・ToDoを1つの重なり順で扱うため、種類を問わず
   // 共通のカウンタで管理する(このボード上だけの見た目上の重なり順で、保存はしない)
@@ -1432,9 +1452,13 @@ export default function UnifiedBoardSection({
       )}
 
       <div className={fullscreen ? "flex min-h-0 flex-1 items-start gap-2" : "flex items-start gap-2"}>
+      {/* ハブモードのHUD枠(コーナー・スキャンライン・時計)は盤面のスクロール/ズームに
+          追従させたくないので、スクロールするビューポート(boardViewportRef)の外側・
+          このrelativeラッパーの中に兄弟として重ねる */}
+      <div className={fullscreen ? "relative min-h-0 min-w-0 flex-1" : "relative min-w-0 flex-1"}>
       <div
         ref={boardViewportRef}
-        className={fullscreen ? "panel min-h-0 min-w-0 flex-1 overflow-auto p-0" : "panel min-w-0 flex-1 overflow-auto p-0"}
+        className="panel h-full w-full overflow-auto p-0"
         style={fullscreen ? undefined : { height: "70vh" }}
       >
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
@@ -1499,7 +1523,10 @@ export default function UnifiedBoardSection({
             />
             {/* ハブモード専用。案件⇔ToDo⇔作業のうち盤面に置かれているものどうしを、
                 手動のスタンプ/連結線とは別に自動で線でつなぐ。あくまで関係性を示す
-                飾りなので、保存はせず毎回boardItemsから作り直す・操作対象にもしない */}
+                飾りなので、保存はせず毎回boardItemsから作り直す・操作対象にもしない。
+                線の上を流れる小さな光点は「データが行き来している」演出で、線の長さから
+                速度を揃え(距離が長いほど周期も長く)、キーから決めた開始位置のずれで
+                全部の線が同時に脈動しないようにしている */}
             {hubMode && autoConnectors.length > 0 && (
               <svg
                 className="absolute left-0 top-0"
@@ -1507,18 +1534,34 @@ export default function UnifiedBoardSection({
                 height={MEMO_BOARD_HEIGHT}
                 style={{ pointerEvents: "none" }}
               >
-                {autoConnectors.map((c) => (
-                  <line
-                    key={c.key}
-                    x1={c.x1}
-                    y1={c.y1}
-                    x2={c.x2}
-                    y2={c.y2}
-                    stroke="rgb(var(--accent-rgb) / 0.35)"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 3"
-                  />
-                ))}
+                {autoConnectors.map((c) => {
+                  const length = Math.hypot(c.x2 - c.x1, c.y2 - c.y1);
+                  const dur = Math.max(1.4, length / 140);
+                  let hash = 0;
+                  for (let i = 0; i < c.key.length; i++) hash = (hash * 31 + c.key.charCodeAt(i)) | 0;
+                  const begin = ((Math.abs(hash) % 100) / 100) * dur;
+                  return (
+                    <g key={c.key}>
+                      <line
+                        x1={c.x1}
+                        y1={c.y1}
+                        x2={c.x2}
+                        y2={c.y2}
+                        stroke="rgb(var(--accent-rgb) / 0.35)"
+                        strokeWidth={1.5}
+                        strokeDasharray="4 3"
+                      />
+                      <circle r={2.5} fill="rgb(var(--accent-rgb) / 0.9)">
+                        <animateMotion
+                          dur={`${dur}s`}
+                          begin={`${begin}s`}
+                          repeatCount="indefinite"
+                          path={`M${c.x1},${c.y1} L${c.x2},${c.y2}`}
+                        />
+                      </circle>
+                    </g>
+                  );
+                })}
               </svg>
             )}
             {/* ラバーバンド範囲選択中の枠 */}
@@ -1609,6 +1652,7 @@ export default function UnifiedBoardSection({
                 selected={selectedIds.has(todo.id)}
                 matched={matchingIds?.has(todo.id) ?? false}
                 dimmed={boardSearchActive && !(matchingIds?.has(todo.id) ?? false)}
+                hubAlert={hubMode && !!todo.dueDate && todo.dueDate < today}
                 onSelect={(additive) => selectItem(todo.id, additive)}
                 onDragEnd={(id, x, y) => handleItemDragEnd("todo", id, x, y)}
                 onComplete={() => completeTodo(todo)}
@@ -1629,6 +1673,7 @@ export default function UnifiedBoardSection({
                 selected={selectedIds.has(project.id)}
                 matched={matchingIds?.has(project.id) ?? false}
                 dimmed={boardSearchActive && !(matchingIds?.has(project.id) ?? false)}
+                hubAlert={hubMode && project.dueDate < today}
                 onSelect={(additive) => selectItem(project.id, additive)}
                 onDragEnd={(id, x, y) => handleItemDragEnd("project", id, x, y)}
                 onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
@@ -1661,6 +1706,8 @@ export default function UnifiedBoardSection({
             })}
           </div>
         </div>
+      </div>
+      {hubMode && <HubHudFrame now={now} />}
       </div>
 
       {/* ミニマップ。拡大しているときに今どこを見ているか分かるようにし、クリック/
@@ -1706,11 +1753,27 @@ export default function UnifiedBoardSection({
         </div>
       </div>
 
-      {/* ハブモード専用。本日の完了率をリングで、所定労働時間の残り・超過中の件数を
-          数字で常駐表示する。盤面を見渡すだけで今の状況が一目でわかるようにする */}
+      {/* ハブモード専用。「ミッションコントロール」HUD。本日の完了率をリングで、
+          総合ステータス・進行中/超過中/待機中の内訳・所定労働時間の残りを常駐表示する。
+          盤面を見渡すだけで今の状況が一目でわかるようにする */}
       {hubMode && (
-        <div className="panel hidden shrink-0 self-start p-2 sm:block">
-          <p className="mb-1 text-[10px] text-cream/40">本日の進捗</p>
+        <div className="panel hidden shrink-0 self-start p-2 sm:block" style={{ width: MINIMAP_WIDTH + 16 }}>
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-[10px] font-bold tracking-[0.2em] text-cream/50">MISSION CONTROL</p>
+            <span className="hub-rec-dot h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: "rgb(var(--accent-rgb))" }} />
+          </div>
+          {overallStatus && (
+            <p
+              className="mb-1.5 rounded border px-1.5 py-1 text-center text-[11px] font-bold tracking-wide"
+              style={{
+                borderColor: `rgb(var(--accent-rgb) / ${0.3 + overallStatus.level * 0.15})`,
+                color: "rgb(var(--accent-rgb))",
+                backgroundColor: `rgb(var(--accent-rgb) / ${0.06 + overallStatus.level * 0.05})`,
+              }}
+            >
+              状況: {overallStatus.name}
+            </p>
+          )}
           <div className="relative flex items-center justify-center" style={{ width: MINIMAP_WIDTH }}>
             <RadialTimer
               progressPct={progressStats.totalCount > 0 ? (progressStats.doneCount / progressStats.totalCount) * 100 : 0}
@@ -1724,11 +1787,24 @@ export default function UnifiedBoardSection({
               <span className="text-[9px] text-cream/50">完了</span>
             </div>
           </div>
-          <div className="mt-1.5 space-y-0.5 text-center text-[10px] tabular-nums text-cream/60">
-            <p>{standardWorkEnd}まで残り {formatMsClock(progressStats.remainingMs)}</p>
-            {progressStats.overrunCount > 0 && (
-              <p className="text-alert">超過中 {progressStats.overrunCount}件</p>
-            )}
+          <p className="mt-1.5 text-center text-[10px] tabular-nums text-cream/60">
+            {standardWorkEnd}まで残り {formatMsClock(progressStats.remainingMs)}
+          </p>
+          <div className="mt-1.5 grid grid-cols-3 gap-1 text-center text-[10px] tabular-nums">
+            <div className="rounded bg-cream/5 py-1">
+              <p className="text-cream/40">進行中</p>
+              <p className="font-bold text-cream">{runningCount}</p>
+            </div>
+            <div className="rounded bg-cream/5 py-1">
+              <p className="text-cream/40">超過中</p>
+              <p className={`font-bold ${progressStats.overrunCount > 0 ? "text-alert" : "text-cream"}`}>
+                {progressStats.overrunCount}
+              </p>
+            </div>
+            <div className="rounded bg-cream/5 py-1">
+              <p className="text-cream/40">待機中</p>
+              <p className="font-bold text-cream">{waitingCount}</p>
+            </div>
           </div>
         </div>
       )}
@@ -1761,6 +1837,32 @@ export default function UnifiedBoardSection({
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+// ハブモード専用。統合ボードのビューポートに重ねる「ミッションコントロール」風のHUD枠。
+// 四隅のコーナーマーク・上から下へ流れるスキャンライン・右上の稼働中インジケーター(時計)を
+// 出すだけの飾りで、操作対象にはしない(pointer-events-none)。盤面のスクロール/ズームに
+// 追従してほしくないため、呼び出し側でスクロールするビューポートの外側(兄弟)に置いている
+function HubHudFrame({ now }: { now: number }) {
+  const d = new Date(now);
+  const clock = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+  const cornerBase = "absolute h-5 w-5 border-[rgb(var(--accent-rgb)/0.55)]";
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
+      <div className={`${cornerBase} left-1.5 top-1.5 border-l-2 border-t-2`} />
+      <div className={`${cornerBase} right-1.5 top-1.5 border-r-2 border-t-2`} />
+      <div className={`${cornerBase} bottom-1.5 left-1.5 border-b-2 border-l-2`} />
+      <div className={`${cornerBase} bottom-1.5 right-1.5 border-b-2 border-r-2`} />
+      <div
+        className="hub-hud-scanline absolute left-0 h-px w-full"
+        style={{ background: "linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.9), transparent)" }}
+      />
+      <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 rounded bg-ink/70 px-1.5 py-0.5">
+        <span className="hub-rec-dot h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "rgb(var(--accent-rgb))" }} />
+        <span className="font-display text-[10px] tabular-nums tracking-wider text-cream/70">{clock}</span>
+      </div>
     </div>
   );
 }
@@ -2486,9 +2588,15 @@ function TaskCard({
   const elapsedMs = segmentsAccumulatedMs(task, now);
   const running = task.status === "running";
 
+  // ハブモード専用。超過度合いが「押され気味」以上(レベル3〜4)まで来たタスクだけ、
+  // 地色の負荷ヒートマップに加えてパルスする縁取りで強調し、盤面を一目見ただけで
+  // 「今すぐ見るべきカード」が分かるようにする
+  const criticalAlert = riskLevel !== null && riskLevel >= 3;
   return (
     <div
-      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${running ? "border-alert" : "border-cream/20"}`}
+      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
+        running ? "border-alert" : "border-cream/20"
+      } ${criticalAlert ? "hub-card-alert" : ""}`}
       style={{ left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
@@ -2569,6 +2677,7 @@ function TodoCard({
   selected,
   matched,
   dimmed,
+  hubAlert,
   onSelect,
   onDragEnd,
   onComplete,
@@ -2587,6 +2696,8 @@ function TodoCard({
   selected: boolean;
   matched: boolean;
   dimmed: boolean;
+  /** ハブモード専用。期限切れの時だけtrueになり、縁取りをパルスさせる */
+  hubAlert: boolean;
   onSelect: (additive: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onComplete: () => void;
@@ -2618,7 +2729,7 @@ function TodoCard({
     <div
       className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
         overdue ? "border-alert/70" : "border-cream/20"
-      }`}
+      } ${hubAlert ? "hub-card-alert" : ""}`}
       style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
@@ -2707,6 +2818,7 @@ function ProjectCard({
   selected,
   matched,
   dimmed,
+  hubAlert,
   onSelect,
   onDragEnd,
   onToggleStage,
@@ -2723,6 +2835,8 @@ function ProjectCard({
   selected: boolean;
   matched: boolean;
   dimmed: boolean;
+  /** ハブモード専用。期日超過の時だけtrueになり、縁取りをパルスさせる */
+  hubAlert: boolean;
   onSelect: (additive: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onToggleStage: (stageId: string) => void;
@@ -2760,7 +2874,7 @@ function ProjectCard({
     <div
       className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
         overdue ? "border-alert/70" : "border-cream/20"
-      }`}
+      } ${hubAlert ? "hub-card-alert" : ""}`}
       style={{ left, top, width: CARD_WIDTH, height: cardHeight, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
