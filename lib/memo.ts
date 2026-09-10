@@ -147,6 +147,97 @@ export function estimateChecklistNoteHeight(itemCount: number): number {
   return clampNoteHeight(MEMO_NOTE_CHROME_HEIGHT + Math.max(1, itemCount) * MEMO_NOTE_CHECKLIST_ITEM_HEIGHT + 20);
 }
 
+// ここから下は、自動サイズ調整で横幅も内容に合わせるための実測ベースの計算。
+// 上のestimateTextNoteHeight等は「幅220px固定」を前提にした文字数からの概算だが、
+// 幅も可変にすると概算では実際の折り返しと大きくズレてしまうため、キャンバスで
+// 実際の文字幅を測って求める(全角/半角混在や絵文字が混ざっても実際の見た目どおりになる)
+export const MEMO_NOTE_AUTO_MAX_WIDTH = 420; // 自動サイズ時、横に広がりすぎないための上限
+// 自動サイズ時の最小幅。付箋の上部には色スウォッチ・自動サイズボタン等の操作列が
+// 並んでおり、MEMO_NOTE_MIN_WIDTH(手動リサイズ時の絶対下限,100px)まで縮めると
+// その操作列自体が折り返して崩れてしまう。180pxなら操作列が2行に収まる
+const MEMO_NOTE_AUTO_MIN_WIDTH = 180;
+const MEMO_NOTE_TEXT_HORIZONTAL_CHROME = 16; // 本文textareaのpx-2(左右16px)相当
+const MEMO_NOTE_CHECKLIST_HORIZONTAL_CHROME = 54; // チェックリスト行のチェックボックス・削除ボタン・余白相当
+
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+function getMeasureCtx(): CanvasRenderingContext2D | null {
+  if (measureCtx !== undefined) return measureCtx;
+  measureCtx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+  return measureCtx;
+}
+
+// テーマによって地の文の書体が変わる場合(ターミナル風は等幅フォントに変わる等)があるため、
+// ハードコードせず都度実際のbodyの書体を読む
+function bodyFontFamily(): string {
+  if (typeof document === "undefined") return "sans-serif";
+  return getComputedStyle(document.body).fontFamily || "sans-serif";
+}
+
+// 付箋本文(textarea, Tailwindのtext-sm=14px)の自動サイズ計算に使うフォント
+export function memoNoteTextFont(): string {
+  return `400 14px ${bodyFontFamily()}`;
+}
+// チェックリスト項目(input, Tailwindのtext-xs=12px)の自動サイズ計算に使うフォント
+export function memoChecklistItemFont(): string {
+  return `400 12px ${bodyFontFamily()}`;
+}
+
+// 1行のテキストを、幅maxWidthに収まるよう貪欲に折り返した場合の行数を返す。
+// 日本語には単語の区切りが無いため、CSSの折り返しと同様に1文字ずつ判定する簡易近似
+function wrappedLineCount(ctx: CanvasRenderingContext2D, line: string, maxWidth: number): number {
+  if (line.length === 0) return 1;
+  let rows = 1;
+  let current = "";
+  for (const ch of line) {
+    const next = current + ch;
+    if (current !== "" && ctx.measureText(next).width > maxWidth) {
+      rows++;
+      current = ch;
+    } else {
+      current = next;
+    }
+  }
+  return rows;
+}
+
+/**
+ * 実際に表示で使っているフォントで文字幅を測り、付箋の横幅を「一番長い行が
+ * ちょうど収まる幅」に、縦幅を「そのときの折り返し行数」に合わせる。
+ * キャンバスが使えない環境(テスト等)では、幅は最小幅のまま高さだけ従来の
+ * 文字数概算(estimateTextNoteHeight)にフォールバックする
+ */
+export function estimateAutoTextNoteSize(text: string, font: string): { width: number; height: number } {
+  const ctx = getMeasureCtx();
+  if (!ctx) return { width: MEMO_NOTE_AUTO_MIN_WIDTH, height: estimateTextNoteHeight(text) };
+  ctx.font = font;
+  const lines = text.split("\n");
+  let longest = 0;
+  for (const line of lines) longest = Math.max(longest, ctx.measureText(line).width);
+  const width = Math.max(
+    MEMO_NOTE_AUTO_MIN_WIDTH,
+    Math.min(MEMO_NOTE_AUTO_MAX_WIDTH, Math.ceil(longest) + MEMO_NOTE_TEXT_HORIZONTAL_CHROME)
+  );
+  const maxTextWidth = width - MEMO_NOTE_TEXT_HORIZONTAL_CHROME;
+  let rows = 0;
+  for (const line of lines) rows += wrappedLineCount(ctx, line, maxTextWidth);
+  const height = clampNoteHeight(MEMO_NOTE_CHROME_HEIGHT + Math.max(1, rows) * MEMO_NOTE_TEXT_LINE_HEIGHT);
+  return { width, height };
+}
+
+// チェックリスト付箋の横幅。各項目はtextareaと違って折り返さない1行入力のため、
+// 一番長い項目の文字幅に合わせるだけでよい(縦幅は従来通り項目数だけで決まる)
+export function estimateAutoChecklistNoteWidth(items: { text: string }[], font: string): number {
+  const ctx = getMeasureCtx();
+  if (!ctx) return MEMO_NOTE_AUTO_MIN_WIDTH;
+  ctx.font = font;
+  let longest = 0;
+  for (const item of items) longest = Math.max(longest, ctx.measureText(item.text).width);
+  return Math.max(
+    MEMO_NOTE_AUTO_MIN_WIDTH,
+    Math.min(MEMO_NOTE_AUTO_MAX_WIDTH, Math.ceil(longest) + MEMO_NOTE_CHECKLIST_HORIZONTAL_CHROME)
+  );
+}
+
 // 消しゴムでなぞった位置から、この半径(ボード論理px)以内に点を持つ手書きストロークを消す対象とする
 export const MEMO_ERASER_RADIUS = 14;
 

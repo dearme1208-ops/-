@@ -24,10 +24,13 @@ import {
   DEFAULT_MEMO_NOTE_TEXT_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
   DEFAULT_MEMO_PEN_WIDTH,
+  estimateAutoChecklistNoteWidth,
+  estimateAutoTextNoteSize,
   estimateChecklistNoteHeight,
-  estimateTextNoteHeight,
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
+  memoChecklistItemFont,
+  memoNoteTextFont,
   MEMO_NOTE_COLORS,
   MEMO_NOTE_TEXT_COLORS,
   MEMO_PEN_COLORS,
@@ -296,6 +299,9 @@ export default function UnifiedBoardSection({
   async function growNote(id: string, height: number) {
     await db.memoNotes.update(id, { height, updatedAt: Date.now() });
   }
+  async function resizeNote(id: string, width: number, height: number) {
+    await db.memoNotes.update(id, { width, height, updatedAt: Date.now() });
+  }
   async function commitNoteText(note: MemoNote, text: string) {
     if (text === note.text) return;
     await db.memoNotes.update(note.id, { text, updatedAt: Date.now() });
@@ -312,10 +318,14 @@ export default function UnifiedBoardSection({
       await db.memoNotes.update(note.id, { autoSize });
       return;
     }
-    const height = note.isChecklist
-      ? estimateChecklistNoteHeight((note.checklistItems ?? []).length)
-      : estimateTextNoteHeight(note.text);
-    await db.memoNotes.update(note.id, { autoSize, height });
+    if (note.isChecklist) {
+      const height = estimateChecklistNoteHeight((note.checklistItems ?? []).length);
+      const width = estimateAutoChecklistNoteWidth(note.checklistItems ?? [], memoChecklistItemFont());
+      await db.memoNotes.update(note.id, { autoSize, width, height });
+      return;
+    }
+    const { width, height } = estimateAutoTextNoteSize(note.text, memoNoteTextFont());
+    await db.memoNotes.update(note.id, { autoSize, width, height });
   }
 
   async function moveTask(id: string, x: number, y: number) {
@@ -410,9 +420,10 @@ export default function UnifiedBoardSection({
   async function addNote() {
     if (!selectedBoardId) return;
     maxNoteOrderRef.current += 1;
-    const width = 180;
-    // 自動サイズは新規付箋では既定でONにする(切り替えはいつでも可能)
-    const height = estimateTextNoteHeight("");
+    // 自動サイズは新規付箋では既定でONにする(切り替えはいつでも可能)。
+    // 幅もここで内容(空文字)に合わせて決めておくことで、作成直後に自動サイズの
+    // useEffectでいきなりサイズが変わって見える「ガタつき」を防ぐ
+    const { width, height } = estimateAutoTextNoteSize("", memoNoteTextFont());
     const occupied: BoardRect[] = [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
       ...tasks
@@ -1243,6 +1254,7 @@ export default function UnifiedBoardSection({
                 onDragEnd={(id, x, y) => handleItemDragEnd("note", id, x, y)}
                 onCommitText={commitNoteText}
                 onGrow={growNote}
+                onResize={resizeNote}
                 onColorChange={setNoteColor}
                 onTextColorChange={setNoteTextColor}
                 onToggleAutoSize={() => toggleNoteAutoSize(note)}
@@ -1878,6 +1890,7 @@ function NoteCard({
   onCommitText,
   onFocus,
   onGrow,
+  onResize,
   onColorChange,
   onTextColorChange,
   onToggleAutoSize,
@@ -1895,6 +1908,7 @@ function NoteCard({
   onCommitText: (note: MemoNote, text: string) => void;
   onFocus: () => void;
   onGrow: (id: string, height: number) => void;
+  onResize: (id: string, width: number, height: number) => void;
   onColorChange: (id: string, color: string) => void;
   onTextColorChange: (id: string, color: string) => void;
   onToggleAutoSize: () => void;
@@ -1910,18 +1924,25 @@ function NoteCard({
       setText(note.text);
     }
   }, [note.id, note.text]);
-  // 自動サイズON中は、文字量(チェックリストなら項目数)が変わるたびに高さを
+  // 自動サイズON中は、文字量(チェックリストなら項目数)が変わるたびに幅・高さを
   // 実際の中身に合わせて増減させる。OFF中は従来通り(はみ出した時だけ自動拡大)のまま
   useEffect(() => {
     if (!note.autoSize) return;
-    const target = note.isChecklist
-      ? estimateChecklistNoteHeight((note.checklistItems ?? []).length)
-      : estimateTextNoteHeight(text);
-    if (Math.abs(target - note.height) > 1) {
-      onGrow(note.id, target);
+    let targetWidth: number;
+    let targetHeight: number;
+    if (note.isChecklist) {
+      targetWidth = estimateAutoChecklistNoteWidth(note.checklistItems ?? [], memoChecklistItemFont());
+      targetHeight = estimateChecklistNoteHeight((note.checklistItems ?? []).length);
+    } else {
+      const size = estimateAutoTextNoteSize(text, memoNoteTextFont());
+      targetWidth = size.width;
+      targetHeight = size.height;
+    }
+    if (Math.abs(targetWidth - note.width) > 1 || Math.abs(targetHeight - note.height) > 1) {
+      onResize(note.id, targetWidth, targetHeight);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note.autoSize, note.isChecklist, note.checklistItems, text]);
+  }, [note.autoSize, note.isChecklist, note.checklistItems, text, note.width]);
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     note.x,
     note.y,

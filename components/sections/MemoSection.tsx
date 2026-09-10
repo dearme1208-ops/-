@@ -19,10 +19,14 @@ import {
   DEFAULT_MEMO_NOTE_TEXT_COLOR,
   DEFAULT_MEMO_PEN_COLOR,
   DEFAULT_MEMO_PEN_WIDTH,
+  estimateAutoChecklistNoteWidth,
+  estimateAutoTextNoteSize,
   estimateChecklistNoteHeight,
   estimateTextNoteHeight,
   MEMO_BOARD_HEIGHT,
   MEMO_BOARD_WIDTH,
+  memoChecklistItemFont,
+  memoNoteTextFont,
   MEMO_NOTE_COLORS,
   MEMO_NOTE_MIN_HEIGHT,
   MEMO_NOTE_MIN_WIDTH,
@@ -357,14 +361,17 @@ export default function MemoSection() {
     if (!selectedBoardId) return;
     maxOrderRef.current += 1;
     const offset = (maxOrderRef.current * 24) % 220;
+    // 自動サイズは新規付箋では既定でONにする(切り替えはいつでも可能)。
+    // 幅もここで内容に合わせて決めておくことで、作成直後に自動サイズの
+    // useEffectでいきなりサイズが変わって見える「ガタつき」を防ぐ
+    const { width, height } = estimateAutoTextNoteSize(text, memoNoteTextFont());
     const note: MemoNote = {
       id: uid(),
       boardId: selectedBoardId,
       x: 40 + offset,
       y: 40 + offset,
-      width: 220,
-      // 自動サイズは新規付箋では既定でONにする(切り替えはいつでも可能)
-      height: estimateTextNoteHeight(text),
+      width,
+      height,
       color: DEFAULT_MEMO_NOTE_COLOR,
       text,
       order: maxOrderRef.current,
@@ -456,7 +463,7 @@ export default function MemoSection() {
   async function setNoteTextColor(id: string, textColor: string) {
     await db.memoNotes.update(id, { textColor });
   }
-  // 自動サイズON/OFFの切り替え。ONにした瞬間、今の中身に合わせた高さへ揃えておく
+  // 自動サイズON/OFFの切り替え。ONにした瞬間、今の中身に合わせた幅・高さへ揃えておく
   // (以降は文字量/項目数が変わるたびにStickyNoteCard側のuseEffectが追従させる)
   async function toggleAutoSize(note: MemoNote) {
     const autoSize = !note.autoSize;
@@ -464,10 +471,14 @@ export default function MemoSection() {
       await db.memoNotes.update(note.id, { autoSize });
       return;
     }
-    const height = note.isChecklist
-      ? estimateChecklistNoteHeight((note.checklistItems ?? []).length)
-      : estimateTextNoteHeight(note.text);
-    await db.memoNotes.update(note.id, { autoSize, height });
+    if (note.isChecklist) {
+      const height = estimateChecklistNoteHeight((note.checklistItems ?? []).length);
+      const width = estimateAutoChecklistNoteWidth(note.checklistItems ?? [], memoChecklistItemFont());
+      await db.memoNotes.update(note.id, { autoSize, width, height });
+      return;
+    }
+    const { width, height } = estimateAutoTextNoteSize(note.text, memoNoteTextFont());
+    await db.memoNotes.update(note.id, { autoSize, width, height });
   }
   async function duplicateNote(note: MemoNote) {
     if (!confirm("この付箋を複製しますか?")) return;
@@ -1289,18 +1300,25 @@ function StickyNoteCard({
     }
   }, [note.id, note.text]);
 
-  // 自動サイズON中は、文字量(チェックリストなら項目数)が変わるたびに高さを
+  // 自動サイズON中は、文字量(チェックリストなら項目数)が変わるたびに幅・高さを
   // 実際の中身に合わせて増減させる。OFF中は従来通り(手動リサイズ+はみ出し時だけ自動拡大)のまま
   useEffect(() => {
     if (!note.autoSize) return;
-    const target = note.isChecklist
-      ? estimateChecklistNoteHeight((note.checklistItems ?? []).length)
-      : estimateTextNoteHeight(text);
-    if (Math.abs(target - note.height) > 1) {
-      onResizeEnd(note.id, note.width, target);
+    let targetWidth: number;
+    let targetHeight: number;
+    if (note.isChecklist) {
+      targetWidth = estimateAutoChecklistNoteWidth(note.checklistItems ?? [], memoChecklistItemFont());
+      targetHeight = estimateChecklistNoteHeight((note.checklistItems ?? []).length);
+    } else {
+      const size = estimateAutoTextNoteSize(text, memoNoteTextFont());
+      targetWidth = size.width;
+      targetHeight = size.height;
+    }
+    if (Math.abs(targetWidth - note.width) > 1 || Math.abs(targetHeight - note.height) > 1) {
+      onResizeEnd(note.id, targetWidth, targetHeight);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note.autoSize, note.isChecklist, note.checklistItems, text, note.width]);
+  }, [note.autoSize, note.isChecklist, note.checklistItems, text, note.width, note.height]);
 
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
