@@ -291,6 +291,9 @@ export interface TodoTask {
   boardY?: number; // ToDo自体が残り続ける限り保持する(マイデイから外れると自然に表示対象から外れる)
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
   boardPinned?: boolean; // trueの場合、統合ボード上で他のカードより必ず手前に表示される
+  boardHidden?: boolean; // trueの場合、自動表示の条件(重要・期日ありなど)に当てはまっても
+  // ボードから下げた状態を維持する(✕で下げた後、条件に一致していても再出現しないようにするため)。
+  // 「一覧から置く」で改めて置くとクリアされる
   imageDataUrl?: string; // タスク(サブタスクを含む)に添付した画像。1枚のみ、data URLとしてそのまま保存する
 }
 

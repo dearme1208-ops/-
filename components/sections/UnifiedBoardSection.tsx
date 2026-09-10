@@ -56,7 +56,18 @@ import type { BoardShape, BoardShapeType, BoardStamp, DailyTask, MasterTask, Mem
 const CARD_WIDTH = 220;
 const TASK_CARD_HEIGHT = 110;
 const TODO_CARD_HEIGHT = 90;
-const PROJECT_CARD_HEIGHT = 132;
+// 案件カードは残っている段階の数に応じて縦に伸びる(スクロールで探すより、
+// できるだけそのまま全部見える方を優先する)。ただし段階が非常に多い案件が
+// 盤面を占領しすぎないよう、上限を超えた分はこれまで通りカード内スクロールになる
+const PROJECT_CARD_MIN_HEIGHT = 132;
+const PROJECT_CARD_MAX_HEIGHT = 480;
+const PROJECT_CARD_CHROME_HEIGHT = 90; // ヘッダー・期日・進捗バーなど、段階以外の固定分
+const PROJECT_CARD_STAGE_ROW_HEIGHT = 22;
+function computeProjectCardHeight(project: ProjectItem): number {
+  const remaining = (project.stages ?? []).filter((st) => !isStageDone(st)).length;
+  const fit = PROJECT_CARD_CHROME_HEIGHT + remaining * PROJECT_CARD_STAGE_ROW_HEIGHT;
+  return Math.max(PROJECT_CARD_MIN_HEIGHT, Math.min(PROJECT_CARD_MAX_HEIGHT, fit));
+}
 const PLACEMENT_GRID = 30;
 const PLACEMENT_MARGIN = 10;
 const MINIMAP_WIDTH = 180;
@@ -72,6 +83,40 @@ const TIME_AXIS_LANE_GAP = 20;
 function parseHM(hm: string): number {
   const [h, m] = hm.split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
+}
+
+// ToDoをどこまで自動でボードに出すかの条件。既定は従来通り「マイデイ」だけだが、
+// チェックボックスで重要・期日あり・期限切れも足せるようにする。手動で置いたもの
+// (boardX有り)は条件に関わらず常に出す(これまで通り)
+const TODO_AUTO_SHOW_OPTIONS = [
+  { key: "myday", label: "マイデイ" },
+  { key: "important", label: "重要" },
+  { key: "planned", label: "期日あり" },
+  { key: "overdue", label: "期限切れ" },
+] as const;
+type TodoAutoShowKey = (typeof TODO_AUTO_SHOW_OPTIONS)[number]["key"];
+const TODO_AUTO_SHOW_KEYS = TODO_AUTO_SHOW_OPTIONS.map((o) => o.key);
+const DEFAULT_TODO_AUTO_SHOW: TodoAutoShowKey[] = ["myday"];
+
+function parseTodoAutoShow(json: string): TodoAutoShowKey[] {
+  try {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed)) {
+      const valid = parsed.filter((k): k is TodoAutoShowKey => (TODO_AUTO_SHOW_KEYS as string[]).includes(k));
+      if (valid.length > 0) return valid;
+    }
+  } catch {
+    // 壊れた設定値は既定にフォールバック
+  }
+  return DEFAULT_TODO_AUTO_SHOW;
+}
+
+function matchesTodoAutoShow(todo: TodoTask, criteria: TodoAutoShowKey[], today: string): boolean {
+  if (criteria.includes("myday") && todo.myDayDate === today) return true;
+  if (criteria.includes("important") && todo.important) return true;
+  if (criteria.includes("planned") && !!todo.dueDate) return true;
+  if (criteria.includes("overdue") && !!todo.dueDate && todo.dueDate < today) return true;
+  return false;
 }
 
 interface BoardRect {
@@ -186,8 +231,18 @@ export default function UnifiedBoardSection({
   const tasks = (dailyTasks ?? []).filter((t) => !t.isProvisional && t.status !== "done");
   // 未完了の親タスクだけを対象にする(サブタスクはカードにしない)
   const openTodos = (todoTasks ?? []).filter((t) => !t.completed && !t.parentTaskId);
-  // ボードに出すのは「マイデイに入れたもの」と「一覧から置いたもの」
-  const todos = openTodos.filter((t) => t.myDayDate === today || t.boardX !== undefined);
+  // ボードに自動で出すToDoの条件(マイデイ/重要/期日あり/期限切れをチェックボックスで選べる)。
+  // どれにも当てはまらなくても、手動で「一覧から置く」で置いたものは常に出す
+  const [todoAutoShowStr, setTodoAutoShowStr] = useSetting("board.todoAutoShow", JSON.stringify(DEFAULT_TODO_AUTO_SHOW));
+  const todoAutoShow = parseTodoAutoShow(todoAutoShowStr);
+  function toggleTodoAutoShow(key: TodoAutoShowKey) {
+    const next = todoAutoShow.includes(key) ? todoAutoShow.filter((k) => k !== key) : [...todoAutoShow, key];
+    setTodoAutoShowStr(JSON.stringify(next.length > 0 ? next : []));
+  }
+  // boardHiddenが立っているもの(✕で明示的に下げたもの)は、条件に当てはまっていても
+  // 自動では出さない。再度出すには「一覧から置く」で改めて置く必要がある
+  const isTodoAutoShown = (t: TodoTask) => !t.boardHidden && matchesTodoAutoShow(t, todoAutoShow, today);
+  const todos = openTodos.filter((t) => t.boardX !== undefined || isTodoAutoShown(t));
   const openProjects = (projectItems ?? []).filter((p) => !p.completedAt);
   // 案件は数が多くなりがちなので、自動では置かず、置いたものだけを出す
   const projects = openProjects.filter((p) => p.boardX !== undefined);
@@ -224,7 +279,7 @@ export default function UnifiedBoardSection({
 
     const occupied: BoardRect[] = [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
-      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
       ...tasks
         .filter((t) => t.boardX !== undefined && t.boardY !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
@@ -495,7 +550,7 @@ export default function UnifiedBoardSection({
       ...todos
         .filter((t) => t.boardX !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TODO_CARD_HEIGHT })),
-      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
     ];
     const pos = findFreeSlot(occupied, width, height);
     await db.memoNotes.add({
@@ -579,26 +634,27 @@ export default function UnifiedBoardSection({
       ...todos
         .filter((t) => t.boardX !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TODO_CARD_HEIGHT })),
-      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
     ];
   }
   async function placeTodo(todo: TodoTask) {
     const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, TODO_CARD_HEIGHT);
-    await db.todoTasks.update(todo.id, { boardX: pos.x, boardY: pos.y });
+    await db.todoTasks.update(todo.id, { boardX: pos.x, boardY: pos.y, boardHidden: false });
     // 置いた直後は最前面にする。他のカードが既に手前へ来ていると、
     // 置いたばかりのカードがその下に隠れて見えなくなっていたため
     bringToFront(todo.id);
   }
   async function placeProject(project: ProjectItem) {
-    const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, PROJECT_CARD_HEIGHT);
+    const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, computeProjectCardHeight(project));
     await db.projects.update(project.id, { boardX: pos.x, boardY: pos.y });
     bringToFront(project.id);
   }
-  // ToDoを下げるときはマイデイからも外す。そうしないと、マイデイのものは
-  // 自動配置がすぐ置き直してしまい、下げたつもりが戻ってくる
+  // ToDoを下げるときはマイデイからも外し、boardHiddenを立てる。myDayDateだけ外しても
+  // 「重要」等の自動表示条件に該当していると自動配置がすぐ置き直してしまうため、
+  // 明示的に「下げた」状態を覚えておく(再度「一覧から置く」で置くとクリアされる)
   async function removeTodo(todo: TodoTask, skipConfirm = false) {
     if (!skipConfirm && !confirm(`「${todo.title}」をボードから下げますか?(マイデイからも外れます。ToDo自体は消えません)`)) return;
-    await db.todoTasks.update(todo.id, { boardX: undefined, boardY: undefined, myDayDate: undefined });
+    await db.todoTasks.update(todo.id, { boardX: undefined, boardY: undefined, myDayDate: undefined, boardHidden: true });
   }
   async function removeProject(project: ProjectItem, skipConfirm = false) {
     if (!skipConfirm && !confirm(`「${project.title}」をボードから下げますか?(案件自体は消えません)`)) return;
@@ -630,7 +686,7 @@ export default function UnifiedBoardSection({
     }
     for (const p of projects) {
       if (p.boardX === undefined || p.boardY === undefined) continue;
-      items.push({ kind: "project", id: p.id, x: p.boardX, y: p.boardY, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT, label: p.title, locked: !!p.boardLocked });
+      items.push({ kind: "project", id: p.id, x: p.boardX, y: p.boardY, width: CARD_WIDTH, height: computeProjectCardHeight(p), label: p.title, locked: !!p.boardLocked });
     }
     for (const n of notes ?? []) {
       const label = n.isChecklist ? (n.checklistItems ?? []).map((i) => i.text).join(" ") : n.text;
@@ -1067,7 +1123,7 @@ export default function UnifiedBoardSection({
   }, [fullscreen]);
 
   const [showPalette, setShowPalette] = useState(false);
-  const unplacedTodos = openTodos.filter((t) => t.myDayDate !== today && t.boardX === undefined);
+  const unplacedTodos = openTodos.filter((t) => t.boardX === undefined && !isTodoAutoShown(t));
   const unplacedProjects = openProjects.filter((p) => p.boardX === undefined);
 
   return (
@@ -1287,6 +1343,25 @@ export default function UnifiedBoardSection({
       {showPalette && (
         <div className="panel space-y-3 p-3">
           <div>
+            <h4 className="mb-1.5 text-xs font-bold text-cream/70">ToDoを自動でボードに出す条件</h4>
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {TODO_AUTO_SHOW_OPTIONS.map((opt) => (
+                <label key={opt.key} className="flex items-center gap-1.5 text-xs text-cream/70">
+                  <input
+                    type="checkbox"
+                    checked={todoAutoShow.includes(opt.key)}
+                    onChange={() => toggleTodoAutoShow(opt.key)}
+                    className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-cream"
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            <p className="mt-1 text-[10px] text-cream/40">
+              いずれかに当てはまるToDoが自動で盤面に並びます。手動で置いたものは条件に関わらず出続けます。
+            </p>
+          </div>
+          <div>
             <h4 className="mb-1.5 text-xs font-bold text-cream/70">ToDo（未完了で、まだ置いていないもの）</h4>
             {unplacedTodos.length === 0 ? (
               <p className="text-xs text-cream/40">置けるToDoはありません。</p>
@@ -1331,7 +1406,7 @@ export default function UnifiedBoardSection({
 
       {!fullscreen && (
         <p className="flex flex-wrap items-center gap-2 px-1 text-xs text-cream/50">
-          付箋と手書きはメモタブと同じものです（どちらで書いても両方に出ます）。ToDoは「マイデイ」に入れたものが自動で並び、それ以外と案件は上の「一覧から置く」から置きます。カードの
+          付箋と手書きはメモタブと同じものです（どちらで書いても両方に出ます）。ToDoは「一覧から置く」内で選んだ条件（既定はマイデイ）に当てはまるものが自動で並び、それ以外と案件は同じく「一覧から置く」から置きます。カードの
           <span className="text-cream">✕</span>
           でボードから下げられます（ToDoはマイデイからも外れます。項目自体は消えません）。
           {onOpenTodo && (
@@ -2648,22 +2723,23 @@ function ProjectCard({
   const pinned = !!project.boardPinned;
   const x = project.boardX ?? 40;
   const y = project.boardY ?? 40;
+  const stages = project.stages ?? [];
+  // 残っている段階の数に応じて、カード自体の高さを伸ばす(できるだけスクロールせず
+  // 全部見えるようにする)。段階が非常に多い場合のみ、上限を超えた分がカード内
+  // スクロールになる(computeProjectCardHeightの上限を参照)
+  const cardHeight = computeProjectCardHeight(project);
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     x,
     y,
     CARD_WIDTH,
-    PROJECT_CARD_HEIGHT,
+    cardHeight,
     zoom,
     (nx, ny) => onDragEnd(project.id, nx, ny),
     locked
   );
-  const stages = project.stages ?? [];
   const doneCount = stages.filter(isStageDone).length;
   const progress = computeProjectProgress(stages);
   const overdue = project.dueDate < today;
-  // 残っている段階を全部出す。カードの高さには収まらないことが多いが、その分は
-  // 下のリスト自体がoverflow-y-autoでスクロールできるので、3件で打ち切って
-  // 「途切れて見える」よりも、スクロールすれば残り全部たどれる方を優先する
   const nextStages = stages.filter((st) => !isStageDone(st));
 
   return (
@@ -2671,7 +2747,7 @@ function ProjectCard({
       className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
         overdue ? "border-alert/70" : "border-cream/20"
       }`}
-      style={{ left, top, width: CARD_WIDTH, height: PROJECT_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
+      style={{ left, top, width: CARD_WIDTH, height: cardHeight, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
     >
