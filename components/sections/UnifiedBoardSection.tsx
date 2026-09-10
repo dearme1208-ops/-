@@ -2661,8 +2661,10 @@ function ProjectCard({
   const doneCount = stages.filter(isStageDone).length;
   const progress = computeProjectProgress(stages);
   const overdue = project.dueDate < today;
-  // 残っている段階のうち、上から3つだけ出す(カードの高さに収まる分)
-  const nextStages = stages.filter((st) => !isStageDone(st)).slice(0, 3);
+  // 残っている段階を全部出す。カードの高さには収まらないことが多いが、その分は
+  // 下のリスト自体がoverflow-y-autoでスクロールできるので、3件で打ち切って
+  // 「途切れて見える」よりも、スクロールすれば残り全部たどれる方を優先する
+  const nextStages = stages.filter((st) => !isStageDone(st));
 
   return (
     <div
