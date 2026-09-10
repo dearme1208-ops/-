@@ -2103,6 +2103,13 @@ function StampElement({
     locked
   );
   const colors = MEMO_NOTE_COLORS[stamp.color] ?? MEMO_NOTE_COLORS[DEFAULT_BOARD_STAMP_COLOR];
+  // ゴム印っぽく見えるよう、同じスタンプは常に同じ角度だけ傾ける(IDから決定的に算出)。
+  // 押すたびに向きが揃わない実際の判子のばらつきを再現する狙い
+  const rotationDeg = useMemo(() => {
+    let hash = 0;
+    for (let i = 0; i < stamp.id.length; i++) hash = (hash * 31 + stamp.id.charCodeAt(i)) | 0;
+    return ((Math.abs(hash) % 9) - 4) * 0.9;
+  }, [stamp.id]);
 
   const [text, setText] = useState(stamp.text);
   const idRef = useRef(stamp.id);
@@ -2175,22 +2182,29 @@ function StampElement({
       onPointerDownCapture={onFocus}
     >
       <div
-        className="flex h-full w-full items-stretch overflow-hidden rounded-full border-2 shadow"
-        style={{ borderColor: colors.border, backgroundColor: colors.bg }}
+        className="h-full w-full rounded-md border-[3px] border-double shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_0_5px_rgba(0,0,0,0.12)]"
+        style={{ borderColor: colors.border, backgroundColor: `${colors.border}26`, transform: `rotate(${rotationDeg}deg)` }}
       >
-        <div {...grabHandleProps}>
-          <span className="text-[9px] leading-none text-ink/40">⠿</span>
-        </div>
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={() => {
-            if (text !== stamp.text) onTextChange(text);
-          }}
-          className="w-0 flex-1 bg-transparent text-center text-[11px] font-bold leading-none text-ink outline-none"
-        />
-        <div {...grabHandleProps}>
-          <span className="text-[9px] leading-none text-ink/40">⠿</span>
+        <div className="flex h-full w-full items-stretch overflow-hidden rounded-sm">
+          <div {...grabHandleProps}>
+            <span className="text-[9px] leading-none" style={{ color: colors.border, opacity: 0.5 }}>
+              ⠿
+            </span>
+          </div>
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => {
+              if (text !== stamp.text) onTextChange(text);
+            }}
+            className="w-0 flex-1 bg-transparent text-center text-[11px] font-bold uppercase leading-none tracking-wide outline-none"
+            style={{ color: colors.border }}
+          />
+          <div {...grabHandleProps}>
+            <span className="text-[9px] leading-none" style={{ color: colors.border, opacity: 0.5 }}>
+              ⠿
+            </span>
+          </div>
         </div>
       </div>
       {controlsOpen && (
