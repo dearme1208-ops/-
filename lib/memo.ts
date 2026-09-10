@@ -95,9 +95,14 @@ export const MEMO_NOTE_MIN_HEIGHT = 80;
 export const MEMO_MIN_ZOOM = 0.25;
 export const MEMO_MAX_ZOOM = 3;
 
-// スタンプ(対応状況などの一言を付箋やToDo等にくっ付ける小さな付箋)の既定サイズ
+// スタンプ(対応状況などの一言を付箋やToDo等にくっ付ける小さな付箋)の既定サイズ。
+// 角のハンドルをドラッグして自由にサイズ変更できるので、上下限だけここで決めておく
 export const BOARD_STAMP_WIDTH = 96;
 export const BOARD_STAMP_HEIGHT = 32;
+export const BOARD_STAMP_MIN_WIDTH = 56;
+export const BOARD_STAMP_MIN_HEIGHT = 24;
+export const BOARD_STAMP_MAX_WIDTH = 280;
+export const BOARD_STAMP_MAX_HEIGHT = 96;
 export const DEFAULT_BOARD_STAMP_COLOR = "orange";
 // スタンプはくっ付けた対象の上に重ねて見せる注釈なので、対象が最前面固定(pinned/
 // MEMO_PINNED_Z_BASE)されていても必ずその上に出るよう、さらに大きな下駄を履かせる

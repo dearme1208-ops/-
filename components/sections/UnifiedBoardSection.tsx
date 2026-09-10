@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
@@ -14,6 +14,10 @@ import {
   BOARD_BACKGROUND_LABELS,
   BOARD_SHAPE_DEFAULT_SIZE,
   BOARD_STAMP_HEIGHT,
+  BOARD_STAMP_MAX_HEIGHT,
+  BOARD_STAMP_MAX_WIDTH,
+  BOARD_STAMP_MIN_HEIGHT,
+  BOARD_STAMP_MIN_WIDTH,
   BOARD_STAMP_WIDTH,
   BOARD_STAMP_Z_BASE,
   boardBackgroundCss,
@@ -819,13 +823,14 @@ export default function UnifiedBoardSection({
     return { x: stamp.x, y: stamp.y };
   }
   // ドラッグを離した位置が他のアイテムと重なっていれば、一番重なりが大きいものに
-  // くっ付ける。重ならなければくっ付けを外し、その場所を素の位置として覚える
-  function stampOverlapTarget(x: number, y: number): BoardItem | null {
+  // くっ付ける。重ならなければくっ付けを外し、その場所を素の位置として覚える。
+  // サイズ変更できるようになったので、固定サイズではなくそのスタンプの実サイズで判定する
+  function stampOverlapTarget(x: number, y: number, width: number, height: number): BoardItem | null {
     let best: BoardItem | null = null;
     let bestArea = 0;
     for (const it of boardItems) {
-      const ox = Math.min(x + BOARD_STAMP_WIDTH, it.x + it.width) - Math.max(x, it.x);
-      const oy = Math.min(y + BOARD_STAMP_HEIGHT, it.y + it.height) - Math.max(y, it.y);
+      const ox = Math.min(x + width, it.x + it.width) - Math.max(x, it.x);
+      const oy = Math.min(y + height, it.y + it.height) - Math.max(y, it.y);
       if (ox > 0 && oy > 0) {
         const area = ox * oy;
         if (area > bestArea) {
@@ -861,8 +866,8 @@ export default function UnifiedBoardSection({
     setShowStampMenu(false);
     setCustomStampText("");
   }
-  async function moveStamp(id: string, x: number, y: number) {
-    const target = stampOverlapTarget(x, y);
+  async function moveStamp(id: string, x: number, y: number, width: number, height: number) {
+    const target = stampOverlapTarget(x, y, width, height);
     if (target) {
       await db.boardStamps.update(id, {
         attachedToKind: target.kind,
@@ -892,6 +897,9 @@ export default function UnifiedBoardSection({
   }
   async function setStampText(id: string, text: string) {
     await db.boardStamps.update(id, { text });
+  }
+  async function resizeStamp(id: string, width: number, height: number) {
+    await db.boardStamps.update(id, { width, height });
   }
   async function toggleStampLock(id: string, currentlyLocked: boolean) {
     await db.boardStamps.update(id, { boardLocked: !currentlyLocked });
@@ -1695,7 +1703,8 @@ export default function UnifiedBoardSection({
                   y={pos.y}
                   zoom={zoom}
                   zIndex={BOARD_STAMP_Z_BASE + (zIndexById[stamp.id] ?? 1)}
-                  onDragEnd={(id, dx, dy) => moveStamp(id, dx, dy)}
+                  onDragEnd={(id, dx, dy) => moveStamp(id, dx, dy, stamp.width, stamp.height)}
+                  onResize={(id, width, height) => resizeStamp(id, width, height)}
                   onRemove={() => removeStamp(stamp.id)}
                   onColorChange={(color) => setStampColor(stamp.id, color)}
                   onTextChange={(text) => setStampText(stamp.id, text)}
@@ -2176,6 +2185,7 @@ function StampElement({
   zoom,
   zIndex,
   onDragEnd,
+  onResize,
   onRemove,
   onColorChange,
   onTextChange,
@@ -2188,6 +2198,7 @@ function StampElement({
   zoom: number;
   zIndex: number;
   onDragEnd: (id: string, x: number, y: number) => void;
+  onResize: (id: string, width: number, height: number) => void;
   onRemove: () => void;
   onColorChange: (color: string) => void;
   onTextChange: (text: string) => void;
@@ -2205,6 +2216,40 @@ function StampElement({
     locked
   );
   const colors = MEMO_NOTE_COLORS[stamp.color] ?? MEMO_NOTE_COLORS[DEFAULT_BOARD_STAMP_COLOR];
+
+  // 角のハンドルをドラッグしてサイズ変更できるようにする。移動と同じく、確定は
+  // 離した時だけ行い(pointerup)、ドラッグ中はローカルのdeltaだけで見た目を動かす
+  const [resizeDelta, setResizeDelta] = useState<{ dw: number; dh: number } | null>(null);
+  const resizeStartRef = useRef<{ x: number; y: number } | null>(null);
+  function clampStampWidth(w: number) {
+    return Math.max(BOARD_STAMP_MIN_WIDTH, Math.min(BOARD_STAMP_MAX_WIDTH, w));
+  }
+  function clampStampHeight(h: number) {
+    return Math.max(BOARD_STAMP_MIN_HEIGHT, Math.min(BOARD_STAMP_MAX_HEIGHT, h));
+  }
+  function handleResizePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    resizeStartRef.current = { x: e.clientX, y: e.clientY };
+    setResizeDelta({ dw: 0, dh: 0 });
+  }
+  function handleResizePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const start = resizeStartRef.current;
+    if (!start) return;
+    setResizeDelta({ dw: (e.clientX - start.x) / zoom, dh: (e.clientY - start.y) / zoom });
+  }
+  function handleResizePointerUp() {
+    const start = resizeStartRef.current;
+    resizeStartRef.current = null;
+    if (start && resizeDelta) {
+      onResize(stamp.id, clampStampWidth(stamp.width + resizeDelta.dw), clampStampHeight(stamp.height + resizeDelta.dh));
+    }
+    setResizeDelta(null);
+  }
+  const liveWidth = resizeDelta ? clampStampWidth(stamp.width + resizeDelta.dw) : stamp.width;
+  const liveHeight = resizeDelta ? clampStampHeight(stamp.height + resizeDelta.dh) : stamp.height;
+  // スタンプが大きいほど文字も大きく見せる(小さいままだと余白ばかりで間延びするため)
+  const fontSizePx = Math.max(11, Math.min(34, Math.round(liveHeight * 0.34)));
   // ゴム印っぽく見えるよう、同じスタンプは常に同じ角度だけ傾ける(IDから決定的に算出)。
   // 押すたびに向きが揃わない実際の判子のばらつきを再現する狙い
   const rotationDeg = useMemo(() => {
@@ -2280,16 +2325,23 @@ function StampElement({
     <div
       ref={wrapperRef}
       className="absolute"
-      style={{ left, top, width: stamp.width, height: stamp.height, zIndex }}
+      style={{ left, top, width: liveWidth, height: liveHeight, zIndex }}
       onPointerDownCapture={onFocus}
     >
       <div
-        className="h-full w-full rounded-md border-[3px] border-double shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_0_5px_rgba(0,0,0,0.12)]"
-        style={{ borderColor: colors.border, backgroundColor: `${colors.border}26`, transform: `rotate(${rotationDeg}deg)` }}
+        className="h-full w-full rounded-md border-[4px] border-double shadow-[0_1px_3px_rgba(0,0,0,0.4),0_0_7px_var(--stamp-glow),inset_0_0_5px_rgba(0,0,0,0.12)]"
+        style={
+          {
+            borderColor: colors.border,
+            backgroundColor: `${colors.border}40`,
+            transform: `rotate(${rotationDeg}deg)`,
+            "--stamp-glow": `${colors.border}66`,
+          } as CSSProperties
+        }
       >
         <div className="flex h-full w-full items-stretch overflow-hidden rounded-sm">
           <div {...grabHandleProps}>
-            <span className="text-[9px] leading-none" style={{ color: colors.border, opacity: 0.5 }}>
+            <span className="text-[9px] leading-none" style={{ color: colors.border, opacity: 0.7 }}>
               ⠿
             </span>
           </div>
@@ -2299,16 +2351,32 @@ function StampElement({
             onBlur={() => {
               if (text !== stamp.text) onTextChange(text);
             }}
-            className="w-0 flex-1 bg-transparent text-center text-[11px] font-bold uppercase leading-none tracking-wide outline-none"
-            style={{ color: colors.border }}
+            className="w-0 flex-1 bg-transparent text-center font-bold uppercase leading-none tracking-wide outline-none"
+            style={{ color: colors.border, fontSize: fontSizePx, textShadow: "0 1px 1px rgba(0,0,0,0.45)" }}
           />
           <div {...grabHandleProps}>
-            <span className="text-[9px] leading-none" style={{ color: colors.border, opacity: 0.5 }}>
+            <span className="text-[9px] leading-none" style={{ color: colors.border, opacity: 0.7 }}>
               ⠿
             </span>
           </div>
         </div>
       </div>
+      {/* 右下の角をドラッグしてサイズ変更。ロック中は動かせないのと同様に無効化する */}
+      {!locked && (
+        <div
+          className="absolute -bottom-1 -right-1 h-4 w-4 cursor-nwse-resize touch-none"
+          style={{ touchAction: "none" }}
+          onPointerDown={handleResizePointerDown}
+          onPointerMove={handleResizePointerMove}
+          onPointerUp={handleResizePointerUp}
+          onPointerCancel={handleResizePointerUp}
+          title="ドラッグでサイズ変更"
+        >
+          <svg width={12} height={12} viewBox="0 0 12 12" className="absolute bottom-0 right-0">
+            <path d="M11 1 L1 11 M11 5 L5 11 M11 9 L9 11" stroke={colors.border} strokeWidth={1.5} strokeLinecap="round" />
+          </svg>
+        </div>
+      )}
       {controlsOpen && (
         <div className="absolute -top-6 left-0 flex items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
           {Object.entries(MEMO_NOTE_COLORS).map(([key, c]) => (
