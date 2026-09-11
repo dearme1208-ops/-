@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { readFileAsDataUrl } from "@/lib/mailImport";
+import { attachMailFile, readFileAsDataUrl, type MailAttachmentFields } from "@/lib/mailImport";
 import {
   DndContext,
   closestCenter,
@@ -28,6 +28,7 @@ function StageRow({
   onSetCompletedCount,
   onSetTargetCount,
   onSetImage,
+  onSetMail,
   onRemove,
   dragHandleProps,
 }: {
@@ -38,6 +39,7 @@ function StageRow({
   onSetCompletedCount: (id: string, value: string) => void;
   onSetTargetCount: (id: string, value: string) => void;
   onSetImage: (id: string, imageDataUrl: string | undefined) => void;
+  onSetMail: (id: string, mail: MailAttachmentFields | undefined) => void;
   onRemove: (id: string) => void;
   dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
 }) {
@@ -46,6 +48,8 @@ function StageRow({
   const isTitleBlank = !stage.title.trim();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [imageExpanded, setImageExpanded] = useState(false);
+  const mailInputRef = useRef<HTMLInputElement>(null);
+  const [mailImportError, setMailImportError] = useState(false);
   return (
     <div className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
       {dragHandleProps && (
@@ -106,6 +110,51 @@ function StageRow({
       >
         {stage.imageDataUrl ? "🖼️" : "📷"}
       </button>
+      <input
+        ref={mailInputRef}
+        type="file"
+        accept=".msg"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          e.target.value = "";
+          try {
+            setMailImportError(false);
+            onSetMail(stage.id, await attachMailFile(file));
+          } catch {
+            setMailImportError(true);
+          }
+        }}
+      />
+      {stage.mailFileDataUrl ? (
+        <span className="flex shrink-0 items-center gap-0.5">
+          <a
+            href={stage.mailFileDataUrl}
+            download={stage.mailFileName || "mail.msg"}
+            title={`ダウンロードして元のメールを開きます: ${stage.mailSubject ?? stage.mailFileName ?? ""}`}
+            className="text-xs text-cream/40 hover:text-cream/70"
+          >
+            📧
+          </a>
+          <button
+            onClick={() => onSetMail(stage.id, undefined)}
+            className="text-[9px] text-cream/30 hover:text-alert"
+            aria-label="添付メールを削除"
+          >
+            ✕
+          </button>
+        </span>
+      ) : (
+        <button
+          onClick={() => mailInputRef.current?.click()}
+          className="shrink-0 text-xs text-cream/40 hover:text-cream/70"
+          title="メールを添付 (.msg)"
+        >
+          📧
+        </button>
+      )}
+      {mailImportError && <span className="text-[9px] text-alert">読み込み失敗</span>}
       {isCountBased ? (
         <div className="flex shrink-0 items-center gap-1 text-[11px] text-cream/70">
           <input
@@ -179,6 +228,7 @@ function SortableStageRow(props: {
   onSetCompletedCount: (id: string, value: string) => void;
   onSetTargetCount: (id: string, value: string) => void;
   onSetImage: (id: string, imageDataUrl: string | undefined) => void;
+  onSetMail: (id: string, mail: MailAttachmentFields | undefined) => void;
   onRemove: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.stage.id });
@@ -201,6 +251,13 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   );
   const [clientId, setClientId] = useState(project.clientId ?? "");
   const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
+  const [mail, setMail] = useState<MailAttachmentFields | undefined>(
+    project.mailFileDataUrl
+      ? { mailFileDataUrl: project.mailFileDataUrl, mailFileName: project.mailFileName ?? "mail.msg", mailSubject: project.mailSubject ?? "" }
+      : undefined
+  );
+  const [mailImportError, setMailImportError] = useState(false);
+  const mailInputRef = useRef<HTMLInputElement>(null);
   const [stages, setStages] = useState<ProjectStage[]>(project.stages ?? []);
   const [newStageTitle, setNewStageTitle] = useState("");
   const [newStageTargetCount, setNewStageTargetCount] = useState("");
@@ -237,6 +294,15 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   }
   function setStageImage(id: string, imageDataUrl: string | undefined) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, imageDataUrl } : s)));
+  }
+  function setStageMail(id: string, mail: MailAttachmentFields | undefined) {
+    setStages((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? { ...s, mailFileDataUrl: mail?.mailFileDataUrl, mailFileName: mail?.mailFileName, mailSubject: mail?.mailSubject }
+          : s
+      )
+    );
   }
   const stageSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   function handleStageDragEnd(event: DragEndEvent) {
@@ -294,6 +360,9 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       hourlyRate: hourlyRateStr.trim() !== "" && Number.isFinite(rate) && rate >= 0 ? rate : undefined,
       estimatedTotalSeconds: estimatedTotalSeconds > 0 ? estimatedTotalSeconds : undefined,
       clientId: clientId || undefined,
+      mailFileDataUrl: mail?.mailFileDataUrl,
+      mailFileName: mail?.mailFileName,
+      mailSubject: mail?.mailSubject,
       // 段階名は前後の空白を除いて保存する(空白だけの入力だと、一見「入力済み」に
       // 見えてしまいプレースホルダーも出ないまま空欄が残ってしまうため)
       stages: stages.map((s) => ({ ...s, title: s.title.trim() })),
@@ -348,6 +417,46 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
           </select>
         </div>
         <div className="flex items-center gap-2">
+          <label className="text-xs text-cream/60">添付メール</label>
+          <input
+            ref={mailInputRef}
+            type="file"
+            accept=".msg"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              e.target.value = "";
+              try {
+                setMailImportError(false);
+                setMail(await attachMailFile(file));
+              } catch {
+                setMailImportError(true);
+              }
+            }}
+          />
+          {mail ? (
+            <>
+              <a
+                href={mail.mailFileDataUrl}
+                download={mail.mailFileName || "mail.msg"}
+                title="ダウンロードして元のメールを開きます(既定のメールアプリに渡されます)"
+                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-xs text-cream hover:border-cream/40"
+              >
+                📧 {mail.mailSubject || mail.mailFileName}
+              </a>
+              <button className="text-xs text-cream/40 hover:text-alert" onClick={() => setMail(undefined)}>
+                削除
+              </button>
+            </>
+          ) : (
+            <button className="btn-pill-outline text-xs" onClick={() => mailInputRef.current?.click()}>
+              📧 メールを添付 (.msg)
+            </button>
+          )}
+          {mailImportError && <span className="text-xs text-alert">読み込み失敗(.msg形式か確認してください)</span>}
+        </div>
+        <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">この案件専用の単価</label>
           <input
             type="number"
@@ -394,6 +503,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
                     onSetCompletedCount={setStageCompletedCount}
                     onSetTargetCount={setStageTargetCount}
                     onSetImage={setStageImage}
+                    onSetMail={setStageMail}
                     onRemove={removeStage}
                   />
                 ))}

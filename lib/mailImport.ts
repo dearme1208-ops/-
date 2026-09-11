@@ -50,3 +50,18 @@ export function readFileAsDataUrl(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+export interface MailAttachmentFields {
+  mailFileDataUrl: string;
+  mailFileName: string;
+  mailSubject: string;
+}
+
+// ToDo・サブタスク・案件・段階など、付箋以外の項目に「メールを添付してクリックで開く」を
+// 追加する際にまとめて使う。件名を抽出しておくことで、開かなくても一覧上で
+// 「どのメールか」が分かるようにする(付箋の取り込みと同じ考え方)
+export async function attachMailFile(file: File): Promise<MailAttachmentFields> {
+  const mail = await parseMsgFile(file);
+  const mailFileDataUrl = await readFileAsDataUrl(file);
+  return { mailFileDataUrl, mailFileName: file.name, mailSubject: mail.subject };
+}

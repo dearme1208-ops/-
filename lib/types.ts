@@ -177,6 +177,11 @@ export interface ProjectStage {
   targetCount?: number; // 目標件数（見積り10件・チーム移籍20件など、件数で進捗管理したい場合に設定）
   completedCount?: number; // targetCountを設定した場合の、これまでの完了件数
   imageDataUrl?: string; // この段階に添付した画像。1枚のみ、data URLとしてそのまま保存する
+  // 付箋の「元のメールを開く」と同じ仕組み。Outlookの.msgファイル本体をdata URLとして
+  // 保持しておき、クリックでダウンロード/OS側の既定アプリに渡す(1件のみ)
+  mailFileDataUrl?: string;
+  mailFileName?: string;
+  mailSubject?: string; // 開かなくても件名だけで分かるよう、添付時にファイルから抽出して保持する
 }
 
 // 取引先（顧客企業）。案件・ToDoに紐付けて、取引先ごとの案件・作業を横断的に見られるようにする
@@ -221,6 +226,11 @@ export interface ProjectItem {
   // クロスSWOT(TOWS分析)。SWOTの4象限を掛け合わせて具体的な戦略に落とし込む、
   // SWOT分析の実践的な発展形
   crossSwot?: { aggressive: string; differentiation: string; improvement: string; defensive: string };
+  // 付箋の「元のメールを開く」と同じ仕組み。Outlookの.msgファイル本体をdata URLとして
+  // 保持しておき、クリックでダウンロード/OS側の既定アプリに渡す(1件のみ)
+  mailFileDataUrl?: string;
+  mailFileName?: string;
+  mailSubject?: string; // 開かなくても件名だけで分かるよう、添付時にファイルから抽出して保持する
 }
 
 // ---- ToDo ----
@@ -295,6 +305,11 @@ export interface TodoTask {
   // ボードから下げた状態を維持する(✕で下げた後、条件に一致していても再出現しないようにするため)。
   // 「一覧から置く」で改めて置くとクリアされる
   imageDataUrl?: string; // タスク(サブタスクを含む)に添付した画像。1枚のみ、data URLとしてそのまま保存する
+  // 付箋の「元のメールを開く」と同じ仕組み。Outlookの.msgファイル本体をdata URLとして
+  // 保持しておき、クリックでダウンロード/OS側の既定アプリに渡す(1件のみ、サブタスクにも設定できる)
+  mailFileDataUrl?: string;
+  mailFileName?: string;
+  mailSubject?: string; // 開かなくても件名だけで分かるよう、添付時にファイルから抽出して保持する
 }
 
 // ---- マンダラチャート ----

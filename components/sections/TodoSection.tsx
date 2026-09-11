@@ -46,7 +46,7 @@ import { itemWeight } from "@/lib/mountain";
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { DraftBoard, RankEmblem, ScoutBust } from "@/components/powerpro/PowerproCanvas";
 import { rankCssColor } from "@/lib/powerproArt";
-import { readFileAsDataUrl } from "@/lib/mailImport";
+import { attachMailFile, readFileAsDataUrl, type MailAttachmentFields } from "@/lib/mailImport";
 import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import { DEFAULT_MEMO_NOTE_COLOR, estimateChecklistNoteHeight, estimateTextNoteHeight } from "@/lib/memo";
@@ -995,6 +995,14 @@ export default function TodoSection({
     await db.todoTasks.update(sub.id, { imageDataUrl });
   }
 
+  async function updateSubtaskMailInline(sub: TodoTask, mail: MailAttachmentFields | undefined) {
+    await db.todoTasks.update(sub.id, {
+      mailFileDataUrl: mail?.mailFileDataUrl,
+      mailFileName: mail?.mailFileName,
+      mailSubject: mail?.mailSubject,
+    });
+  }
+
   async function reorderSubtasks(subtasks: TodoTask[], oldIndex: number, newIndex: number) {
     const reordered = arrayMove(subtasks, oldIndex, newIndex);
     await db.transaction("rw", db.todoTasks, async () => {
@@ -1909,6 +1917,7 @@ export default function TodoSection({
                         onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
                         onUpdateSubtaskTag={updateSubtaskTagInline}
                         onUpdateSubtaskImage={updateSubtaskImageInline}
+                        onUpdateSubtaskMail={updateSubtaskMailInline}
                         onReorderSubtasks={reorderSubtasks}
                       />
                     ))}
@@ -1930,6 +1939,7 @@ export default function TodoSection({
                     onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
                     onUpdateSubtaskTag={updateSubtaskTagInline}
                     onUpdateSubtaskImage={updateSubtaskImageInline}
+                    onUpdateSubtaskMail={updateSubtaskMailInline}
                     onReorderSubtasks={reorderSubtasks}
                     selectionMode={bulkSelectionMode}
                     selected={selectedTaskIds.has(task.id)}
@@ -1967,6 +1977,7 @@ export default function TodoSection({
                         onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
                         onUpdateSubtaskTag={updateSubtaskTagInline}
                         onUpdateSubtaskImage={updateSubtaskImageInline}
+                        onUpdateSubtaskMail={updateSubtaskMailInline}
                       />
                     ))}
                   </div>
@@ -2279,6 +2290,7 @@ function SubtaskRow({
   onUpdateSubtaskDueDate,
   onUpdateSubtaskTag,
   onUpdateSubtaskImage,
+  onUpdateSubtaskMail,
   dragHandleProps,
 }: {
   sub: TodoTask;
@@ -2290,12 +2302,15 @@ function SubtaskRow({
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
   onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
+  onUpdateSubtaskMail: (sub: TodoTask, mail: MailAttachmentFields | undefined) => void;
   dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
 }) {
   const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
   const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
   const subImageInputRef = useRef<HTMLInputElement>(null);
   const [subImageExpanded, setSubImageExpanded] = useState(false);
+  const subMailInputRef = useRef<HTMLInputElement>(null);
+  const [subMailError, setSubMailError] = useState(false);
   return (
     <div
       className={`rounded-lg border border-cream/20 bg-ink/50 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
@@ -2375,6 +2390,51 @@ function SubtaskRow({
           }}
         />
         <input
+          ref={subMailInputRef}
+          type="file"
+          accept=".msg"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            e.target.value = "";
+            try {
+              setSubMailError(false);
+              onUpdateSubtaskMail(sub, await attachMailFile(file));
+            } catch {
+              setSubMailError(true);
+            }
+          }}
+        />
+        {sub.mailFileDataUrl ? (
+          <span className="flex shrink-0 items-center gap-0.5">
+            <a
+              href={sub.mailFileDataUrl}
+              download={sub.mailFileName || "mail.msg"}
+              title={`ダウンロードして元のメールを開きます: ${sub.mailSubject ?? sub.mailFileName ?? ""}`}
+              className="text-[11px] text-cream/40 hover:text-cream/70"
+            >
+              📧
+            </a>
+            <button
+              onClick={() => onUpdateSubtaskMail(sub, undefined)}
+              className="text-[9px] text-cream/30 hover:text-alert"
+              aria-label="添付メールを削除"
+            >
+              ✕
+            </button>
+          </span>
+        ) : (
+          <button
+            onClick={() => subMailInputRef.current?.click()}
+            className="shrink-0 text-[11px] text-cream/40 hover:text-cream/70"
+            title="メールを添付 (.msg)"
+          >
+            📧
+          </button>
+        )}
+        {subMailError && <span className="text-[9px] text-alert">読み込み失敗</span>}
+        <input
           key={sub.id + (sub.dueDate ?? "")}
           type="date"
           defaultValue={sub.dueDate ?? ""}
@@ -2430,6 +2490,7 @@ function SortableSubtaskRow(props: {
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
   onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
+  onUpdateSubtaskMail: (sub: TodoTask, mail: MailAttachmentFields | undefined) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.sub.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -2454,6 +2515,7 @@ function TaskBlock({
   onUpdateSubtaskDueDate,
   onUpdateSubtaskTag,
   onUpdateSubtaskImage,
+  onUpdateSubtaskMail,
   onReorderSubtasks,
   selectionMode,
   selected,
@@ -2471,6 +2533,7 @@ function TaskBlock({
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
   onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
+  onUpdateSubtaskMail: (sub: TodoTask, mail: MailAttachmentFields | undefined) => void;
   onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
   selectionMode?: boolean;
   selected?: boolean;
@@ -2564,6 +2627,7 @@ function TaskBlock({
                         onUpdateSubtaskDueDate={onUpdateSubtaskDueDate}
                         onUpdateSubtaskTag={onUpdateSubtaskTag}
                         onUpdateSubtaskImage={onUpdateSubtaskImage}
+                        onUpdateSubtaskMail={onUpdateSubtaskMail}
                       />
                     ))}
                   </SortableContext>
@@ -2580,6 +2644,7 @@ function TaskBlock({
                     onUpdateSubtaskDueDate={onUpdateSubtaskDueDate}
                     onUpdateSubtaskTag={onUpdateSubtaskTag}
                     onUpdateSubtaskImage={onUpdateSubtaskImage}
+                    onUpdateSubtaskMail={onUpdateSubtaskMail}
                   />
                 ))
               )}
@@ -2604,6 +2669,7 @@ function SortableTaskBlock(props: {
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
   onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
+  onUpdateSubtaskMail: (sub: TodoTask, mail: MailAttachmentFields | undefined) => void;
   onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -2921,6 +2987,77 @@ function TaskImageField({ task }: { task: TodoTask }) {
   );
 }
 
+// タスク詳細のメール添付欄。画像添付欄と同じく、選択/削除した時点で即座にDBへ反映する。
+// Outlookの.msgファイル本体を保持しておき、クリックでダウンロード/OS側の既定アプリに渡す
+// (このアプリ内でメールを解釈して開くことはできないため、付箋の「元のメールを開く」と同じ形)
+function TaskMailField({ task }: { task: TodoTask }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [mail, setMail] = useState<MailAttachmentFields | undefined>(
+    task.mailFileDataUrl
+      ? { mailFileDataUrl: task.mailFileDataUrl, mailFileName: task.mailFileName ?? "mail.msg", mailSubject: task.mailSubject ?? "" }
+      : undefined
+  );
+  const [error, setError] = useState(false);
+
+  async function handleFile(file: File) {
+    try {
+      setError(false);
+      const attached = await attachMailFile(file);
+      setMail(attached);
+      await db.todoTasks.update(task.id, {
+        mailFileDataUrl: attached.mailFileDataUrl,
+        mailFileName: attached.mailFileName,
+        mailSubject: attached.mailSubject,
+      });
+    } catch {
+      setError(true);
+    }
+  }
+  async function removeMail() {
+    setMail(undefined);
+    await db.todoTasks.update(task.id, { mailFileDataUrl: undefined, mailFileName: undefined, mailSubject: undefined });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".msg"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = "";
+        }}
+      />
+      {mail ? (
+        <>
+          <a
+            href={mail.mailFileDataUrl}
+            download={mail.mailFileName || "mail.msg"}
+            title="ダウンロードして元のメールを開きます(既定のメールアプリに渡されます)"
+            className="rounded-lg border border-cream/20 bg-ink px-3 py-1.5 text-xs text-cream hover:border-cream/40"
+          >
+            📧 {mail.mailSubject || mail.mailFileName}
+          </a>
+          <button className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80" onClick={() => inputRef.current?.click()}>
+            差し替え
+          </button>
+          <button className="text-xs text-alert" onClick={removeMail}>
+            削除
+          </button>
+        </>
+      ) : (
+        <button className="btn-pill-outline text-xs" onClick={() => inputRef.current?.click()}>
+          📧 メールを添付 (.msg)
+        </button>
+      )}
+      {error && <span className="text-xs text-alert">読み込み失敗(.msg形式か確認してください)</span>}
+    </div>
+  );
+}
+
 function TaskDetailModal({
   task,
   subtasks,
@@ -3157,6 +3294,7 @@ function TaskDetailModal({
         </div>
 
         <TaskImageField task={task} />
+        <TaskMailField task={task} />
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-cream/60">対応状況</label>
