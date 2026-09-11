@@ -2,7 +2,7 @@ import type { ProjectItem, ProjectStage } from "./types";
 import { csvEscape, parseCsvLine } from "./csv";
 import { todayStr } from "./time";
 
-const HEADERS = ["id", "title", "category", "workName", "dueDate", "createdDate", "completed", "stages"] as const;
+const HEADERS = ["id", "title", "group", "category", "workName", "dueDate", "createdDate", "completed", "stages"] as const;
 
 // 段階(ProjectStage)は1セルに「タイトル:期日:目標件数」を;区切りで詰めて表現する
 // (例: 初稿作成:2026-08-20:;検収立会:2026-08-25:5 )。期日・目標件数は空でもよい。
@@ -19,6 +19,7 @@ export function projectsToCsv(projects: ProjectItem[]): string {
       [
         p.id,
         csvEscape(p.title),
+        csvEscape(p.groupName ?? ""),
         csvEscape(p.category),
         csvEscape(p.workName),
         p.dueDate,
@@ -35,8 +36,10 @@ export function projectsCsvTemplate(): string {
   const today = todayStr();
   const rows = [
     HEADERS.join(","),
-    ["", "A社案件", "組立", "本体組立", today, today, "false", csvEscape("初稿作成:" + today + ":;先方送付::")].join(","),
-    ["", "B社案件", "検査", "出荷前検査", today, today, "false", ""].join(","),
+    ["", "A社案件(型番X)", "A社案件", "組立", "本体組立", today, today, "false", csvEscape("初稿作成:" + today + ":;先方送付::")].join(
+      ","
+    ),
+    ["", "B社案件", "", "検査", "出荷前検査", today, today, "false", ""].join(","),
   ];
   return rows.join("\n");
 }
@@ -50,6 +53,8 @@ export interface ParsedProjectStage {
 export interface ParsedProjectRow {
   id?: string;
   title: string;
+  // 未定義=CSVにgroup列自体が無い(既存のグループ名には触れない)。空文字はグループ解除。
+  groupName?: string;
   category: string;
   workName: string;
   dueDate: string;
@@ -98,6 +103,7 @@ export function parseProjectsCsv(text: string): ParsedProjectsCsvResult {
   if (errors.length > 0) return { rows: [], errors };
 
   const idCol = idx("id");
+  const groupCol = idx("group");
   const createdCol = idx("createdDate");
   const completedCol = idx("completed");
   const stagesCol = idx("stages");
@@ -115,6 +121,7 @@ export function parseProjectsCsv(text: string): ParsedProjectsCsvResult {
     rows.push({
       id: idCol !== -1 && cols[idCol] ? cols[idCol].trim() : undefined,
       title,
+      groupName: groupCol !== -1 ? (cols[groupCol]?.trim() ?? "") : undefined,
       category,
       workName,
       dueDate,

@@ -76,6 +76,8 @@ export async function upsertProjectsFromCsv(
           createdAt,
           completedAt,
           fromImport: true,
+          // groupNameが未定義(CSVにgroup列自体が無い)の行では、既存のグループ名に触れない
+          ...(row.groupName !== undefined ? { groupName: row.groupName || undefined } : {}),
           ...(row.stages ? { stages: mergeStages(existing.stages, row.stages) } : {}),
         });
         updated++;
@@ -83,6 +85,7 @@ export async function upsertProjectsFromCsv(
         const item: ProjectItem = {
           id: row.id || uid(),
           title: row.title,
+          groupName: row.groupName || undefined,
           category: row.category,
           workName: row.workName,
           dueDate: row.dueDate,

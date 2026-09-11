@@ -242,6 +242,7 @@ function SortableStageRow(props: {
 
 export default function EditProjectDialog({ project, onClose }: { project: ProjectItem; onClose: () => void }) {
   const [title, setTitle] = useState(project.title);
+  const [groupName, setGroupName] = useState(project.groupName ?? "");
   const [category, setCategory] = useState(project.category);
   const [workName, setWorkName] = useState(project.workName);
   const [dueDate, setDueDate] = useState(project.dueDate);
@@ -251,6 +252,12 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   );
   const [clientId, setClientId] = useState(project.clientId ?? "");
   const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
+  // 既存で使われているグループ名の一覧(入力候補用)。表記ゆれで別グループになってしまわないよう、
+  // 案件一覧側(ProjectsSection)と同じ考え方でdatalistの候補にする
+  const allProjectsForGroupNames = useLiveQuery(() => db.projects.toArray(), []);
+  const groupNameOptions = Array.from(new Set((allProjectsForGroupNames ?? []).map((p) => p.groupName).filter((g): g is string => !!g))).sort(
+    (a, b) => a.localeCompare(b, "ja")
+  );
   const [mail, setMail] = useState<MailAttachmentFields | undefined>(
     project.mailFileDataUrl
       ? { mailFileDataUrl: project.mailFileDataUrl, mailFileName: project.mailFileName ?? "mail.msg", mailSubject: project.mailSubject ?? "" }
@@ -354,6 +361,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       estimatedTotalStr.trim() !== "" ? parseHmsToSeconds(estimatedTotalStr) : 0;
     await db.projects.update(project.id, {
       title: title.trim(),
+      groupName: groupName.trim() || undefined,
       category: category.trim(),
       workName: workName.trim(),
       dueDate,
@@ -380,6 +388,18 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           autoFocus
         />
+        <input
+          placeholder="グループ名（任意。別アプリで機種名違いでも同じ案件として扱いたい場合に）"
+          value={groupName}
+          onChange={(e) => setGroupName(e.target.value)}
+          list="edit-project-group-names"
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <datalist id="edit-project-group-names">
+          {groupNameOptions.map((g) => (
+            <option key={g} value={g} />
+          ))}
+        </datalist>
         <input
           placeholder="業務区分（大項目）"
           value={category}

@@ -96,6 +96,7 @@ export default function ProjectsSection({
   onInitialEditConsumed?: () => void;
 }) {
   const [title, setTitle] = useState("");
+  const [groupName, setGroupName] = useState("");
   const [category, setCategory] = useState("");
   const [workName, setWorkName] = useState("");
   const [dueDate, setDueDate] = useState(todayStr());
@@ -162,6 +163,47 @@ export default function ProjectsSection({
       };
     });
   }, [clients, projects, linkedTodoTasksForClients, records, today]);
+  // 既存で使われているグループ名の一覧(入力候補用)。表記ゆれで別グループに
+  // なってしまわないよう、入力欄のdatalistで既存のものを選びやすくする
+  const groupNames = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of projects ?? []) {
+      if (p.groupName) set.add(p.groupName);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "ja"));
+  }, [projects]);
+
+  // グループごとの案件・進捗のまとめ。取引先別サマリーと同じ考え方で、
+  // 同じグループ名の案件をまとめて件数・期限切れ・進捗(段階の完了率)・実績時間を見せる
+  const groupSummaries = useMemo(() => {
+    return groupNames.map((name) => {
+      const groupProjects = (projects ?? []).filter((p) => p.groupName === name);
+      const activeProjects = groupProjects.filter((p) => !p.completedAt);
+      const overdueProjectCount = activeProjects.filter((p) => p.dueDate < today).length;
+      const projectIds = groupProjects.map((p) => p.id);
+      const totalSeconds = (records ?? [])
+        .filter((r) => !r.excludedFromStats && projectIds.some((pid) => recordBelongsToProject(r, pid)))
+        .reduce((sum, r) => sum + r.seconds, 0);
+      // 進捗は、グループ内の全案件が持つ段階を合わせて「完了段階数 / 全段階数」で見る。
+      // 段階を1つも持たない案件だけのグループでは、案件自体の完了/未完了で代用する
+      const allStages = groupProjects.flatMap((p) => p.stages ?? []);
+      const progressPct =
+        allStages.length > 0
+          ? Math.round((allStages.filter(isStageDone).length / allStages.length) * 100)
+          : groupProjects.length > 0
+            ? Math.round((groupProjects.filter((p) => !!p.completedAt).length / groupProjects.length) * 100)
+            : 0;
+      return {
+        name,
+        projectCount: groupProjects.length,
+        activeProjectCount: activeProjects.length,
+        overdueProjectCount,
+        totalSeconds,
+        progressPct,
+      };
+    });
+  }, [groupNames, projects, records, today]);
+
   const { themedMode, wordingEnabled } = useVisualMode();
 
   // 本日タブの案件バッジの「編集」から遷移してきた場合、該当案件の編集ダイアログを自動的に開く。
@@ -268,6 +310,7 @@ export default function ProjectsSection({
     const item: ProjectItem = {
       id: uid(),
       title: title.trim(),
+      groupName: groupName.trim() || undefined,
       category: category.trim(),
       workName: workName.trim(),
       dueDate,
@@ -276,6 +319,7 @@ export default function ProjectsSection({
     };
     await db.projects.add(item);
     setTitle("");
+    setGroupName("");
     setCategory("");
     setWorkName("");
     setDueDate(todayStr());
@@ -623,6 +667,18 @@ export default function ProjectsSection({
               className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
             />
             <input
+              placeholder="グループ名（任意。別アプリで機種名違いでも同じ案件として扱いたい場合に）"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              list="project-group-names"
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+            <datalist id="project-group-names">
+              {groupNames.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+            <input
               placeholder="業務区分（大項目）"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
@@ -712,6 +768,29 @@ export default function ProjectsSection({
         </div>
       )}
 
+      {groupSummaries.length > 0 && (
+        <div className="panel p-4">
+          <h2 className="mb-2 font-display text-lg font-bold">グループ別サマリー</h2>
+          <p className="mb-2 text-xs text-cream/50">
+            件名・詳細作業名が違っても、同じグループ名を付けた案件をまとめて進捗・実績を確認できます。
+          </p>
+          <div className="divide-y divide-cream/10">
+            {groupSummaries.map((s) => (
+              <div key={s.name} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span className="font-bold">{s.name}</span>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-cream/70">
+                  <span>
+                    📁 案件 {s.projectCount}件
+                    {s.overdueProjectCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueProjectCount})</span>}
+                  </span>
+                  <span>📊 進捗 {s.progressPct}%</span>
+                  <span>⏱ 実績 {formatHms(s.totalSeconds)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 育成選手モード: 一覧の前に順位表を置く。段階の消化を勝敗に見立てて勝率順に並べるので、
           走っている案件と止まっている案件が一列で分かる */}
@@ -1232,6 +1311,14 @@ function ProjectRow({
           )}
           {project.title}
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
+          {project.groupName && (
+            <span
+              className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60"
+              title="この案件が属するグループ(件名・詳細作業名が違っても同じグループの案件はまとめて集計されます)"
+            >
+              🔗 {project.groupName}
+            </span>
+          )}
           {clientName && (
             <span className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60">🏢 {clientName}</span>
           )}

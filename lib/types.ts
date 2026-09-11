@@ -196,6 +196,9 @@ export interface Client {
 export interface ProjectItem {
   id: string;
   title: string; // 件名
+  groupName?: string; // グループ名（任意）。別アプリから機種名違いで別々にインポートされた
+  // 案件でも、実態としては同じ案件として一覧でまとめて表示・進捗を合算したい場合に使う。
+  // 自由入力で、件名・詳細作業名はそのまま(機種ごとの区別も残る)
   category: string; // 業務区分（大項目）。本日の作業に反映する際の区分になる
   workName: string; // 詳細作業名（本日の作業に反映する際の作業名）
   dueDate: string; // 期日 YYYY-MM-DD
