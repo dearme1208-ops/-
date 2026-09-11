@@ -2313,9 +2313,9 @@ function SubtaskRow({
   const [subMailError, setSubMailError] = useState(false);
   return (
     <div
-      className={`rounded-lg border border-cream/20 bg-ink/50 px-2 py-1.5 ${sub.completed ? "opacity-50" : ""} ${
-        subDueToday ? "ring-1 ring-alert/40" : ""
-      }`}
+      className={`rounded-lg border border-cream/15 bg-cream/[0.025] px-2 py-1.5 transition-colors hover:border-cream/25 hover:bg-cream/[0.05] ${
+        sub.completed ? "opacity-50" : ""
+      } ${subDueToday ? "ring-1 ring-alert/40" : ""}`}
     >
       <div className="flex items-center gap-2">
         {dragHandleProps && (
@@ -2742,7 +2742,7 @@ function TaskRow({
   return (
     <div
       title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
-      className={`flex items-center gap-2 border-cream/25 bg-ink/70 shadow-sm transition-[opacity,filter] ${
+      className={`flex items-center gap-2 border-cream/20 bg-cream/[0.04] shadow-sm transition-[opacity,filter,background-color,border-color] hover:border-cream/35 hover:bg-cream/[0.08] ${
         powerproMode ? "gap-2.5 rounded-xl border-y border-r py-2.5 pl-0 pr-3" : "rounded-lg border px-3 py-2"
       } ${task.completed ? "opacity-50" : agingClass} ${
         overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""
