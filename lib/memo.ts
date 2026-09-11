@@ -107,6 +107,9 @@ export const DEFAULT_BOARD_STAMP_COLOR = "orange";
 // スタンプはくっ付けた対象の上に重ねて見せる注釈なので、対象が最前面固定(pinned/
 // MEMO_PINNED_Z_BASE)されていても必ずその上に出るよう、さらに大きな下駄を履かせる
 export const BOARD_STAMP_Z_BASE = 2_000_000;
+// ToDoの「対応状況」(tag)を、手を加えず自動でスタンプ風に可視化するバッジ用のz-index下駄。
+// 通常のカード(pinned/MEMO_PINNED_Z_BASEを含む)より上、手動で置いたスタンプよりは下にする
+export const TAG_BADGE_Z_BASE = 1_500_000;
 
 export function clampMemoZoom(z: number): number {
   return Math.max(MEMO_MIN_ZOOM, Math.min(MEMO_MAX_ZOOM, z));

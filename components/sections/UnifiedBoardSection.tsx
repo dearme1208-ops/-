@@ -40,6 +40,7 @@ import {
   MEMO_NOTE_TEXT_COLORS,
   MEMO_PEN_COLORS,
   memoNoteZIndex,
+  TAG_BADGE_Z_BASE,
   type BoardBackgroundKind,
 } from "@/lib/memo";
 import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
@@ -121,6 +122,22 @@ function matchesTodoAutoShow(todo: TodoTask, criteria: TodoAutoShowKey[], today:
   if (criteria.includes("planned") && !!todo.dueDate) return true;
   if (criteria.includes("overdue") && !!todo.dueDate && todo.dueDate < today) return true;
   return false;
+}
+
+// スタンプ・対応状況バッジ共通の「ゴム印っぽさ」用ヘルパー。同じ文字列からは常に同じ
+// 傾き・色になるようにし(押すたびに向きが揃わない実際の判子のばらつきの再現と、
+// 同じ対応状況なら常に同じ色になる分かりやすさを両立する)
+function hashString(s: string): number {
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
+function stampRotationForKey(key: string): number {
+  return ((hashString(key) % 9) - 4) * 0.9;
+}
+const STAMP_COLOR_KEYS = Object.keys(MEMO_NOTE_COLORS);
+function stampColorForText(text: string): string {
+  return STAMP_COLOR_KEYS[hashString(text) % STAMP_COLOR_KEYS.length];
 }
 
 interface BoardRect {
@@ -1671,6 +1688,21 @@ export default function UnifiedBoardSection({
                 onOpenDetail={onOpenTodoDetail ? () => onOpenTodoDetail(todo.id) : undefined}
               />
             ))}
+            {/* ToDoの「対応状況」(tag)が設定されていれば、手で貼らなくても自動でスタンプ風の
+                バッジをカードの左上に出す。手動のスタンプ(BoardStamp)とは別物で、DBには
+                保存せずtodoの現在値からその都度作るだけなので、対応状況を変えれば即座に
+                追従し、消せば自動で消える */}
+            {todos
+              .filter((todo): todo is TodoTask & { tag: string } => !!todo.tag)
+              .map((todo) => (
+                <TagStatusBadge
+                  key={`tagbadge:${todo.id}`}
+                  text={todo.tag}
+                  x={todo.boardX ?? 40}
+                  y={todo.boardY ?? 40}
+                  zIndex={TAG_BADGE_Z_BASE + (zIndexById[todo.id] ?? 1)}
+                />
+              ))}
             {projects.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -2250,13 +2282,7 @@ function StampElement({
   const liveHeight = resizeDelta ? clampStampHeight(stamp.height + resizeDelta.dh) : stamp.height;
   // スタンプが大きいほど文字も大きく見せる(小さいままだと余白ばかりで間延びするため)
   const fontSizePx = Math.max(11, Math.min(34, Math.round(liveHeight * 0.34)));
-  // ゴム印っぽく見えるよう、同じスタンプは常に同じ角度だけ傾ける(IDから決定的に算出)。
-  // 押すたびに向きが揃わない実際の判子のばらつきを再現する狙い
-  const rotationDeg = useMemo(() => {
-    let hash = 0;
-    for (let i = 0; i < stamp.id.length; i++) hash = (hash * 31 + stamp.id.charCodeAt(i)) | 0;
-    return ((Math.abs(hash) % 9) - 4) * 0.9;
-  }, [stamp.id]);
+  const rotationDeg = useMemo(() => stampRotationForKey(stamp.id), [stamp.id]);
 
   const [text, setText] = useState(stamp.text);
   const idRef = useRef(stamp.id);
@@ -2400,6 +2426,37 @@ function StampElement({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ToDoの「対応状況」(tag)を、手で貼らなくても自動でスタンプ風に可視化するための読み取り専用
+// バッジ。手動のスタンプ(StampElement/BoardStamp)と見た目を揃えつつ、ドラッグ・色変更・
+// 削除などの操作対象にはしない(対応状況そのものはToDoタブ側で変える)。カードの左上の角に
+// 少しはみ出すように重ねて出す
+function TagStatusBadge({ text, x, y, zIndex }: { text: string; x: number; y: number; zIndex: number }) {
+  const colors = MEMO_NOTE_COLORS[stampColorForText(text)];
+  const rotationDeg = stampRotationForKey(text);
+  return (
+    <div className="pointer-events-none absolute" style={{ left: x - 10, top: y - 10, zIndex }}>
+      <div
+        className="whitespace-nowrap rounded-md border-[4px] border-double px-2 py-0.5 shadow-[0_1px_3px_rgba(0,0,0,0.4),0_0_7px_var(--stamp-glow),inset_0_0_5px_rgba(0,0,0,0.12)]"
+        style={
+          {
+            borderColor: colors.border,
+            backgroundColor: `${colors.border}40`,
+            transform: `rotate(${rotationDeg}deg)`,
+            "--stamp-glow": `${colors.border}66`,
+          } as CSSProperties
+        }
+      >
+        <span
+          className="text-[11px] font-bold uppercase leading-none tracking-wide"
+          style={{ color: colors.border, textShadow: "0 1px 1px rgba(0,0,0,0.45)" }}
+        >
+          {text}
+        </span>
+      </div>
     </div>
   );
 }
