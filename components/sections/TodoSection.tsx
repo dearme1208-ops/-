@@ -987,6 +987,10 @@ export default function TodoSection({
     await db.todoTasks.update(sub.id, { dueDate: dueDate || undefined });
   }
 
+  async function updateSubtaskTagInline(sub: TodoTask, tag: string) {
+    await db.todoTasks.update(sub.id, { tag: tag || undefined });
+  }
+
   async function updateSubtaskImageInline(sub: TodoTask, imageDataUrl: string | undefined) {
     await db.todoTasks.update(sub.id, { imageDataUrl });
   }
@@ -1896,12 +1900,14 @@ export default function TodoSection({
                         task={task}
                         subtasks={subtasksByParent.get(task.id) ?? []}
                         listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                        tagOptions={tagOptions}
                         onToggleComplete={() => toggleComplete(task)}
                         onToggleImportant={() => toggleImportant(task)}
                         onOpenDetail={() => setDetailTaskId(task.id)}
                         onToggleSubtask={toggleSubtaskComplete}
                         onUpdateSubtaskTitle={updateSubtaskTitleInline}
                         onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                        onUpdateSubtaskTag={updateSubtaskTagInline}
                         onUpdateSubtaskImage={updateSubtaskImageInline}
                         onReorderSubtasks={reorderSubtasks}
                       />
@@ -1915,12 +1921,14 @@ export default function TodoSection({
                     task={task}
                     subtasks={subtasksByParent.get(task.id) ?? []}
                     listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                    tagOptions={tagOptions}
                     onToggleComplete={() => toggleComplete(task)}
                     onToggleImportant={() => toggleImportant(task)}
                     onOpenDetail={() => setDetailTaskId(task.id)}
                     onToggleSubtask={toggleSubtaskComplete}
                     onUpdateSubtaskTitle={updateSubtaskTitleInline}
                     onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                    onUpdateSubtaskTag={updateSubtaskTagInline}
                     onUpdateSubtaskImage={updateSubtaskImageInline}
                     onReorderSubtasks={reorderSubtasks}
                     selectionMode={bulkSelectionMode}
@@ -1950,12 +1958,14 @@ export default function TodoSection({
                         task={task}
                         subtasks={subtasksByParent.get(task.id) ?? []}
                         listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                        tagOptions={tagOptions}
                         onToggleComplete={() => toggleComplete(task)}
                         onToggleImportant={() => toggleImportant(task)}
                         onOpenDetail={() => setDetailTaskId(task.id)}
                         onToggleSubtask={toggleSubtaskComplete}
                         onUpdateSubtaskTitle={updateSubtaskTitleInline}
                         onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                        onUpdateSubtaskTag={updateSubtaskTagInline}
                         onUpdateSubtaskImage={updateSubtaskImageInline}
                       />
                     ))}
@@ -2263,17 +2273,22 @@ function OverdueBulkList({
 function SubtaskRow({
   sub,
   today,
+  tagOptions,
   onToggleSubtask,
   onUpdateSubtaskTitle,
   onUpdateSubtaskDueDate,
+  onUpdateSubtaskTag,
   onUpdateSubtaskImage,
   dragHandleProps,
 }: {
   sub: TodoTask;
   today: string;
+  /** 対応状況の選択肢(設定タブで管理しているプリセット)。親タスクと同じものを使う */
+  tagOptions: string[];
   onToggleSubtask: (sub: TodoTask) => void;
   onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
 }) {
@@ -2318,10 +2333,27 @@ function SubtaskRow({
           }`}
         />
       </div>
-      <div className="mt-1 flex items-center justify-end gap-2">
+      <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
         {subDueToday && (
           <span className="shrink-0 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
         )}
+        <select
+          key={`tagselect-${sub.id}-${sub.tag ?? ""}`}
+          value={sub.tag ?? ""}
+          onChange={(e) => onUpdateSubtaskTag(sub, e.target.value)}
+          className={`w-[6.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[10px] focus:border-cream/20 focus:outline-none ${
+            sub.tag ? "text-cream/70" : "text-cream/30"
+          }`}
+          title="対応状況"
+        >
+          <option value="">対応状況なし</option>
+          {tagOptions.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+          {sub.tag && !tagOptions.includes(sub.tag) && <option value={sub.tag}>{sub.tag}</option>}
+        </select>
         <button
           onClick={() => (sub.imageDataUrl ? setSubImageExpanded(true) : subImageInputRef.current?.click())}
           className="shrink-0 text-[11px] text-cream/40 hover:text-cream/70"
@@ -2392,9 +2424,11 @@ function SubtaskRow({
 function SortableSubtaskRow(props: {
   sub: TodoTask;
   today: string;
+  tagOptions: string[];
   onToggleSubtask: (sub: TodoTask) => void;
   onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.sub.id });
@@ -2411,12 +2445,14 @@ function TaskBlock({
   task,
   subtasks,
   listTitle,
+  tagOptions,
   onToggleComplete,
   onToggleImportant,
   onOpenDetail,
   onToggleSubtask,
   onUpdateSubtaskTitle,
   onUpdateSubtaskDueDate,
+  onUpdateSubtaskTag,
   onUpdateSubtaskImage,
   onReorderSubtasks,
   selectionMode,
@@ -2426,12 +2462,14 @@ function TaskBlock({
   task: TodoTask;
   subtasks: TodoTask[];
   listTitle?: string;
+  tagOptions: string[];
   onToggleComplete: () => void;
   onToggleImportant: () => void;
   onOpenDetail: () => void;
   onToggleSubtask: (sub: TodoTask) => void;
   onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
   selectionMode?: boolean;
@@ -2520,9 +2558,11 @@ function TaskBlock({
                         key={sub.id}
                         sub={sub}
                         today={today}
+                        tagOptions={tagOptions}
                         onToggleSubtask={onToggleSubtask}
                         onUpdateSubtaskTitle={onUpdateSubtaskTitle}
                         onUpdateSubtaskDueDate={onUpdateSubtaskDueDate}
+                        onUpdateSubtaskTag={onUpdateSubtaskTag}
                         onUpdateSubtaskImage={onUpdateSubtaskImage}
                       />
                     ))}
@@ -2534,9 +2574,11 @@ function TaskBlock({
                     key={sub.id}
                     sub={sub}
                     today={today}
+                    tagOptions={tagOptions}
                     onToggleSubtask={onToggleSubtask}
                     onUpdateSubtaskTitle={onUpdateSubtaskTitle}
                     onUpdateSubtaskDueDate={onUpdateSubtaskDueDate}
+                    onUpdateSubtaskTag={onUpdateSubtaskTag}
                     onUpdateSubtaskImage={onUpdateSubtaskImage}
                   />
                 ))
@@ -2553,12 +2595,14 @@ function SortableTaskBlock(props: {
   task: TodoTask;
   subtasks: TodoTask[];
   listTitle?: string;
+  tagOptions: string[];
   onToggleComplete: () => void;
   onToggleImportant: () => void;
   onOpenDetail: () => void;
   onToggleSubtask: (sub: TodoTask) => void;
   onUpdateSubtaskTitle: (sub: TodoTask, title: string) => void;
   onUpdateSubtaskDueDate: (sub: TodoTask, dueDate: string) => void;
+  onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
 }) {
