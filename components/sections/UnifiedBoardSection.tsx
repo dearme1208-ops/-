@@ -786,6 +786,9 @@ export default function UnifiedBoardSection({
   // 盤面から離れてしまうので、盤面に居たまま中身を見て動かせるようにする
   const [detailTodoId, setDetailTodoId] = useState<string | null>(null);
   const detailTodo = (todoTasks ?? []).find((t) => t.id === detailTodoId) ?? null;
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  // サブタスクの削除は取り消せないので、✕を押したら一度確認する
+  const [deleteSubtaskTarget, setDeleteSubtaskTarget] = useState<TodoTask | null>(null);
   // 「作業を追加」のメニュー。どの選び方で足すかをここで分岐させる
   const [showAddWork, setShowAddWork] = useState(false);
   const [freeCategory, setFreeCategory] = useState("");
@@ -806,6 +809,22 @@ export default function UnifiedBoardSection({
       return;
     }
     await completeTodoTask(sub, today);
+  }
+  // 盤面のToDo詳細からサブタスクを足す。orderは実際の最大値の次にして、
+  // 歯抜けのorderが付いている既存サブタスクより手前に入らないようにする
+  async function addSubtaskTo(parent: TodoTask, title: string) {
+    const siblings = subtasksByParent.get(parent.id) ?? [];
+    const maxOrder = siblings.reduce((max, s) => Math.max(max, s.order), -1);
+    await db.todoTasks.add({
+      id: uid(),
+      listId: parent.listId,
+      parentTaskId: parent.id,
+      title: title.trim(),
+      important: false,
+      completed: false,
+      order: maxOrder + 1,
+      createdAt: Date.now(),
+    });
   }
   async function moveProject(id: string, x: number, y: number) {
     await db.projects.update(id, { boardX: x, boardY: y });
@@ -2405,14 +2424,9 @@ export default function UnifiedBoardSection({
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
-              {detailTodo.dueDate && (
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
-                    detailTodo.dueDate < today ? "border-alert/50 bg-alert/15 text-alert" : "border-cream/25 text-cream/80"
-                  }`}
-                >
-                  期日 {detailTodo.dueDate}
-                  {detailTodo.dueDate < today && "（超過）"}
+              {detailTodo.dueDate && detailTodo.dueDate < today && (
+                <span className="rounded-full border border-alert/50 bg-alert/15 px-2 py-0.5 text-xs font-bold text-alert">
+                  期日 {detailTodo.dueDate}（超過）
                 </span>
               )}
               {detailTodo.customer && (
@@ -2444,13 +2458,28 @@ export default function UnifiedBoardSection({
                   <option value={detailTodo.tag}>{detailTodo.tag}</option>
                 )}
               </select>
+              <span className="ml-2">期日:</span>
+              <input
+                type="date"
+                value={detailTodo.dueDate ?? ""}
+                onChange={(e) => db.todoTasks.update(detailTodo.id, { dueDate: e.target.value || undefined })}
+                className="rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+              />
             </label>
 
-            {detailTodo.action && (
-              <p className="rounded-lg bg-cream/5 px-3 py-2 text-sm text-cream/80">
-                <span className="text-cream/40">次の行動:</span> {detailTodo.action}
-              </p>
-            )}
+            <label className="block">
+              <span className="text-xs text-cream/60">次の行動</span>
+              <input
+                key={`action-${detailTodo.id}-${detailTodo.action ?? ""}`}
+                defaultValue={detailTodo.action ?? ""}
+                placeholder="次にすべきことを一言で"
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v !== (detailTodo.action ?? "")) db.todoTasks.update(detailTodo.id, { action: v || undefined });
+                }}
+                className="mt-1 w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+            </label>
             {detailTodo.notes && (
               <p className="whitespace-pre-wrap rounded-lg bg-cream/5 px-3 py-2 text-sm text-cream/70">{detailTodo.notes}</p>
             )}
@@ -2465,36 +2494,83 @@ export default function UnifiedBoardSection({
               </a>
             )}
 
-            {(subtasksByParent.get(detailTodo.id) ?? []).length > 0 && (
-              <div className="border-t border-cream/10 pt-3">
-                <p className="mb-1.5 text-xs font-bold text-cream/70">
-                  サブタスク（{(subtasksByParent.get(detailTodo.id) ?? []).filter((s) => s.completed).length}/
-                  {(subtasksByParent.get(detailTodo.id) ?? []).length}）
-                </p>
-                <div className="space-y-1">
-                  {(subtasksByParent.get(detailTodo.id) ?? []).map((sub) => (
+            <div className="border-t border-cream/10 pt-3">
+              <p className="mb-1.5 text-xs font-bold text-cream/70">
+                サブタスク（{(subtasksByParent.get(detailTodo.id) ?? []).filter((s) => s.completed).length}/
+                {(subtasksByParent.get(detailTodo.id) ?? []).length}）
+              </p>
+              <div className="space-y-1">
+                {(subtasksByParent.get(detailTodo.id) ?? []).map((sub) => (
+                  // 行ごとに「完了の切り替え」「件名の書き換え」「対応状況」「削除」を置く。
+                  // 入れ子のボタンは作れないので、チェックだけをボタンにして横に並べる
+                  <div key={sub.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-cream/5">
                     <button
-                      key={sub.id}
                       onClick={() => toggleSubtask(sub)}
-                      className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left hover:bg-cream/10"
                       title={sub.completed ? "未完了に戻す" : "完了にする"}
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] ${
+                        sub.completed ? "border-cream/40 bg-cream/25 text-cream/70" : "border-cream/40 hover:bg-cream/15"
+                      }`}
                     >
-                      <span
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] ${
-                          sub.completed ? "border-cream/40 bg-cream/25 text-cream/70" : "border-cream/40"
-                        }`}
-                      >
-                        {sub.completed ? "✓" : ""}
-                      </span>
-                      <span className={`min-w-0 flex-1 text-sm ${sub.completed ? "text-cream/35 line-through" : "text-cream/85"}`}>
-                        {sub.title}
-                      </span>
-                      {sub.completed ? <InlineStamp text="済" tone="done" /> : sub.tag ? <InlineStamp text={sub.tag} /> : null}
+                      {sub.completed ? "✓" : ""}
                     </button>
-                  ))}
-                </div>
+                    <input
+                      defaultValue={sub.title}
+                      key={`t-${sub.id}-${sub.title}`}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v && v !== sub.title) db.todoTasks.update(sub.id, { title: v });
+                        else e.target.value = sub.title;
+                      }}
+                      className={`min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none focus:border-cream/25 ${
+                        sub.completed ? "text-cream/35 line-through" : "text-cream/85"
+                      }`}
+                    />
+                    <select
+                      value={sub.tag ?? ""}
+                      onChange={(e) => db.todoTasks.update(sub.id, { tag: e.target.value || undefined })}
+                      title="対応状況"
+                      className={`w-[7rem] shrink-0 rounded border px-1 py-0.5 text-xs outline-none ${
+                        sub.tag ? "border-cream/30 bg-cream/10 font-bold text-cream/90" : "border-transparent text-cream/30"
+                      }`}
+                    >
+                      <option value="">対応状況なし</option>
+                      {stampPresets.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                      {sub.tag && !stampPresets.includes(sub.tag) && <option value={sub.tag}>{sub.tag}</option>}
+                    </select>
+                    <button
+                      onClick={() => setDeleteSubtaskTarget(sub)}
+                      title="このサブタスクを削除"
+                      className="shrink-0 px-1 text-xs text-cream/30 hover:text-alert"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
               </div>
-            )}
+              <form
+                className="mt-2 flex gap-2"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!newSubtaskTitle.trim()) return;
+                  await addSubtaskTo(detailTodo, newSubtaskTitle);
+                  setNewSubtaskTitle("");
+                }}
+              >
+                <input
+                  value={newSubtaskTitle}
+                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                  placeholder="＋ サブタスクを追加"
+                  className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-1.5 text-sm text-cream"
+                />
+                <button type="submit" className="btn-pill-outline shrink-0 text-xs disabled:opacity-40" disabled={!newSubtaskTitle.trim()}>
+                  追加
+                </button>
+              </form>
+            </div>
 
             <div className="flex flex-wrap justify-end gap-2 border-t border-cream/10 pt-3">
               {onOpenTodoDetail && (
@@ -2519,6 +2595,29 @@ export default function UnifiedBoardSection({
                 完了にする
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* サブタスクの削除確認。ToDo詳細の上に重ねて出す */}
+      {deleteSubtaskTarget && (
+        <Modal title="サブタスクを削除しますか？" onClose={() => setDeleteSubtaskTarget(null)}>
+          <p className="text-sm text-cream/80">
+            <b className="text-cream">{deleteSubtaskTarget.title}</b> を削除します。元に戻せません。
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => setDeleteSubtaskTarget(null)}>
+              やめる
+            </button>
+            <button
+              className="btn-pill text-sm"
+              onClick={async () => {
+                await db.todoTasks.delete(deleteSubtaskTarget.id);
+                setDeleteSubtaskTarget(null);
+              }}
+            >
+              削除する
+            </button>
           </div>
         </Modal>
       )}
