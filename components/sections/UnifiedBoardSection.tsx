@@ -6,7 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib/time";
-import { computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
+import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
 import { completeTodoTask, DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { getRiskTier, useVisualMode } from "@/lib/theme";
@@ -1488,19 +1488,19 @@ export default function UnifiedBoardSection({
 
   // 段の見出し。押すとその段だけ畳める。コンポーネントではなく関数にして、
   // 再描画のたびに中身が作り直されないようにしている
+  // 右側には「すべて見る」などのボタンも置きたいので、畳むボタンとは兄弟にする
+  // (ボタンの中にボタンは入れられないため)
   function hubHead(key: string, label: string, right?: ReactNode) {
     const open = !hubCollapsed.has(key);
     return (
-      <button
-        onClick={() => toggleHubSection(key)}
-        className="flex w-full items-baseline justify-between rounded px-0.5 hover:bg-cream/5"
-        aria-expanded={open}
-      >
-        <span className="text-[9px] font-bold tracking-[0.15em] text-cream/40">
-          {open ? "▾" : "▸"} {label}
-        </span>
+      <div className="flex w-full items-baseline justify-between gap-1">
+        <button onClick={() => toggleHubSection(key)} className="rounded px-0.5 hover:bg-cream/5" aria-expanded={open}>
+          <span className="text-[9px] font-bold tracking-[0.15em] text-cream/40">
+            {open ? "▾" : "▸"} {label}
+          </span>
+        </button>
         {right}
-      </button>
+      </div>
     );
   }
 
@@ -1561,6 +1561,38 @@ export default function UnifiedBoardSection({
     }
     setHubList({ title: "通過していない段階", items });
   }
+  // 着地見込みの内訳。どの作業が残り時間を食っているのかを、予測残り時間の多い順に
+  function openLandingList() {
+    const rows = tasks
+      .map((t) => {
+        const predictedMs = (predictedSecondsByTaskId.get(t.id) ?? 0) * 1000;
+        if (predictedMs <= 0) return null;
+        const spent = t.status === "running" ? segmentsAccumulatedMs(t, now) : baseAccumulatedMs(t);
+        const remaining = Math.max(0, predictedMs - spent);
+        if (remaining <= 0) return null;
+        return { id: t.id, label: `${t.category} / ${t.name}`, sub: `残り見込み ${formatMsClock(remaining)}`, ms: remaining };
+      })
+      .filter((r): r is { id: string; label: string; sub: string; ms: number } => r !== null)
+      .sort((a, b) => b.ms - a.ms);
+    setHubList({ title: "着地見込みの内訳（未完了の作業）", items: rows.map(({ id, label, sub }) => ({ id, label, sub })) });
+  }
+
+  // カテゴリの帯を押したとき、その中身がどの作業だったのかを出す
+  function openCategoryList(category: string) {
+    const rows = (dailyTasks ?? [])
+      .filter((t) => !t.isProvisional && t.category === category && segmentsAccumulatedMs(t, now) > 0)
+      .map((t) => ({ id: t.id, label: t.name, ms: segmentsAccumulatedMs(t, now), status: t.status }))
+      .sort((a, b) => b.ms - a.ms);
+    setHubList({
+      title: `${category} に使った時間`,
+      items: rows.map((r) => ({
+        id: r.id,
+        label: r.label,
+        sub: `${formatMsClock(r.ms)}${r.status === "done" ? " / 完了" : r.status === "running" ? " / 計測中" : ""}`,
+      })),
+    });
+  }
+
   function openTagList(tag: string) {
     const items: HubListItem[] = [
       ...todos.filter((t) => t.tag === tag).map((t) => ({ id: t.id, label: t.title, sub: "ToDo" })),
@@ -1642,7 +1674,7 @@ export default function UnifiedBoardSection({
   const totalTrackedMs = useMemo(() => timeByCategory.reduce((sum, r) => sum + r.ms, 0), [timeByCategory]);
 
   // 直近に片付いたもの。作業・ToDo・案件の段階をまとめて時系列で見せる
-  const recentDone = useMemo(() => {
+  const recentDoneAll = useMemo(() => {
     if (!hubMode) return [];
     const rows: { id: string; label: string; sub: string; at: number }[] = [];
     for (const t of dailyTasks ?? []) {
@@ -1660,8 +1692,10 @@ export default function UnifiedBoardSection({
         rows.push({ id: p.id, label: st.title, sub: `案件 ${p.title}`, at: st.completedAt });
       }
     }
-    return rows.sort((a, b) => b.at - a.at).slice(0, 5);
+    return rows.sort((a, b) => b.at - a.at);
   }, [hubMode, dailyTasks, todoTasks, projects]);
+  // 段の中には新しい5件だけ出し、「すべて」からは全件を見せる
+  const recentDoneTop = useMemo(() => recentDoneAll.slice(0, 5), [recentDoneAll]);
 
   const upcoming = useMemo(() => {
     if (!hubMode) return null;
@@ -2535,7 +2569,7 @@ export default function UnifiedBoardSection({
             <div className="mt-2 border-t border-cream/10 pt-2">
               {hubHead("landing", "着地見込み")}
               {!hubCollapsed.has("landing") && (
-                <div className="mt-1">
+                <button onClick={openLandingList} className="mt-1 block w-full rounded px-0.5 hover:bg-cream/5" title="どの作業が残っているかを見る">
                   <p
                     className={`text-center text-[11px] font-bold tabular-nums ${
                       landing.diffMs > 0 ? "text-alert" : "text-cream/80"
@@ -2557,7 +2591,7 @@ export default function UnifiedBoardSection({
                   <p className="mt-1 text-center text-[9px] tabular-nums text-cream/40">
                     残り {formatMsClock(landing.remainingWorkMs)} / 必要 {formatMsClock(landing.neededMs)}
                   </p>
-                </div>
+                </button>
               )}
             </div>
           )}
@@ -2712,7 +2746,18 @@ export default function UnifiedBoardSection({
                   {hubHead(
                     "risky",
                     "危険信号",
-                    <span className="text-[10px] font-bold tabular-nums text-alert">{riskyProjects.length}</span>
+                    <button
+                      className="rounded px-1 text-[10px] font-bold tabular-nums text-alert hover:bg-alert/15"
+                      onClick={() =>
+                        setHubList({
+                          title: "危険信号の案件",
+                          items: riskyProjects.map((r) => ({ id: r.id, label: r.title, sub: r.reason, alert: r.level === "overdue" })),
+                        })
+                      }
+                      title="すべて見る"
+                    >
+                      {riskyProjects.length}
+                    </button>
                   )}
                   {!hubCollapsed.has("risky") && (
                     <div className="mt-0.5 space-y-0.5">
@@ -2756,26 +2801,46 @@ export default function UnifiedBoardSection({
                         ))}
                       </div>
                       {timeByCategory.map((r, i) => (
-                        <div key={r.name} className="flex items-center gap-1 text-[10px]">
+                        <button
+                          key={r.name}
+                          onClick={() => r.name !== "その他" && openCategoryList(r.name)}
+                          disabled={r.name === "その他"}
+                          className="flex w-full items-center gap-1 rounded px-0.5 text-[10px] hover:bg-cream/10 disabled:hover:bg-transparent"
+                          title={r.name === "その他" ? undefined : `${r.name} の内訳を見る`}
+                        >
                           <span
                             className="h-2 w-2 shrink-0 rounded-sm"
                             style={{ backgroundColor: `rgb(var(--accent-rgb) / ${0.85 - i * 0.13})` }}
                           />
-                          <span className="min-w-0 flex-1 truncate text-cream/70">{r.name}</span>
+                          <span className="min-w-0 flex-1 truncate text-left text-cream/70">{r.name}</span>
                           <span className="shrink-0 tabular-nums text-cream/50">{formatMsClock(r.ms)}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
                 </div>
               )}
 
-              {recentDone.length > 0 && (
+              {recentDoneTop.length > 0 && (
                 <div>
-                  {hubHead("recent", "直近の動き")}
+                  {hubHead(
+                    "recent",
+                    "直近の動き",
+                    <button
+                      className="rounded px-1 text-[9px] text-cream/40 hover:bg-cream/10 hover:text-cream/70"
+                      onClick={() =>
+                        setHubList({
+                          title: "本日片付いたもの",
+                          items: recentDoneAll.map((r) => ({ id: r.id, label: r.label, sub: `${formatClock(r.at)} / ${r.sub}` })),
+                        })
+                      }
+                    >
+                      すべて {recentDoneAll.length}
+                    </button>
+                  )}
                   {!hubCollapsed.has("recent") && (
                     <div className="mt-0.5 space-y-0.5">
-                      {recentDone.map((r, i) => (
+                      {recentDoneTop.map((r, i) => (
                         <button
                           key={`${r.id}:${r.at}:${i}`}
                           onClick={() => focusBoardItem(r.id)}
