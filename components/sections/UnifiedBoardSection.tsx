@@ -616,6 +616,24 @@ export default function UnifiedBoardSection({
     await finishDailyTask(task);
   }
 
+  // 盤面から「完了にする」を押したときの確認。ブラウザ標準のconfirmでは
+  // 残っているサブタスクや未通過の前段階といった判断材料を出せないため、
+  // 盤面の中で見せる確認ダイアログにまとめる
+  type BoardCompleteTarget =
+    | { kind: "task"; task: DailyTask }
+    | { kind: "todo"; todo: TodoTask }
+    | { kind: "stage"; project: ProjectItem; stageId: string };
+  const [completeTarget, setCompleteTarget] = useState<BoardCompleteTarget | null>(null);
+
+  async function runCompleteTarget() {
+    const target = completeTarget;
+    if (!target) return;
+    setCompleteTarget(null);
+    if (target.kind === "task") await completeTask(target.task, true);
+    else if (target.kind === "todo") await completeTodo(target.todo, true);
+    else await toggleProjectStage(target.project, target.stageId, true);
+  }
+
   // お気に入り/マスタから、その場で新しい作業を開始する。既に計測中の作業があれば
   // 一時停止してから開始する(startTaskの「既存タスクを再開」と同じ考え方)
   async function startFromMaster(master: MasterTask) {
@@ -1699,7 +1717,7 @@ export default function UnifiedBoardSection({
                   onDragEnd={() => {}}
                   onStart={() => startTask(task)}
                   onPause={() => pauseTask(task)}
-                  onComplete={() => completeTask(task)}
+                  onComplete={() => setCompleteTarget({ kind: "task", task })}
                   onToggleLock={() => toggleBoardLock("task", task.id, !!task.boardLocked)}
                   onTogglePin={() => toggleBoardPin("task", task.id, !!task.boardPinned)}
                   onFocus={() => {}}
@@ -1921,7 +1939,7 @@ export default function UnifiedBoardSection({
                 onDragEnd={(id, x, y) => handleItemDragEnd("task", id, x, y)}
                 onStart={() => startTask(task)}
                 onPause={() => pauseTask(task)}
-                onComplete={() => completeTask(task)}
+                onComplete={() => setCompleteTarget({ kind: "task", task })}
                 onToggleLock={() => toggleBoardLock("task", task.id, !!task.boardLocked)}
                 onTogglePin={() => toggleBoardPin("task", task.id, !!task.boardPinned)}
                 onFocus={() => bringToFront(task.id)}
@@ -1942,7 +1960,7 @@ export default function UnifiedBoardSection({
                 hubAlert={hubMode && !!todo.dueDate && todo.dueDate < today}
                 onSelect={(additive) => selectItem(todo.id, additive)}
                 onDragEnd={(id, x, y) => handleItemDragEnd("todo", id, x, y)}
-                onComplete={() => completeTodo(todo)}
+                onComplete={() => setCompleteTarget({ kind: "todo", todo })}
                 onToggleSubtask={toggleSubtask}
                 onRemove={() => removeTodo(todo)}
                 onToggleLock={() => toggleBoardLock("todo", todo.id, !!todo.boardLocked)}
@@ -1979,7 +1997,7 @@ export default function UnifiedBoardSection({
                 hubAlert={hubMode && project.dueDate < today}
                 onSelect={(additive) => selectItem(project.id, additive)}
                 onDragEnd={(id, x, y) => handleItemDragEnd("project", id, x, y)}
-                onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
+                onToggleStage={(stageId) => setCompleteTarget({ kind: "stage", project, stageId })}
                 onRemove={() => removeProject(project)}
                 onToggleLock={() => toggleBoardLock("project", project.id, !!project.boardLocked)}
                 onTogglePin={() => toggleBoardPin("project", project.id, !!project.boardPinned)}
@@ -2168,6 +2186,87 @@ export default function UnifiedBoardSection({
       )}
       </div>
 
+      {/* 完了にする前の確認。取り消しの効かない操作なので、何を完了にするのかと、
+          まだ残っているもの(未完了のサブタスク・未通過の前段階)を必ず添える */}
+      {completeTarget && (
+        <Modal
+          title={completeTarget.kind === "stage" ? "この段階を通過にしますか？" : "完了にしますか？"}
+          onClose={() => setCompleteTarget(null)}
+        >
+          {(() => {
+            if (completeTarget.kind === "task") {
+              const t = completeTarget.task;
+              return (
+                <div className="space-y-2">
+                  <p className="text-sm text-cream/80">
+                    <span className="text-cream/50">{t.category}</span> <b className="text-cream">{t.name}</b> を完了にします。
+                  </p>
+                  <p className="text-xs tabular-nums text-cream/50">計測時間 {formatMsClock(segmentsAccumulatedMs(t, now))}</p>
+                </div>
+              );
+            }
+            if (completeTarget.kind === "todo") {
+              const t = completeTarget.todo;
+              const subs = subtasksByParent.get(t.id) ?? [];
+              const remaining = subs.filter((s) => !s.completed);
+              return (
+                <div className="space-y-2">
+                  <p className="text-sm text-cream/80">
+                    <b className="text-cream">{t.title}</b> を完了にします。
+                  </p>
+                  {t.dueDate && <p className="text-xs text-cream/50">期日 {t.dueDate}</p>}
+                  {remaining.length > 0 && (
+                    <div className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2">
+                      <p className="text-xs font-bold text-alert">未完了のサブタスクが{remaining.length}件あります</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {remaining.slice(0, 5).map((s) => (
+                          <li key={s.id} className="truncate text-xs text-cream/70">
+                            ・{s.title}
+                          </li>
+                        ))}
+                        {remaining.length > 5 && <li className="text-xs text-cream/40">ほか{remaining.length - 5}件</li>}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            const { project, stageId } = completeTarget;
+            const all = project.stages ?? [];
+            const idx = all.findIndex((s) => s.id === stageId);
+            const stage = all[idx];
+            const previousOpen = all.slice(0, Math.max(0, idx)).filter((s) => !isStageDone(s));
+            return (
+              <div className="space-y-2">
+                <p className="text-sm text-cream/80">
+                  <span className="text-cream/50">{project.title}</span> の <b className="text-cream">{stage?.title}</b> を通過にします。
+                </p>
+                {previousOpen.length > 0 && (
+                  <div className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2">
+                    <p className="text-xs font-bold text-alert">前の段階がまだ通過していません</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {previousOpen.map((s) => (
+                        <li key={s.id} className="truncate text-xs text-cream/70">
+                          ・{s.title}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => setCompleteTarget(null)}>
+              やめる
+            </button>
+            <button className="btn-pill text-sm" onClick={runCompleteTarget}>
+              {completeTarget.kind === "stage" ? "通過にする" : "完了にする"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {/* 盤面上のToDoの詳細。ToDoタブへ飛ばさず、盤面に居たまま中身を読んで
           対応状況を変えたりサブタスクを潰したりできるようにする */}
       {detailTodo && (
@@ -2293,8 +2392,8 @@ export default function UnifiedBoardSection({
               <button
                 className="btn-pill text-sm"
                 onClick={async () => {
-                  await completeTodo(detailTodo);
                   setDetailTodoId(null);
+                  setCompleteTarget({ kind: "todo", todo: detailTodo });
                 }}
               >
                 完了にする

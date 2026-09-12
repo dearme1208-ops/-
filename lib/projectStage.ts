@@ -67,11 +67,13 @@ export function buildStageCompletionOrder(stages: ProjectStage[] | undefined): M
 // 段階が多い案件では誤タップしやすいための保険。前の段階が未完了の場合は
 // その旨も確認メッセージに含める(依存関係の警告)。案件タブ・ToDoタブの
 // 「案件」ビューなど、複数の画面から同じ挙動で呼べるよう共通化してある
-export async function toggleProjectStage(project: ProjectItem, stageId: string): Promise<void> {
+// skipConfirmを立てると、ここでの確認を出さずに切り替える。呼び出し側で
+// 独自の確認ダイアログを出している場合(統合ボード)に二重で聞かないため
+export async function toggleProjectStage(project: ProjectItem, stageId: string, skipConfirm = false): Promise<void> {
   const allStages = project.stages ?? [];
   const idx = allStages.findIndex((s) => s.id === stageId);
   const stage = allStages[idx];
-  if (stage && !stage.completed) {
+  if (!skipConfirm && stage && !stage.completed) {
     const incompletePrevious = allStages.slice(0, idx).filter((s) => !s.completed);
     const warning =
       incompletePrevious.length > 0
