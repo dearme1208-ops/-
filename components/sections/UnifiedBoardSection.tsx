@@ -250,6 +250,10 @@ export default function UnifiedBoardSection({
   const background: BoardBackgroundKind = (BOARD_BACKGROUND_KINDS as readonly string[]).includes(backgroundStr)
     ? (backgroundStr as BoardBackgroundKind)
     : DEFAULT_BOARD_BACKGROUND;
+  // 盤面のまわりに机・壁・デスクライトを描く「机まわり」。地の模様とは独立した
+  // 切り替えで、どの地(コルク/黒板/方眼紙…)とも組み合わせられる
+  const [deskSceneStr, setDeskSceneStr] = useSetting(`board.deskScene.${selectedBoardId || "default"}`, "false");
+  const deskScene = deskSceneStr === "true";
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   // ボードに置く分だけでなく、下の一覧から選んで置けるようにするため未完了は全件見る
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
@@ -310,6 +314,34 @@ export default function UnifiedBoardSection({
     }
     return map;
   }, [todoTasks]);
+
+  // 盤面に出ているToDoが持つ対応状況の一覧(自分の対応状況＋未完了サブタスクの対応状況)。
+  // 「今この状況のものだけ見たい」を1タップで切り替えられるように、件数付きで並べる
+  const boardTagOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of todos) {
+      const tags = new Set<string>();
+      if (t.tag) tags.add(t.tag);
+      for (const s of subtasksByParent.get(t.id) ?? []) {
+        if (s.tag && !s.completed) tags.add(s.tag);
+      }
+      for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [todos, subtasksByParent]);
+
+  const [tagFilterRaw, setTagFilterRaw] = useState<string | null>(null);
+  // 絞り込み中の対応状況が盤面から消えた(最後の1件を完了した等)場合に、
+  // 何も出ない盤面のまま取り残されないよう、その時点で絞り込みを外れたものとして扱う
+  const tagFilter = tagFilterRaw && boardTagOptions.some(([t]) => t === tagFilterRaw) ? tagFilterRaw : null;
+  const visibleTodos = useMemo(() => {
+    if (!tagFilter) return todos;
+    return todos.filter(
+      (t) =>
+        t.tag === tagFilter ||
+        (subtasksByParent.get(t.id) ?? []).some((s) => s.tag === tagFilter && !s.completed)
+    );
+  }, [todos, tagFilter, subtasksByParent]);
 
   const todoCardHeight = useCallback(
     (todoId: string) => computeTodoCardHeight((subtasksByParent.get(todoId) ?? []).length),
@@ -1295,6 +1327,16 @@ export default function UnifiedBoardSection({
             {BOARD_BACKGROUND_LABELS[kind]}
           </button>
         ))}
+        <span className="ml-1 flex items-center gap-2 border-l border-cream/15 pl-3">
+          <button
+            className={deskScene ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setDeskSceneStr(deskScene ? "false" : "true")}
+            title="盤面のまわりに机・壁・デスクライトを描いて、席に着いて板を眺めている見え方にします"
+            aria-pressed={deskScene}
+          >
+            🪑 机まわり: {deskScene ? "ON" : "OFF"}
+          </button>
+        </span>
       </div>
       {/* 書き込みの道具。付箋・図形・手書き・消しゴムをこの1列にまとめる */}
       <div className="panel flex flex-wrap items-center gap-2 p-3">
@@ -1428,6 +1470,29 @@ export default function UnifiedBoardSection({
         <button className="btn-pill-outline text-xs" onClick={alignBoardItems} title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)">
           🧹 整列
         </button>
+        {boardTagOptions.length > 0 && (
+          <span className="flex flex-wrap items-center gap-1.5 border-l border-cream/15 pl-2">
+            <span className="text-[10px] tracking-wider text-cream/40">対応状況</span>
+            <button
+              className={tagFilter === null ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setTagFilterRaw(null)}
+              title="対応状況での絞り込みを解除します"
+            >
+              すべて
+            </button>
+            {boardTagOptions.map(([tag, count]) => (
+              <button
+                key={tag}
+                className={tagFilter === tag ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setTagFilterRaw(tagFilter === tag ? null : tag)}
+                title={`対応状況が「${tag}」のToDoだけを盤面に出します`}
+              >
+                {tag}
+                <span className="ml-1 tabular-nums opacity-60">{count}</span>
+              </button>
+            ))}
+          </span>
+        )}
         {hubMode && (
           <>
             <button
@@ -1556,10 +1621,29 @@ export default function UnifiedBoardSection({
           追従させたくないので、スクロールするビューポート(boardViewportRef)の外側・
           このrelativeラッパーの中に兄弟として重ねる */}
       <div className={fullscreen ? "relative min-h-0 min-w-0 flex-1" : "relative min-w-0 flex-1"}>
+      {/* 「机まわり」。盤面のビューポートより先に描いて、その背後の部屋にする。
+          ビューポート側は下で内側に寄せ、板を壁に掛けたような見え方にする */}
+      {deskScene && <DeskSceneFrame intense={hubMode} />}
       <div
         ref={boardViewportRef}
-        className="panel h-full w-full overflow-auto p-0"
-        style={fullscreen ? undefined : { height: "70vh" }}
+        className={`relative h-full w-full overflow-auto p-0 ${deskScene ? "rounded-lg" : "panel"}`}
+        style={
+          deskScene
+            ? {
+                ...(fullscreen ? {} : { height: "70vh" }),
+                // 板の厚みと、壁に掛かって落ちる影。板そのものの縁は木枠に見せる
+                border: "7px solid rgba(86,58,32,0.92)",
+                boxShadow:
+                  "0 22px 38px -14px rgba(0,0,0,0.72), 0 0 0 1px rgba(255,214,160,0.18), inset 0 2px 10px rgba(0,0,0,0.35)",
+                // 部屋の余白(下は机の分だけ広く空ける)
+                margin: hubMode ? "42px 44px 104px" : "28px 30px 74px",
+                width: "auto",
+                height: fullscreen ? "auto" : `calc(70vh - ${hubMode ? 146 : 102}px)`,
+              }
+            : fullscreen
+              ? undefined
+              : { height: "70vh" }
+        }
       >
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
           <div
@@ -1741,7 +1825,7 @@ export default function UnifiedBoardSection({
                 onFocus={() => bringToFront(task.id)}
               />
             ))}
-            {todos.map((todo) => (
+            {visibleTodos.map((todo) => (
               <TodoCard
                 key={todo.id}
                 todo={todo}
@@ -1769,7 +1853,7 @@ export default function UnifiedBoardSection({
                 バッジをカードの左上に出す。手動のスタンプ(BoardStamp)とは別物で、DBには
                 保存せずtodoの現在値からその都度作るだけなので、対応状況を変えれば即座に
                 追従し、消せば自動で消える */}
-            {todos
+            {visibleTodos
               .filter((todo): todo is TodoTask & { tag: string } => !!todo.tag)
               .map((todo) => (
                 <TagStatusBadge
@@ -2007,6 +2091,125 @@ export default function UnifiedBoardSection({
 // 四隅のコーナーマーク・上から下へ流れるスキャンライン・右上の稼働中インジケーター(時計)を
 // 出すだけの飾りで、操作対象にはしない(pointer-events-none)。盤面のスクロール/ズームに
 // 追従してほしくないため、呼び出し側でスクロールするビューポートの外側(兄弟)に置いている
+// 「机まわり」。盤面のビューポートを板(コルクボード/黒板/モニタ)に見立て、その
+// まわりに壁・机・デスクライト・キーボードを描いて、席に着いてそれを眺めている
+// 視点をつくる。画像は持ち込まず、すべてCSSのグラデーションで組む。
+// 壁と机の陰影は演出テーマの地色(--ink-rgb)の上に重ねるので、明るいテーマでは
+// 明るい部屋、暗いテーマでは暗い部屋として馴染む。
+// intense(ハブモード)では、デスクライトの光だまり・板から机に落ちる照り返し・
+// マグカップまで足して、より「作戦室」らしく見せる
+function DeskSceneFrame({ intense }: { intense: boolean }) {
+  const deskHeight = intense ? 92 : 64;
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden="true">
+      {/* 壁。上からの照明で天井側が明るく、腰から下は影になる */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundColor: "rgb(var(--ink-rgb))",
+          backgroundImage: [
+            // 壁紙のざらつき
+            "repeating-linear-gradient(23deg, rgba(255,255,255,0.012) 0 1px, transparent 1px 4px)",
+            "linear-gradient(180deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.02) 40%, rgba(0,0,0,0.42) 100%)",
+            // デスクライトが左上から壁を舐める
+            `radial-gradient(64% 52% at 13% -6%, rgba(255,206,138,${intense ? 0.3 : 0.18}), transparent 66%)`,
+          ].join(","),
+        }}
+      />
+      {/* 板を掛けている壁の陰。板のすぐ外側だけ濃く落として、壁から浮いて見せる */}
+      <div
+        className="absolute inset-0"
+        style={{ boxShadow: "inset 0 0 70px 10px rgba(0,0,0,0.45)" }}
+      />
+      {/* 机。手前ほど明るい木目にして、奥行きのある天板に見せる */}
+      <div
+        className="absolute inset-x-0 bottom-0"
+        style={{
+          height: deskHeight,
+          backgroundColor: "#4a341f",
+          backgroundImage: [
+            // 木目。座っている側から見た天板なので、板目は左右に流れる
+            "repeating-linear-gradient(1.5deg, rgba(0,0,0,0.20) 0 1px, transparent 1px 9px)",
+            "repeating-linear-gradient(-1deg, rgba(255,214,160,0.055) 0 2px, transparent 2px 27px)",
+            // 奥から手前への明るさ(天板の反り)
+            "linear-gradient(180deg, rgba(0,0,0,0.60) 0%, rgba(0,0,0,0.12) 44%, rgba(255,208,150,0.12) 100%)",
+            // 板(画面)からの照り返しが天板の中央に落ちる
+            `radial-gradient(62% 150% at 50% -10%, rgba(255,236,200,${intense ? 0.2 : 0.12}), transparent 72%)`,
+          ].join(","),
+        }}
+      />
+      {/* 天板の奥の縁。壁と机の境目に細いハイライトを置いて、面の切り替わりを立たせる */}
+      <div
+        className="absolute inset-x-0"
+        style={{ bottom: deskHeight - 1, height: 2, background: "linear-gradient(180deg, rgba(255,222,180,0.22), transparent)" }}
+      />
+      {/* 板が天板に落とす影。これが無いと板と机が同じ面に貼ってあるように見える */}
+      <div
+        className="absolute inset-x-0"
+        style={{
+          bottom: deskHeight - 4,
+          height: 26,
+          background: "linear-gradient(180deg, rgba(0,0,0,0.55), transparent)",
+          filter: "blur(3px)",
+        }}
+      />
+      {/* キーボード。手前中央に、下端で切れる形で置く(座っている人の手元) */}
+      <div
+        className="absolute rounded-t-[6px]"
+        style={{
+          left: "50%",
+          transform: "translateX(-50%)",
+          bottom: -6,
+          width: intense ? 360 : 280,
+          height: intense ? 38 : 28,
+          backgroundColor: "#0f1216",
+          backgroundImage: [
+            "repeating-linear-gradient(90deg, rgba(255,255,255,0.045) 0 13px, transparent 13px 16px)",
+            "repeating-linear-gradient(180deg, rgba(255,255,255,0.035) 0 9px, transparent 9px 12px)",
+            "linear-gradient(180deg, rgba(255,255,255,0.07), transparent 45%)",
+          ].join(","),
+          boxShadow: "0 -3px 14px rgba(0,0,0,0.6)",
+        }}
+      />
+      {intense && (
+        <>
+          {/* デスクライトの光だまり。天板の左手前を斜めに照らす */}
+          <div
+            className="absolute inset-x-0 bottom-0"
+            style={{
+              height: deskHeight,
+              backgroundImage:
+                "radial-gradient(34% 130% at 17% 25%, rgba(255,198,120,0.22), transparent 70%)",
+            }}
+          />
+          {/* マグカップ。天板の右手前に置いてあるもののシルエット */}
+          <div
+            className="absolute rounded-b-[7px] rounded-t-[3px]"
+            style={{
+              right: 46,
+              bottom: Math.round(deskHeight * 0.22),
+              width: 26,
+              height: 30,
+              backgroundImage: "linear-gradient(100deg, rgba(232,236,240,0.92), rgba(150,158,166,0.85))",
+              boxShadow: "0 6px 10px -4px rgba(0,0,0,0.6)",
+            }}
+          />
+          <div
+            className="absolute rounded-full border-[3px]"
+            style={{
+              right: 38,
+              bottom: Math.round(deskHeight * 0.22) + 8,
+              width: 13,
+              height: 14,
+              borderColor: "rgba(196,202,208,0.85)",
+            }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 function HubHudFrame({ now }: { now: number }) {
   const d = new Date(now);
   const clock = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;

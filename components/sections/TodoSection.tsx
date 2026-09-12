@@ -2380,8 +2380,10 @@ function SubtaskRow({
           key={`tagselect-${sub.id}-${sub.tag ?? ""}`}
           value={sub.tag ?? ""}
           onChange={(e) => onUpdateSubtaskTag(sub, e.target.value)}
-          className={`w-[6.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[10px] focus:border-cream/20 focus:outline-none ${
-            sub.tag ? "text-cream/70" : "text-cream/30"
+          className={`w-[7.5rem] shrink-0 rounded border bg-transparent px-1 py-0.5 text-xs focus:outline-none ${
+            sub.tag
+              ? "border-cream/30 bg-cream/10 font-bold text-cream/90 focus:border-cream/50"
+              : "border-transparent text-cream/30 focus:border-cream/20"
           }`}
           title="対応状況"
         >
@@ -2850,12 +2852,14 @@ function TaskRow({
           {listTitle && (
             <span className="rounded-full bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/40">{listTitle}</span>
           )}
+          {/* 対応状況と客先は、一覧を追うときに件名の次によく見る情報なので、
+              リスト名・分類より一段大きく・濃く出す */}
           {task.tag && (
             <span
-              className={`rounded-full border px-1.5 py-0.5 text-[10px] ${
+              className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
                 !!autoImportantTag && task.tag === autoImportantTag
-                  ? "border-alert/50 bg-alert/15 font-bold text-alert"
-                  : "border-cream/30 text-cream/80"
+                  ? "border-alert/50 bg-alert/15 text-alert"
+                  : "border-cream/40 bg-cream/10 text-cream"
               }`}
             >
               {task.tag}
@@ -2867,7 +2871,7 @@ function TaskRow({
             </span>
           )}
           {task.customer && (
-            <span className="rounded-full bg-cream/10 px-1.5 py-0.5 text-[10px] text-cream/60">
+            <span className="rounded-full border border-cream/25 bg-cream/15 px-2 py-0.5 text-xs font-bold text-cream/90">
               {task.customer}
             </span>
           )}

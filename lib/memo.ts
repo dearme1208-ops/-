@@ -35,7 +35,16 @@ export const MEMO_BOARD_HEIGHT = 1600;
 
 // ボードの地の模様。カードの位置合わせの目安になるだけで、データとは無関係な
 // 見た目だけの切り替え(演出テーマにも依存しない)
-export const BOARD_BACKGROUND_KINDS = ["none", "grid", "dots", "lines", "checker"] as const;
+export const BOARD_BACKGROUND_KINDS = [
+  "none",
+  "grid",
+  "dots",
+  "lines",
+  "checker",
+  "cork",
+  "blackboard",
+  "whiteboard",
+] as const;
 export type BoardBackgroundKind = (typeof BOARD_BACKGROUND_KINDS)[number];
 export const DEFAULT_BOARD_BACKGROUND: BoardBackgroundKind = "none";
 export const BOARD_BACKGROUND_LABELS: Record<BoardBackgroundKind, string> = {
@@ -44,11 +53,60 @@ export const BOARD_BACKGROUND_LABELS: Record<BoardBackgroundKind, string> = {
   dots: "ドットグリッド",
   lines: "罫線ノート",
   checker: "チェック柄",
+  cork: "コルクボード",
+  blackboard: "黒板",
+  whiteboard: "ホワイトボード",
 };
 
 // CSSのbackground-imageで表現する。画像を持ち込まずグラデーションだけで描くので、
 // 軽量でどの演出テーマの地色の上でも同じ見え方になる
-export function boardBackgroundCss(kind: BoardBackgroundKind): { backgroundImage?: string; backgroundSize?: string } {
+export function boardBackgroundCss(kind: BoardBackgroundKind): {
+  backgroundImage?: string;
+  backgroundSize?: string;
+  backgroundColor?: string;
+} {
+  if (kind === "cork") {
+    // コルク板。粒の大きさと濃さを変えた斑点を4層重ねて、圧縮コルクの不均一な
+    // 木目粒に見せる。周囲をわずかに暗く落として板の厚みを感じさせる
+    return {
+      backgroundColor: "#c69963",
+      backgroundImage: [
+        "radial-gradient(circle at 50% 50%, rgba(90,54,22,0.30) 0 1.6px, transparent 1.9px)",
+        "radial-gradient(circle at 50% 50%, rgba(120,76,34,0.22) 0 2.6px, transparent 3px)",
+        "radial-gradient(circle at 50% 50%, rgba(255,226,180,0.30) 0 1.2px, transparent 1.5px)",
+        "radial-gradient(circle at 50% 50%, rgba(74,42,16,0.14) 0 4px, transparent 4.6px)",
+        "radial-gradient(120% 90% at 50% 45%, rgba(255,214,160,0.20), rgba(92,54,20,0.28))",
+      ].join(","),
+      backgroundSize: "17px 13px, 29px 23px, 23px 31px, 47px 41px, 100% 100%",
+    };
+  }
+  if (kind === "blackboard") {
+    // 黒板。緑みの強い黒に、拭き跡(横に流れた薄いチョーク)と細かな粉を重ねる
+    return {
+      backgroundColor: "#2b3a33",
+      backgroundImage: [
+        "repeating-linear-gradient(97deg, rgba(255,255,255,0.030) 0 2px, transparent 2px 13px)",
+        "repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 9px)",
+        "radial-gradient(ellipse 42% 26% at 22% 32%, rgba(233,245,238,0.055), transparent 70%)",
+        "radial-gradient(ellipse 36% 22% at 74% 68%, rgba(233,245,238,0.045), transparent 70%)",
+        "radial-gradient(130% 100% at 50% 40%, rgba(120,150,134,0.12), rgba(12,20,16,0.42))",
+      ].join(","),
+      backgroundSize: "auto, auto, 100% 100%, 100% 100%, 100% 100%",
+    };
+  }
+  if (kind === "whiteboard") {
+    // ホワイトボード。ほぼ白の樹脂面に、拭き残しのゴーストと斜めの照明の映り込み
+    return {
+      backgroundColor: "#eef1f3",
+      backgroundImage: [
+        "radial-gradient(ellipse 34% 20% at 28% 30%, rgba(120,140,150,0.10), transparent 72%)",
+        "radial-gradient(ellipse 30% 16% at 70% 62%, rgba(120,140,150,0.08), transparent 72%)",
+        "linear-gradient(104deg, transparent 30%, rgba(255,255,255,0.85) 44%, transparent 56%)",
+        "linear-gradient(180deg, rgba(255,255,255,0.9), rgba(196,206,214,0.45))",
+      ].join(","),
+      backgroundSize: "100% 100%",
+    };
+  }
   const line = "rgba(242,242,240,0.14)";
   const dot = "rgba(242,242,240,0.22)";
   const check = "rgba(242,242,240,0.06)";
