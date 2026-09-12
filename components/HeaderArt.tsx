@@ -641,8 +641,94 @@ function TerminalArt() {
   );
 }
 
+// 原点モード: このアプリの原型である「工程表.xlsm」を開いたときの、Excelの窓そのもの。
+// 緑のタイトルバー、リボン(マクロブックなので「開発」タブを選択状態にしてある)、
+// そして列見出しと、元ブックで実際に中身が入っていたセル(C3=日付、B6/C6=見出し)を
+// 縮小して敷いている
+function OriginArt() {
+  const cols = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"];
+  const colW = 74;
+  const ribbon = ["ファイル", "ホーム", "挿入", "ページレイアウト", "数式", "データ", "校閲", "表示", "開発"];
+  return (
+    <svg
+      viewBox="0 0 1200 220"
+      preserveAspectRatio="none"
+      className="h-24 w-full sm:h-28"
+      role="img"
+      aria-label="表計算ソフトで工程表のブックを開いた画面のイラスト"
+    >
+      <rect x="0" y="0" width="1200" height="220" fill="#f3f2ef" />
+      {/* タイトルバー */}
+      <rect x="0" y="0" width="1200" height="46" fill="#217346" />
+      <rect x="18" y="12" width="22" height="22" rx="2" fill="#ffffff" fillOpacity="0.9" />
+      <text x="24" y="29" fontSize="15" fontWeight="700" fill="#217346">
+        X
+      </text>
+      <text x="52" y="30" fontSize="16" fill="#ffffff" fillOpacity="0.95">
+        工程表.xlsm ー Excel
+      </text>
+      <g fill="#ffffff" fillOpacity="0.8">
+        <rect x="1104" y="22" width="12" height="2" />
+        <rect x="1134" y="16" width="12" height="12" fill="none" stroke="#ffffff" strokeOpacity="0.8" strokeWidth="2" />
+        <path d="M1164 16 L1176 28 M1176 16 L1164 28" stroke="#ffffff" strokeOpacity="0.8" strokeWidth="2" />
+      </g>
+      {/* リボン */}
+      <rect x="0" y="46" width="1200" height="34" fill="#ffffff" />
+      {ribbon.map((label, i) => {
+        const x = 20 + i * 96;
+        const active = label === "開発";
+        return (
+          <g key={label}>
+            {active && <rect x={x - 10} y={48} width={86} height={32} fill="#f3f2ef" />}
+            {active && <rect x={x - 10} y={76} width={86} height={3} fill="#217346" />}
+            <text x={x} y={69} fontSize="13" fill={active ? "#217346" : "#4a4a48"} fillOpacity={active ? 1 : 0.75}>
+              {label}
+            </text>
+          </g>
+        );
+      })}
+      {/* 列見出しと格子 */}
+      <rect x="0" y="80" width="1200" height="26" fill="#eceae4" />
+      <rect x="0" y="80" width="34" height="140" fill="#eceae4" />
+      {cols.map((c, i) => (
+        <g key={c}>
+          <text x={34 + i * colW + colW / 2} y={98} fontSize="12" textAnchor="middle" fill="#6b6b68">
+            {c}
+          </text>
+          <line x1={34 + i * colW} y1="80" x2={34 + i * colW} y2="220" stroke="#d3d1cb" strokeWidth="1" />
+        </g>
+      ))}
+      {[1, 2, 3, 4].map((r) => (
+        <g key={r}>
+          <text x="17" y={106 + (r - 1) * 30 + 20} fontSize="11" textAnchor="middle" fill="#6b6b68">
+            {r + 2}
+          </text>
+          <line x1="0" y1={106 + (r - 1) * 30} x2="1200" y2={106 + (r - 1) * 30} stroke="#d3d1cb" strokeWidth="1" />
+        </g>
+      ))}
+      {/* 元ブックで実際に中身が入っていたセル */}
+      <rect x={34 + 2 * colW + 1} y={107} width={colW - 1} height={29} fill="#ffffff" stroke="#217346" strokeWidth="2" />
+      <text x={34 + 2 * colW + 8} y={126} fontSize="13" fill="#20201e">
+        4/26
+      </text>
+      <rect x={34 + colW + 1} y={197} width={colW - 1} height={23} fill="#eceae4" />
+      <rect x={34 + 2 * colW + 1} y={197} width={colW - 1} height={23} fill="#eceae4" />
+      <text x={34 + colW + 8} y={213} fontSize="12" fontWeight="700" fill="#4a4a48">
+        作業
+      </text>
+      <text x={34 + 2 * colW + 8} y={213} fontSize="12" fontWeight="700" fill="#4a4a48">
+        内容
+      </text>
+      {/* 右手の時間軸(L列〜)に、予定内の黄色と予定外の赤の帯を1本ずつ置く */}
+      <rect x={34 + 11 * colW} y={170} width={colW * 2.4} height={20} fill="#fff2cc" stroke="#d6b656" />
+      <rect x={34 + 13.6 * colW} y={200} width={colW * 1.6} height={20} fill="#ffd2d7" stroke="#d98b95" />
+    </svg>
+  );
+}
+
 export default function HeaderArt() {
-  const { mode, natsuyasumiMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode, terminalMode } = useVisualMode();
+  const { mode, natsuyasumiMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode, terminalMode, originMode } =
+    useVisualMode();
   // ロボトミー/VA-11 HALL-A/ペルソナ5/ぼくのなつやすみの4テーマは、設定画面から
   // 自分の画像にヘッダーを差し替えられる。未設定(空文字)なら従来どおりテーマ専用の
   // イラストを描画する(=「オリジナル」)。Claude/禅/オフには画像差し替えの仕組みは無い
@@ -673,6 +759,7 @@ export default function HeaderArt() {
       </div>
     );
   }
+  if (originMode) return <OriginArt />;
   if (claudeMode) return <ClaudeArt />;
   if (zenMode) return <ZenArt />;
   if (terminalMode) return <TerminalArt />;

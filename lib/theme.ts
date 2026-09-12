@@ -58,7 +58,8 @@ export type VisualMode =
   | "library"
   | "powerpro"
   | "hayarigami"
-  | "mountain";
+  | "mountain"
+  | "origin";
 export type ThemedMode =
   | "lobotomy"
   | "va11halla"
@@ -72,7 +73,8 @@ export type ThemedMode =
   | "library"
   | "powerpro"
   | "hayarigami"
-  | "mountain";
+  | "mountain"
+  | "origin";
 
 const THEMED_MODES: ThemedMode[] = [
   "lobotomy",
@@ -88,6 +90,7 @@ const THEMED_MODES: ThemedMode[] = [
   "powerpro",
   "hayarigami",
   "mountain",
+  "origin",
 ];
 
 /** 保存されている文字列を、実在する演出テーマへ正規化する */
@@ -110,6 +113,7 @@ export function useVisualMode(): {
   powerproMode: boolean;
   hayarigamiMode: boolean;
   mountainMode: boolean;
+  originMode: boolean;
   themedMode: ThemedMode | null;
   // 色・形・アニメーションは常にthemedMode通りに適用される一方、
   // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
@@ -138,6 +142,7 @@ export function useVisualMode(): {
     powerproMode: mode === "powerpro",
     hayarigamiMode: mode === "hayarigami",
     mountainMode: mode === "mountain",
+    originMode: mode === "origin",
     themedMode,
     wordingEnabled,
     wordingMode: wordingEnabled ? mode : "off",
@@ -176,6 +181,10 @@ export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
   // ハブモードは統合ボードが主役だが、一覧をじっくり見たり項目を作ったりするための
   // タブは残す(ボードに置けるのは既にある項目だけなので、作る場所が無いと行き詰まる)
   hub: ["today", "todo", "projects", "memo", "report", "appearance", "settings"],
+  // 原点モードは元ブックの5枚のシート(メモ / 工程表 / 作業項目 / 集計 / 時間外集計)を
+  // そのままタブにする。実績編集は元ブックで言えばセルを直接書き換える行為にあたるので残し、
+  // グラフ・ヒートマップ・年表など当時のブックに無かった画面は出さない
+  origin: ["today", "todo", "master", "aggregation", "overtime", "memo", "records", "appearance", "settings"],
   adventurer: [
     "today",
     "todo",
@@ -307,6 +316,16 @@ export const RISK_TIERS_HAYARIGAMI = [
   { threshold: 1, name: "噂", level: 0 },
 ] as const;
 
+// 原点モード: 元ブックが予定外の行を赤く塗っていたことに寄せて、想定からのはみ出しを
+// 「セルの色」の言葉で言い表す。数字が大きいほど、その行はブックの中で赤くなっていく
+export const RISK_TIERS_ORIGIN = [
+  { threshold: 4, name: "予定崩壊", level: 4 },
+  { threshold: 2.5, name: "赤塗り", level: 3 },
+  { threshold: 1.8, name: "予定外", level: 2 },
+  { threshold: 1.3, name: "はみ出し", level: 1 },
+  { threshold: 1, name: "予定内", level: 0 },
+] as const;
+
 export type RiskTier =
   | (typeof RISK_TIERS_LOBOTOMY)[number]
   | (typeof RISK_TIERS_VA11HALLA)[number]
@@ -320,7 +339,8 @@ export type RiskTier =
   | (typeof RISK_TIERS_LIBRARY)[number]
   | (typeof RISK_TIERS_POWERPRO)[number]
   | (typeof RISK_TIERS_HAYARIGAMI)[number]
-  | (typeof RISK_TIERS_MOUNTAIN)[number];
+  | (typeof RISK_TIERS_MOUNTAIN)[number]
+  | (typeof RISK_TIERS_ORIGIN)[number];
 
 // 登山モード: 山の遭難リスクのエスカレーション。想定(コースタイム)から
 // どれだけ離れているかを、行動時間の遅れがそのまま危険度になる山の言葉で表す
@@ -346,6 +366,7 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   powerpro: RISK_TIERS_POWERPRO,
   hayarigami: RISK_TIERS_HAYARIGAMI,
   mountain: RISK_TIERS_MOUNTAIN,
+  origin: RISK_TIERS_ORIGIN,
 };
 
 export function getRiskTier(ratio: number, mode: ThemedMode): RiskTier {
@@ -378,7 +399,9 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
                       ? "border-2 border-alert bg-alert/15 text-alert font-black"
                       : mode === "hayarigami"
                         ? "risk-badge-hyr border-alert/80 bg-black/70 text-alert font-bold tracking-[0.2em]"
-                        : "border-alert/70 bg-alert/20 text-alert";
+                        : mode === "origin"
+                          ? "rounded-none border-alert/70 bg-alert/15 text-alert font-bold"
+                          : "border-alert/70 bg-alert/20 text-alert";
   const roundness =
     mode === "claude" || mode === "zen" || mode === "adventurer" || mode === "powerpro"
       ? "rounded-full px-2.5"
@@ -401,6 +424,7 @@ export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode | null): string 
   if (mode === "library") return tier.name;
   if (mode === "powerpro") return tier.name;
   if (mode === "hayarigami") return `怪異度・${tier.name}`;
+  if (mode === "origin") return tier.name;
   return `危険度 ${tier.name}`;
 }
 
@@ -420,6 +444,7 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   powerpro: "card-running-pp",
   hayarigami: "card-running-hyr",
   mountain: "card-running-mtn",
+  origin: "card-running-claude",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -439,6 +464,7 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   powerpro: "card-overrun-pp",
   hayarigami: "card-overrun-hyr",
   mountain: "card-overrun-mtn",
+  origin: "card-overrun-claude",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -458,6 +484,7 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   powerpro: "hazard-bar-pp",
   hayarigami: "hazard-bar-hyr",
   mountain: "hazard-bar-mtn",
+  origin: "hazard-bar-claude",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -477,6 +504,7 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   powerpro: "gantt-bar-overrun-pp",
   hayarigami: "gantt-bar-overrun-hyr",
   mountain: "gantt-bar-overrun-mtn",
+  origin: "gantt-bar-overrun-claude",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
@@ -502,6 +530,7 @@ export function runningLabel(mode: ThemedMode | null): string {
   if (mode === "library") return "貸出中";
   if (mode === "powerpro") return "練習中";
   if (mode === "hayarigami") return "調査中";
+  if (mode === "origin") return "計測中";
   return "計測中";
 }
 
@@ -517,6 +546,7 @@ export function overrunLabel(mode: ThemedMode | null): string {
   if (mode === "library") return "📚 延滞中・返却期限超過";
   if (mode === "powerpro") return "💦 疲労蓄積・練習過多";
   if (mode === "hayarigami") return "🩸 怪異接触・想定を超過";
+  if (mode === "origin") return "■ 想定時間を超過（赤）";
   return "⚠ 計測中・予測超過";
 }
 
@@ -534,6 +564,7 @@ export function completionLabel(mode: ThemedMode | null): string {
   if (mode === "library") return "返却完了";
   if (mode === "powerpro") return "練習完了！";
   if (mode === "hayarigami") return "怪異、解決";
+  if (mode === "origin") return "K列に 1";
   return "完了しました";
 }
 
@@ -556,6 +587,7 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   powerpro: "育成選手名鑑",
   hayarigami: "怪異調査ファイル",
   mountain: "登攀記録",
+  origin: "工程表.xlsm",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -850,6 +882,30 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     records: "供述の訂正",
     appearance: "捜査モード選択",
     settings: "捜査環境設定",
+  },
+  // 原点モード: 元ブック「工程表.xlsm」のシート見出しをそのままタブ名にする。
+  // 実際に出るのは 工程表 / やることリスト / 作業項目 / 集計 / 時間外集計 / メモ /
+  // 実績編集 / モード選択 / 設定 の9枚(当時のブックに無かった画面は出さない)
+  origin: {
+    today: "工程表",
+    todo: "やることリスト",
+    projects: "案件",
+    master: "作業項目",
+    template: "曜日別テンプレート",
+    gantt: "時間軸",
+    aggregation: "集計",
+    charts: "グラフ",
+    heatmap: "ヒートマップ",
+    attention: "要注意リスト",
+    overtime: "時間外集計",
+    yearlyChart: "年表",
+    mandala: "マンダラチャート",
+    memo: "メモ",
+    board: "統合ボード",
+    report: "日報・週報・月報",
+    records: "実績編集",
+    appearance: "モード選択",
+    settings: "設定",
   },
   mountain: {
     today: "本日の行程",

@@ -460,6 +460,57 @@ html[data-high-contrast="true"] :focus-visible {
     mask-image: linear-gradient(to bottom, #000, transparent);
   }
 
+  /* 原点モード: このアプリの原型である「工程表.xlsm」。Excelの作業ウィンドウそのままの
+     薄いグレーの地に真っ白なシート、という配色にする。アクセント(警告色)は、元ブックが
+     予定外の行に使っていた赤 RGB(255,210,215) を文字に耐える濃さまで落としたもの */
+  html[data-visual-mode="origin"] {
+    color-scheme: light;
+    --accent-rgb: 192 57 62;
+    --ink-rgb: 226 226 222;
+    --cream-rgb: 32 32 30;
+    --panel-rgb: 255 255 255;
+    /* 元ブックの塗り色と、Excelの画面まわりの固定色 */
+    --origin-planned: #fff2cc;
+    --origin-planned-line: #d6b656;
+    --origin-unplanned: #ffd2d7;
+    --origin-unplanned-line: #d98b95;
+    --origin-green: #217346;
+    --origin-grid: #c8c8c4;
+    --origin-head: #eceae4;
+  }
+  /* タブ列をExcelのシート見出しにする。台紙に乗った紙のタブで、選択中だけが白く浮き、
+     上端に緑の線が入る、というあの見え方 */
+  html[data-visual-mode="origin"] nav .btn-pill,
+  html[data-visual-mode="origin"] nav .btn-pill-outline {
+    border-radius: 0 0 3px 3px;
+    border: 1px solid var(--origin-grid);
+    border-top: 3px solid transparent;
+    padding: 0.3rem 0.85rem;
+    box-shadow: none;
+    font-weight: 600;
+    background: #dedcd6;
+    color: rgb(var(--cream-rgb) / 0.65);
+  }
+  html[data-visual-mode="origin"] nav .btn-pill {
+    background: #fff;
+    border-top-color: var(--origin-green);
+    color: var(--origin-green);
+  }
+  html[data-visual-mode="origin"] nav > div {
+    gap: 2px;
+    border-bottom: 1px solid var(--origin-grid);
+  }
+  /* ヘッダーの絵そのものがExcelのタイトルバーとして「工程表.xlsm」を名乗っているので、
+     その上に重ねている見出しは伏せる(読み上げには残す) */
+  html[data-visual-mode="origin"] header .app-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   /* 流行り神風モード: ほぼ黒の背景に血のような赤、文字は色を抜いた骨色。
      ホラーサウンドノベルの「暗闇に文字だけが浮かぶ」画面に寄せる */
   html[data-visual-mode="hayarigami"] {
@@ -3078,5 +3129,628 @@ html[data-high-contrast="true"] :focus-visible {
   .hub-rec-dot {
     animation: hub-rec-blink 1.2s ease-in-out infinite;
   }
-}
 
+  /* ===== 原点モード: 工程表シートの本体 =====
+     元ブックの見た目(白いセル・薄いグレーの罫線・グレーの列見出し)をそのまま作る。
+     左の B〜K 列は固定し、右の時間軸だけが横に流れる(Excelのウィンドウ枠の固定と同じ) */
+  .origin-sheet {
+    /* 行番号34 + B104 + C190 + E54 + F54 + J58 + K26 = 520 。
+       この合計と --origin-left-w は必ず一致させること(ずれると時間軸に重ねている
+       休憩帯・定時線・現在時刻線の位置が横にずれる) */
+    --origin-left-w: 520px;
+    --origin-cell-w: 22px;
+    --origin-row-h: 28px;
+    font-size: 11px;
+  }
+  /* 帯を広く見る表示。B列・C列を畳んで時間軸に幅を回す。
+     元ブックのメモにあった「バーに文字」を直して帯の中に作業名を書いてあるので、
+     B・C列が無くてもどの帯が何かは分かる。28+54+54+58+26 = 220 */
+  .origin-sheet.origin-wide {
+    --origin-left-w: 220px;
+  }
+  .origin-sheet.origin-wide .origin-c-b,
+  .origin-sheet.origin-wide .origin-c-c {
+    display: none;
+  }
+  .origin-sheet.origin-wide .origin-rownum {
+    width: 28px;
+  }
+  @media (max-width: 720px) {
+    /* 28 + 62 + 96 + 46 + 46 + 50 + 22 = 350 */
+    .origin-sheet {
+      --origin-left-w: 350px;
+    }
+    .origin-sheet.origin-wide {
+      /* 28 + 46 + 46 + 50 + 22 = 192 */
+      --origin-left-w: 192px;
+    }
+    .origin-sheet .origin-rownum {
+      width: 28px;
+    }
+    .origin-sheet .origin-c-b {
+      width: 62px;
+    }
+    .origin-sheet .origin-c-c {
+      width: 96px;
+    }
+    .origin-sheet .origin-c-e,
+    .origin-sheet .origin-c-f {
+      width: 46px;
+    }
+    .origin-sheet .origin-c-j {
+      width: 50px;
+    }
+    .origin-sheet .origin-c-k {
+      width: 22px;
+    }
+  }
+
+  .origin-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--origin-grid);
+    background: var(--origin-head);
+    padding: 4px 6px;
+  }
+  .origin-namebox {
+    min-width: 42px;
+    border: 1px solid var(--origin-grid);
+    background: #fff;
+    padding: 2px 6px;
+    font-family: var(--font-noto-sans-jp), sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    color: rgb(var(--cream-rgb) / 0.55);
+    text-align: center;
+  }
+  .origin-datecell {
+    border: 1px solid var(--origin-grid);
+    background: #fff;
+    padding: 2px 6px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--cream-rgb));
+  }
+  .origin-bar-sep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--origin-grid);
+    margin: 0 4px;
+  }
+  /* 元ブックのシート上に貼ってあったマクロボタン(灰色の角ばったボタン)の見た目 */
+  .origin-xbtn {
+    border: 1px solid #9a9a95;
+    border-radius: 2px;
+    background: linear-gradient(#fdfdfd, #e6e6e2);
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: rgb(var(--cream-rgb) / 0.85);
+    white-space: nowrap;
+  }
+  .origin-xbtn:hover:not(:disabled) {
+    background: linear-gradient(#fff, #f0f0ec);
+    border-color: var(--origin-green);
+  }
+  .origin-xbtn:active:not(:disabled) {
+    background: #dcdcd8;
+  }
+  .origin-xbtn:disabled {
+    opacity: 0.4;
+  }
+  .origin-xbtn-primary {
+    border-color: var(--origin-green);
+    background: linear-gradient(#2d8b57, #1d6640);
+    color: #fff;
+  }
+  .origin-xbtn-primary:hover:not(:disabled) {
+    background: linear-gradient(#35a065, #217346);
+    color: #fff;
+  }
+  .origin-xbtn-mini {
+    padding: 1px 6px;
+    font-size: 10px;
+  }
+
+  /* 予定内と予定外の集計(元ブック Module8)の帯 */
+  .origin-tally {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0;
+    border: 1px solid var(--origin-grid);
+    background: #fff;
+  }
+  .origin-tally-cell {
+    display: flex;
+    min-width: 96px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    border-right: 1px solid var(--origin-grid);
+    padding: 4px 10px;
+  }
+  .origin-tally-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: rgb(var(--cream-rgb) / 0.5);
+  }
+  .origin-tally-value {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: rgb(var(--cream-rgb));
+  }
+  .origin-tally-sub {
+    font-size: 10px;
+    color: rgb(var(--cream-rgb) / 0.45);
+  }
+  .origin-tally-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    padding: 4px 10px;
+    font-size: 10px;
+    color: rgb(var(--cream-rgb) / 0.55);
+  }
+  .origin-tally-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .origin-tally-controls select {
+    border: 1px solid var(--origin-grid);
+    background: #fff;
+    padding: 1px 2px;
+    font-size: 10px;
+    color: rgb(var(--cream-rgb));
+  }
+  .origin-check input {
+    accent-color: var(--origin-green);
+  }
+  .origin-legend {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 1px solid var(--origin-grid);
+    vertical-align: -1px;
+    margin-right: 2px;
+  }
+  .origin-sw-planned {
+    background: var(--origin-planned);
+    border-color: var(--origin-planned-line);
+  }
+  .origin-sw-unplanned {
+    background: var(--origin-unplanned);
+    border-color: var(--origin-unplanned-line);
+  }
+
+  .origin-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 236px;
+    gap: 8px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .origin-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .origin-grid-wrap {
+    min-width: 0;
+  }
+  .origin-grid-scroller {
+    overflow: auto;
+    border: 1px solid var(--origin-grid);
+    background: #fff;
+    max-height: 68vh;
+  }
+  .origin-grid {
+    position: relative;
+    width: max-content;
+    min-width: 100%;
+  }
+  .origin-row {
+    display: flex;
+    height: var(--origin-row-h);
+  }
+  .origin-fixed {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    display: flex;
+    width: var(--origin-left-w);
+    flex: none;
+    background: inherit;
+    box-shadow: 1px 0 0 var(--origin-grid);
+  }
+  .origin-cell {
+    display: flex;
+    align-items: center;
+    border-right: 1px solid var(--origin-grid);
+    border-bottom: 1px solid var(--origin-grid);
+    padding: 0 4px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+  }
+  .origin-cell > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .origin-rownum {
+    width: 34px;
+    flex: none;
+    justify-content: center;
+    background: var(--origin-head);
+    font-size: 10px;
+    color: rgb(var(--cream-rgb) / 0.4);
+  }
+  .origin-c-b {
+    width: 104px;
+    flex: none;
+  }
+  .origin-c-c {
+    width: 190px;
+    flex: none;
+    gap: 3px;
+  }
+  .origin-c-e,
+  .origin-c-f {
+    width: 54px;
+    flex: none;
+    justify-content: flex-end;
+  }
+  .origin-c-j {
+    width: 58px;
+    flex: none;
+    justify-content: flex-end;
+  }
+  .origin-c-k {
+    width: 26px;
+    flex: none;
+    justify-content: center;
+    color: rgb(var(--cream-rgb) / 0.45);
+  }
+
+  /* 6行目の見出し。Excelの列見出しと同じグレーの帯 */
+  .origin-head {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: var(--origin-head);
+    font-weight: 700;
+    color: rgb(var(--cream-rgb) / 0.6);
+  }
+  .origin-head .origin-fixed {
+    z-index: 5;
+    background: var(--origin-head);
+  }
+  .origin-axis-head {
+    display: flex;
+    flex: none;
+    border-bottom: 1px solid var(--origin-grid);
+  }
+  .origin-tick {
+    flex: none;
+    border-right: 1px solid rgb(var(--cream-rgb) / 0.07);
+    font-size: 9px;
+    color: rgb(var(--cream-rgb) / 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+  .origin-tick-hour {
+    border-right-color: var(--origin-grid);
+    color: rgb(var(--cream-rgb) / 0.7);
+  }
+  .origin-tick-hour > span {
+    position: relative;
+    left: 14px;
+    white-space: nowrap;
+    font-weight: 700;
+  }
+
+  /* 予定行と実績行の2行ペア。元ブックのメモに「予定と実績の縦並びわかりにくい」と
+     あったので、ペアを1つの塊として左端の縦線で括り、間に線を入れない */
+  .origin-pair {
+    position: relative;
+    cursor: pointer;
+    background: #fff;
+  }
+  .origin-pair::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    z-index: 6;
+  }
+  .origin-pair-planned::before {
+    background: var(--origin-planned-line);
+  }
+  .origin-pair-unplanned::before {
+    background: var(--origin-unplanned-line);
+  }
+  .origin-pair-planned {
+    background: color-mix(in srgb, var(--origin-planned) 22%, #fff);
+  }
+  .origin-pair-unplanned {
+    background: color-mix(in srgb, var(--origin-unplanned) 22%, #fff);
+  }
+  .origin-pair:hover {
+    background: color-mix(in srgb, var(--origin-green) 6%, #fff);
+  }
+  .origin-pair-selected {
+    outline: 2px solid var(--origin-green);
+    outline-offset: -2px;
+  }
+  .origin-pair-running .origin-bar-act-running {
+    animation: origin-running-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes origin-running-pulse {
+    0%,
+    100% {
+      box-shadow: inset 0 0 0 1px var(--origin-planned-line);
+    }
+    50% {
+      box-shadow: inset 0 0 0 2px var(--origin-green);
+    }
+  }
+  .origin-row-actual .origin-cell {
+    border-bottom-color: rgb(var(--cream-rgb) / 0.18);
+  }
+  .origin-actual-tag {
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: rgb(var(--cream-rgb) / 0.4);
+    letter-spacing: 0.2em;
+  }
+  .origin-actual-note {
+    font-size: 10px;
+    color: rgb(var(--cream-rgb) / 0.45);
+  }
+  .origin-over {
+    color: rgb(var(--accent-rgb));
+    font-weight: 700;
+  }
+  .origin-flag {
+    flex: none;
+    border: 1px solid var(--origin-unplanned-line);
+    background: var(--origin-unplanned);
+    padding: 0 3px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #8a2530;
+  }
+  .origin-flag-ot {
+    border-color: #8aa0c8;
+    background: #dfe8f7;
+    color: #2c4a80;
+    margin-left: 3px;
+  }
+
+  /* 時間軸(L列〜CI列)。10分ごとの罫線は背景のグラデーションで引く */
+  .origin-lane {
+    position: relative;
+    flex: none;
+    border-bottom: 1px solid var(--origin-grid);
+    background-image: repeating-linear-gradient(
+      to right,
+      rgb(var(--cream-rgb) / 0.08) 0 1px,
+      transparent 1px var(--origin-cell-w)
+    );
+  }
+  .origin-bar-plan,
+  .origin-bar-act {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    padding: 0 4px;
+    font-size: 10px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  /* 予定の帯は輪郭だけ。実績の帯と見分けが付くようにする */
+  .origin-bar-plan {
+    border: 1px dashed rgb(var(--cream-rgb) / 0.35);
+    background: repeating-linear-gradient(
+      135deg,
+      rgb(var(--cream-rgb) / 0.06) 0 4px,
+      transparent 4px 8px
+    );
+    color: rgb(var(--cream-rgb) / 0.5);
+  }
+  /* 実績の帯は塗り。予定内=黄 / 予定外=赤 で、元ブックの塗り色をそのまま使う */
+  .origin-pair-planned .origin-bar-act {
+    background: var(--origin-planned);
+    border: 1px solid var(--origin-planned-line);
+    color: #6b5411;
+  }
+  .origin-pair-unplanned .origin-bar-act {
+    background: var(--origin-unplanned);
+    border: 1px solid var(--origin-unplanned-line);
+    color: #8a2530;
+  }
+  .origin-bar-over {
+    color: rgb(var(--accent-rgb));
+    font-weight: 700;
+  }
+
+  .origin-overlay {
+    position: absolute;
+    left: var(--origin-left-w);
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    pointer-events: none;
+  }
+  .origin-break {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgb(var(--cream-rgb) / 0.07);
+    border-left: 1px dotted rgb(var(--cream-rgb) / 0.2);
+    border-right: 1px dotted rgb(var(--cream-rgb) / 0.2);
+  }
+  .origin-closing-line,
+  .origin-now-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+  }
+  .origin-closing-line {
+    border-left: 1px dashed #2c4a80;
+  }
+  .origin-now-line {
+    border-left: 2px solid rgb(var(--accent-rgb));
+  }
+  .origin-closing-line > span,
+  .origin-now-line > span {
+    position: sticky;
+    top: 0;
+    display: inline-block;
+    transform: translateX(2px);
+    padding: 0 3px;
+    font-size: 9px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .origin-closing-line > span {
+    background: #dfe8f7;
+    color: #2c4a80;
+  }
+  .origin-now-line > span {
+    background: rgb(var(--accent-rgb));
+    color: #fff;
+  }
+
+  .origin-empty {
+    padding: 18px 14px;
+    font-size: 11px;
+    color: rgb(var(--cream-rgb) / 0.5);
+  }
+  .origin-note {
+    margin-top: 4px;
+    font-size: 10px;
+    line-height: 1.6;
+    color: rgb(var(--cream-rgb) / 0.5);
+  }
+
+  /* 右の欄(CK列のやることリストと、上位10位の作業) */
+  .origin-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .origin-rail-box {
+    border: 1px solid var(--origin-grid);
+    background: #fff;
+  }
+  .origin-rail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    border-bottom: 1px solid var(--origin-grid);
+    background: var(--origin-head);
+    padding: 3px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    color: rgb(var(--cream-rgb) / 0.6);
+  }
+  .origin-rail-empty {
+    padding: 8px;
+    font-size: 10px;
+    color: rgb(var(--cream-rgb) / 0.4);
+  }
+  .origin-rail-list {
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .origin-rail-list li {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-bottom: 1px solid rgb(var(--cream-rgb) / 0.08);
+    padding: 3px 6px;
+  }
+  .origin-rail-list input {
+    accent-color: var(--origin-green);
+  }
+  .origin-rail-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: rgb(var(--cream-rgb) / 0.85);
+  }
+  .origin-overdue {
+    color: rgb(var(--accent-rgb));
+    font-weight: 700;
+  }
+  .origin-rail-due {
+    flex: none;
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--cream-rgb) / 0.4);
+  }
+  .origin-rail-rank li {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    border-bottom: 1px solid rgb(var(--cream-rgb) / 0.08);
+    padding: 2px 6px;
+  }
+  .origin-rank-no {
+    flex: none;
+    width: 15px;
+    text-align: right;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--origin-green);
+  }
+  .origin-rank-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    color: rgb(var(--cream-rgb) / 0.5);
+  }
+  .origin-rank-name b {
+    color: rgb(var(--cream-rgb) / 0.9);
+  }
+  .origin-rank-val {
+    flex: none;
+    font-size: 10px;
+    font-weight: 700;
+    color: rgb(var(--cream-rgb) / 0.75);
+  }
+
+  .origin-dialog-card {
+    border: 1px solid rgb(var(--cream-rgb) / 0.15);
+    background: rgb(var(--cream-rgb) / 0.04);
+    padding: 8px 10px;
+  }
+
+}

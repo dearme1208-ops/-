@@ -144,7 +144,19 @@ const HAYARIGAMI_STAGES: GrowthStage[] = [
   { icon: "🩸", label: "真相を掴んだ" },
 ];
 
+// 原点モード: 1日の工程表が上から埋まっていき、最後に集計まで回る、という
+// あのブックの1日の進み方そのものを段階にする
+const ORIGIN_STAGES: GrowthStage[] = [
+  { icon: "📄", label: "空のシート" },
+  { icon: "✏️", label: "予定を入力" },
+  { icon: "🟨", label: "予定内で進行" },
+  { icon: "📊", label: "半分消化" },
+  { icon: "✅", label: "K列に1が並ぶ" },
+  { icon: "📗", label: "集計まで完了" },
+];
+
 const STAGES_BY_MODE: Record<ThemedMode, GrowthStage[]> = {
+  origin: ORIGIN_STAGES,
   natsuyasumi: NATSUYASUMI_STAGES,
   lobotomy: LOBOTOMY_STAGES,
   va11halla: VA11HALLA_STAGES,

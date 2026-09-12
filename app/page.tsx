@@ -58,6 +58,7 @@ const YearlyChartSection = dynamic(() => import("@/components/sections/YearlyCha
 const MandalaSection = dynamic(() => import("@/components/sections/MandalaSection"), { ssr: false });
 const MemoSection = dynamic(() => import("@/components/sections/MemoSection"), { ssr: false });
 const UnifiedBoardSection = dynamic(() => import("@/components/sections/UnifiedBoardSection"), { ssr: false });
+const OriginSheetSection = dynamic(() => import("@/components/sections/OriginSheetSection"), { ssr: false });
 
 const TABS: TabDef[] = [
   { key: "today", label: "本日の作業" },
@@ -244,6 +245,7 @@ export default function HomePage() {
       {active === "today" && mode === "hayarigami" && <HayarigamiSection />}
       {active === "today" && mode === "lobotomy" && <LobotomySection />}
       {active === "today" && mode === "library" && <LibrarySection />}
+      {active === "today" && mode === "origin" && <OriginSheetSection onOpenTodo={() => setActive("todo")} />}
       {active === "today" &&
         mode !== "claude" &&
         mode !== "zen" &&
@@ -255,6 +257,7 @@ export default function HomePage() {
         mode !== "hayarigami" &&
         mode !== "lobotomy" &&
         mode !== "natsuyasumi" &&
+        mode !== "origin" &&
         mode !== "library" && (
         <TodaySection
           onOpenTodoDetail={(taskId) => {
