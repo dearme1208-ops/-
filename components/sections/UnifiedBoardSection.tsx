@@ -1470,6 +1470,108 @@ export default function UnifiedBoardSection({
   const [minimapDragging, setMinimapDragging] = useState(false);
 
   // ------------------------------------------------------------
+  // ミッションコントロールの数字を押して中身を見る。数だけ見せて「で、どれ?」と
+  // 盤面を探し回らせないよう、一覧から選べばその札まで寄せて光らせる
+  // ------------------------------------------------------------
+  type HubListItem = { id: string; label: string; sub?: string; alert?: boolean };
+  const [hubList, setHubList] = useState<{ title: string; items: HubListItem[] } | null>(null);
+
+  // 盤面上のその札まで表示を寄せて、選択状態にして目立たせる
+  function focusBoardItem(id: string) {
+    const it = boardItems.find((b) => b.id === id);
+    const vp = boardViewportRef.current;
+    if (!it || !vp) return;
+    vp.scrollLeft = Math.max(0, (it.x + it.width / 2) * zoom - vp.clientWidth / 2);
+    vp.scrollTop = Math.max(0, (it.y + it.height / 2) * zoom - vp.clientHeight / 2);
+    bringToFront(id);
+    setSelectedIds(new Set([id]));
+  }
+
+  // 一覧の中身を作る小道具。押した数字と同じ条件で拾う
+  function todoListItems(filter: (t: TodoTask) => boolean): HubListItem[] {
+    return todos.filter(filter).map((t) => ({
+      id: t.id,
+      label: t.title,
+      sub: t.dueDate ? `期日 ${t.dueDate}` : undefined,
+      alert: !!t.dueDate && t.dueDate < today,
+    }));
+  }
+  function taskListItems(filter: (t: DailyTask) => boolean): HubListItem[] {
+    return tasks.filter(filter).map((t) => ({
+      id: t.id,
+      label: `${t.category} / ${t.name}`,
+      sub: formatMsClock(segmentsAccumulatedMs(t, now)),
+      alert: riskLevelByTaskId.has(t.id),
+    }));
+  }
+  // サブタスク・段階は盤面に札が無いので、寄せる先は親のToDo・案件にする
+  function openSubtaskList() {
+    const items: HubListItem[] = [];
+    for (const t of todos) {
+      for (const s of subtasksByParent.get(t.id) ?? []) {
+        if (s.completed) continue;
+        items.push({ id: t.id, label: s.title, sub: t.title });
+      }
+    }
+    setHubList({ title: "残っているサブタスク", items });
+  }
+  function openStageList() {
+    const items: HubListItem[] = [];
+    for (const p of projects) {
+      for (const st of p.stages ?? []) {
+        if (isStageDone(st)) continue;
+        items.push({
+          id: p.id,
+          label: st.title,
+          sub: `${p.title}${st.dueDate ? ` / 期日 ${st.dueDate}` : ""}`,
+          alert: !!st.dueDate && st.dueDate < today,
+        });
+      }
+    }
+    setHubList({ title: "通過していない段階", items });
+  }
+  function openTagList(tag: string) {
+    const items: HubListItem[] = [
+      ...todos.filter((t) => t.tag === tag).map((t) => ({ id: t.id, label: t.title, sub: "ToDo" })),
+    ];
+    for (const p of projects) {
+      for (const st of p.stages ?? []) {
+        if (st.tag !== tag || isStageDone(st)) continue;
+        items.push({ id: p.id, label: st.title, sub: `案件 ${p.title}` });
+      }
+    }
+    setHubList({ title: `対応状況「${tag}」`, items });
+  }
+
+  // ミッションコントロールの下に足す「次の一手」と「これから7日の期日」。
+  // 数の内訳だけでは「で、次に何をすべきか」が出てこないため
+  const upcoming = useMemo(() => {
+    if (!hubMode) return null;
+    type Entry = { id: string; label: string; sub: string; date: string };
+    const entries: Entry[] = [];
+    for (const t of todos) {
+      if (!t.dueDate) continue;
+      entries.push({ id: t.id, label: t.title, sub: "ToDo", date: t.dueDate });
+    }
+    for (const p of projects) {
+      for (const st of p.stages ?? []) {
+        if (isStageDone(st) || !st.dueDate) continue;
+        entries.push({ id: p.id, label: st.title, sub: `案件 ${p.title}`, date: st.dueDate });
+      }
+    }
+    entries.sort((a, b) => a.date.localeCompare(b.date));
+    // 今日から7日分の期日の数。どのあたりが混んでいるかを棒の高さで見せる
+    const days: { date: string; day: number; count: number; isToday: boolean }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      days.push({ date: key, day: d.getDate(), count: entries.filter((e) => e.date === key).length, isToday: i === 0 });
+    }
+    return { upNext: entries.slice(0, 3), overdueCount: entries.filter((e) => e.date < today).length, days };
+  }, [hubMode, todos, projects, today]);
+
+  // ------------------------------------------------------------
   // 画像として書き出し(共有・記録用)。今の拡大率に関わらず、盤面全体を等倍で書き出す
   // ------------------------------------------------------------
   const [exportingImage, setExportingImage] = useState(false);
@@ -2284,20 +2386,29 @@ export default function UnifiedBoardSection({
             {standardWorkEnd}まで残り {formatMsClock(progressStats.remainingMs)}
           </p>
           <div className="mt-1.5 grid grid-cols-3 gap-1 text-center text-[10px] tabular-nums">
-            <div className="rounded bg-cream/5 py-1">
+            <button
+              className="rounded bg-cream/5 py-1 hover:bg-cream/15"
+              onClick={() => setHubList({ title: "進行中の作業", items: taskListItems((t) => t.status === "running") })}
+            >
               <p className="text-cream/40">進行中</p>
               <p className="font-bold text-cream">{runningCount}</p>
-            </div>
-            <div className="rounded bg-cream/5 py-1">
+            </button>
+            <button
+              className="rounded bg-cream/5 py-1 hover:bg-cream/15"
+              onClick={() => setHubList({ title: "予定を超過している作業", items: taskListItems((t) => riskLevelByTaskId.has(t.id)) })}
+            >
               <p className="text-cream/40">超過中</p>
               <p className={`font-bold ${progressStats.overrunCount > 0 ? "text-alert" : "text-cream"}`}>
                 {progressStats.overrunCount}
               </p>
-            </div>
-            <div className="rounded bg-cream/5 py-1">
+            </button>
+            <button
+              className="rounded bg-cream/5 py-1 hover:bg-cream/15"
+              onClick={() => setHubList({ title: "待機中の作業", items: taskListItems((t) => t.status !== "running") })}
+            >
               <p className="text-cream/40">待機中</p>
               <p className="font-bold text-cream">{waitingCount}</p>
-            </div>
+            </button>
           </div>
           </div>
           </div>
@@ -2311,11 +2422,23 @@ export default function UnifiedBoardSection({
                   <span className="text-[10px] tabular-nums text-cream/50">盤面 {boardStats.todoCount}</span>
                 </div>
                 <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] tabular-nums">
-                  <span className={`rounded px-1 py-0.5 ${boardStats.todoOverdue > 0 ? "bg-alert/15 font-bold text-alert" : "bg-cream/5 text-cream/50"}`}>
+                  <button
+                    className={`rounded px-1 py-0.5 hover:brightness-125 ${boardStats.todoOverdue > 0 ? "bg-alert/15 font-bold text-alert" : "bg-cream/5 text-cream/50"}`}
+                    onClick={() =>
+                      setHubList({ title: "期限切れのToDo", items: todoListItems((t) => !!t.dueDate && t.dueDate < today) })
+                    }
+                  >
                     期限切れ {boardStats.todoOverdue}
-                  </span>
-                  <span className="rounded bg-cream/5 px-1 py-0.5 text-cream/60">本日 {boardStats.todoDueToday}</span>
-                  <span className="rounded bg-cream/5 px-1 py-0.5 text-cream/60">残サブ {boardStats.openSubtasks}</span>
+                  </button>
+                  <button
+                    className="rounded bg-cream/5 px-1 py-0.5 text-cream/60 hover:bg-cream/15"
+                    onClick={() => setHubList({ title: "本日が期日のToDo", items: todoListItems((t) => t.dueDate === today) })}
+                  >
+                    本日 {boardStats.todoDueToday}
+                  </button>
+                  <button className="rounded bg-cream/5 px-1 py-0.5 text-cream/60 hover:bg-cream/15" onClick={openSubtaskList}>
+                    残サブ {boardStats.openSubtasks}
+                  </button>
                 </div>
               </div>
               <div>
@@ -2324,10 +2447,22 @@ export default function UnifiedBoardSection({
                   <span className="text-[10px] tabular-nums text-cream/50">盤面 {boardStats.projectCount}</span>
                 </div>
                 <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] tabular-nums">
-                  <span className={`rounded px-1 py-0.5 ${boardStats.projectOverdue > 0 ? "bg-alert/15 font-bold text-alert" : "bg-cream/5 text-cream/50"}`}>
+                  <button
+                    className={`rounded px-1 py-0.5 hover:brightness-125 ${boardStats.projectOverdue > 0 ? "bg-alert/15 font-bold text-alert" : "bg-cream/5 text-cream/50"}`}
+                    onClick={() =>
+                      setHubList({
+                        title: "期日を過ぎている案件",
+                        items: projects
+                          .filter((p) => p.dueDate < today)
+                          .map((p) => ({ id: p.id, label: p.title, sub: `期日 ${p.dueDate}`, alert: true })),
+                      })
+                    }
+                  >
                     超過 {boardStats.projectOverdue}
-                  </span>
-                  <span className="rounded bg-cream/5 px-1 py-0.5 text-cream/60">残段階 {boardStats.openStages}</span>
+                  </button>
+                  <button className="rounded bg-cream/5 px-1 py-0.5 text-cream/60 hover:bg-cream/15" onClick={openStageList}>
+                    残段階 {boardStats.openStages}
+                  </button>
                 </div>
               </div>
               {boardStats.topTags.length > 0 && (
@@ -2335,14 +2470,89 @@ export default function UnifiedBoardSection({
                   <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">対応状況</p>
                   <div className="mt-0.5 flex flex-wrap gap-1">
                     {boardStats.topTags.map(([tag, count]) => (
-                      <span key={tag} className="flex items-center gap-0.5">
+                      <button key={tag} className="flex items-center gap-0.5 rounded px-0.5 hover:bg-cream/10" onClick={() => openTagList(tag)}>
                         <InlineStamp text={tag} />
                         <span className="text-[10px] tabular-nums text-cream/50">{count}</span>
-                      </span>
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* 数の内訳だけでは「で、次に何をすべきか」が出てこないので、
+              いちばん期日が近いものと、この先1週間の混み具合を足す */}
+          {upcoming && (
+            <div className="mt-2 space-y-2 border-t border-cream/10 pt-2">
+              <div>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">次の一手</p>
+                  {upcoming.overdueCount > 0 && (
+                    <span className="text-[10px] font-bold tabular-nums text-alert">超過 {upcoming.overdueCount}</span>
+                  )}
+                </div>
+                {upcoming.upNext.length === 0 ? (
+                  <p className="mt-0.5 text-[10px] text-cream/40">期日のあるものはありません。</p>
+                ) : (
+                  <div className="mt-0.5 space-y-0.5">
+                    {upcoming.upNext.map((e, i) => (
+                      <button
+                        key={`${e.id}:${e.label}:${i}`}
+                        onClick={() => focusBoardItem(e.id)}
+                        className="block w-full rounded px-1 py-0.5 text-left hover:bg-cream/10"
+                        title="盤面のこの札まで移動します"
+                      >
+                        <span className={`block truncate text-[11px] ${e.date < today ? "font-bold text-alert" : "text-cream/85"}`}>
+                          {e.label}
+                        </span>
+                        <span className="block truncate text-[9px] text-cream/40">
+                          {e.sub} / {e.date}
+                          {e.date < today && "（超過）"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">これから7日</p>
+                <div className="mt-1 flex items-end justify-between gap-0.5">
+                  {upcoming.days.map((d) => {
+                    const max = Math.max(1, ...upcoming.days.map((x) => x.count));
+                    return (
+                      <button
+                        key={d.date}
+                        onClick={() =>
+                          setHubList({
+                            title: `${d.date} が期日のもの`,
+                            items: [
+                              ...todos.filter((t) => t.dueDate === d.date).map((t) => ({ id: t.id, label: t.title, sub: "ToDo" })),
+                              ...projects.flatMap((p) =>
+                                (p.stages ?? [])
+                                  .filter((st) => !isStageDone(st) && st.dueDate === d.date)
+                                  .map((st) => ({ id: p.id, label: st.title, sub: `案件 ${p.title}` }))
+                              ),
+                            ],
+                          })
+                        }
+                        className="flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded px-0.5 py-0.5 hover:bg-cream/10"
+                        title={`${d.date}: ${d.count}件`}
+                      >
+                        <span
+                          className="w-full rounded-sm"
+                          style={{
+                            height: 4 + Math.round((d.count / max) * 20),
+                            backgroundColor: d.count === 0 ? "rgb(var(--cream-rgb) / 0.12)" : "rgb(var(--accent-rgb) / 0.75)",
+                          }}
+                        />
+                        <span className={`text-[9px] tabular-nums ${d.isToday ? "font-bold text-cream" : "text-cream/40"}`}>{d.day}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -2620,6 +2830,36 @@ export default function UnifiedBoardSection({
               </button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* ミッションコントロールの数字から開く一覧。押すとその札まで盤面を寄せる */}
+      {hubList && (
+        <Modal title={hubList.title} onClose={() => setHubList(null)}>
+          {hubList.items.length === 0 ? (
+            <p className="text-sm text-cream/50">該当するものはありません。</p>
+          ) : (
+            <div className="max-h-[60vh] space-y-1 overflow-y-auto">
+              {hubList.items.map((it, i) => (
+                <button
+                  key={`${it.id}:${it.label}:${i}`}
+                  onClick={() => {
+                    setHubList(null);
+                    focusBoardItem(it.id);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg bg-cream/5 px-3 py-2 text-left hover:bg-cream/15"
+                  title="盤面のこの札まで移動します"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className={`block truncate text-sm ${it.alert ? "font-bold text-alert" : "text-cream/85"}`}>{it.label}</span>
+                    {it.sub && <span className="block truncate text-[10px] text-cream/40">{it.sub}</span>}
+                  </span>
+                  <span className="shrink-0 text-xs text-cream/30">→</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="mt-3 text-[10px] text-cream/40">押すと盤面のその札まで移動して、選択状態にします。</p>
         </Modal>
       )}
 
