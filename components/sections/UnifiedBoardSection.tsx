@@ -559,6 +559,95 @@ export default function UnifiedBoardSection({
     setZoomStr(String(clampMemoZoom(z)));
   }
 
+  // ------------------------------------------------------------
+  // 指・トラックパッドでの拡大縮小(ピンチ)。-/+ボタンだけだと携帯やiPadで
+  // 倍率を変えるのが手間なので、盤面の上で直接つまんで変えられるようにする
+  // ------------------------------------------------------------
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  // ピンチ中は、盤面の空き地を1本目の指で押したときに始まる範囲選択(ラバーバンド)を
+  // 止める。止めないと、つまんでいる間ずっと選択の矩形が引かれてしまう
+  const pinchingRef = useRef(false);
+  // つまんだ点(指の中点・カーソル位置)が動かないように倍率を変える。
+  // 倍率を変えるとスクロールできる範囲も変わるので、描画後にスクロール位置を合わせ直す
+  const applyZoomAtRef = useRef<(nextZoom: number, clientX: number, clientY: number) => void>(() => {});
+  applyZoomAtRef.current = (nextZoom, clientX, clientY) => {
+    const el = boardViewportRef.current;
+    if (!el) return;
+    const prev = zoomRef.current;
+    const next = clampMemoZoom(nextZoom);
+    if (Math.abs(next - prev) < 0.002) return;
+    const rect = el.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    // つまんだ点が指しているボード上の座標(倍率に依らない値)
+    const bx = (el.scrollLeft + px) / prev;
+    const by = (el.scrollTop + py) / prev;
+    zoomRef.current = next;
+    setZoom(next);
+    requestAnimationFrame(() => {
+      const after = boardViewportRef.current;
+      if (!after) return;
+      after.scrollLeft = bx * next - px;
+      after.scrollTop = by * next - py;
+    });
+  };
+
+  useEffect(() => {
+    const el = boardViewportRef.current;
+    if (!el) return;
+
+    // トラックパッドのピンチと Ctrl+ホイールは、どちらも ctrlKey 付きの wheel として届く。
+    // 既定のままだとブラウザのページ全体の拡大になってしまうので、盤面の倍率に回す
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      applyZoomAtRef.current(zoomRef.current * Math.exp(-e.deltaY / 180), e.clientX, e.clientY);
+    }
+
+    let startDist = 0;
+    let startZoom = 1;
+    const touchDistance = (a: Touch, b: Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length !== 2) return;
+      startDist = touchDistance(e.touches[0], e.touches[1]);
+      startZoom = zoomRef.current;
+      pinchingRef.current = true;
+      setSelectionBox(null);
+    }
+    function onTouchMove(e: TouchEvent) {
+      if (e.touches.length !== 2 || startDist === 0) return;
+      // 2本指のときだけ既定動作(ページの拡大・慣性スクロール)を止める。
+      // 1本指のスクロールやカードのドラッグはこれまで通り効かせる
+      e.preventDefault();
+      const d = touchDistance(e.touches[0], e.touches[1]);
+      applyZoomAtRef.current(
+        startZoom * (d / startDist),
+        (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        (e.touches[0].clientY + e.touches[1].clientY) / 2
+      );
+    }
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length >= 2) return;
+      startDist = 0;
+      pinchingRef.current = false;
+    }
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
+
   async function moveNote(id: string, x: number, y: number) {
     await db.memoNotes.update(id, { x, y, updatedAt: Date.now() });
   }
@@ -1094,6 +1183,8 @@ export default function UnifiedBoardSection({
   function onCanvasPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (e.target !== e.currentTarget) return;
     if (penMode || eraseMode) return;
+    // ピンチでつまんでいる間は範囲選択を始めない
+    if (pinchingRef.current) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const rect = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - rect.left) / zoom;
@@ -1746,9 +1837,12 @@ export default function UnifiedBoardSection({
       <div
         ref={boardViewportRef}
         className={`relative h-full w-full overflow-auto p-0 ${deskScene ? "rounded-lg" : "panel"}`}
+        // 2本指のピンチを自前で拾うため、ブラウザ側のページ拡大に取られないようにする。
+        // 1本指でのスクロールはこれまで通り効かせたいので pan-x pan-y は残す
         style={
           deskScene
             ? {
+                touchAction: "pan-x pan-y",
                 ...(fullscreen ? {} : { height: "70vh" }),
                 // 壁に掛かった額縁。黒い太枠に内側の落ち影を入れて、板が枠の
                 // 奥に一段沈んで見えるようにする
@@ -1761,8 +1855,8 @@ export default function UnifiedBoardSection({
                 height: fullscreen ? "auto" : `calc(70vh - ${hubMode ? 282 : 208}px)`,
               }
             : fullscreen
-              ? undefined
-              : { height: "70vh" }
+              ? { touchAction: "pan-x pan-y" }
+              : { touchAction: "pan-x pan-y", height: "70vh" }
         }
       >
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
