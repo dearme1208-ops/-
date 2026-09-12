@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
-import { formatClock, formatMsClock, todayStr } from "@/lib/time";
+import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib/time";
 import { computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
 import { completeTodoTask, DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import { findOrCreateMasterTask } from "@/lib/master";
@@ -45,12 +45,14 @@ import {
   type BoardBackgroundKind,
 } from "@/lib/memo";
 import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
+import { computeAutoAllocation } from "@/lib/allocate";
+import { computeProjectForecast } from "@/lib/projectForecast";
 import { exportElementToPng } from "@/lib/pdfExport";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import StrokeLayer from "@/components/memo/StrokeLayer";
 import RadialTimer from "@/components/ui/RadialTimer";
-import type { BoardShape, BoardShapeType, BoardStamp, DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask } from "@/lib/types";
+import type { BoardShape, BoardShapeType, BoardStamp, DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask, WorkRecord } from "@/lib/types";
 
 // 「メモ・ToDo・案件・本日の作業」を1つの自由配置キャンバスにまとめて表示し、
 // その場で作業の開始/一時停止/完了、ToDoの完了、案件の段階の通過までできるようにしたビュー。
@@ -1473,6 +1475,35 @@ export default function UnifiedBoardSection({
   // ミッションコントロールの数字を押して中身を見る。数だけ見せて「で、どれ?」と
   // 盤面を探し回らせないよう、一覧から選べばその札まで寄せて光らせる
   // ------------------------------------------------------------
+  // ミッションコントロールは段が増えて縦に伸びるので、段ごとに畳めるようにする。
+  // 畳んだ段はカンマ区切りで覚えておき、次に開いたときも同じ状態にする
+  const [hubCollapsedStr, setHubCollapsedStr] = useSetting("board.hubCollapsed", "");
+  const hubCollapsed = useMemo(() => new Set(hubCollapsedStr.split(",").filter(Boolean)), [hubCollapsedStr]);
+  function toggleHubSection(key: string) {
+    const next = new Set(hubCollapsed);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setHubCollapsedStr([...next].join(","));
+  }
+
+  // 段の見出し。押すとその段だけ畳める。コンポーネントではなく関数にして、
+  // 再描画のたびに中身が作り直されないようにしている
+  function hubHead(key: string, label: string, right?: ReactNode) {
+    const open = !hubCollapsed.has(key);
+    return (
+      <button
+        onClick={() => toggleHubSection(key)}
+        className="flex w-full items-baseline justify-between rounded px-0.5 hover:bg-cream/5"
+        aria-expanded={open}
+      >
+        <span className="text-[9px] font-bold tracking-[0.15em] text-cream/40">
+          {open ? "▾" : "▸"} {label}
+        </span>
+        {right}
+      </button>
+    );
+  }
+
   type HubListItem = { id: string; label: string; sub?: string; alert?: boolean };
   const [hubList, setHubList] = useState<{ title: string; items: HubListItem[] } | null>(null);
 
@@ -1545,6 +1576,93 @@ export default function UnifiedBoardSection({
 
   // ミッションコントロールの下に足す「次の一手」と「これから7日の期日」。
   // 数の内訳だけでは「で、次に何をすべきか」が出てこないため
+  // 着地見込み。残りの所定時間と、未完了作業の予測残り時間の合計を突き合わせる。
+  // 「完了◯件」だけでは今日のうちに終わるのかが分からないため
+  const landing = useMemo(() => {
+    if (!hubMode) return null;
+    const a = computeAutoAllocation(tasks, predictedSecondsByTaskId, today, standardWorkEnd, now);
+    if (a.totalRemainingPredictedMs <= 0) return null;
+    return {
+      remainingWorkMs: a.remainingWorkMs,
+      neededMs: a.totalRemainingPredictedMs,
+      diffMs: a.totalRemainingPredictedMs - a.remainingWorkMs,
+    };
+  }, [hubMode, tasks, predictedSecondsByTaskId, today, standardWorkEnd, now]);
+
+  // 案件の危険信号に見積もり総所要時間ベースの予測を使う。見積もりが入っている案件が
+  // 1件も無ければ実績は読まない(この画面のために全実績を抱え込まないため)
+  const anyEstimatedProject = projects.some((p) => (p.estimatedTotalSeconds ?? 0) > 0);
+  const forecastRecords = useLiveQuery(
+    () => (anyEstimatedProject ? db.records.toArray() : Promise.resolve([] as WorkRecord[])),
+    [anyEstimatedProject]
+  );
+
+  // 期日に間に合わなそうな案件。見積もりがあれば消化ペースから、無ければ
+  // 「期日までの残り日数 ≦ 未通過の段階数」を目安にする
+  const riskyProjects = useMemo(() => {
+    if (!hubMode) return [];
+    const rows: { id: string; title: string; reason: string; level: "overdue" | "risk" }[] = [];
+    for (const p of projects) {
+      const openStages = (p.stages ?? []).filter((st) => !isStageDone(st)).length;
+      const days = daysBetweenDateStrs(today, p.dueDate);
+      if (days < 0) {
+        rows.push({ id: p.id, title: p.title, reason: `期日を${-days}日超過`, level: "overdue" });
+        continue;
+      }
+      const fc = computeProjectForecast(p, forecastRecords ?? [], today);
+      if (fc && fc.status === "at-risk") {
+        rows.push({ id: p.id, title: p.title, reason: "今のペースでは期日に間に合わない見込み", level: "risk" });
+        continue;
+      }
+      if (openStages > 0 && days <= openStages) {
+        rows.push({ id: p.id, title: p.title, reason: `残り${days}日に未通過${openStages}段階`, level: "risk" });
+      }
+    }
+    return rows.sort((a, b) => (a.level === b.level ? 0 : a.level === "overdue" ? -1 : 1));
+  }, [hubMode, projects, forecastRecords, today]);
+
+  // 本日の実働をカテゴリ別に。リングの「完了◯件」では見えない
+  // 「何に時間を使ったか」を出す
+  const timeByCategory = useMemo(() => {
+    if (!hubMode) return [];
+    const map = new Map<string, number>();
+    for (const t of dailyTasks ?? []) {
+      if (t.isProvisional) continue;
+      const ms = segmentsAccumulatedMs(t, now);
+      if (ms <= 0) continue;
+      map.set(t.category, (map.get(t.category) ?? 0) + ms);
+    }
+    const rows = [...map.entries()].sort((a, b) => b[1] - a[1]);
+    const total = rows.reduce((sum, [, ms]) => sum + ms, 0);
+    const top = rows.slice(0, 5);
+    const restMs = rows.slice(5).reduce((sum, [, ms]) => sum + ms, 0);
+    if (restMs > 0) top.push(["その他", restMs]);
+    return total > 0 ? top.map(([name, ms]) => ({ name, ms, pct: ms / total })) : [];
+  }, [hubMode, dailyTasks, now]);
+  const totalTrackedMs = useMemo(() => timeByCategory.reduce((sum, r) => sum + r.ms, 0), [timeByCategory]);
+
+  // 直近に片付いたもの。作業・ToDo・案件の段階をまとめて時系列で見せる
+  const recentDone = useMemo(() => {
+    if (!hubMode) return [];
+    const rows: { id: string; label: string; sub: string; at: number }[] = [];
+    for (const t of dailyTasks ?? []) {
+      if (t.isProvisional || t.status !== "done") continue;
+      const at = t.segments[t.segments.length - 1]?.end ?? t.endedAt;
+      if (at) rows.push({ id: t.id, label: `${t.category} / ${t.name}`, sub: "作業", at });
+    }
+    for (const t of todoTasks ?? []) {
+      if (!t.completed || !t.completedAt) continue;
+      rows.push({ id: t.parentTaskId ?? t.id, label: t.title, sub: t.parentTaskId ? "サブタスク" : "ToDo", at: t.completedAt });
+    }
+    for (const p of projects) {
+      for (const st of p.stages ?? []) {
+        if (!st.completedAt) continue;
+        rows.push({ id: p.id, label: st.title, sub: `案件 ${p.title}`, at: st.completedAt });
+      }
+    }
+    return rows.sort((a, b) => b.at - a.at).slice(0, 5);
+  }, [hubMode, dailyTasks, todoTasks, projects]);
+
   const upcoming = useMemo(() => {
     if (!hubMode) return null;
     type Entry = { id: string; label: string; sub: string; date: string };
@@ -2412,15 +2530,45 @@ export default function UnifiedBoardSection({
           </div>
           </div>
           </div>
+          {/* 着地見込み。今日のうちに終わるのかどうかを、残り時間との差で出す */}
+          {landing && (
+            <div className="mt-2 border-t border-cream/10 pt-2">
+              {hubHead("landing", "着地見込み")}
+              {!hubCollapsed.has("landing") && (
+                <div className="mt-1">
+                  <p
+                    className={`text-center text-[11px] font-bold tabular-nums ${
+                      landing.diffMs > 0 ? "text-alert" : "text-cream/80"
+                    }`}
+                  >
+                    {landing.diffMs > 0
+                      ? `${formatMsClock(landing.diffMs)} 超えそう`
+                      : `${formatMsClock(-landing.diffMs)} 余りそう`}
+                  </p>
+                  {/* 残り時間の帯の上に、必要な時間を重ねる。はみ出した分が超過 */}
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-cream/10">
+                    <div
+                      className={`h-full rounded-full ${landing.diffMs > 0 ? "bg-alert/70" : "bg-cream/50"}`}
+                      style={{
+                        width: `${Math.min(100, Math.round((landing.neededMs / Math.max(1, landing.remainingWorkMs)) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-1 text-center text-[9px] tabular-nums text-cream/40">
+                    残り {formatMsClock(landing.remainingWorkMs)} / 必要 {formatMsClock(landing.neededMs)}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 同じ盤面に出ているToDo・案件の状況。作業(上のリング)だけでは
               「期限が迫っているものが他に無いか」が分からなかった */}
           {boardStats && (
             <div className="mt-2 space-y-1.5 border-t border-cream/10 pt-2 sm:space-y-1.5">
               <div>
-                <div className="flex items-baseline justify-between">
-                  <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">TODO</p>
-                  <span className="text-[10px] tabular-nums text-cream/50">盤面 {boardStats.todoCount}</span>
-                </div>
+                {hubHead("todo", "TODO", <span className="text-[10px] tabular-nums text-cream/50">盤面 {boardStats.todoCount}</span>)}
+                {!hubCollapsed.has("todo") && (
                 <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] tabular-nums">
                   <button
                     className={`rounded px-1 py-0.5 hover:brightness-125 ${boardStats.todoOverdue > 0 ? "bg-alert/15 font-bold text-alert" : "bg-cream/5 text-cream/50"}`}
@@ -2440,12 +2588,11 @@ export default function UnifiedBoardSection({
                     残サブ {boardStats.openSubtasks}
                   </button>
                 </div>
+                )}
               </div>
               <div>
-                <div className="flex items-baseline justify-between">
-                  <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">案件</p>
-                  <span className="text-[10px] tabular-nums text-cream/50">盤面 {boardStats.projectCount}</span>
-                </div>
+                {hubHead("project", "案件", <span className="text-[10px] tabular-nums text-cream/50">盤面 {boardStats.projectCount}</span>)}
+                {!hubCollapsed.has("project") && (
                 <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] tabular-nums">
                   <button
                     className={`rounded px-1 py-0.5 hover:brightness-125 ${boardStats.projectOverdue > 0 ? "bg-alert/15 font-bold text-alert" : "bg-cream/5 text-cream/50"}`}
@@ -2464,10 +2611,12 @@ export default function UnifiedBoardSection({
                     残段階 {boardStats.openStages}
                   </button>
                 </div>
+                )}
               </div>
               {boardStats.topTags.length > 0 && (
                 <div>
-                  <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">対応状況</p>
+                  {hubHead("tags", "対応状況")}
+                  {!hubCollapsed.has("tags") && (
                   <div className="mt-0.5 flex flex-wrap gap-1">
                     {boardStats.topTags.map(([tag, count]) => (
                       <button key={tag} className="flex items-center gap-0.5 rounded px-0.5 hover:bg-cream/10" onClick={() => openTagList(tag)}>
@@ -2476,6 +2625,7 @@ export default function UnifiedBoardSection({
                       </button>
                     ))}
                   </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2486,13 +2636,14 @@ export default function UnifiedBoardSection({
           {upcoming && (
             <div className="mt-2 space-y-2 border-t border-cream/10 pt-2">
               <div>
-                <div className="flex items-baseline justify-between">
-                  <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">次の一手</p>
-                  {upcoming.overdueCount > 0 && (
+                {hubHead(
+                  "upnext",
+                  "次の一手",
+                  upcoming.overdueCount > 0 ? (
                     <span className="text-[10px] font-bold tabular-nums text-alert">超過 {upcoming.overdueCount}</span>
-                  )}
-                </div>
-                {upcoming.upNext.length === 0 ? (
+                  ) : undefined
+                )}
+                {!hubCollapsed.has("upnext") && (upcoming.upNext.length === 0 ? (
                   <p className="mt-0.5 text-[10px] text-cream/40">期日のあるものはありません。</p>
                 ) : (
                   <div className="mt-0.5 space-y-0.5">
@@ -2513,11 +2664,12 @@ export default function UnifiedBoardSection({
                       </button>
                     ))}
                   </div>
-                )}
+                ))}
               </div>
 
               <div>
-                <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">これから7日</p>
+                {hubHead("next7", "これから7日")}
+                {!hubCollapsed.has("next7") && (
                 <div className="mt-1 flex items-end justify-between gap-0.5">
                   {upcoming.days.map((d) => {
                     const max = Math.max(1, ...upcoming.days.map((x) => x.count));
@@ -2552,7 +2704,93 @@ export default function UnifiedBoardSection({
                     );
                   })}
                 </div>
+                )}
               </div>
+
+              {riskyProjects.length > 0 && (
+                <div>
+                  {hubHead(
+                    "risky",
+                    "危険信号",
+                    <span className="text-[10px] font-bold tabular-nums text-alert">{riskyProjects.length}</span>
+                  )}
+                  {!hubCollapsed.has("risky") && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {riskyProjects.slice(0, 4).map((r) => (
+                        <button
+                          key={r.id}
+                          onClick={() => focusBoardItem(r.id)}
+                          className="block w-full rounded px-1 py-0.5 text-left hover:bg-cream/10"
+                          title="盤面のこの札まで移動します"
+                        >
+                          <span className={`block truncate text-[11px] ${r.level === "overdue" ? "font-bold text-alert" : "text-cream/85"}`}>
+                            {r.title}
+                          </span>
+                          <span className="block truncate text-[9px] text-cream/40">{r.reason}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {timeByCategory.length > 0 && (
+                <div>
+                  {hubHead(
+                    "timeuse",
+                    "時間の使いみち",
+                    <span className="text-[10px] tabular-nums text-cream/50">{formatMsClock(totalTrackedMs)}</span>
+                  )}
+                  {!hubCollapsed.has("timeuse") && (
+                    <div className="mt-1 space-y-1">
+                      {/* 1本の帯をカテゴリで割る。割合がそのまま幅になる */}
+                      <div className="flex h-2 w-full overflow-hidden rounded-full bg-cream/10">
+                        {timeByCategory.map((r, i) => (
+                          <span
+                            key={r.name}
+                            style={{
+                              width: `${r.pct * 100}%`,
+                              backgroundColor: `rgb(var(--accent-rgb) / ${0.85 - i * 0.13})`,
+                            }}
+                          />
+                        ))}
+                      </div>
+                      {timeByCategory.map((r, i) => (
+                        <div key={r.name} className="flex items-center gap-1 text-[10px]">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-sm"
+                            style={{ backgroundColor: `rgb(var(--accent-rgb) / ${0.85 - i * 0.13})` }}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-cream/70">{r.name}</span>
+                          <span className="shrink-0 tabular-nums text-cream/50">{formatMsClock(r.ms)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {recentDone.length > 0 && (
+                <div>
+                  {hubHead("recent", "直近の動き")}
+                  {!hubCollapsed.has("recent") && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {recentDone.map((r, i) => (
+                        <button
+                          key={`${r.id}:${r.at}:${i}`}
+                          onClick={() => focusBoardItem(r.id)}
+                          className="flex w-full items-baseline gap-1.5 rounded px-1 py-0.5 text-left hover:bg-cream/10"
+                          title="盤面のこの札まで移動します"
+                        >
+                          <span className="shrink-0 text-[9px] tabular-nums text-cream/40">{formatClock(r.at)}</span>
+                          <span className="min-w-0 flex-1 truncate text-[11px] text-cream/80">{r.label}</span>
+                          <span className="shrink-0 text-[9px] text-cream/35">{r.sub}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
