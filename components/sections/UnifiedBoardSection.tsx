@@ -8,6 +8,7 @@ import { useSetting } from "@/lib/settings";
 import { formatClock, formatMsClock, todayStr } from "@/lib/time";
 import { computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
 import { completeTodoTask, DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
+import { findOrCreateMasterTask } from "@/lib/master";
 import { getRiskTier, useVisualMode } from "@/lib/theme";
 import {
   BOARD_BACKGROUND_KINDS,
@@ -639,8 +640,23 @@ export default function UnifiedBoardSection({
     await db.dailyTasks.add(task);
   }
 
+  // 作業マスタに無い作業を、その場で名前を打って開始する。同じ名前のマスタが
+  // あればそれを使い、無ければ作ってから開始する(本日タブの自由入力と同じ扱い)
+  async function startFromFreeInput(category: string, name: string) {
+    const master = await findOrCreateMasterTask(category.trim(), name.trim(), 0);
+    await startFromMaster(master);
+  }
+
   const [showMasterPicker, setShowMasterPicker] = useState(false);
   const [pickedMaster, setPickedMaster] = useState<MasterTask | null>(null);
+  // 盤面のToDoカードの件名を押したときに開く詳細。ToDoタブへ飛んで一覧を絞り込むと
+  // 盤面から離れてしまうので、盤面に居たまま中身を見て動かせるようにする
+  const [detailTodoId, setDetailTodoId] = useState<string | null>(null);
+  const detailTodo = (todoTasks ?? []).find((t) => t.id === detailTodoId) ?? null;
+  // 「作業を追加」のメニュー。どの選び方で足すかをここで分岐させる
+  const [showAddWork, setShowAddWork] = useState(false);
+  const [freeCategory, setFreeCategory] = useState("");
+  const [freeName, setFreeName] = useState("");
 
   async function moveTodo(id: string, x: number, y: number) {
     await db.todoTasks.update(id, { boardX: x, boardY: y });
@@ -1106,20 +1122,45 @@ export default function UnifiedBoardSection({
   // 整列。ドラッグで散らかった配置を、現在の並び(上から左から)を保ったまま
   // グリッド状に並べ直す。ロック中のカードは動かさない
   // ------------------------------------------------------------
+  // 整列の並び順を決めるキー。ToDoは対応状況ごとにまとめ(対応状況なしはその後ろ)、
+  // 作業・案件・付箋などは種類ごとにさらに後ろへ回す。
+  // 先頭の数字は種類の優先順で、同じキーのものが盤面の上で固まって見えるようにする
+  function alignGroupKey(it: BoardItem): string {
+    if (it.kind === "todo") {
+      const todo = todos.find((t) => t.id === it.id);
+      const tag =
+        todo?.tag || (subtasksByParent.get(it.id) ?? []).find((s) => s.tag && !s.completed)?.tag || "";
+      return tag ? `1:${tag}` : "2:";
+    }
+    return `3:${it.kind}`;
+  }
+
   async function alignBoardItems() {
-    const sorted = boardItems.filter((it) => !it.locked).sort((a, b) => a.y - b.y || a.x - b.x);
+    const sorted = boardItems
+      .filter((it) => !it.locked)
+      .sort((a, b) => {
+        const ka = alignGroupKey(a);
+        const kb = alignGroupKey(b);
+        if (ka !== kb) return ka.localeCompare(kb, "ja");
+        return a.y - b.y || a.x - b.x;
+      });
     const cols = Math.max(1, Math.floor((MEMO_BOARD_WIDTH - PLACEMENT_MARGIN) / (CARD_WIDTH + PLACEMENT_MARGIN)));
     let x = 20;
     let y = 20;
     let col = 0;
     let rowHeight = 0;
+    let currentKey: string | null = null;
     for (const it of sorted) {
-      if (col >= cols) {
+      const key = alignGroupKey(it);
+      // 対応状況が変わったら改行して、group同士が横に混ざらないようにする
+      const groupChanged = currentKey !== null && key !== currentKey;
+      if (col >= cols || groupChanged) {
         col = 0;
         x = 20;
         y += rowHeight + PLACEMENT_MARGIN;
         rowHeight = 0;
       }
+      currentKey = key;
       await moveBoardItemByKind(it.kind, it.id, x, y);
       rowHeight = Math.max(rowHeight, it.height);
       x += it.width + PLACEMENT_MARGIN;
@@ -1614,14 +1655,10 @@ export default function UnifiedBoardSection({
 
       {!fullscreen && (
         <div className="panel flex flex-wrap items-center gap-2 p-3">
-          <span className="text-xs text-cream/50">作業を開始:</span>
-          {(favorites ?? []).map((f) => (
-            <button key={f.id} className="btn-pill-outline text-xs" onClick={() => startFromMaster(f)}>
-              ★ {f.category} / {f.name}
-            </button>
-          ))}
-          <button className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
-            ＋ マスタから選択
+          {/* お気に入りを全部並べると、その数だけこの行が伸びて盤面が下がってしまう。
+              まず1つのボタンで受けて、選び方(お気に入り/マスタ/自由入力)は中で選ばせる */}
+          <button className="btn-pill-outline text-xs" onClick={() => setShowAddWork(true)}>
+            ＋ 作業を追加
           </button>
           <button
             className={`${tasksOutside ? "btn-pill" : "btn-pill-outline"} ml-auto text-xs`}
@@ -1911,7 +1948,7 @@ export default function UnifiedBoardSection({
                 onToggleLock={() => toggleBoardLock("todo", todo.id, !!todo.boardLocked)}
                 onTogglePin={() => toggleBoardPin("todo", todo.id, !!todo.boardPinned)}
                 onFocus={() => bringToFront(todo.id)}
-                onOpenDetail={onOpenTodoDetail ? () => onOpenTodoDetail(todo.id) : undefined}
+                onOpenDetail={() => setDetailTodoId(todo.id)}
               />
             ))}
             {/* ToDoの「対応状況」(tag)が設定されていれば、手で貼らなくても自動でスタンプ風の
@@ -2130,6 +2167,216 @@ export default function UnifiedBoardSection({
         </div>
       )}
       </div>
+
+      {/* 盤面上のToDoの詳細。ToDoタブへ飛ばさず、盤面に居たまま中身を読んで
+          対応状況を変えたりサブタスクを潰したりできるようにする */}
+      {detailTodo && (
+        <Modal title="ToDoの詳細" onClose={() => setDetailTodoId(null)}>
+          <div className="space-y-3">
+            <div className="flex items-start gap-2">
+              <button
+                onClick={() => db.todoTasks.update(detailTodo.id, { important: !detailTodo.important })}
+                className={`mt-0.5 shrink-0 text-lg leading-none ${detailTodo.important ? "text-alert" : "text-cream/30 hover:text-cream/60"}`}
+                title={detailTodo.important ? "重要を外す" : "重要にする"}
+                aria-pressed={detailTodo.important}
+              >
+                ★
+              </button>
+              <h3 className="min-w-0 flex-1 font-display text-lg font-bold text-cream">{detailTodo.title}</h3>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {detailTodo.dueDate && (
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
+                    detailTodo.dueDate < today ? "border-alert/50 bg-alert/15 text-alert" : "border-cream/25 text-cream/80"
+                  }`}
+                >
+                  期日 {detailTodo.dueDate}
+                  {detailTodo.dueDate < today && "（超過）"}
+                </span>
+              )}
+              {detailTodo.customer && (
+                <span className="rounded-full border border-cream/25 bg-cream/15 px-2 py-0.5 text-xs font-bold text-cream/90">
+                  {detailTodo.customer}
+                </span>
+              )}
+              {detailTodo.category && (
+                <span className="rounded-full border border-cream/20 bg-cream/5 px-2 py-0.5 text-xs text-cream/60">
+                  {detailTodo.category}
+                </span>
+              )}
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-cream/60">
+              対応状況:
+              <select
+                value={detailTodo.tag ?? ""}
+                onChange={(e) => db.todoTasks.update(detailTodo.id, { tag: e.target.value || undefined })}
+                className="rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+              >
+                <option value="">なし</option>
+                {stampPresets.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+                {detailTodo.tag && !stampPresets.includes(detailTodo.tag) && (
+                  <option value={detailTodo.tag}>{detailTodo.tag}</option>
+                )}
+              </select>
+            </label>
+
+            {detailTodo.action && (
+              <p className="rounded-lg bg-cream/5 px-3 py-2 text-sm text-cream/80">
+                <span className="text-cream/40">次の行動:</span> {detailTodo.action}
+              </p>
+            )}
+            {detailTodo.notes && (
+              <p className="whitespace-pre-wrap rounded-lg bg-cream/5 px-3 py-2 text-sm text-cream/70">{detailTodo.notes}</p>
+            )}
+            {detailTodo.url && (
+              <a
+                href={detailTodo.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block truncate text-sm text-cream underline decoration-dotted underline-offset-2"
+              >
+                🔗 {detailTodo.url}
+              </a>
+            )}
+
+            {(subtasksByParent.get(detailTodo.id) ?? []).length > 0 && (
+              <div className="border-t border-cream/10 pt-3">
+                <p className="mb-1.5 text-xs font-bold text-cream/70">
+                  サブタスク（{(subtasksByParent.get(detailTodo.id) ?? []).filter((s) => s.completed).length}/
+                  {(subtasksByParent.get(detailTodo.id) ?? []).length}）
+                </p>
+                <div className="space-y-1">
+                  {(subtasksByParent.get(detailTodo.id) ?? []).map((sub) => (
+                    <button
+                      key={sub.id}
+                      onClick={() => toggleSubtask(sub)}
+                      className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left hover:bg-cream/10"
+                      title={sub.completed ? "未完了に戻す" : "完了にする"}
+                    >
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] ${
+                          sub.completed ? "border-cream/40 bg-cream/25 text-cream/70" : "border-cream/40"
+                        }`}
+                      >
+                        {sub.completed ? "✓" : ""}
+                      </span>
+                      <span className={`min-w-0 flex-1 text-sm ${sub.completed ? "text-cream/35 line-through" : "text-cream/85"}`}>
+                        {sub.title}
+                      </span>
+                      {sub.completed ? <InlineStamp text="済" tone="done" /> : sub.tag ? <InlineStamp text={sub.tag} /> : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 border-t border-cream/10 pt-3">
+              {onOpenTodoDetail && (
+                <button
+                  className="btn-pill-outline text-xs"
+                  onClick={() => {
+                    const id = detailTodo.id;
+                    setDetailTodoId(null);
+                    onOpenTodoDetail(id);
+                  }}
+                >
+                  ToDoタブで開く →
+                </button>
+              )}
+              <button
+                className="btn-pill text-sm"
+                onClick={async () => {
+                  await completeTodo(detailTodo);
+                  setDetailTodoId(null);
+                }}
+              >
+                完了にする
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* 作業の追加。お気に入り・マスタ・自由入力の3つの入口をここにまとめる */}
+      {showAddWork && (
+        <Modal title="作業を追加" onClose={() => setShowAddWork(false)}>
+          <div className="space-y-4">
+            <div>
+              <p className="mb-1.5 text-xs font-bold text-cream/70">★ お気に入りから</p>
+              {(favorites ?? []).length === 0 ? (
+                <p className="text-xs text-cream/40">お気に入りに登録された作業がありません。</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {(favorites ?? []).map((f) => (
+                    <button
+                      key={f.id}
+                      className="btn-pill-outline text-xs"
+                      onClick={async () => {
+                        await startFromMaster(f);
+                        setShowAddWork(false);
+                      }}
+                    >
+                      ★ {f.category} / {f.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-cream/10 pt-3">
+              <p className="mb-1.5 text-xs font-bold text-cream/70">作業マスタから</p>
+              <button
+                className="btn-pill-outline text-xs"
+                onClick={() => {
+                  setShowAddWork(false);
+                  setShowMasterPicker(true);
+                }}
+              >
+                一覧から選ぶ →
+              </button>
+            </div>
+
+            <div className="border-t border-cream/10 pt-3">
+              <p className="mb-1.5 text-xs font-bold text-cream/70">自由入力</p>
+              <div className="space-y-2">
+                <input
+                  placeholder="業務区分（大項目）"
+                  value={freeCategory}
+                  onChange={(e) => setFreeCategory(e.target.value)}
+                  className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+                <input
+                  placeholder="詳細作業名"
+                  value={freeName}
+                  onChange={(e) => setFreeName(e.target.value)}
+                  className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+                <div className="flex justify-end">
+                  <button
+                    className="btn-pill text-sm"
+                    disabled={!freeCategory.trim() || !freeName.trim()}
+                    onClick={async () => {
+                      await startFromFreeInput(freeCategory, freeName);
+                      setFreeCategory("");
+                      setFreeName("");
+                      setShowAddWork(false);
+                    }}
+                  >
+                    この作業を開始する
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {showMasterPicker && (
         <Modal
