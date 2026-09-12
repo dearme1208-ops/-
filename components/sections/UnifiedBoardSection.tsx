@@ -264,6 +264,12 @@ export default function UnifiedBoardSection({
   const allMasterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
 
   const tasks = (dailyTasks ?? []).filter((t) => !t.isProvisional && t.status !== "done");
+  // 本日の作業を盤面の中に置かず、盤面の外に横一列で並べる切り替え。
+  // 盤面は貼り出して眺めるもの、作業は順に片付けていくものなので、混ぜたくない
+  // ことがある。ONの間は盤面側の配置・整列・連結線からも作業を外す
+  const [tasksOutsideStr, setTasksOutsideStr] = useSetting(`board.tasksOutside.${selectedBoardId || "default"}`, "false");
+  const tasksOutside = tasksOutsideStr === "true";
+  const boardTasks = tasksOutside ? [] : tasks;
   // 未完了の親タスクだけを対象にする(サブタスクはカードにしない)
   const openTodos = (todoTasks ?? []).filter((t) => !t.completed && !t.parentTaskId);
   // ボードに自動で出すToDoの条件(マイデイ/重要/期日あり/期限切れをチェックボックスで選べる)。
@@ -360,14 +366,14 @@ export default function UnifiedBoardSection({
     // すべて確定してから行う
     if (notes === undefined || dailyTasks === undefined || todoTasks === undefined) return;
     if (!selectedBoardId || !boards || !boards.some((b) => b.id === selectedBoardId)) return;
-    const unpositionedTasks = tasks.filter((t) => t.boardX === undefined || t.boardY === undefined);
+    const unpositionedTasks = boardTasks.filter((t) => t.boardX === undefined || t.boardY === undefined);
     const unpositionedTodos = todos.filter((t) => t.boardX === undefined || t.boardY === undefined);
     if (unpositionedTasks.length === 0 && unpositionedTodos.length === 0) return;
 
     const occupied: BoardRect[] = [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
       ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
-      ...tasks
+      ...boardTasks
         .filter((t) => t.boardX !== undefined && t.boardY !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
       ...todos
@@ -694,7 +700,7 @@ export default function UnifiedBoardSection({
     const { width, height } = estimateAutoTextNoteSize("", memoNoteTextFont());
     const occupied: BoardRect[] = [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
-      ...tasks
+      ...boardTasks
         .filter((t) => t.boardX !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
       ...todos
@@ -778,7 +784,7 @@ export default function UnifiedBoardSection({
     return [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
       ...(shapes ?? []).map((s) => ({ x: s.x, y: s.y, width: s.width, height: s.height })),
-      ...tasks
+      ...boardTasks
         .filter((t) => t.boardX !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
       ...todos
@@ -817,7 +823,7 @@ export default function UnifiedBoardSection({
   // ------------------------------------------------------------
   const boardItems: BoardItem[] = useMemo(() => {
     const items: BoardItem[] = [];
-    for (const t of tasks) {
+    for (const t of boardTasks) {
       if (t.boardX === undefined || t.boardY === undefined) continue;
       items.push({
         kind: "task",
@@ -846,7 +852,7 @@ export default function UnifiedBoardSection({
       items.push({ kind: "shape", id: s.id, x: s.x, y: s.y, width: s.width, height: s.height, label: s.label ?? "", locked: !!s.boardLocked });
     }
     return items;
-  }, [tasks, todos, projects, notes, shapes]);
+  }, [boardTasks, todos, projects, notes, shapes]);
 
   // ハブモード専用。案件→ToDo→作業のうち、両端が盤面に置かれているものどうしを
   // 自動で線でつなぐための中心点ペア。作業がToDo経由で案件ともつながっている場合、
@@ -869,7 +875,7 @@ export default function UnifiedBoardSection({
       const c2 = center(to);
       lines.push({ key: `todo-project:${t.id}`, x1: c1.x, y1: c1.y, x2: c2.x, y2: c2.y });
     }
-    for (const t of tasks) {
+    for (const t of boardTasks) {
       const from = byKey.get(`task:${t.id}`);
       if (!from) continue;
       if (t.todoTaskId) {
@@ -891,7 +897,7 @@ export default function UnifiedBoardSection({
       }
     }
     return lines;
-  }, [hubMode, boardItems, visibleTodos, visibleTodoIds, tasks]);
+  }, [hubMode, boardItems, visibleTodos, visibleTodoIds, boardTasks]);
 
   function moveBoardItemByKind(kind: BoardItemKind, id: string, x: number, y: number) {
     if (kind === "task") return moveTask(id, x, y);
@@ -1617,10 +1623,64 @@ export default function UnifiedBoardSection({
           <button className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
             ＋ マスタから選択
           </button>
+          <button
+            className={`${tasksOutside ? "btn-pill" : "btn-pill-outline"} ml-auto text-xs`}
+            onClick={() => setTasksOutsideStr(tasksOutside ? "false" : "true")}
+            title="本日の作業カードを、盤面の中ではなく盤面の外に横一列で並べます"
+            aria-pressed={tasksOutside}
+          >
+            🗂 作業を外に出す: {tasksOutside ? "ON" : "OFF"}
+          </button>
         </div>
       )}
 
-      <div className={fullscreen ? "flex min-h-0 flex-1 items-start gap-2" : "flex items-start gap-2"}>
+      {/* 盤面の外に出した本日の作業。横一列に流し込み、入りきらない分は横スクロールする。
+          盤面の自由配置とは別物なので、ドラッグでの移動や選択はしない */}
+      {tasksOutside && (
+        <div className="panel p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-bold text-cream/70">本日の作業（{tasks.length}）</p>
+            {tasks.length > 0 && <p className="text-[10px] text-cream/40">横にスクロールできます</p>}
+          </div>
+          {tasks.length === 0 ? (
+            <p className="text-xs text-cream/40">進行中・未着手の作業はありません。</p>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {tasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  now={now}
+                  zoom={1}
+                  riskLevel={riskLevelByTaskId.get(task.id) ?? null}
+                  zIndex={1}
+                  selected={false}
+                  matched={false}
+                  dimmed={false}
+                  strip
+                  onSelect={() => {}}
+                  onDragEnd={() => {}}
+                  onStart={() => startTask(task)}
+                  onPause={() => pauseTask(task)}
+                  onComplete={() => completeTask(task)}
+                  onToggleLock={() => toggleBoardLock("task", task.id, !!task.boardLocked)}
+                  onTogglePin={() => toggleBoardPin("task", task.id, !!task.boardPinned)}
+                  onFocus={() => {}}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 携帯の幅では横に並べると盤面が潰れるので、盤面の下へ積む */}
+      <div
+        className={
+          fullscreen
+            ? "flex min-h-0 flex-1 flex-col items-stretch gap-2 sm:flex-row sm:items-start"
+            : "flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
+        }
+      >
       {/* ハブモードのHUD枠(コーナー・スキャンライン・時計)は盤面のスクロール/ズームに
           追従させたくないので、スクロールするビューポート(boardViewportRef)の外側・
           このrelativeラッパーの中に兄弟として重ねる */}
@@ -1809,7 +1869,7 @@ export default function UnifiedBoardSection({
                 onFocus={() => bringToFront(note.id)}
               />
             ))}
-            {tasks.map((task) => (
+            {boardTasks.map((task) => (
               <TaskCard
                 key={task.id}
                 task={task}
@@ -1969,7 +2029,7 @@ export default function UnifiedBoardSection({
           総合ステータス・進行中/超過中/待機中の内訳・所定労働時間の残りを常駐表示する。
           盤面を見渡すだけで今の状況が一目でわかるようにする */}
       {hubMode && (
-        <div className="panel hidden shrink-0 self-start p-2 sm:block" style={{ width: MINIMAP_WIDTH + 16 }}>
+        <div className="panel w-full shrink-0 self-start p-2 sm:w-[196px]">
           <div className="mb-1.5 flex items-center justify-between">
             <p className="text-[10px] font-bold tracking-[0.2em] text-cream/50">MISSION CONTROL</p>
             <span className="hub-rec-dot h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: "rgb(var(--accent-rgb))" }} />
@@ -1986,7 +2046,9 @@ export default function UnifiedBoardSection({
               状況: {overallStatus.name}
             </p>
           )}
-          <div className="relative flex items-center justify-center" style={{ width: MINIMAP_WIDTH }}>
+          {/* 携帯では縦に伸びると盤面が押し下げられるので、リングと内訳を横に並べる */}
+          <div className="flex items-center gap-3 sm:block">
+          <div className="relative flex w-24 shrink-0 items-center justify-center sm:w-[180px]">
             <RadialTimer
               progressPct={progressStats.totalCount > 0 ? (progressStats.doneCount / progressStats.totalCount) * 100 : 0}
               overEstimate={progressStats.overrunCount > 0}
@@ -1999,7 +2061,8 @@ export default function UnifiedBoardSection({
               <span className="text-[9px] text-cream/50">完了</span>
             </div>
           </div>
-          <p className="mt-1.5 text-center text-[10px] tabular-nums text-cream/60">
+          <div className="min-w-0 flex-1">
+          <p className="text-center text-[10px] tabular-nums text-cream/60 sm:mt-1.5">
             {standardWorkEnd}まで残り {formatMsClock(progressStats.remainingMs)}
           </p>
           <div className="mt-1.5 grid grid-cols-3 gap-1 text-center text-[10px] tabular-nums">
@@ -2018,10 +2081,12 @@ export default function UnifiedBoardSection({
               <p className="font-bold text-cream">{waitingCount}</p>
             </div>
           </div>
+          </div>
+          </div>
           {/* 同じ盤面に出ているToDo・案件の状況。作業(上のリング)だけでは
               「期限が迫っているものが他に無いか」が分からなかった */}
           {boardStats && (
-            <div className="mt-2 space-y-1.5 border-t border-cream/10 pt-2">
+            <div className="mt-2 space-y-1.5 border-t border-cream/10 pt-2 sm:space-y-1.5">
               <div>
                 <div className="flex items-baseline justify-between">
                   <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">TODO</p>
@@ -3126,12 +3191,16 @@ function TaskCard({
   onToggleLock,
   onTogglePin,
   onFocus,
+  strip = false,
 }: {
   task: DailyTask;
   now: number;
   zoom: number;
   /** ハブモードの負荷ヒートマップ用。超過度合いの階級(0=順調〜4=要再編成)。対象外はnull */
   riskLevel: number | null;
+  /** 盤面の外に横並びで出す場合はtrue。自由配置ではなく流し込みで並べるため、
+      絶対位置とドラッグでの移動をやめる(中身の作りは盤面上と同じものを使う) */
+  strip?: boolean;
   zIndex: number;
   selected: boolean;
   matched: boolean;
@@ -3169,12 +3238,16 @@ function TaskCard({
   const criticalAlert = riskLevel !== null && riskLevel >= 3;
   return (
     <div
-      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
+      className={`${strip ? "relative shrink-0" : "absolute"} flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
         running ? "border-alert" : "border-cream/20"
       } ${criticalAlert ? "hub-card-alert" : ""}`}
-      style={{ left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
-      onPointerDownCapture={onFocus}
-      onClick={(e) => onSelect(e.shiftKey)}
+      style={
+        strip
+          ? { width: CARD_WIDTH, height: TASK_CARD_HEIGHT }
+          : { left, top, width: CARD_WIDTH, height: TASK_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }
+      }
+      onPointerDownCapture={strip ? undefined : onFocus}
+      onClick={strip ? undefined : (e) => onSelect(e.shiftKey)}
     >
       {/* ハブモードの負荷ヒートマップ。超過度合いが大きいほど濃い赤に近づく色温度で
           強調する。負のz-indexで、カード自体の地色の上・中身の文字の下に敷く */}
@@ -3187,14 +3260,14 @@ function TaskCard({
       )}
       <div
         className={`-mx-2 -mt-2 mb-1 flex shrink-0 items-center justify-between rounded-t bg-cream/10 px-2 py-1 ${
-          locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"
+          strip ? "" : locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"
         }`}
-        style={{ touchAction: "none" }}
-        title={locked ? "ロック中です(🔒で解除できます)" : "ドラッグで移動できます"}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        style={strip ? undefined : { touchAction: "none" }}
+        title={strip ? undefined : locked ? "ロック中です(🔒で解除できます)" : "ドラッグで移動できます"}
+        onPointerDown={strip ? undefined : onPointerDown}
+        onPointerMove={strip ? undefined : onPointerMove}
+        onPointerUp={strip ? undefined : onPointerUp}
+        onPointerCancel={strip ? undefined : onPointerUp}
       >
         <span className="text-[10px] text-cream/50">{running ? "🔴 計測中" : task.status === "paused" ? "一時停止中" : "未着手"}</span>
         <span className="font-display text-xs font-bold tabular-nums text-cream/80">{formatMsClock(elapsedMs)}</span>
