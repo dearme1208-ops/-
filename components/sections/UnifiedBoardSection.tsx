@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
@@ -66,12 +66,22 @@ const TODO_CARD_HEIGHT = 90;
 // 盤面を占領しすぎないよう、上限を超えた分はこれまで通りカード内スクロールになる
 const PROJECT_CARD_MIN_HEIGHT = 132;
 const PROJECT_CARD_MAX_HEIGHT = 480;
-const PROJECT_CARD_CHROME_HEIGHT = 90; // ヘッダー・期日・進捗バーなど、段階以外の固定分
+// ヘッダー・期日・進捗バーなど、段階以外の固定分(要素間のgapを含む)。
+// 足りないと最後の段階が1行分だけ見切れてしまう
+const PROJECT_CARD_CHROME_HEIGHT = 102;
 const PROJECT_CARD_STAGE_ROW_HEIGHT = 22;
 function computeProjectCardHeight(project: ProjectItem): number {
   const remaining = (project.stages ?? []).filter((st) => !isStageDone(st)).length;
   const fit = PROJECT_CARD_CHROME_HEIGHT + remaining * PROJECT_CARD_STAGE_ROW_HEIGHT;
   return Math.max(PROJECT_CARD_MIN_HEIGHT, Math.min(PROJECT_CARD_MAX_HEIGHT, fit));
+}
+// ToDoカードも案件カードと同じように、抱えているサブタスクの数だけ縦に伸ばす。
+// 件数だけを「サブタスク 2/4」と書いていた頃と違い、中身をその場で見て潰せるようにする
+const TODO_CARD_SUBTASK_ROW_HEIGHT = 22;
+const TODO_CARD_MAX_HEIGHT = 420;
+function computeTodoCardHeight(subtaskCount: number): number {
+  if (subtaskCount === 0) return TODO_CARD_HEIGHT;
+  return Math.min(TODO_CARD_MAX_HEIGHT, TODO_CARD_HEIGHT + subtaskCount * TODO_CARD_SUBTASK_ROW_HEIGHT);
 }
 const PLACEMENT_GRID = 30;
 const PLACEMENT_MARGIN = 10;
@@ -284,6 +294,28 @@ export default function UnifiedBoardSection({
     return map;
   }, [todoTasks]);
 
+  // 親タスクごとのサブタスク本体。カードの中に「直下」で並べて、対応状況と完了を
+  // その場で見られるようにするために使う(ToDoタブを開かずに盤面だけで潰せるように)
+  const subtasksByParent = useMemo(() => {
+    const map = new Map<string, TodoTask[]>();
+    for (const t of todoTasks ?? []) {
+      if (!t.parentTaskId) continue;
+      const list = map.get(t.parentTaskId) ?? [];
+      list.push(t);
+      map.set(t.parentTaskId, list);
+    }
+    for (const list of map.values()) {
+      // 未完了を先に、その中では一覧と同じ並び順(order)で出す
+      list.sort((a, b) => Number(a.completed) - Number(b.completed) || a.order - b.order);
+    }
+    return map;
+  }, [todoTasks]);
+
+  const todoCardHeight = useCallback(
+    (todoId: string) => computeTodoCardHeight((subtasksByParent.get(todoId) ?? []).length),
+    [subtasksByParent]
+  );
+
   // 新しく現れた(まだboardX/boardYを持たない)作業・ToDoカードに、既存の付箋/カードと
   // 重ならない位置を1回だけ自動で割り当てる。手動でドラッグして重ねるのはユーザーの
   // 意図なので、ここでは「位置が未確定の新規カード」だけを対象にする
@@ -306,7 +338,7 @@ export default function UnifiedBoardSection({
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
       ...todos
         .filter((t) => t.boardX !== undefined && t.boardY !== undefined)
-        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TODO_CARD_HEIGHT })),
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: todoCardHeight(t.id) })),
     ];
 
     (async () => {
@@ -316,8 +348,9 @@ export default function UnifiedBoardSection({
         await db.dailyTasks.update(t.id, { boardX: pos.x, boardY: pos.y });
       }
       for (const t of unpositionedTodos) {
-        const pos = findFreeSlot(occupied, CARD_WIDTH, TODO_CARD_HEIGHT);
-        occupied.push({ ...pos, width: CARD_WIDTH, height: TODO_CARD_HEIGHT });
+        const h = todoCardHeight(t.id);
+        const pos = findFreeSlot(occupied, CARD_WIDTH, h);
+        occupied.push({ ...pos, width: CARD_WIDTH, height: h });
         await db.todoTasks.update(t.id, { boardX: pos.x, boardY: pos.y });
       }
     })();
@@ -392,6 +425,39 @@ export default function UnifiedBoardSection({
   // 既に持っているので、そこから引き算するだけで済む
   const runningCount = tasks.filter((t) => t.status === "running").length;
   const waitingCount = Math.max(0, progressStats.totalCount - progressStats.doneCount - runningCount);
+
+  // ハブモード専用。HUDはこれまで「本日の作業」の進み具合しか映しておらず、同じ盤面に
+  // 出ているToDo・案件の状況が読み取れなかった。盤面に出ている分の期限と残作業をまとめる
+  const boardStats = useMemo(() => {
+    if (!hubMode) return null;
+    const todoOverdue = todos.filter((t) => !!t.dueDate && t.dueDate < today).length;
+    const todoDueToday = todos.filter((t) => t.dueDate === today).length;
+    let openSubtasks = 0;
+    for (const t of todos) {
+      const stat = subtaskStats.get(t.id);
+      if (stat) openSubtasks += stat.total - stat.done;
+    }
+    const projectOverdue = projects.filter((p) => p.dueDate < today).length;
+    let openStages = 0;
+    for (const p of projects) openStages += (p.stages ?? []).filter((st) => !isStageDone(st)).length;
+    // 対応状況(tag)ごとの件数。何が滞留しているのかが件数で分かるようにする
+    const tagCounts = new Map<string, number>();
+    for (const t of todos) {
+      if (!t.tag) continue;
+      tagCounts.set(t.tag, (tagCounts.get(t.tag) ?? 0) + 1);
+    }
+    const topTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    return {
+      todoCount: todos.length,
+      todoOverdue,
+      todoDueToday,
+      openSubtasks,
+      projectCount: projects.length,
+      projectOverdue,
+      openStages,
+      topTags,
+    };
+  }, [hubMode, todos, projects, today, subtaskStats]);
 
   // 付箋/本日の作業/ToDoカードを掴んだ際、他のカードの下に隠れたままにならないよう
   // 最前面に持ってくる。付箋・タスク・ToDoを1つの重なり順で扱うため、種類を問わず
@@ -543,6 +609,15 @@ export default function UnifiedBoardSection({
     if (!skipConfirm && !confirm(`「${task.title}」を完了にしますか?`)) return;
     await completeTodoTask(task, today);
   }
+  // カードの中のサブタスクは1タップで切り替える。親タスクの完了と違って取り消しが
+  // 効く(もう一度押せば戻る)ため、いちいち確認は挟まない
+  async function toggleSubtask(sub: TodoTask) {
+    if (sub.completed) {
+      await db.todoTasks.update(sub.id, { completed: false, completedAt: undefined });
+      return;
+    }
+    await completeTodoTask(sub, today);
+  }
   async function moveProject(id: string, x: number, y: number) {
     await db.projects.update(id, { boardX: x, boardY: y });
   }
@@ -590,7 +665,7 @@ export default function UnifiedBoardSection({
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
       ...todos
         .filter((t) => t.boardX !== undefined)
-        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TODO_CARD_HEIGHT })),
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: todoCardHeight(t.id) })),
       ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
     ];
     const pos = findFreeSlot(occupied, width, height);
@@ -674,12 +749,12 @@ export default function UnifiedBoardSection({
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
       ...todos
         .filter((t) => t.boardX !== undefined)
-        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TODO_CARD_HEIGHT })),
+        .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: todoCardHeight(t.id) })),
       ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
     ];
   }
   async function placeTodo(todo: TodoTask) {
-    const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, TODO_CARD_HEIGHT);
+    const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, todoCardHeight(todo.id));
     await db.todoTasks.update(todo.id, { boardX: pos.x, boardY: pos.y, boardHidden: false });
     // 置いた直後は最前面にする。他のカードが既に手前へ来ていると、
     // 置いたばかりのカードがその下に隠れて見えなくなっていたため
@@ -723,7 +798,7 @@ export default function UnifiedBoardSection({
     }
     for (const t of todos) {
       if (t.boardX === undefined || t.boardY === undefined) continue;
-      items.push({ kind: "todo", id: t.id, x: t.boardX, y: t.boardY, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, label: t.title, locked: !!t.boardLocked });
+      items.push({ kind: "todo", id: t.id, x: t.boardX, y: t.boardY, width: CARD_WIDTH, height: todoCardHeight(t.id), label: t.title, locked: !!t.boardLocked });
     }
     for (const p of projects) {
       if (p.boardX === undefined || p.boardY === undefined) continue;
@@ -1672,6 +1747,7 @@ export default function UnifiedBoardSection({
                 todo={todo}
                 today={today}
                 subtaskStat={subtaskStats.get(todo.id) ?? null}
+                subtasks={subtasksByParent.get(todo.id) ?? []}
                 zoom={zoom}
                 zIndex={memoNoteZIndex(todo.boardPinned, zIndexById[todo.id] ?? 1)}
                 selected={selectedIds.has(todo.id)}
@@ -1681,6 +1757,7 @@ export default function UnifiedBoardSection({
                 onSelect={(additive) => selectItem(todo.id, additive)}
                 onDragEnd={(id, x, y) => handleItemDragEnd("todo", id, x, y)}
                 onComplete={() => completeTodo(todo)}
+                onToggleSubtask={toggleSubtask}
                 onRemove={() => removeTodo(todo)}
                 onToggleLock={() => toggleBoardLock("todo", todo.id, !!todo.boardLocked)}
                 onTogglePin={() => toggleBoardPin("todo", todo.id, !!todo.boardPinned)}
@@ -1847,6 +1924,50 @@ export default function UnifiedBoardSection({
               <p className="font-bold text-cream">{waitingCount}</p>
             </div>
           </div>
+          {/* 同じ盤面に出ているToDo・案件の状況。作業(上のリング)だけでは
+              「期限が迫っているものが他に無いか」が分からなかった */}
+          {boardStats && (
+            <div className="mt-2 space-y-1.5 border-t border-cream/10 pt-2">
+              <div>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">TODO</p>
+                  <span className="text-[10px] tabular-nums text-cream/50">盤面 {boardStats.todoCount}</span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] tabular-nums">
+                  <span className={`rounded px-1 py-0.5 ${boardStats.todoOverdue > 0 ? "bg-alert/15 font-bold text-alert" : "bg-cream/5 text-cream/50"}`}>
+                    期限切れ {boardStats.todoOverdue}
+                  </span>
+                  <span className="rounded bg-cream/5 px-1 py-0.5 text-cream/60">本日 {boardStats.todoDueToday}</span>
+                  <span className="rounded bg-cream/5 px-1 py-0.5 text-cream/60">残サブ {boardStats.openSubtasks}</span>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">案件</p>
+                  <span className="text-[10px] tabular-nums text-cream/50">盤面 {boardStats.projectCount}</span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] tabular-nums">
+                  <span className={`rounded px-1 py-0.5 ${boardStats.projectOverdue > 0 ? "bg-alert/15 font-bold text-alert" : "bg-cream/5 text-cream/50"}`}>
+                    超過 {boardStats.projectOverdue}
+                  </span>
+                  <span className="rounded bg-cream/5 px-1 py-0.5 text-cream/60">残段階 {boardStats.openStages}</span>
+                </div>
+              </div>
+              {boardStats.topTags.length > 0 && (
+                <div>
+                  <p className="text-[9px] font-bold tracking-[0.15em] text-cream/40">対応状況</p>
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    {boardStats.topTags.map(([tag, count]) => (
+                      <span key={tag} className="flex items-center gap-0.5">
+                        <InlineStamp text={tag} />
+                        <span className="text-[10px] tabular-nums text-cream/50">{count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       </div>
@@ -2461,6 +2582,28 @@ function TagStatusBadge({ text, x, y, zIndex }: { text: string; x: number; y: nu
   );
 }
 
+// カードの行の中に置く小さなスタンプ。盤面に浮かぶTagStatusBadgeと同じ
+// 「押した判子」の見た目(二重枠・文字色と同系の下地・わずかな傾き)を、
+// 行内に収まるサイズで再現する。対応状況・完了のどちらにも使う
+function InlineStamp({ text, tone }: { text: string; tone?: "done" }) {
+  const colors = MEMO_NOTE_COLORS[stampColorForText(text)];
+  // 完了は作業が終わった印なので、対応状況のような色分けをせず常に同じ見た目にする
+  const color = tone === "done" ? "rgb(var(--cream-rgb) / 0.55)" : colors.border;
+  return (
+    <span
+      className="shrink-0 whitespace-nowrap rounded-[3px] border-2 border-double px-1 text-[8px] font-bold uppercase leading-[1.4] tracking-wide"
+      style={{
+        borderColor: color,
+        color,
+        backgroundColor: tone === "done" ? "transparent" : `${colors.border}33`,
+        transform: `rotate(${stampRotationForKey(text) / 2}deg)`,
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
 function NoteCard({
   note,
   zoom,
@@ -2797,6 +2940,7 @@ function TodoCard({
   todo,
   today,
   subtaskStat,
+  subtasks,
   zoom,
   zIndex,
   selected,
@@ -2806,6 +2950,7 @@ function TodoCard({
   onSelect,
   onDragEnd,
   onComplete,
+  onToggleSubtask,
   onRemove,
   onToggleLock,
   onTogglePin,
@@ -2816,6 +2961,8 @@ function TodoCard({
   today: string;
   /** サブタスクを持つ場合の完了/全体件数。持たない単発のタスクならnull */
   subtaskStat: { done: number; total: number } | null;
+  /** このタスクのサブタスク(未完了が先)。カードの中に直下で並べる */
+  subtasks: TodoTask[];
   zoom: number;
   zIndex: number;
   selected: boolean;
@@ -2826,6 +2973,7 @@ function TodoCard({
   onSelect: (additive: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onComplete: () => void;
+  onToggleSubtask: (sub: TodoTask) => void;
   onRemove: () => void;
   onToggleLock: () => void;
   onTogglePin: () => void;
@@ -2839,11 +2987,12 @@ function TodoCard({
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
   const x = todo.boardX ?? 40;
   const y = todo.boardY ?? 40;
+  const cardHeight = computeTodoCardHeight(subtasks.length);
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     x,
     y,
     CARD_WIDTH,
-    TODO_CARD_HEIGHT,
+    cardHeight,
     zoom,
     (nx, ny) => onDragEnd(todo.id, nx, ny),
     locked
@@ -2851,11 +3000,13 @@ function TodoCard({
   const overdue = !!todo.dueDate && todo.dueDate < today;
 
   return (
+    // ToDoは「チェックして潰していく紙片」。角を大きめに丸め、左端に細い帯を通して、
+    // 角ばった書類然とした案件カード(下のProjectCard)とひと目で見分けられるようにする
     <div
-      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
-        overdue ? "border-alert/70" : "border-cream/20"
+      className={`absolute flex flex-col gap-1 overflow-hidden rounded-xl border-2 border-l-[6px] bg-ink/90 p-2 pl-2.5 shadow-md ${
+        overdue ? "border-alert/70" : "border-cream/20 border-l-cream/45"
       } ${hubAlert ? "hub-card-alert" : ""}`}
-      style={{ left, top, width: CARD_WIDTH, height: TODO_CARD_HEIGHT, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
+      style={{ left, top, width: CARD_WIDTH, height: cardHeight, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
     >
@@ -2889,7 +3040,7 @@ function TodoCard({
         📌
       </button>
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（マイデイからも外れます。ToDo自体は消えません）" />
-      <div className="flex flex-1 items-start gap-2">
+      <div className={`flex items-start gap-2 ${subtasks.length > 0 ? "shrink-0" : "flex-1"}`}>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -2912,20 +3063,52 @@ function TodoCard({
         )}
       </div>
       {(todo.dueDate || subtaskStat) && (
-        <div className="flex flex-wrap items-center gap-x-1.5 text-[10px]">
+        <div className="flex shrink-0 flex-wrap items-center gap-x-1.5 text-[10px]">
           {todo.dueDate && (
             <span className={overdue ? "font-bold text-alert" : "text-cream/40"}>
               期日 {todo.dueDate}
               {overdue && "（超過）"}
             </span>
           )}
-          {/* サブタスクを持つ親タスクだと分かるようにする。カード自体はサブタスクを
-              置かないため、これが無いと単発のタスクと見た目上まったく区別できなかった */}
           {subtaskStat && (
-            <span className="text-cream/40">
-              サブタスク {subtaskStat.done}/{subtaskStat.total}
+            <span className="ml-auto shrink-0 tabular-nums text-cream/50">
+              {subtaskStat.done}/{subtaskStat.total}
             </span>
           )}
+        </div>
+      )}
+      {/* サブタスクを直下に並べる。案件カードの段階と同じく、その場で押して完了に
+          できるようにし、対応状況(tag)と完了はスタンプで示す */}
+      {subtasks.length > 0 && (
+        <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+          {subtasks.map((sub) => (
+            <button
+              key={sub.id}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSubtask(sub);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
+              title={sub.completed ? "未完了に戻す" : "このサブタスクを完了にする"}
+            >
+              <span
+                className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-full border text-[8px] leading-none ${
+                  sub.completed ? "border-cream/40 bg-cream/25 text-cream/70" : "border-cream/40"
+                }`}
+              >
+                {sub.completed ? "✓" : ""}
+              </span>
+              <span
+                className={`min-w-0 flex-1 truncate text-[11px] ${
+                  sub.completed ? "text-cream/35 line-through" : "text-cream/80"
+                }`}
+              >
+                {sub.title}
+              </span>
+              {sub.completed ? <InlineStamp text="済" tone="done" /> : sub.tag ? <InlineStamp text={sub.tag} /> : null}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -2996,9 +3179,11 @@ function ProjectCard({
   const nextStages = stages.filter((st) => !isStageDone(st));
 
   return (
+    // 案件は「期日まで段階を踏んでいく書類」。角を立て、上辺にアクセント色の見出し帯を
+    // 通して、角丸で左に帯が入るToDoカードとひと目で見分けられるようにする
     <div
-      className={`absolute flex flex-col gap-1 rounded-md border-2 bg-ink/90 p-2 shadow-md ${
-        overdue ? "border-alert/70" : "border-cream/20"
+      className={`absolute flex flex-col gap-1 overflow-hidden rounded-sm border-2 border-t-[5px] bg-ink/90 p-2 shadow-md ${
+        overdue ? "border-alert/70" : "border-cream/20 border-t-[rgb(var(--accent-rgb)/0.65)]"
       } ${hubAlert ? "hub-card-alert" : ""}`}
       style={{ left, top, width: CARD_WIDTH, height: cardHeight, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
