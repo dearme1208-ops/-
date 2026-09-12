@@ -1898,39 +1898,37 @@ export default function TodoSection({
                 </button>
               </div>
             )}
-            {/* 親タスクのまとまり同士がひと目で分かるよう、他のタスクとの間だけに区切り線を引く
-                (divide-yは最初の要素にはborderを付けないので、そのまま「区切り」として使える)。
-                親タスクとその自分のサブタスクの間隔(TaskBlock内部)はこれよりずっと詰めてあるので、
-                「どのサブタスクがどの親のものか」は間隔の違いだけでも読み取れる */}
-            <div className="divide-y divide-cream/15">
+            {/* 親タスクのまとまりごとに、設定タブと同じ「島」(panel)として切り出す。
+                親タスクとその自分のサブタスクは同じ島の中に入るので、どのサブタスクが
+                どの親のものかが枠だけで読み取れる */}
+            <div className="space-y-2">
               {reorderEnabled && !bulkSelectionMode ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={incompleteTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                     {incompleteTasks.map((task) => (
-                      <div key={task.id} className="py-3 first:pt-0 last:pb-0">
-                        <SortableTaskBlock
-                          task={task}
-                          subtasks={subtasksByParent.get(task.id) ?? []}
-                          listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
-                          tagOptions={tagOptions}
-                          onToggleComplete={() => toggleComplete(task)}
-                          onToggleImportant={() => toggleImportant(task)}
-                          onOpenDetail={() => setDetailTaskId(task.id)}
-                          onToggleSubtask={toggleSubtaskComplete}
-                          onUpdateSubtaskTitle={updateSubtaskTitleInline}
-                          onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
-                          onUpdateSubtaskTag={updateSubtaskTagInline}
-                          onUpdateSubtaskImage={updateSubtaskImageInline}
-                          onUpdateSubtaskMail={updateSubtaskMailInline}
-                          onReorderSubtasks={reorderSubtasks}
-                        />
-                      </div>
+                      <SortableTaskBlock
+                        key={task.id}
+                        task={task}
+                        subtasks={subtasksByParent.get(task.id) ?? []}
+                        listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                        tagOptions={tagOptions}
+                        onToggleComplete={() => toggleComplete(task)}
+                        onToggleImportant={() => toggleImportant(task)}
+                        onOpenDetail={() => setDetailTaskId(task.id)}
+                        onToggleSubtask={toggleSubtaskComplete}
+                        onUpdateSubtaskTitle={updateSubtaskTitleInline}
+                        onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                        onUpdateSubtaskTag={updateSubtaskTagInline}
+                        onUpdateSubtaskImage={updateSubtaskImageInline}
+                        onUpdateSubtaskMail={updateSubtaskMailInline}
+                        onReorderSubtasks={reorderSubtasks}
+                      />
                     ))}
                   </SortableContext>
                 </DndContext>
               ) : (
                 incompleteTasks.map((task) => (
-                  <div key={task.id} className="py-3 first:pt-0 last:pb-0">
+                  <div key={task.id} className="panel p-3">
                     <TaskBlock
                       task={task}
                       subtasks={subtasksByParent.get(task.id) ?? []}
@@ -1967,9 +1965,9 @@ export default function TodoSection({
                   {showCompleted ? "▼" : "▶"} 完了済み（{completedTasks.length}）
                 </button>
                 {showCompleted && (
-                  <div className="divide-y divide-cream/15">
+                  <div className="space-y-2">
                     {completedTasks.map((task) => (
-                      <div key={task.id} className="py-3 first:pt-0 last:pb-0">
+                      <div key={task.id} className="panel p-3">
                         <TaskBlock
                           task={task}
                           subtasks={subtasksByParent.get(task.id) ?? []}
@@ -2688,12 +2686,14 @@ function SortableTaskBlock(props: {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} className="flex items-start gap-1">
+    // 島(panel)の枠は、ドラッグ中の移動がかかるこの要素自身に付ける。
+    // 外側のラッパーに付けると、掴んで動かしたときに中身だけが動いて枠が取り残される
+    <div ref={setNodeRef} style={style} className="panel flex items-start gap-1 p-3">
       <button
         {...attributes}
         {...listeners}
         style={{ touchAction: "none" }}
-        className="mt-2 cursor-grab px-1 text-cream/30 active:cursor-grabbing"
+        className="mt-1 cursor-grab px-1 text-cream/30 active:cursor-grabbing"
         aria-label="並び替え"
       >
         ⠿
