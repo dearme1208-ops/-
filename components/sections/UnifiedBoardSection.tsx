@@ -725,11 +725,36 @@ export default function UnifiedBoardSection({
 
   // お気に入り/マスタから、その場で新しい作業を開始する。既に計測中の作業があれば
   // 一時停止してから開始する(startTaskの「既存タスクを再開」と同じ考え方)
-  async function startFromMaster(master: MasterTask) {
-    const running = tasks.find((t) => t.status === "running");
-    if (running) await pauseTask(running);
+  // 直前に終わった作業の終了時刻。完了した後で終了時刻を手で直していれば、直した後の値を使う。
+  // (stoppedAtは「止めた瞬間」を覚えているだけで編集を反映しないので、ここでは見ない。
+  //  直した実績にそのまま続けて積みたい、というのがこの機能の狙いのため)
+  const lastFinishedEndAt = useMemo(() => {
+    let latest: number | null = null;
+    for (const t of dailyTasks ?? []) {
+      if (t.isProvisional || t.status !== "done") continue;
+      const at = t.segments[t.segments.length - 1]?.end ?? t.endedAt;
+      if (at === undefined) continue;
+      if (latest === null || at > latest) latest = at;
+    }
+    return latest;
+  }, [dailyTasks]);
+
+  // 作業の足し方。すぐ計測を始める/置くだけ/直前の作業の終了時刻から遡って始める
+  type AddWorkMode = "now" | "pending" | "afterLast";
+  const [addWorkMode, setAddWorkMode] = useState<AddWorkMode>("now");
+
+  async function startFromMaster(master: MasterTask, mode: AddWorkMode = "now") {
+    // 遡って始める場合、終了時刻が未来にずれていると経過が負になるので今で頭打ちにする
+    const startAt = mode === "afterLast" ? Math.min(lastFinishedEndAt ?? Date.now(), Date.now()) : Date.now();
+    if (mode !== "pending") {
+      const running = tasks.find((t) => t.status === "running");
+      if (running) await pauseTask(running);
+    }
     const estimatedSeconds = await computeRemainingEstimatedSeconds(today, master.category, master.name, master.estimatedSeconds);
     const count = (dailyTasks ?? []).length;
+    // 遡って始めた直後は既に想定を超えている場合があるので、超過の確認は一旦抑える
+    // (超過が続けば通常どおり後で出る)
+    const retroactive = mode === "afterLast" && startAt < Date.now() - 5000;
     const task: DailyTask = {
       id: uid(),
       date: today,
@@ -738,20 +763,21 @@ export default function UnifiedBoardSection({
       category: master.category,
       name: master.name,
       estimatedSeconds,
-      status: "running",
-      segments: [{ start: Date.now() }],
+      status: mode === "pending" ? "pending" : "running",
+      segments: mode === "pending" ? [] : [{ start: startAt }],
       accumulatedMs: 0,
-      startedAt: Date.now(),
+      ...(mode === "pending" ? {} : { startedAt: startAt }),
       isSpontaneous: true,
+      ...(retroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
     };
     await db.dailyTasks.add(task);
   }
 
   // 作業マスタに無い作業を、その場で名前を打って開始する。同じ名前のマスタが
   // あればそれを使い、無ければ作ってから開始する(本日タブの自由入力と同じ扱い)
-  async function startFromFreeInput(category: string, name: string) {
+  async function startFromFreeInput(category: string, name: string, mode: AddWorkMode) {
     const master = await findOrCreateMasterTask(category.trim(), name.trim(), 0);
-    await startFromMaster(master);
+    await startFromMaster(master, mode);
   }
 
   const [showMasterPicker, setShowMasterPicker] = useState(false);
@@ -2501,7 +2527,48 @@ export default function UnifiedBoardSection({
       {showAddWork && (
         <Modal title="作業を追加" onClose={() => setShowAddWork(false)}>
           <div className="space-y-4">
+            {/* 足し方を先に決めてから作業を選ぶ。下のお気に入り・マスタ・自由入力の
+                どの入口から選んでも、ここで選んだ足し方が使われる */}
             <div>
+              <p className="mb-1.5 text-xs font-bold text-cream/70">どう足しますか？</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  className={addWorkMode === "now" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  onClick={() => setAddWorkMode("now")}
+                >
+                  ▶ すぐに開始
+                </button>
+                <button
+                  className={addWorkMode === "pending" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  onClick={() => setAddWorkMode("pending")}
+                >
+                  📋 追加のみ（未着手）
+                </button>
+                <button
+                  className={`${addWorkMode === "afterLast" ? "btn-pill" : "btn-pill-outline"} text-xs disabled:opacity-40`}
+                  onClick={() => setAddWorkMode("afterLast")}
+                  disabled={lastFinishedEndAt === null}
+                  title={
+                    lastFinishedEndAt === null
+                      ? "本日まだ完了した作業がありません"
+                      : "直前に終わった作業の終了時刻まで遡って計測を始めます"
+                  }
+                >
+                  ⏪ 前回の完了から
+                  {lastFinishedEndAt !== null && <span className="ml-1 tabular-nums opacity-70">{formatClock(lastFinishedEndAt)}</span>}
+                </button>
+              </div>
+              <p className="mt-1.5 text-[10px] text-cream/40">
+                {addWorkMode === "now" && "今この瞬間から計測を始めます。"}
+                {addWorkMode === "pending" && "未着手として置くだけで、計測は始めません。"}
+                {addWorkMode === "afterLast" &&
+                  (lastFinishedEndAt === null
+                    ? "完了した作業がないため選べません。"
+                    : `${formatClock(lastFinishedEndAt)} から続けて計測します（完了後に終了時刻を直していれば、直した後の時刻です）。空き時間が実績から抜け落ちません。`)}
+              </p>
+            </div>
+
+            <div className="border-t border-cream/10 pt-3">
               <p className="mb-1.5 text-xs font-bold text-cream/70">★ お気に入りから</p>
               {(favorites ?? []).length === 0 ? (
                 <p className="text-xs text-cream/40">お気に入りに登録された作業がありません。</p>
@@ -2512,7 +2579,7 @@ export default function UnifiedBoardSection({
                       key={f.id}
                       className="btn-pill-outline text-xs"
                       onClick={async () => {
-                        await startFromMaster(f);
+                        await startFromMaster(f, addWorkMode);
                         setShowAddWork(false);
                       }}
                     >
@@ -2556,13 +2623,13 @@ export default function UnifiedBoardSection({
                     className="btn-pill text-sm"
                     disabled={!freeCategory.trim() || !freeName.trim()}
                     onClick={async () => {
-                      await startFromFreeInput(freeCategory, freeName);
+                      await startFromFreeInput(freeCategory, freeName, addWorkMode);
                       setFreeCategory("");
                       setFreeName("");
                       setShowAddWork(false);
                     }}
                   >
-                    この作業を開始する
+                    {addWorkMode === "pending" ? "この作業を追加する" : "この作業を開始する"}
                   </button>
                 </div>
               </div>
@@ -2573,7 +2640,7 @@ export default function UnifiedBoardSection({
 
       {showMasterPicker && (
         <Modal
-          title="マスタから作業を開始"
+          title={addWorkMode === "pending" ? "マスタから作業を追加" : "マスタから作業を開始"}
           onClose={() => {
             setShowMasterPicker(false);
             setPickedMaster(null);
@@ -2587,12 +2654,12 @@ export default function UnifiedBoardSection({
                 disabled={!pickedMaster}
                 onClick={async () => {
                   if (!pickedMaster) return;
-                  await startFromMaster(pickedMaster);
+                  await startFromMaster(pickedMaster, addWorkMode);
                   setPickedMaster(null);
                   setShowMasterPicker(false);
                 }}
               >
-                この作業を開始する
+                {addWorkMode === "pending" ? "この作業を追加する" : "この作業を開始する"}
               </button>
             </div>
           </div>
