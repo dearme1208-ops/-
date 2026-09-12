@@ -1898,53 +1898,59 @@ export default function TodoSection({
                 </button>
               </div>
             )}
-            <div className="space-y-3">
+            {/* 親タスクのまとまり同士がひと目で分かるよう、他のタスクとの間だけに区切り線を引く
+                (divide-yは最初の要素にはborderを付けないので、そのまま「区切り」として使える)。
+                親タスクとその自分のサブタスクの間隔(TaskBlock内部)はこれよりずっと詰めてあるので、
+                「どのサブタスクがどの親のものか」は間隔の違いだけでも読み取れる */}
+            <div className="divide-y divide-cream/15">
               {reorderEnabled && !bulkSelectionMode ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={incompleteTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                     {incompleteTasks.map((task) => (
-                      <SortableTaskBlock
-                        key={task.id}
-                        task={task}
-                        subtasks={subtasksByParent.get(task.id) ?? []}
-                        listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
-                        tagOptions={tagOptions}
-                        onToggleComplete={() => toggleComplete(task)}
-                        onToggleImportant={() => toggleImportant(task)}
-                        onOpenDetail={() => setDetailTaskId(task.id)}
-                        onToggleSubtask={toggleSubtaskComplete}
-                        onUpdateSubtaskTitle={updateSubtaskTitleInline}
-                        onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
-                        onUpdateSubtaskTag={updateSubtaskTagInline}
-                        onUpdateSubtaskImage={updateSubtaskImageInline}
-                        onUpdateSubtaskMail={updateSubtaskMailInline}
-                        onReorderSubtasks={reorderSubtasks}
-                      />
+                      <div key={task.id} className="py-3 first:pt-0 last:pb-0">
+                        <SortableTaskBlock
+                          task={task}
+                          subtasks={subtasksByParent.get(task.id) ?? []}
+                          listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                          tagOptions={tagOptions}
+                          onToggleComplete={() => toggleComplete(task)}
+                          onToggleImportant={() => toggleImportant(task)}
+                          onOpenDetail={() => setDetailTaskId(task.id)}
+                          onToggleSubtask={toggleSubtaskComplete}
+                          onUpdateSubtaskTitle={updateSubtaskTitleInline}
+                          onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                          onUpdateSubtaskTag={updateSubtaskTagInline}
+                          onUpdateSubtaskImage={updateSubtaskImageInline}
+                          onUpdateSubtaskMail={updateSubtaskMailInline}
+                          onReorderSubtasks={reorderSubtasks}
+                        />
+                      </div>
                     ))}
                   </SortableContext>
                 </DndContext>
               ) : (
                 incompleteTasks.map((task) => (
-                  <TaskBlock
-                    key={task.id}
-                    task={task}
-                    subtasks={subtasksByParent.get(task.id) ?? []}
-                    listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
-                    tagOptions={tagOptions}
-                    onToggleComplete={() => toggleComplete(task)}
-                    onToggleImportant={() => toggleImportant(task)}
-                    onOpenDetail={() => setDetailTaskId(task.id)}
-                    onToggleSubtask={toggleSubtaskComplete}
-                    onUpdateSubtaskTitle={updateSubtaskTitleInline}
-                    onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
-                    onUpdateSubtaskTag={updateSubtaskTagInline}
-                    onUpdateSubtaskImage={updateSubtaskImageInline}
-                    onUpdateSubtaskMail={updateSubtaskMailInline}
-                    onReorderSubtasks={reorderSubtasks}
-                    selectionMode={bulkSelectionMode}
-                    selected={selectedTaskIds.has(task.id)}
-                    onToggleSelect={() => toggleTaskSelect(task.id)}
-                  />
+                  <div key={task.id} className="py-3 first:pt-0 last:pb-0">
+                    <TaskBlock
+                      task={task}
+                      subtasks={subtasksByParent.get(task.id) ?? []}
+                      listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                      tagOptions={tagOptions}
+                      onToggleComplete={() => toggleComplete(task)}
+                      onToggleImportant={() => toggleImportant(task)}
+                      onOpenDetail={() => setDetailTaskId(task.id)}
+                      onToggleSubtask={toggleSubtaskComplete}
+                      onUpdateSubtaskTitle={updateSubtaskTitleInline}
+                      onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                      onUpdateSubtaskTag={updateSubtaskTagInline}
+                      onUpdateSubtaskImage={updateSubtaskImageInline}
+                      onUpdateSubtaskMail={updateSubtaskMailInline}
+                      onReorderSubtasks={reorderSubtasks}
+                      selectionMode={bulkSelectionMode}
+                      selected={selectedTaskIds.has(task.id)}
+                      onToggleSelect={() => toggleTaskSelect(task.id)}
+                    />
+                  </div>
                 ))
               )}
               {incompleteTasks.length === 0 && (
@@ -1961,24 +1967,25 @@ export default function TodoSection({
                   {showCompleted ? "▼" : "▶"} 完了済み（{completedTasks.length}）
                 </button>
                 {showCompleted && (
-                  <div className="space-y-3">
+                  <div className="divide-y divide-cream/15">
                     {completedTasks.map((task) => (
-                      <TaskBlock
-                        key={task.id}
-                        task={task}
-                        subtasks={subtasksByParent.get(task.id) ?? []}
-                        listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
-                        tagOptions={tagOptions}
-                        onToggleComplete={() => toggleComplete(task)}
-                        onToggleImportant={() => toggleImportant(task)}
-                        onOpenDetail={() => setDetailTaskId(task.id)}
-                        onToggleSubtask={toggleSubtaskComplete}
-                        onUpdateSubtaskTitle={updateSubtaskTitleInline}
-                        onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
-                        onUpdateSubtaskTag={updateSubtaskTagInline}
-                        onUpdateSubtaskImage={updateSubtaskImageInline}
-                        onUpdateSubtaskMail={updateSubtaskMailInline}
-                      />
+                      <div key={task.id} className="py-3 first:pt-0 last:pb-0">
+                        <TaskBlock
+                          task={task}
+                          subtasks={subtasksByParent.get(task.id) ?? []}
+                          listTitle={searchActive ? listTitleById.get(task.listId) : undefined}
+                          tagOptions={tagOptions}
+                          onToggleComplete={() => toggleComplete(task)}
+                          onToggleImportant={() => toggleImportant(task)}
+                          onOpenDetail={() => setDetailTaskId(task.id)}
+                          onToggleSubtask={toggleSubtaskComplete}
+                          onUpdateSubtaskTitle={updateSubtaskTitleInline}
+                          onUpdateSubtaskDueDate={updateSubtaskDueDateInline}
+                          onUpdateSubtaskTag={updateSubtaskTagInline}
+                          onUpdateSubtaskImage={updateSubtaskImageInline}
+                          onUpdateSubtaskMail={updateSubtaskMailInline}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
