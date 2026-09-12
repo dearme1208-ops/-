@@ -343,6 +343,8 @@ export default function UnifiedBoardSection({
     );
   }, [todos, tagFilter, subtasksByParent]);
 
+  const visibleTodoIds = useMemo(() => new Set(visibleTodos.map((t) => t.id)), [visibleTodos]);
+
   const todoCardHeight = useCallback(
     (todoId: string) => computeTodoCardHeight((subtasksByParent.get(todoId) ?? []).length),
     [subtasksByParent]
@@ -856,7 +858,9 @@ export default function UnifiedBoardSection({
       return { x: it.x + it.width / 2, y: it.y + it.height / 2 };
     }
     const lines: { key: string; x1: number; y1: number; x2: number; y2: number }[] = [];
-    for (const t of todos) {
+    // 対応状況で絞り込んでいる間は、盤面から消えているToDoへ線を引かない
+    // (引くと、何も無いところへ伸びる線だけが残ってしまう)
+    for (const t of visibleTodos) {
       if (!t.projectId) continue;
       const from = byKey.get(`todo:${t.id}`);
       const to = byKey.get(`project:${t.projectId}`);
@@ -869,7 +873,7 @@ export default function UnifiedBoardSection({
       const from = byKey.get(`task:${t.id}`);
       if (!from) continue;
       if (t.todoTaskId) {
-        const to = byKey.get(`todo:${t.todoTaskId}`);
+        const to = visibleTodoIds.has(t.todoTaskId) ? byKey.get(`todo:${t.todoTaskId}`) : undefined;
         if (to) {
           const c1 = center(from);
           const c2 = center(to);
@@ -887,7 +891,7 @@ export default function UnifiedBoardSection({
       }
     }
     return lines;
-  }, [hubMode, boardItems, todos, tasks]);
+  }, [hubMode, boardItems, visibleTodos, visibleTodoIds, tasks]);
 
   function moveBoardItemByKind(kind: BoardItemKind, id: string, x: number, y: number) {
     if (kind === "task") return moveTask(id, x, y);
@@ -1887,6 +1891,11 @@ export default function UnifiedBoardSection({
             ))}
             {/* スタンプは付箋やカードに重ねてくっ付けるものなので、DOM上でも一番手前(最後)に描く */}
             {(stamps ?? []).map((stamp) => {
+              // 対応状況で絞り込んで消えたToDoにくっ付いているスタンプは、一緒に隠す。
+              // 出したままだと、カードの無いところへスタンプだけが取り残される
+              if (stamp.attachedToKind === "todo" && stamp.attachedToId && !visibleTodoIds.has(stamp.attachedToId)) {
+                return null;
+              }
               const pos = stampTargetPosition(stamp);
               return (
                 <StampElement
