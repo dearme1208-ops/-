@@ -81,6 +81,10 @@ type DisplayMode = "list" | "gantt" | "calendar" | "kanban" | "tree";
 // 選んだ項目でその都度並べ替える(手動の並び順自体は保持され、いつでも「手動」に戻せる)
 type TodoSortMode = "manual" | "category" | "title" | "customer" | "dueDate" | "important" | "status";
 
+// タスク1件分の「島」。一覧全体が既にpanelで囲まれているため、島にpanelをそのまま使うと
+// 背景と同じ色になって境目が見えない。cream側へ一段持ち上げて、囲いの中でも浮いて見せる
+const TASK_ISLAND_CLASS = "rounded-2xl border border-cream/20 bg-cream/[0.05] p-3 shadow-panel";
+
 const TODO_SORT_MODE_LABELS: Record<TodoSortMode, string> = {
   manual: "手動(ドラッグ&ドロップ)",
   category: "分類名順",
@@ -687,8 +691,11 @@ export default function TodoSection({
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
 
-  const reorderEnabled =
-    displayMode === "list" && !searchActive && view !== "planned" && view !== "overdue" && sortMode === "manual";
+  // 手で並べ替えられる場所かどうか(並び替え設定は問わない)。
+  // 期日順などで並んでいる最中は、手で動かしても次の再描画で元の位置へ戻ってしまうため、
+  // 実際にハンドルを出すのは下のreorderEnabled(手動のとき)だけに絞る
+  const reorderAvailableHere = displayMode === "list" && !searchActive && view !== "planned" && view !== "overdue";
+  const reorderEnabled = reorderAvailableHere && sortMode === "manual";
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -1901,6 +1908,18 @@ export default function TodoSection({
             {/* 親タスクのまとまりごとに、設定タブと同じ「島」(panel)として切り出す。
                 親タスクとその自分のサブタスクは同じ島の中に入るので、どのサブタスクが
                 どの親のものかが枠だけで読み取れる */}
+            {/* 親タスクを掴むためのハンドル(⠿)は手動並び替えのときにしか出せない
+                (期日順などで並んでいる最中に手で動かしても、次の再描画で元の位置へ戻ってしまうため)。
+                サブタスク側のハンドルは常に出ているので、黙って消えていると
+                「親はどこを掴むのか」が分からない。その場で切り替えられる形で理由を添える */}
+            {reorderAvailableHere && !bulkSelectionMode && sortMode !== "manual" && incompleteTasks.length > 1 && (
+              <p className="mb-2 text-xs text-cream/50">
+                並び替えが「{TODO_SORT_MODE_LABELS[sortMode]}」のため、親タスクはドラッグで動かせません。
+                <button className="ml-1 underline hover:text-cream/80" onClick={() => setSortModeStr("manual")}>
+                  手動に切り替える
+                </button>
+              </p>
+            )}
             <div className="space-y-2">
               {reorderEnabled && !bulkSelectionMode ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1928,7 +1947,7 @@ export default function TodoSection({
                 </DndContext>
               ) : (
                 incompleteTasks.map((task) => (
-                  <div key={task.id} className="panel p-3">
+                  <div key={task.id} className={TASK_ISLAND_CLASS}>
                     <TaskBlock
                       task={task}
                       subtasks={subtasksByParent.get(task.id) ?? []}
@@ -1967,7 +1986,7 @@ export default function TodoSection({
                 {showCompleted && (
                   <div className="space-y-2">
                     {completedTasks.map((task) => (
-                      <div key={task.id} className="panel p-3">
+                      <div key={task.id} className={TASK_ISLAND_CLASS}>
                         <TaskBlock
                           task={task}
                           subtasks={subtasksByParent.get(task.id) ?? []}
@@ -2686,9 +2705,9 @@ function SortableTaskBlock(props: {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    // 島(panel)の枠は、ドラッグ中の移動がかかるこの要素自身に付ける。
+    // 島の枠は、ドラッグ中の移動がかかるこの要素自身に付ける。
     // 外側のラッパーに付けると、掴んで動かしたときに中身だけが動いて枠が取り残される
-    <div ref={setNodeRef} style={style} className="panel flex items-start gap-1 p-3">
+    <div ref={setNodeRef} style={style} className={`${TASK_ISLAND_CLASS} flex items-start gap-1`}>
       <button
         {...attributes}
         {...listeners}
