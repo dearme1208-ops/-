@@ -334,8 +334,16 @@ export default function UnifiedBoardSection({
       }
       for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
     }
+    // 案件も、まだ通過していない段階に付いている対応状況で数える
+    for (const p of projects) {
+      const tags = new Set<string>();
+      for (const st of p.stages ?? []) {
+        if (st.tag && !isStageDone(st)) tags.add(st.tag);
+      }
+      for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [todos, subtasksByParent]);
+  }, [todos, subtasksByParent, projects]);
 
   const [tagFilterRaw, setTagFilterRaw] = useState<string | null>(null);
   // 絞り込み中の対応状況が盤面から消えた(最後の1件を完了した等)場合に、
@@ -351,6 +359,12 @@ export default function UnifiedBoardSection({
   }, [todos, tagFilter, subtasksByParent]);
 
   const visibleTodoIds = useMemo(() => new Set(visibleTodos.map((t) => t.id)), [visibleTodos]);
+  // 案件も、未通過の段階に絞り込み中の対応状況が付いているものだけ残す
+  const visibleProjects = useMemo(() => {
+    if (!tagFilter) return projects;
+    return projects.filter((p) => (p.stages ?? []).some((st) => st.tag === tagFilter && !isStageDone(st)));
+  }, [projects, tagFilter]);
+  const visibleProjectIds = useMemo(() => new Set(visibleProjects.map((p) => p.id)), [visibleProjects]);
 
   const todoCardHeight = useCallback(
     (todoId: string) => computeTodoCardHeight((subtasksByParent.get(todoId) ?? []).length),
@@ -486,6 +500,13 @@ export default function UnifiedBoardSection({
     for (const t of todos) {
       if (!t.tag) continue;
       tagCounts.set(t.tag, (tagCounts.get(t.tag) ?? 0) + 1);
+    }
+    // 案件の未通過の段階に付いている対応状況も同じ内訳に入れる
+    for (const p of projects) {
+      for (const st of p.stages ?? []) {
+        if (!st.tag || isStageDone(st)) continue;
+        tagCounts.set(st.tag, (tagCounts.get(st.tag) ?? 0) + 1);
+      }
     }
     const topTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
     return {
@@ -1037,7 +1058,7 @@ export default function UnifiedBoardSection({
     for (const t of visibleTodos) {
       if (!t.projectId) continue;
       const from = byKey.get(`todo:${t.id}`);
-      const to = byKey.get(`project:${t.projectId}`);
+      const to = visibleProjectIds.has(t.projectId) ? byKey.get(`project:${t.projectId}`) : undefined;
       if (!from || !to) continue;
       const c1 = center(from);
       const c2 = center(to);
@@ -1056,7 +1077,7 @@ export default function UnifiedBoardSection({
         }
       }
       if (t.projectId) {
-        const to = byKey.get(`project:${t.projectId}`);
+        const to = visibleProjectIds.has(t.projectId) ? byKey.get(`project:${t.projectId}`) : undefined;
         if (to) {
           const c1 = center(from);
           const c2 = center(to);
@@ -1065,7 +1086,7 @@ export default function UnifiedBoardSection({
       }
     }
     return lines;
-  }, [hubMode, boardItems, visibleTodos, visibleTodoIds, boardTasks]);
+  }, [hubMode, boardItems, visibleTodos, visibleTodoIds, visibleProjectIds, boardTasks]);
 
   function moveBoardItemByKind(kind: BoardItemKind, id: string, x: number, y: number) {
     if (kind === "task") return moveTask(id, x, y);
@@ -2123,7 +2144,7 @@ export default function UnifiedBoardSection({
                   zIndex={TAG_BADGE_Z_BASE + (zIndexById[todo.id] ?? 1)}
                 />
               ))}
-            {projects.map((project) => (
+            {visibleProjects.map((project) => (
               <ProjectCard
                 key={project.id}
                 project={project}
@@ -2149,6 +2170,9 @@ export default function UnifiedBoardSection({
               // 対応状況で絞り込んで消えたToDoにくっ付いているスタンプは、一緒に隠す。
               // 出したままだと、カードの無いところへスタンプだけが取り残される
               if (stamp.attachedToKind === "todo" && stamp.attachedToId && !visibleTodoIds.has(stamp.attachedToId)) {
+                return null;
+              }
+              if (stamp.attachedToKind === "project" && stamp.attachedToId && !visibleProjectIds.has(stamp.attachedToId)) {
                 return null;
               }
               const pos = stampTargetPosition(stamp);
@@ -4259,6 +4283,8 @@ function ProjectCard({
             >
               <span className="h-3 w-3 shrink-0 rounded-sm border border-cream/40" />
               <span className="min-w-0 flex-1 truncate text-[11px] text-cream/80">{st.title}</span>
+              {/* 段階の対応状況。ToDoのサブタスクと同じ判子の見た目で揃える */}
+              {st.tag && <InlineStamp text={st.tag} />}
               {st.dueDate && (
                 <span className={`shrink-0 text-[9px] ${st.dueDate < today ? "text-alert" : "text-cream/35"}`}>{st.dueDate}</span>
               )}

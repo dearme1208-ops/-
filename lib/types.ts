@@ -174,6 +174,7 @@ export interface ProjectStage {
   completed: boolean;
   completedAt?: number; // 完了にした時刻(epoch ms)。レポートで「いつ完了したか」を区別するために使う
   dueDate?: string; // YYYY-MM-DD（任意）
+  tag?: string; // 対応状況（社内確認中・客先確認中 など）。ToDoのtagと同じ選択肢を使う
   targetCount?: number; // 目標件数（見積り10件・チーム移籍20件など、件数で進捗管理したい場合に設定）
   completedCount?: number; // targetCountを設定した場合の、これまでの完了件数
   imageDataUrl?: string; // この段階に添付した画像。1枚のみ、data URLとしてそのまま保存する

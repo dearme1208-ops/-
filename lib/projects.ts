@@ -29,10 +29,11 @@ function mergeStages(existingStages: ProjectStage[] | undefined, csvStages: Pars
       targetCount: s.targetCount,
       completed: existing?.completed ?? false,
       completedCount: existing?.completedCount,
-      // 完了時刻と添付画像はCSVに載らない情報なので、取り込みで消さずに引き継ぐ。
+      // 完了時刻・添付画像・対応状況はCSVに載らない情報なので、取り込みで消さずに引き継ぐ。
       // completedAtが消えると「何番目に完了したか」が分からなくなってしまう
       completedAt: existing?.completedAt,
       imageDataUrl: existing?.imageDataUrl,
+      tag: existing?.tag,
     };
   });
 }

@@ -14,6 +14,8 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+import { useSetting } from "@/lib/settings";
+import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import type { ProjectItem, ProjectStage } from "@/lib/types";
 import { computeProjectProgress } from "@/lib/projectStage";
 import { formatHms, parseHmsToSeconds } from "@/lib/time";
@@ -25,18 +27,22 @@ function StageRow({
   onToggle,
   onSetTitle,
   onSetDueDate,
+  onSetTag,
   onSetCompletedCount,
   onSetTargetCount,
   onSetImage,
   onSetMail,
   onRemove,
+  tagOptions,
   dragHandleProps,
 }: {
   stage: ProjectStage;
   onToggle: (id: string) => void;
   onSetTitle: (id: string, value: string) => void;
   onSetDueDate: (id: string, value: string) => void;
+  onSetTag: (id: string, value: string) => void;
   onSetCompletedCount: (id: string, value: string) => void;
+  tagOptions: string[];
   onSetTargetCount: (id: string, value: string) => void;
   onSetImage: (id: string, imageDataUrl: string | undefined) => void;
   onSetMail: (id: string, mail: MailAttachmentFields | undefined) => void;
@@ -183,6 +189,22 @@ function StageRow({
           件数管理にする
         </button>
       )}
+      <select
+        value={stage.tag ?? ""}
+        onChange={(e) => onSetTag(stage.id, e.target.value)}
+        title="対応状況"
+        className={`w-28 shrink-0 rounded-md border px-1 py-1 text-[11px] outline-none ${
+          stage.tag ? "border-cream/30 bg-cream/10 font-bold text-cream/90" : "border-cream/20 bg-ink text-cream/40"
+        }`}
+      >
+        <option value="">対応状況なし</option>
+        {tagOptions.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+        {stage.tag && !tagOptions.includes(stage.tag) && <option value={stage.tag}>{stage.tag}</option>}
+      </select>
       <input
         type="date"
         value={stage.dueDate ?? ""}
@@ -225,11 +247,13 @@ function SortableStageRow(props: {
   onToggle: (id: string) => void;
   onSetTitle: (id: string, value: string) => void;
   onSetDueDate: (id: string, value: string) => void;
+  onSetTag: (id: string, value: string) => void;
   onSetCompletedCount: (id: string, value: string) => void;
   onSetTargetCount: (id: string, value: string) => void;
   onSetImage: (id: string, imageDataUrl: string | undefined) => void;
   onSetMail: (id: string, mail: MailAttachmentFields | undefined) => void;
   onRemove: (id: string) => void;
+  tagOptions: string[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.stage.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -298,6 +322,14 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   }
   function setStageDueDate(id: string, value: string) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, dueDate: value || undefined } : s)));
+  }
+  // 段階の対応状況は、ToDoで使っている選択肢をそのまま共有する
+  // (社内確認中・客先確認中 など、同じ語彙で揃えたいため)
+  const [stageTagPresetsStr] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const stageTagOptions = parsePresetList(stageTagPresetsStr);
+
+  function setStageTag(id: string, value: string) {
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, tag: value || undefined } : s)));
   }
   function setStageImage(id: string, imageDataUrl: string | undefined) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, imageDataUrl } : s)));
@@ -520,11 +552,13 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
                     onToggle={toggleStage}
                     onSetTitle={setStageTitle}
                     onSetDueDate={setStageDueDate}
+                    onSetTag={setStageTag}
                     onSetCompletedCount={setStageCompletedCount}
                     onSetTargetCount={setStageTargetCount}
                     onSetImage={setStageImage}
                     onSetMail={setStageMail}
                     onRemove={removeStage}
+                    tagOptions={stageTagOptions}
                   />
                 ))}
               </SortableContext>
