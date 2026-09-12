@@ -2378,7 +2378,7 @@ export default function UnifiedBoardSection({
             return (
               <div className="space-y-2">
                 <p className="text-sm text-cream/80">
-                  <span className="text-cream/50">{project.title}</span> の <b className="text-cream">{stage?.title}</b> を通過にします。
+                  案件 <span className="text-cream/50">{project.title}</span> の段階 <b className="text-cream">{stage?.title}</b> を通過にします。
                 </p>
                 {previousOpen.length > 0 && (
                   <div className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2">
@@ -4200,8 +4200,20 @@ function ProjectCard({
         📌
       </button>
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（案件自体は消えません）" />
-      <div className="flex items-baseline gap-1">
-        <span className="shrink-0 text-[9px] uppercase tracking-wider text-cream/35">案件</span>
+      <div className="flex items-center gap-1.5">
+        {/* 種類の明示。ひと目で案件のカードだと分かるよう、上辺のアクセント帯と
+            同じ色のバッジにする(以前は9pxの薄い文字で、ほぼ読めなかった) */}
+        <span
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none tracking-wider"
+          style={{
+            backgroundColor: "rgb(var(--accent-rgb) / 0.2)",
+            borderWidth: 1,
+            borderColor: "rgb(var(--accent-rgb) / 0.5)",
+            color: "rgb(var(--accent-rgb))",
+          }}
+        >
+          案件
+        </span>
         {onOpenDetail ? (
           <button
             onClick={onOpenDetail}
