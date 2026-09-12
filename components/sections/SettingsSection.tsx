@@ -435,8 +435,14 @@ export default function SettingsSection() {
     ) {
       return;
     }
-    const { restoredRows } = await importBackup(data);
-    setBackupStatus(`復元しました（${restoredRows}件のデータ）。エクスポート日時: ${data.exportedAt}`);
+    const { restoredRows, skippedTables } = await importBackup(data);
+    const skippedNote =
+      skippedTables.length > 0
+        ? `（このアプリが対応していない${skippedTables.length}種類のデータは復元できませんでした。アプリを最新にしてからやり直してください）`
+        : "";
+    setBackupStatus(
+      `復元しました（${restoredRows}件のデータ）。エクスポート日時: ${data.exportedAt}${skippedNote}`
+    );
   }
 
   async function exportArchive() {

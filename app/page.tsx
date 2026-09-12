@@ -12,6 +12,7 @@ import Modal from "@/components/ui/Modal";
 import ThemeInit from "@/components/ThemeInit";
 import VisualModeInit from "@/components/VisualModeInit";
 import AccessibilityInit from "@/components/AccessibilityInit";
+import StoragePersistInit from "@/components/StoragePersistInit";
 import LobotomyOverrunWatcher from "@/components/LobotomyOverrunWatcher";
 import ToastHost from "@/components/ui/ToastHost";
 import ConfettiHost from "@/components/ui/ConfettiHost";
@@ -165,6 +166,7 @@ export default function HomePage() {
       <ThemeInit />
       <VisualModeInit />
       <AccessibilityInit />
+      <StoragePersistInit />
       <LobotomyOverrunWatcher />
       <ToastHost />
       <ConfettiHost />
