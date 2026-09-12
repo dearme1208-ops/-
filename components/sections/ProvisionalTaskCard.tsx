@@ -30,7 +30,8 @@ export default function ProvisionalTaskCard({
     name: string,
     estimatedSeconds: number,
     masterTaskId: string | undefined,
-    hasPlan: boolean
+    hasPlan: boolean,
+    isTrouble?: boolean
   ) => void | Promise<void>;
   onFinishAsIs: () => void | Promise<void>;
 }) {
@@ -62,6 +63,11 @@ export default function ProvisionalTaskCard({
     const estimatedSeconds = parseHmsToSeconds(estimate);
     const master = await findOrCreateMasterTask(category.trim(), name.trim(), estimatedSeconds);
     await onAssignNew(category.trim(), name.trim(), estimatedSeconds, master.id, setPlan);
+  }
+
+  // この未計測時間を「トラブル対応」として確定する(想定時間なし、予定なしで即確定)
+  async function assignTrouble() {
+    await onAssignNew("トラブル対応", `トラブル ${formatClock(now)}`, 0, undefined, false, true);
   }
 
   return (
@@ -110,6 +116,12 @@ export default function ProvisionalTaskCard({
             onClick={() => setMode("free")}
           >
             自由入力
+          </button>
+          <button
+            className="btn-pill-outline border-alert text-xs text-alert hover:bg-alert/10"
+            onClick={assignTrouble}
+          >
+            🚨 トラブル対応として割り当てる
           </button>
         </div>
 
