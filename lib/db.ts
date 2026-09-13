@@ -20,6 +20,7 @@ import type {
   Client,
   BoardShape,
   BoardStamp,
+  WbsNode,
 } from "./types";
 
 export class KouteiDB extends Dexie {
@@ -43,6 +44,7 @@ export class KouteiDB extends Dexie {
   clients!: Table<Client, string>;
   boardShapes!: Table<BoardShape, string>;
   boardStamps!: Table<BoardStamp, string>;
+  wbsNodes!: Table<WbsNode, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -235,6 +237,30 @@ export class KouteiDB extends Dexie {
       clients: "id, order",
       boardShapes: "id, boardId, order",
       boardStamps: "id, boardId, order",
+    });
+    // WBS(作業分解構成図)用のテーブルを追加。案件1件に対して複数のWbsNodeがぶら下がる
+    this.version(14).stores({
+      masterTasks: "id, category, name, isFavorite",
+      templateItems: "id, weekday, order",
+      dailyTasks: "id, date, status, order",
+      records: "id, date, category, name, masterTaskId, excludedFromStats",
+      settings: "key",
+      projects: "id, dueDate, createdAt",
+      todoLists: "id, order",
+      todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+      conditionLogs: "id, date, loggedAt",
+      geoPlaces: "id, createdAt",
+      weatherForecasts: "id, placeId, date",
+      weatherPlaces: "id, createdAt",
+      mandalaCharts: "id, createdAt",
+      memoBoards: "id, order",
+      memoNotes: "id, boardId, order",
+      memoStrokes: "id, boardId, createdAt",
+      memoConnectors: "id, boardId, fromNoteId, toNoteId",
+      clients: "id, order",
+      boardShapes: "id, boardId, order",
+      boardStamps: "id, boardId, order",
+      wbsNodes: "id, projectId, parentId, order",
     });
   }
 }

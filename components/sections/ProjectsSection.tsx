@@ -32,6 +32,7 @@ import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import ProjectAnalysisDialog from "@/components/sections/ProjectAnalysisDialog";
+import WbsDialog from "@/components/sections/WbsDialog";
 import ProjectPPMChart from "@/components/sections/ProjectPPMChart";
 import Modal from "@/components/ui/Modal";
 import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
@@ -120,6 +121,7 @@ export default function ProjectsSection({
   const tagOptions = parsePresetList(tagPresetsStr);
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [analysisProject, setAnalysisProject] = useState<ProjectItem | null>(null);
+  const [wbsProject, setWbsProject] = useState<ProjectItem | null>(null);
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
   const [stageAddTarget, setStageAddTarget] = useState<{ project: ProjectItem; stage: ProjectStage } | null>(null);
   const [stageAddStartNow, setStageAddStartNow] = useState(false);
@@ -857,6 +859,7 @@ export default function ProjectsSection({
             onToggleComplete={() => toggleComplete(project)}
             onEdit={() => setEditingProject(project)}
             onAnalysis={() => setAnalysisProject(project)}
+            onWbs={() => setWbsProject(project)}
             onDelete={() => deleteProject(project)}
             onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
             onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
@@ -896,6 +899,7 @@ export default function ProjectsSection({
                   onToggleComplete={() => toggleComplete(project)}
                   onEdit={() => setEditingProject(project)}
                   onAnalysis={() => setAnalysisProject(project)}
+                  onWbs={() => setWbsProject(project)}
                   onDelete={() => deleteProject(project)}
                   onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
                   onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
@@ -1086,6 +1090,7 @@ export default function ProjectsSection({
 
       {editingProject && <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
       {analysisProject && <ProjectAnalysisDialog project={analysisProject} onClose={() => setAnalysisProject(null)} />}
+      {wbsProject && <WbsDialog project={wbsProject} onClose={() => setWbsProject(null)} />}
 
       {addToTodayTarget && (
         <CategoryWorkNameDialog
@@ -1210,6 +1215,7 @@ function ProjectRow({
   onToggleComplete,
   onEdit,
   onAnalysis,
+  onWbs,
   onDelete,
   onToggleStage,
   onAddStageToToday,
@@ -1231,6 +1237,7 @@ function ProjectRow({
   onToggleComplete: () => void;
   onEdit: () => void;
   onAnalysis: () => void;
+  onWbs: () => void;
   onDelete: () => void;
   onToggleStage: (stageId: string) => void;
   onAddStageToToday: (stage: ProjectStage) => void;
@@ -1622,6 +1629,9 @@ function ProjectRow({
         </button>
         <button className="text-xs text-cream/60 hover:text-cream" onClick={onAnalysis} title="SWOT・BSC・3C分析">
           分析
+        </button>
+        <button className="text-xs text-cream/60 hover:text-cream" onClick={onWbs} title="WBS(作業分解構成図)">
+          WBS
         </button>
         <button className="text-xs text-alert" onClick={onDelete}>
           削除

@@ -239,6 +239,30 @@ export interface ProjectItem {
   mailSubject?: string; // 開かなくても件名だけで分かるよう、添付時にファイルから抽出して保持する
 }
 
+// ---- WBS(作業分解構成図) ----
+// 案件の段階(ProjectStage)がフラットな1階層のマイルストーン管理なのに対し、こちらは
+// 案件1件の中身を任意の深さの親子構造(工程→タスク→サブタスク→…)に分解し、
+// 開始日・終了日・進捗率・先行タスク(依存関係)まで持たせた、より本格的な工程管理のための構造。
+// 表示上のWBS番号(1 / 1.1 / 1.1.2 …)は保存せず、常にその時点の並び順・階層から
+// 計算して出す(並び替え・削除のたびに手で振り直す必要が無いようにするため)
+export interface WbsNode {
+  id: string;
+  projectId: string; // 属する案件(ProjectItem.id)
+  parentId?: string; // 親ノード。未設定なら最上位(工程)
+  order: number; // 同じ親を持つノード同士の並び順
+  title: string;
+  startDate?: string; // 開始日 YYYY-MM-DD
+  endDate?: string; // 終了日 YYYY-MM-DD(startDateのみで終了日が無ければ1日のタスクとして扱う)
+  progress: number; // 進捗率0〜100。子を持つノードでは表示・集計のたびに子から自動計算した値で
+  // 上書きされ、この保存値自体は参照されない(葉ノードだけがこの値をそのまま使う)
+  predecessorIds?: string[]; // 先行タスク(他のWbsNode.id)。両方とも開始日・終了日が
+  // 揃っている場合に、ガントチャート上で終了→開始の依存線として描画される
+  assignee?: string; // 担当者(自由入力、任意)
+  collapsed?: boolean; // ツリー表示でこのノードの子を畳んでいるか
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ---- ToDo ----
 
 export interface TodoList {
