@@ -332,3 +332,73 @@ export async function applyWbsImport(
   });
   return { created: rows.length };
 }
+
+// ---- 手入力(アウトライン貼り付け)からの取り込み ----
+// CSVはExcel等の既存ファイルからの移行向けだが、手元に何も無く直接タイプ/貼り付けたい
+// 場合のために、コードも日付も書かない「ただの階層付き箇条書き」からも取り込めるようにする。
+// Tab(またはスペース)でインデントするだけで子になり、日付・進捗率・先行タスク・担当者は
+// 取り込み後に各項目の詳細ダイアログから入力する想定(この経路では常に空で作る)。
+// 生成した行はapplyWbsImportにそのまま渡せる(ParsedWbsRowと同じ形)ので、
+// 取り込み確認・置き換え/追記の選択画面はCSVインポートと完全に共有できる
+
+function stripOutlineBullet(s: string): string {
+  return s.replace(/^[-*・□■✓✔☐]\s*/, "").replace(/^\d+[.)、]\s*/, "");
+}
+
+/** 行頭のインデント量を「レベル」に変換する。タブはそのまま1レベル、スペースは
+ * ファイル内で最初に見つかったインデント幅(既定2)を1レベルとして数える */
+function outlineDepthOf(line: string, spaceUnit: number): number {
+  let i = 0;
+  let depth = 0;
+  while (i < line.length) {
+    if (line[i] === "\t") {
+      depth++;
+      i++;
+    } else if (spaceUnit > 0 && line.slice(i, i + spaceUnit) === " ".repeat(spaceUnit)) {
+      depth++;
+      i += spaceUnit;
+    } else {
+      break;
+    }
+  }
+  return depth;
+}
+
+export function parseWbsOutlineText(text: string): ParsedWbsResult {
+  const lines = text.split(/\r\n|\n/);
+  const errors: string[] = [];
+
+  let spaceUnit = 2;
+  for (const line of lines) {
+    const m = /^( +)\S/.exec(line);
+    if (m && !line.startsWith("\t")) {
+      spaceUnit = m[1].length;
+      break;
+    }
+  }
+
+  const rows: ParsedWbsRow[] = [];
+  // counters[depth] = そのdepthでこれまでに振った通し番号。codeStack[depth] = そのdepthで
+  // 直近に振ったコード(1つ浅いdepthの行が来るたびに、それより深い分は打ち切って振り直す)
+  const counters: number[] = [];
+  const codeStack: string[] = [];
+  for (const raw of lines) {
+    if (!raw.trim()) continue;
+    const depth = outlineDepthOf(raw, spaceUnit);
+    const title = stripOutlineBullet(raw.trim());
+    if (!title) continue;
+
+    counters[depth] = (counters[depth] ?? 0) + 1;
+    counters.length = depth + 1;
+    const parentCode = depth > 0 ? codeStack[depth - 1] : undefined;
+    if (depth > 0 && !parentCode) {
+      errors.push(`"${title}" の親にあたる行が見当たらないため、最上位として取り込みます`);
+    }
+    const code = parentCode ? `${parentCode}.${counters[depth]}` : String(counters[depth]);
+    codeStack[depth] = code;
+    codeStack.length = depth + 1;
+
+    rows.push({ code, parentCode, title, progress: 0, predecessorCodes: [] });
+  }
+  return { rows, errors };
+}

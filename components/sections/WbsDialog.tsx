@@ -11,6 +11,7 @@ import {
   flattenWbsTree,
   getDescendantIds,
   parseWbsCsv,
+  parseWbsOutlineText,
   wbsCsvTemplate,
   wbsNodesToCsv,
   type ParsedWbsResult,
@@ -58,6 +59,8 @@ export default function WbsDialog({ project, onClose }: { project: ProjectItem; 
   const [importResult, setImportResult] = useState("");
   const [pendingImport, setPendingImport] = useState<ParsedWbsResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [outlineText, setOutlineText] = useState("");
 
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -242,6 +245,12 @@ export default function WbsDialog({ project, onClose }: { project: ProjectItem; 
     setImportResult("");
     setPendingImport(parseWbsCsv(text));
   }
+  function submitOutline() {
+    setImportResult("");
+    setPendingImport(parseWbsOutlineText(outlineText));
+    setOutlineOpen(false);
+    setOutlineText("");
+  }
   async function confirmImport(mode: "replace" | "append") {
     if (!pendingImport) return;
     const { created } = await applyWbsImport(project.id, pendingImport.rows, mode);
@@ -297,6 +306,9 @@ export default function WbsDialog({ project, onClose }: { project: ProjectItem; 
                 e.target.value = "";
               }}
             />
+            <button className="btn-pill-outline text-xs" onClick={() => setOutlineOpen(true)}>
+              手入力で追加
+            </button>
             <button className="btn-pill text-xs" onClick={addRootNode}>
               ＋ 最上位に追加
             </button>
@@ -469,6 +481,31 @@ export default function WbsDialog({ project, onClose }: { project: ProjectItem; 
               </button>
               <button className="btn-pill-danger text-sm" onClick={performDelete}>
                 削除する
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {outlineOpen && (
+        <Modal title="手入力でWBSを追加" onClose={() => setOutlineOpen(false)}>
+          <div className="space-y-3 text-sm text-cream/80">
+            <p className="text-xs text-cream/50">
+              1行に1項目、Tabまたは半角スペースでインデントすると子になります。ファイルを用意しなくてもここに直接タイプ・貼り付けできます。日付・進捗率・先行タスク・担当者は取り込んだ後、各項目の「✎ 詳細を編集」から入力してください。
+            </p>
+            <textarea
+              value={outlineText}
+              onChange={(e) => setOutlineText(e.target.value)}
+              placeholder={"要件定義\n\tヒアリング\n\t要件確定\n設計\n\t基本設計\n\t詳細設計"}
+              rows={10}
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 font-mono text-xs text-cream"
+            />
+            <div className="flex justify-end gap-2">
+              <button className="btn-pill-outline text-sm" onClick={() => setOutlineOpen(false)}>
+                キャンセル
+              </button>
+              <button className="btn-pill text-sm" disabled={!outlineText.trim()} onClick={submitOutline}>
+                次へ
               </button>
             </div>
           </div>
