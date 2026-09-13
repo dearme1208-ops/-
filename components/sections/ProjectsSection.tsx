@@ -17,6 +17,7 @@ import {
   toggleProjectStage as toggleProjectStageShared,
 } from "@/lib/projectStage";
 import { useSetting } from "@/lib/settings";
+import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import { cardOverrunClass, useVisualMode, type ThemedMode } from "@/lib/theme";
 import {
   daysBetweenDateStrs,
@@ -113,6 +114,10 @@ export default function ProjectsSection({
   // 設定タブまで行かずにここで直接ひっくり返せるようにしてある
   const [showCompletedStagesStr, setShowCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
   const showCompletedStages = showCompletedStagesStr === "true";
+  // 案件・段階の対応状況は、ToDoで使っている選択肢をそのまま共有する
+  // (社内確認中・客先確認中 など、同じ語彙で揃えたいため)
+  const [tagPresetsStr] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const tagOptions = parsePresetList(tagPresetsStr);
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [analysisProject, setAnalysisProject] = useState<ProjectItem | null>(null);
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
@@ -352,6 +357,10 @@ export default function ProjectsSection({
     showUndoToast(`「${item.title}」を削除しました`, async () => {
       await db.projects.add(item);
     });
+  }
+
+  async function setProjectTag(item: ProjectItem, value: string) {
+    await db.projects.update(item.id, { tag: value || undefined });
   }
 
   async function toggleComplete(item: ProjectItem) {
@@ -851,6 +860,8 @@ export default function ProjectsSection({
             onDelete={() => deleteProject(project)}
             onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
             onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
+            onSetTag={(value) => setProjectTag(project, value)}
+            tagOptions={tagOptions}
           />
         ))}
         {activeRows.length === 0 && completedRows.length === 0 && (
@@ -888,6 +899,8 @@ export default function ProjectsSection({
                   onDelete={() => deleteProject(project)}
                   onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
                   onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
+                  onSetTag={(value) => setProjectTag(project, value)}
+                  tagOptions={tagOptions}
                 />
               ))}
             </div>
@@ -1200,6 +1213,8 @@ function ProjectRow({
   onDelete,
   onToggleStage,
   onAddStageToToday,
+  onSetTag,
+  tagOptions,
   themedMode,
 }: {
   project: ProjectItem;
@@ -1219,6 +1234,8 @@ function ProjectRow({
   onDelete: () => void;
   onToggleStage: (stageId: string) => void;
   onAddStageToToday: (stage: ProjectStage) => void;
+  onSetTag: (value: string) => void;
+  tagOptions: string[];
   themedMode?: ThemedMode | null;
 }) {
   const today = todayStr();
@@ -1310,6 +1327,24 @@ function ProjectRow({
             </span>
           )}
           {project.title}
+          {/* 案件そのものの対応状況。段階(マイルストーン)ごとのtagとは別に、
+              案件全体としての状況(見積り中・受注確定 など)をここで持つ */}
+          <select
+            value={project.tag ?? ""}
+            onChange={(e) => onSetTag(e.target.value)}
+            title="対応状況"
+            className={`ml-2 rounded-full border px-1.5 py-0.5 align-middle text-[10px] font-bold outline-none ${
+              project.tag ? "border-cream/40 bg-cream/10 text-cream" : "border-cream/15 bg-transparent text-cream/30"
+            }`}
+          >
+            <option value="">対応状況なし</option>
+            {tagOptions.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+            {project.tag && !tagOptions.includes(project.tag) && <option value={project.tag}>{project.tag}</option>}
+          </select>
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
           {project.groupName && (
             <span

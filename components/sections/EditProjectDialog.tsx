@@ -57,163 +57,171 @@ function StageRow({
   const mailInputRef = useRef<HTMLInputElement>(null);
   const [mailImportError, setMailImportError] = useState(false);
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
-      {dragHandleProps && (
-        <button
-          {...dragHandleProps.attributes}
-          {...dragHandleProps.listeners}
-          style={{ touchAction: "none" }}
-          className="shrink-0 cursor-grab px-0.5 text-cream/30 active:cursor-grabbing"
-          aria-label="段階を並び替え"
-        >
-          ⠿
+    <div className="space-y-1.5 rounded-lg bg-ink/50 px-2 py-1.5">
+      {/* 1行目: 並び替え・チェック・件名・削除だけの最小限。項目数が多いこの行を
+          畳まずに常に読めるようにするため、ここだけは折り返させない */}
+      <div className="flex items-center gap-2">
+        {dragHandleProps && (
+          <button
+            {...dragHandleProps.attributes}
+            {...dragHandleProps.listeners}
+            style={{ touchAction: "none" }}
+            className="shrink-0 cursor-grab px-0.5 text-cream/30 active:cursor-grabbing"
+            aria-label="段階を並び替え"
+          >
+            ⠿
+          </button>
+        )}
+        {!isCountBased && (
+          <button
+            onClick={() => onToggle(stage.id)}
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+              stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
+            }`}
+          >
+            {stage.completed ? "✓" : ""}
+          </button>
+        )}
+        {isCountBased && (
+          <span
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
+              isDone ? "border-cream bg-cream text-ink" : "border-cream/40"
+            }`}
+          >
+            {isDone ? "✓" : ""}
+          </span>
+        )}
+        <input
+          value={stage.title}
+          onChange={(e) => onSetTitle(stage.id, e.target.value)}
+          placeholder="段階名（未入力・タップして入力）"
+          className={`min-w-0 flex-1 rounded-md border px-1.5 py-1 text-xs text-cream placeholder:text-alert/70 focus:border-cream/40 focus:outline-none ${
+            isTitleBlank ? "border-dashed border-alert/60 bg-alert/5" : "border-transparent"
+          } ${isDone ? "text-cream/40 line-through" : ""}`}
+        />
+        <button className="shrink-0 text-cream/40 hover:text-alert" onClick={() => onRemove(stage.id)} aria-label="削除">
+          ✕
         </button>
-      )}
-      {!isCountBased && (
+      </div>
+      {/* 2行目: 添付・進捗管理・対応状況・期日。項目数が多く1行に収まらないため、
+          折り返しを許して狭い画面でも潰れないようにする(高さが伸びるだけで済む) */}
+      <div className="flex flex-wrap items-center gap-1.5 pl-1">
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const dataUrl = await readFileAsDataUrl(file);
+            onSetImage(stage.id, dataUrl);
+            e.target.value = "";
+          }}
+        />
         <button
-          onClick={() => onToggle(stage.id)}
-          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-            stage.completed ? "border-cream bg-cream text-ink" : "border-cream/40"
-          }`}
+          onClick={() => (stage.imageDataUrl ? setImageExpanded(true) : imageInputRef.current?.click())}
+          className="shrink-0 text-xs text-cream/40 hover:text-cream/70"
+          title={stage.imageDataUrl ? "画像を表示" : "画像を追加"}
         >
-          {stage.completed ? "✓" : ""}
+          {stage.imageDataUrl ? "🖼️" : "📷"}
         </button>
-      )}
-      {isCountBased && (
-        <span
-          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] ${
-            isDone ? "border-cream bg-cream text-ink" : "border-cream/40"
-          }`}
-        >
-          {isDone ? "✓" : ""}
-        </span>
-      )}
-      <input
-        value={stage.title}
-        onChange={(e) => onSetTitle(stage.id, e.target.value)}
-        placeholder="段階名（未入力・タップして入力）"
-        className={`min-w-0 flex-1 rounded-md border px-1.5 py-1 text-xs text-cream placeholder:text-alert/70 focus:border-cream/40 focus:outline-none ${
-          isTitleBlank ? "border-dashed border-alert/60 bg-alert/5" : "border-transparent"
-        } ${isDone ? "text-cream/40 line-through" : ""}`}
-      />
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          const dataUrl = await readFileAsDataUrl(file);
-          onSetImage(stage.id, dataUrl);
-          e.target.value = "";
-        }}
-      />
-      <button
-        onClick={() => (stage.imageDataUrl ? setImageExpanded(true) : imageInputRef.current?.click())}
-        className="shrink-0 text-xs text-cream/40 hover:text-cream/70"
-        title={stage.imageDataUrl ? "画像を表示" : "画像を追加"}
-      >
-        {stage.imageDataUrl ? "🖼️" : "📷"}
-      </button>
-      <input
-        ref={mailInputRef}
-        type="file"
-        accept=".msg"
-        className="hidden"
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          e.target.value = "";
-          try {
-            setMailImportError(false);
-            onSetMail(stage.id, await attachMailFile(file));
-          } catch {
-            setMailImportError(true);
-          }
-        }}
-      />
-      {stage.mailFileDataUrl ? (
-        <span className="flex shrink-0 items-center gap-0.5">
-          <a
-            href={stage.mailFileDataUrl}
-            download={stage.mailFileName || "mail.msg"}
-            title={`ダウンロードして元のメールを開きます: ${stage.mailSubject ?? stage.mailFileName ?? ""}`}
-            className="text-xs text-cream/40 hover:text-cream/70"
+        <input
+          ref={mailInputRef}
+          type="file"
+          accept=".msg"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            e.target.value = "";
+            try {
+              setMailImportError(false);
+              onSetMail(stage.id, await attachMailFile(file));
+            } catch {
+              setMailImportError(true);
+            }
+          }}
+        />
+        {stage.mailFileDataUrl ? (
+          <span className="flex shrink-0 items-center gap-0.5">
+            <a
+              href={stage.mailFileDataUrl}
+              download={stage.mailFileName || "mail.msg"}
+              title={`ダウンロードして元のメールを開きます: ${stage.mailSubject ?? stage.mailFileName ?? ""}`}
+              className="text-xs text-cream/40 hover:text-cream/70"
+            >
+              📧
+            </a>
+            <button
+              onClick={() => onSetMail(stage.id, undefined)}
+              className="text-[9px] text-cream/30 hover:text-alert"
+              aria-label="添付メールを削除"
+            >
+              ✕
+            </button>
+          </span>
+        ) : (
+          <button
+            onClick={() => mailInputRef.current?.click()}
+            className="shrink-0 text-xs text-cream/40 hover:text-cream/70"
+            title="メールを添付 (.msg)"
           >
             📧
-          </a>
-          <button
-            onClick={() => onSetMail(stage.id, undefined)}
-            className="text-[9px] text-cream/30 hover:text-alert"
-            aria-label="添付メールを削除"
-          >
-            ✕
           </button>
-        </span>
-      ) : (
-        <button
-          onClick={() => mailInputRef.current?.click()}
-          className="shrink-0 text-xs text-cream/40 hover:text-cream/70"
-          title="メールを添付 (.msg)"
+        )}
+        {mailImportError && <span className="text-[9px] text-alert">読み込み失敗</span>}
+        {isCountBased ? (
+          <div className="flex shrink-0 items-center gap-1 text-[11px] text-cream/70">
+            <input
+              type="number"
+              min={0}
+              value={stage.completedCount ?? 0}
+              onChange={(e) => onSetCompletedCount(stage.id, e.target.value)}
+              className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
+            />
+            <span>/</span>
+            <input
+              type="number"
+              min={1}
+              value={stage.targetCount ?? ""}
+              onChange={(e) => onSetTargetCount(stage.id, e.target.value)}
+              className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
+            />
+            <span>件</span>
+          </div>
+        ) : (
+          <button
+            onClick={() => onSetTargetCount(stage.id, "1")}
+            className="shrink-0 text-[10px] text-cream/40 hover:text-cream"
+            title="この段階を件数（見積り件数など）で進捗管理する"
+          >
+            件数管理にする
+          </button>
+        )}
+        <select
+          value={stage.tag ?? ""}
+          onChange={(e) => onSetTag(stage.id, e.target.value)}
+          title="対応状況"
+          className={`min-w-0 max-w-full shrink rounded-md border px-1 py-1 text-[11px] outline-none ${
+            stage.tag ? "border-cream/30 bg-cream/10 font-bold text-cream/90" : "border-cream/20 bg-ink text-cream/40"
+          }`}
         >
-          📧
-        </button>
-      )}
-      {mailImportError && <span className="text-[9px] text-alert">読み込み失敗</span>}
-      {isCountBased ? (
-        <div className="flex shrink-0 items-center gap-1 text-[11px] text-cream/70">
-          <input
-            type="number"
-            min={0}
-            value={stage.completedCount ?? 0}
-            onChange={(e) => onSetCompletedCount(stage.id, e.target.value)}
-            className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
-          />
-          <span>/</span>
-          <input
-            type="number"
-            min={1}
-            value={stage.targetCount ?? ""}
-            onChange={(e) => onSetTargetCount(stage.id, e.target.value)}
-            className="w-12 rounded-md border border-cream/20 bg-ink px-1 py-1 text-right text-cream"
-          />
-          <span>件</span>
-        </div>
-      ) : (
-        <button
-          onClick={() => onSetTargetCount(stage.id, "1")}
-          className="shrink-0 text-[10px] text-cream/40 hover:text-cream"
-          title="この段階を件数（見積り件数など）で進捗管理する"
-        >
-          件数管理にする
-        </button>
-      )}
-      <select
-        value={stage.tag ?? ""}
-        onChange={(e) => onSetTag(stage.id, e.target.value)}
-        title="対応状況"
-        className={`w-28 shrink-0 rounded-md border px-1 py-1 text-[11px] outline-none ${
-          stage.tag ? "border-cream/30 bg-cream/10 font-bold text-cream/90" : "border-cream/20 bg-ink text-cream/40"
-        }`}
-      >
-        <option value="">対応状況なし</option>
-        {tagOptions.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-        {stage.tag && !tagOptions.includes(stage.tag) && <option value={stage.tag}>{stage.tag}</option>}
-      </select>
-      <input
-        type="date"
-        value={stage.dueDate ?? ""}
-        onChange={(e) => onSetDueDate(stage.id, e.target.value)}
-        className="w-32 shrink-0 rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
-      />
-      <button className="text-cream/40 hover:text-alert" onClick={() => onRemove(stage.id)} aria-label="削除">
-        ✕
-      </button>
+          <option value="">対応状況なし</option>
+          {tagOptions.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+          {stage.tag && !tagOptions.includes(stage.tag) && <option value={stage.tag}>{stage.tag}</option>}
+        </select>
+        <input
+          type="date"
+          value={stage.dueDate ?? ""}
+          onChange={(e) => onSetDueDate(stage.id, e.target.value)}
+          className="min-w-0 max-w-full shrink rounded-md border border-cream/20 bg-ink px-1.5 py-1 text-[11px] text-cream"
+        />
+      </div>
       {imageExpanded && stage.imageDataUrl && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
@@ -275,6 +283,12 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
     project.estimatedTotalSeconds ? formatHms(project.estimatedTotalSeconds) : ""
   );
   const [clientId, setClientId] = useState(project.clientId ?? "");
+  const [tag, setTag] = useState(project.tag ?? "");
+  // 案件・段階の対応状況は、ToDoで使っている選択肢をそのまま共有する
+  // (社内確認中・客先確認中 など、同じ語彙で揃えたいため)。案件そのものと各段階の
+  // どちらも同じ選択肢から選べるが、値自体は別々に持つ(案件=全体の状況、段階=個々の進み具合)
+  const [tagPresetsStr] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const tagOptions = parsePresetList(tagPresetsStr);
   const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
   // 既存で使われているグループ名の一覧(入力候補用)。表記ゆれで別グループになってしまわないよう、
   // 案件一覧側(ProjectsSection)と同じ考え方でdatalistの候補にする
@@ -323,10 +337,6 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   function setStageDueDate(id: string, value: string) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, dueDate: value || undefined } : s)));
   }
-  // 段階の対応状況は、ToDoで使っている選択肢をそのまま共有する
-  // (社内確認中・客先確認中 など、同じ語彙で揃えたいため)
-  const [stageTagPresetsStr] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
-  const stageTagOptions = parsePresetList(stageTagPresetsStr);
 
   function setStageTag(id: string, value: string) {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, tag: value || undefined } : s)));
@@ -400,6 +410,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       hourlyRate: hourlyRateStr.trim() !== "" && Number.isFinite(rate) && rate >= 0 ? rate : undefined,
       estimatedTotalSeconds: estimatedTotalSeconds > 0 ? estimatedTotalSeconds : undefined,
       clientId: clientId || undefined,
+      tag: tag || undefined,
       mailFileDataUrl: mail?.mailFileDataUrl,
       mailFileName: mail?.mailFileName,
       mailSubject: mail?.mailSubject,
@@ -411,7 +422,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   }
 
   return (
-    <Modal title="案件を編集" onClose={onClose}>
+    <Modal title="案件を編集" onClose={onClose} size="lg">
       <div className="space-y-2">
         <input
           placeholder="件名"
@@ -452,6 +463,22 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
             onChange={(e) => setDueDate(e.target.value)}
             className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-cream/60">対応状況</label>
+          <select
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          >
+            <option value="">対応状況なし</option>
+            {tagOptions.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+            {tag && !tagOptions.includes(tag) && <option value={tag}>{tag}</option>}
+          </select>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">取引先</label>
@@ -558,18 +585,18 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
                     onSetImage={setStageImage}
                     onSetMail={setStageMail}
                     onRemove={removeStage}
-                    tagOptions={stageTagOptions}
+                    tagOptions={tagOptions}
                   />
                 ))}
               </SortableContext>
             </DndContext>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 value={newStageTitle}
                 onChange={(e) => setNewStageTitle(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addStage()}
                 placeholder="+ 段階を追加（例: 要件定義）"
-                className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                className="min-w-0 flex-1 basis-40 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
               />
               <input
                 type="number"
@@ -578,9 +605,9 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
                 onChange={(e) => setNewStageTargetCount(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addStage()}
                 placeholder="目標件数(任意)"
-                className="w-24 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                className="w-24 shrink-0 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
               />
-              <button className="btn-pill-outline text-xs" onClick={addStage}>
+              <button className="btn-pill-outline shrink-0 text-xs" onClick={addStage}>
                 追加
               </button>
             </div>
