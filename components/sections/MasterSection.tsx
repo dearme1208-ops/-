@@ -3,7 +3,13 @@
 import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { upsertMasterTasksFromCsv, recomputeAllMasterEstimates, recoverOrphanedMasterHistory } from "@/lib/master";
+import {
+  upsertMasterTasksFromCsv,
+  recomputeAllMasterEstimates,
+  recoverOrphanedMasterHistory,
+  findDuplicateMasterGroups,
+  mergeMasterTasks,
+} from "@/lib/master";
 import { recomputeOutliersForAll, clearManualOverride } from "@/lib/outliers";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/masterCsv";
@@ -35,6 +41,14 @@ export default function MasterSection() {
   const [newCategory, setNewCategory] = useState("");
   const [newName, setNewName] = useState("");
   const [newEstimate, setNewEstimate] = useState("00:10:00");
+  // 入力中の区分/作業名と完全一致する、生きている作業マスタが既にある場合の警告。
+  // 入力を変えたら黙って消す(古い警告のまま新規登録されるのを防ぐ)
+  const [duplicateWarning, setDuplicateWarning] = useState<MasterTask | null>(null);
+  // 統合(重複マスタの解消)で選択中の作業マスタID
+  const [mergeSelectedIds, setMergeSelectedIds] = useState<Set<string>>(new Set());
+  const [mergeTarget, setMergeTarget] = useState<{ ids: string[] } | null>(null);
+  const [mergeStatus, setMergeStatus] = useState<string>("");
+  const [duplicatesCollapsed, setDuplicatesCollapsed] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
   const [recalcStatus, setRecalcStatus] = useState<string>("");
@@ -67,6 +81,9 @@ export default function MasterSection() {
     () => computeStaleMasterTasks(tasks ?? [], records ?? [], staleDays, todayStr()),
     [tasks, records, staleDays]
   );
+
+  // 区分/作業名が完全一致する、生きている作業マスタの重複候補
+  const duplicateGroups = useMemo(() => findDuplicateMasterGroups(tasks ?? []), [tasks]);
 
   const viewingRecordsList = useMemo(() => {
     if (!viewingRecords || !records) return [];
@@ -227,17 +244,16 @@ export default function MasterSection() {
     });
   }
 
-  async function createNew() {
-    if (!newCategory.trim() || !newName.trim()) return;
+  async function insertNewMaster(category: string, name: string) {
     const now = Date.now();
     const id = uid();
     // 誤って削除したマスタの実績が同じ区分/作業名で宙に浮いている場合、そちらを新IDへ
     // 繋ぎ直した上でその平均・件数を優先する(見つからなければ入力欄の想定時間を使う)
-    const recovered = await recoverOrphanedMasterHistory(id, newCategory.trim(), newName.trim());
+    const recovered = await recoverOrphanedMasterHistory(id, category, name);
     await db.masterTasks.add({
       id,
-      category: newCategory.trim(),
-      name: newName.trim(),
+      category,
+      name,
       estimatedSeconds: recovered ? recovered.estimatedSeconds : parseHmsToSeconds(newEstimate),
       isFavorite: false,
       sampleCount: recovered ? recovered.sampleCount : 0,
@@ -248,6 +264,61 @@ export default function MasterSection() {
     setNewName("");
     setNewEstimate("00:10:00");
     setShowNew(false);
+    setDuplicateWarning(null);
+  }
+
+  async function createNew() {
+    const category = newCategory.trim();
+    const name = newName.trim();
+    if (!category || !name) return;
+    // 同じ区分/作業名の生きているマスタが既にある場合、黙って重複を増やさず先に警告する。
+    // 気付かず複数回登録すると、実績・想定時間がマスタごとにバラバラに積まれてしまうため
+    const existing = (tasks ?? []).find((t) => t.category === category && t.name === name);
+    if (existing) {
+      setDuplicateWarning(existing);
+      return;
+    }
+    await insertNewMaster(category, name);
+  }
+
+  async function createAnyway() {
+    const category = newCategory.trim();
+    const name = newName.trim();
+    if (!category || !name) return;
+    await insertNewMaster(category, name);
+  }
+
+  function toggleMergeSelect(id: string) {
+    setMergeSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // 完全一致で見つかった重複の組は、迷う余地が無いので確認モーダルを挟まず即座に統合する
+  // (実績が最も多いものを残す。他の一覧操作(アーカイブする等)と同じ一手扱い)
+  async function mergeDuplicateGroup(group: { tasks: MasterTask[] }) {
+    const sorted = [...group.tasks].sort((a, b) => b.sampleCount - a.sampleCount || a.createdAt - b.createdAt);
+    const [target, ...rest] = sorted;
+    const { movedRecords } = await mergeMasterTasks(
+      target.id,
+      rest.map((t) => t.id)
+    );
+    setMergeStatus(`「${target.category} / ${target.name}」に${rest.length}件を統合し、実績${movedRecords}件を繋ぎ直しました。`);
+  }
+
+  async function confirmManualMerge(targetId: string) {
+    if (!mergeTarget) return;
+    const sourceIds = mergeTarget.ids.filter((id) => id !== targetId);
+    const target = (tasks ?? []).find((t) => t.id === targetId);
+    const { movedRecords } = await mergeMasterTasks(targetId, sourceIds);
+    setMergeStatus(
+      `「${target?.category ?? ""} / ${target?.name ?? ""}」に${sourceIds.length}件を統合し、実績${movedRecords}件を繋ぎ直しました。`
+    );
+    setMergeTarget(null);
+    setMergeSelectedIds(new Set());
   }
 
   function downloadTemplate() {
@@ -347,6 +418,7 @@ export default function MasterSection() {
 
       {recalcStatus && <p className="text-xs text-cream/70">{recalcStatus}</p>}
       {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
+      {mergeStatus && <p className="text-xs text-cream/70">{mergeStatus}</p>}
       {importErrors.length > 0 && (
         <div className="panel border border-alert/40 p-3 text-xs text-alert">
           {importErrors.map((e, i) => (
@@ -360,13 +432,19 @@ export default function MasterSection() {
           <input
             placeholder="業務区分（大項目）"
             value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
+            onChange={(e) => {
+              setNewCategory(e.target.value);
+              setDuplicateWarning(null);
+            }}
             className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
           <input
             placeholder="詳細作業名"
             value={newName}
-            onChange={(e) => setNewName(e.target.value)}
+            onChange={(e) => {
+              setNewName(e.target.value);
+              setDuplicateWarning(null);
+            }}
             className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
           <input
@@ -375,9 +453,28 @@ export default function MasterSection() {
             onChange={(e) => setNewEstimate(e.target.value)}
             className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
-          <button className="btn-pill text-sm" onClick={createNew}>
-            追加
-          </button>
+          {duplicateWarning ? (
+            <div className="space-y-2 rounded-lg border border-alert/40 bg-alert/10 p-3 text-xs">
+              <p className="font-bold text-alert">
+                同じ「{duplicateWarning.category} / {duplicateWarning.name}」という作業マスタが既にあります（実績{duplicateWarning.sampleCount}件・想定{formatHms(duplicateWarning.estimatedSeconds)}）。
+              </p>
+              <p className="text-cream/60">
+                作業を始める際に自由入力や作業マスタから選べば、このマスタがそのまま使われます。ここで新規登録すると、同じ作業の記録がマスタ間で分かれたままになります。
+              </p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button className="btn-pill-outline text-xs" onClick={() => setDuplicateWarning(null)}>
+                  やめる
+                </button>
+                <button className="btn-pill-outline text-xs" onClick={createAnyway}>
+                  それでも新規登録する
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button className="btn-pill text-sm" onClick={createNew}>
+              追加
+            </button>
+          )}
         </div>
       )}
 
@@ -453,6 +550,49 @@ export default function MasterSection() {
         </div>
       )}
 
+      {duplicateGroups.length > 0 && (
+        <div className="panel space-y-2 border border-alert/30 p-4">
+          <button
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setDuplicatesCollapsed((v) => !v)}
+          >
+            <h3 className="font-display text-sm font-bold text-alert">
+              重複している可能性がある作業マスタ（{duplicateGroups.length}件）
+            </h3>
+            <span className="shrink-0 text-cream/60">{duplicatesCollapsed ? "▶" : "▼"}</span>
+          </button>
+          {!duplicatesCollapsed && (
+            <>
+              <p className="text-xs text-cream/50">
+                区分・作業名が完全に一致する作業マスタが複数あります。「作業マスタ」タブの新規登録に重複チェックが無かった頃に、同じ作業を何度か登録すると実績が別々のマスタに分かれてしまいます。「統合する」で実績の多い方へまとめ、実績・本日以降の作業を繋ぎ直します。
+              </p>
+              <div className="space-y-2">
+                {duplicateGroups.map((g) => (
+                  <div key={`${g.category}::${g.name}`} className="rounded-lg bg-ink/50 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs text-cream/50">{g.category}</div>
+                        <div className="text-sm text-cream">{g.name}</div>
+                      </div>
+                      <button className="btn-pill-outline text-xs" onClick={() => mergeDuplicateGroup(g)}>
+                        統合する（{g.tasks.length}件 → 1件）
+                      </button>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-cream/40">
+                      {g.tasks.map((t) => (
+                        <span key={t.id}>
+                          実績{t.sampleCount}件・想定{formatHms(t.estimatedSeconds)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="panel p-4">
         <button
           className="flex w-full items-center justify-between text-left"
@@ -499,6 +639,26 @@ export default function MasterSection() {
         )}
       </div>
 
+      {mergeSelectedIds.size > 0 && (
+        <div className="panel sticky top-2 z-10 flex flex-wrap items-center justify-between gap-2 border border-alert/30 p-3">
+          <p className="text-xs text-cream/70">
+            統合の対象として<span className="font-bold text-cream">{mergeSelectedIds.size}件</span>を選択中（一覧の☑から選べます）
+          </p>
+          <div className="flex gap-2">
+            <button className="btn-pill-outline text-xs" onClick={() => setMergeSelectedIds(new Set())}>
+              選択を解除
+            </button>
+            <button
+              className="btn-pill text-xs"
+              disabled={mergeSelectedIds.size < 2}
+              onClick={() => setMergeTarget({ ids: [...mergeSelectedIds] })}
+            >
+              統合する
+            </button>
+          </div>
+        </div>
+      )}
+
       {grouped.map(({ category, items }) => (
         <div key={category} className="panel p-4">
           <button
@@ -517,6 +677,8 @@ export default function MasterSection() {
                   <MonsterCard
                     key={t.id}
                     task={t}
+                    mergeSelected={mergeSelectedIds.has(t.id)}
+                    onToggleMergeSelect={() => toggleMergeSelect(t.id)}
                     onToggleFavorite={() => toggleFavorite(t)}
                     onUpdateTags={(v) => updateTags(t, v)}
                     onUpdateEstimate={(v) => updateEstimate(t, v)}
@@ -532,6 +694,13 @@ export default function MasterSection() {
                 {items.map((t) => (
                   <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
                     <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={mergeSelectedIds.has(t.id)}
+                        onChange={() => toggleMergeSelect(t.id)}
+                        aria-label="統合の対象として選択"
+                        title="統合の対象として選択"
+                      />
                       <button onClick={() => toggleFavorite(t)} aria-label="お気に入り">
                         {t.isFavorite ? "★" : "☆"}
                       </button>
@@ -645,7 +814,74 @@ export default function MasterSection() {
           )}
         </Modal>
       )}
+
+      {mergeTarget && (
+        <MergeConfirmModal
+          tasks={(tasks ?? []).filter((t) => mergeTarget.ids.includes(t.id))}
+          onConfirm={confirmManualMerge}
+          onClose={() => setMergeTarget(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// 統合の対象として選んだ複数の作業マスタのうち、どれを残すかを選ばせる確認モーダル。
+// 残す1件以外(source)は、実績・本日以降の作業がその1件へ繋ぎ直された上で削除される
+function MergeConfirmModal({
+  tasks,
+  onConfirm,
+  onClose,
+}: {
+  tasks: MasterTask[];
+  onConfirm: (targetId: string) => void;
+  onClose: () => void;
+}) {
+  // 既定では実績が最も多いものを残す候補にしておく(手作業で選び直せる)
+  const defaultTargetId = useMemo(
+    () => [...tasks].sort((a, b) => b.sampleCount - a.sampleCount || a.createdAt - b.createdAt)[0]?.id ?? "",
+    [tasks]
+  );
+  const [targetId, setTargetId] = useState(defaultTargetId);
+  const totalRecords = tasks.reduce((sum, t) => sum + t.sampleCount, 0);
+
+  return (
+    <Modal title="作業マスタを統合" onClose={onClose}>
+      <div className="space-y-3 text-sm text-cream/80">
+        <p className="text-xs text-cream/50">
+          残すマスタを1つ選んでください。他のマスタに紐づく実績・本日以降の作業はすべて選んだマスタへ繋ぎ直され、他のマスタ自体は削除されます（実績は失われません。合計{totalRecords}件が1つのマスタにまとまります）。
+        </p>
+        <div className="space-y-1.5">
+          {tasks.map((t) => (
+            <label
+              key={t.id}
+              className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 ${
+                targetId === t.id ? "border-alert bg-alert/10" : "border-cream/10 bg-ink/50"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <input type="radio" name="merge-target" checked={targetId === t.id} onChange={() => setTargetId(t.id)} />
+                <span>
+                  <span className="block text-xs text-cream/50">{t.category}</span>
+                  <span className="text-sm text-cream">{t.name}</span>
+                </span>
+              </span>
+              <span className="text-xs text-cream/50">
+                実績{t.sampleCount}件・想定{formatHms(t.estimatedSeconds)}
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2">
+          <button className="btn-pill-outline text-sm" onClick={onClose}>
+            キャンセル
+          </button>
+          <button className="btn-pill text-sm" disabled={!targetId} onClick={() => onConfirm(targetId)}>
+            このマスタに統合する
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -661,6 +897,8 @@ function monsterIconFor(id: string): string {
 
 function MonsterCard({
   task,
+  mergeSelected,
+  onToggleMergeSelect,
   onToggleFavorite,
   onUpdateTags,
   onUpdateEstimate,
@@ -670,6 +908,8 @@ function MonsterCard({
   onViewRecords,
 }: {
   task: MasterTask;
+  mergeSelected: boolean;
+  onToggleMergeSelect: () => void;
   onToggleFavorite: () => void;
   onUpdateTags: (value: string) => void;
   onUpdateEstimate: (value: string) => void;
@@ -681,7 +921,16 @@ function MonsterCard({
   return (
     <div className={`adv-quest-card flex flex-col gap-2 p-3 ${task.archived ? "opacity-50" : ""}`}>
       <div className="flex items-start justify-between gap-1">
-        <span className="text-2xl">{monsterIconFor(task.id)}</span>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={mergeSelected}
+            onChange={onToggleMergeSelect}
+            aria-label="統合の対象として選択"
+            title="統合の対象として選択"
+          />
+          <span className="text-2xl">{monsterIconFor(task.id)}</span>
+        </div>
         <button onClick={onToggleFavorite} aria-label="契約モンスターにする" className="text-lg leading-none">
           {task.isFavorite ? "★" : "☆"}
         </button>

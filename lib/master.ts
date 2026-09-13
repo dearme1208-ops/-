@@ -2,6 +2,83 @@ import { db, uid } from "./db";
 import type { MasterTask } from "./types";
 import type { ParsedMasterRow } from "./masterCsv";
 
+export interface DuplicateMasterGroup {
+  category: string;
+  name: string;
+  tasks: MasterTask[];
+}
+
+// 区分/作業名が完全一致(前後空白を除く)する、生きている作業マスタが2件以上ある組を探す。
+// 「作業マスタ」タブの手動登録(createNew)には長らく重複チェックが無く、同じ作業を
+// 複数回登録すると別IDのマスタに分かれてしまっていた。その解消対象を見つけるための関数
+export function findDuplicateMasterGroups(tasks: MasterTask[]): DuplicateMasterGroup[] {
+  const map = new Map<string, MasterTask[]>();
+  for (const t of tasks) {
+    const key = `${t.category.trim()}::${t.name.trim()}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(t);
+  }
+  return [...map.values()]
+    .filter((group) => group.length >= 2)
+    .map((group) => ({ category: group[0].category, name: group[0].name, tasks: group }))
+    .sort((a, b) => b.tasks.length - a.tasks.length);
+}
+
+// 生きている複数の作業マスタを1つへ統合する。targetIdを残し、sourceIds側に紐づく
+// 実績(WorkRecord)・本日以降の作業(DailyTask)をすべてtargetId側へ繋ぎ直す
+// (区分/作業名の表記もtarget側に揃える。カテゴリ/名前でグルーピングする集計・繰り越し
+// ロジックが他にもあるため、masterTaskIdの付け替えだけでなく表記も揃えておく必要がある)。
+// 繋ぎ直した後、targetの想定時間・実績件数を実績から再計算し、sourceIds側の
+// 作業マスタ自体は削除する
+export async function mergeMasterTasks(
+  targetId: string,
+  sourceIds: string[]
+): Promise<{ movedRecords: number; movedDailyTasks: number }> {
+  const ids = [...new Set(sourceIds)].filter((id) => id !== targetId);
+  if (ids.length === 0) return { movedRecords: 0, movedDailyTasks: 0 };
+
+  const result = await db.transaction("rw", db.masterTasks, db.records, db.dailyTasks, async () => {
+    const target = await db.masterTasks.get(targetId);
+    if (!target) return { movedRecords: 0, movedDailyTasks: 0 };
+    const sources = (await db.masterTasks.bulkGet(ids)).filter((t): t is MasterTask => !!t);
+
+    const idSet = new Set(ids);
+    // recordsはmasterTaskIdにインデックスがあるのでwhere().anyOf()で一括更新できるが、
+    // dailyTasksにはそのインデックスが無いため、こちらはfilter()でのフルスキャンになる
+    // (統合は頻繁に起きる操作ではなく、本日分中心の小さなテーブルなので問題にならない)
+    const movedRecords = await db.records
+      .where("masterTaskId")
+      .anyOf(ids)
+      .modify({ masterTaskId: targetId, category: target.category, name: target.name });
+    const movedDailyTasks = await db.dailyTasks
+      .filter((t) => !!t.masterTaskId && idSet.has(t.masterTaskId))
+      .modify({ masterTaskId: targetId, category: target.category, name: target.name });
+
+    // お気に入り・タグ・取引先はtarget側を優先しつつ、target側が未設定ならsource側から引き継ぐ
+    const mergedTags = new Set(target.tags ?? []);
+    let clientId = target.clientId;
+    let isFavorite = target.isFavorite;
+    for (const s of sources) {
+      for (const tag of s.tags ?? []) mergedTags.add(tag);
+      if (!clientId && s.clientId) clientId = s.clientId;
+      if (s.isFavorite) isFavorite = true;
+    }
+
+    await db.masterTasks.update(targetId, {
+      tags: mergedTags.size > 0 ? [...mergedTags] : undefined,
+      clientId,
+      isFavorite,
+      updatedAt: Date.now(),
+    });
+    await db.masterTasks.bulkDelete(ids);
+    return { movedRecords, movedDailyTasks };
+  });
+
+  // 実績の付け替え後、目安件数・想定時間を実際の実績から数え直す
+  await recomputeEstimateFromRecords(targetId);
+  return result;
+}
+
 export async function findOrCreateMasterTask(
   category: string,
   name: string,
