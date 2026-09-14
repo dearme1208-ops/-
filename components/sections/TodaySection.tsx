@@ -845,7 +845,12 @@ export default function TodaySection({
     if (stopCandidates.length === 0) return sessionAnchorRef.current;
     const withStoppedAt = stopCandidates.filter((t) => t.stoppedAt !== undefined);
     if (withStoppedAt.length > 0) {
-      return withStoppedAt.reduce((a, b) => (b.stoppedAt! > a.stoppedAt! ? b : a)).stoppedAt!;
+      // 「最後に停止した作業」自体の特定にはstoppedAt(実際に操作した時刻。手動編集では
+      // 変わらない)を使うが、返す時刻はその作業の実際の終了時刻(endedAt/区間の終了)にする。
+      // stoppedAtをそのまま返すと、後から完了タブ等で終了時刻を編集していても反映されず、
+      // 「前の作業が本当に何時に終わったか」ではなく「何時にボタンを押したか」になってしまうため
+      const last = withStoppedAt.reduce((a, b) => (b.stoppedAt! > a.stoppedAt! ? b : a));
+      return last.status === "done" ? last.endedAt! : last.segments[last.segments.length - 1].end!;
     }
     const last = stopCandidates.reduce((a, b) => (b.order > a.order ? b : a));
     return last.status === "done" ? last.endedAt! : last.segments[last.segments.length - 1].end!;
