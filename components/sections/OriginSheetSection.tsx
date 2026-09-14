@@ -379,7 +379,7 @@ export default function OriginSheetSection({
         <TallyCell label="予定外" swatchClass="origin-sw-unplanned" value={`${summary.unplannedCount}件`} sub={formatOriginDuration(summary.unplannedMs)} />
         <TallyCell label="予定外の割合" value={`${Math.round(summary.unplannedShare * 100)}%`} sub="実働に占める割合" />
         <TallyCell label={`時間外(${closingHm}以降)`} value={`${summary.overtimeCount}件`} sub="別集計の対象" />
-        <TallyCell label="完了" value={`${summary.doneCount}/${summary.totalCount}`} sub="K列のフラグ" />
+        <TallyCell label="完了" value={`${summary.doneCount}/${summary.totalCount}`} sub="完了フラグ" />
         <div className="origin-tally-controls">
           <label>
             行高
@@ -639,12 +639,12 @@ function HeadCells() {
   return (
     <div className="origin-fixed">
       <div className="origin-cell origin-rownum">行</div>
-      <div className="origin-cell origin-c-b">B 作業</div>
-      <div className="origin-cell origin-c-c">C 内容</div>
-      <div className="origin-cell origin-c-e">E 開始</div>
-      <div className="origin-cell origin-c-f">F 終了</div>
-      <div className="origin-cell origin-c-j">J 想定</div>
-      <div className="origin-cell origin-c-k">K</div>
+      <div className="origin-cell origin-c-b">作業</div>
+      <div className="origin-cell origin-c-c">内容</div>
+      <div className="origin-cell origin-c-e">開始</div>
+      <div className="origin-cell origin-c-f">終了</div>
+      <div className="origin-cell origin-c-j">想定</div>
+      <div className="origin-cell origin-c-k">完了</div>
     </div>
   );
 }
@@ -727,7 +727,7 @@ function SheetRowPair({
           <div className="origin-cell origin-c-j tabular-nums">
             {row.plannedSeconds > 0 ? formatOriginDuration(row.plannedSeconds * 1000) : "—"}
           </div>
-          <div className="origin-cell origin-c-k tabular-nums">{row.done ? "1" : ""}</div>
+          <div className="origin-cell origin-c-k" />
         </div>
         <div className="origin-lane" style={{ width: axisWidth }}>
           {row.plannedSeconds > 0 && (
@@ -756,7 +756,7 @@ function SheetRowPair({
           <div className={row.overrun ? "origin-cell origin-c-j origin-over tabular-nums" : "origin-cell origin-c-j tabular-nums"}>
             {row.actualMs > 0 ? formatOriginDuration(row.actualMs) : ""}
           </div>
-          <div className="origin-cell origin-c-k" />
+          <div className="origin-cell origin-c-k tabular-nums">{row.done ? "1" : ""}</div>
         </div>
         <div className="origin-lane" style={{ width: axisWidth }}>
           {actualStart !== undefined && actualEnd !== undefined && (
