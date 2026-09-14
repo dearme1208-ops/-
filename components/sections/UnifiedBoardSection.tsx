@@ -9,6 +9,7 @@ import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib
 import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
 import { completeTodoTask, DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import { findOrCreateMasterTask } from "@/lib/master";
+import { openMailAttachment } from "@/lib/mailImport";
 import { getRiskTier, useVisualMode } from "@/lib/theme";
 import {
   BOARD_BACKGROUND_KINDS,
@@ -73,9 +74,10 @@ const PROJECT_CARD_MAX_HEIGHT = 480;
 // 足りないと最後の段階が1行分だけ見切れてしまう
 const PROJECT_CARD_CHROME_HEIGHT = 102;
 const PROJECT_CARD_STAGE_ROW_HEIGHT = 22;
-function computeProjectCardHeight(project: ProjectItem): number {
-  const remaining = (project.stages ?? []).filter((st) => !isStageDone(st)).length;
-  const fit = PROJECT_CARD_CHROME_HEIGHT + remaining * PROJECT_CARD_STAGE_ROW_HEIGHT;
+function computeProjectCardHeight(project: ProjectItem, showCompletedStages: boolean): number {
+  const stages = project.stages ?? [];
+  const count = showCompletedStages ? stages.length : stages.filter((st) => !isStageDone(st)).length;
+  const fit = PROJECT_CARD_CHROME_HEIGHT + count * PROJECT_CARD_STAGE_ROW_HEIGHT;
   return Math.max(PROJECT_CARD_MIN_HEIGHT, Math.min(PROJECT_CARD_MAX_HEIGHT, fit));
 }
 // ToDoカードも案件カードと同じように、抱えているサブタスクの数だけ縦に伸ばす。
@@ -273,6 +275,14 @@ export default function UnifiedBoardSection({
   const [tasksOutsideStr, setTasksOutsideStr] = useSetting(`board.tasksOutside.${selectedBoardId || "default"}`, "false");
   const tasksOutside = tasksOutsideStr === "true";
   const boardTasks = tasksOutside ? [] : tasks;
+  // 案件カードの完了済み段階を表示するかどうか。ToDoのサブタスクは完了後も打ち消し線で
+  // 残り続けるのに対し、案件の段階だけボードでは常に隠していたため、案件タブと同じ設定
+  // (projects.showCompletedStages)を共有して選べるようにする
+  const [showCompletedProjectStagesStr, setShowCompletedProjectStagesStr] = useSetting(
+    "projects.showCompletedStages",
+    "true"
+  );
+  const showCompletedProjectStages = showCompletedProjectStagesStr === "true";
   // 未完了の親タスクだけを対象にする(サブタスクはカードにしない)
   const openTodos = (todoTasks ?? []).filter((t) => !t.completed && !t.parentTaskId);
   // ボードに自動で出すToDoの条件(マイデイ/重要/期日あり/期限切れをチェックボックスで選べる)。
@@ -389,7 +399,7 @@ export default function UnifiedBoardSection({
 
     const occupied: BoardRect[] = [
       ...(notes ?? []).map((n) => ({ x: n.x, y: n.y, width: n.width, height: n.height })),
-      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p, showCompletedProjectStages) })),
       ...boardTasks
         .filter((t) => t.boardX !== undefined && t.boardY !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: TASK_CARD_HEIGHT })),
@@ -743,7 +753,7 @@ export default function UnifiedBoardSection({
     setCompleteTarget(null);
     if (target.kind === "task") await completeTask(target.task, true);
     else if (target.kind === "todo") await completeTodo(target.todo, true);
-    else await toggleProjectStage(target.project, target.stageId, true);
+    else await toggleProjectStage(target.project, target.stageId);
   }
 
   // お気に入り/マスタから、その場で新しい作業を開始する。既に計測中の作業があれば
@@ -897,7 +907,7 @@ export default function UnifiedBoardSection({
       ...todos
         .filter((t) => t.boardX !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: todoCardHeight(t.id) })),
-      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p, showCompletedProjectStages) })),
     ];
     const pos = findFreeSlot(occupied, width, height);
     await db.memoNotes.add({
@@ -981,7 +991,7 @@ export default function UnifiedBoardSection({
       ...todos
         .filter((t) => t.boardX !== undefined)
         .map((t) => ({ x: t.boardX as number, y: t.boardY as number, width: CARD_WIDTH, height: todoCardHeight(t.id) })),
-      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p) })),
+      ...projects.map((p) => ({ x: p.boardX as number, y: p.boardY as number, width: CARD_WIDTH, height: computeProjectCardHeight(p, showCompletedProjectStages) })),
     ];
   }
   async function placeTodo(todo: TodoTask) {
@@ -992,7 +1002,7 @@ export default function UnifiedBoardSection({
     bringToFront(todo.id);
   }
   async function placeProject(project: ProjectItem) {
-    const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, computeProjectCardHeight(project));
+    const pos = findFreeSlot(occupiedRects(), CARD_WIDTH, computeProjectCardHeight(project, showCompletedProjectStages));
     await db.projects.update(project.id, { boardX: pos.x, boardY: pos.y });
     bringToFront(project.id);
   }
@@ -1033,7 +1043,7 @@ export default function UnifiedBoardSection({
     }
     for (const p of projects) {
       if (p.boardX === undefined || p.boardY === undefined) continue;
-      items.push({ kind: "project", id: p.id, x: p.boardX, y: p.boardY, width: CARD_WIDTH, height: computeProjectCardHeight(p), label: p.title, locked: !!p.boardLocked });
+      items.push({ kind: "project", id: p.id, x: p.boardX, y: p.boardY, width: CARD_WIDTH, height: computeProjectCardHeight(p, showCompletedProjectStages), label: p.title, locked: !!p.boardLocked });
     }
     for (const n of notes ?? []) {
       const label = n.isChecklist ? (n.checklistItems ?? []).map((i) => i.text).join(" ") : n.text;
@@ -2090,7 +2100,15 @@ export default function UnifiedBoardSection({
             ＋ 作業を追加
           </button>
           <button
-            className={`${tasksOutside ? "btn-pill" : "btn-pill-outline"} ml-auto text-xs`}
+            className={`${showCompletedProjectStages ? "btn-pill" : "btn-pill-outline"} ml-auto text-xs`}
+            onClick={() => setShowCompletedProjectStagesStr(showCompletedProjectStages ? "false" : "true")}
+            title="案件カードで、完了済みの段階も残す(打ち消し線)か隠すか。案件タブの同じ設定と連動します"
+            aria-pressed={showCompletedProjectStages}
+          >
+            🏁 完了済みの段階: {showCompletedProjectStages ? "表示" : "非表示"}
+          </button>
+          <button
+            className={`${tasksOutside ? "btn-pill" : "btn-pill-outline"} text-xs`}
             onClick={() => setTasksOutsideStr(tasksOutside ? "false" : "true")}
             title="本日の作業カードを、盤面の中ではなく盤面の外に横一列で並べます"
             aria-pressed={tasksOutside}
@@ -2403,6 +2421,7 @@ export default function UnifiedBoardSection({
                 key={project.id}
                 project={project}
                 today={today}
+                showCompletedStages={showCompletedProjectStages}
                 zoom={zoom}
                 zIndex={memoNoteZIndex(project.boardPinned, zIndexById[project.id] ?? 1)}
                 selected={selectedIds.has(project.id)}
@@ -4332,16 +4351,18 @@ function NoteCard({
         placeholder="付箋のメモ..."
       />
       {note.mailFileDataUrl && (
-        <a
-          href={note.mailFileDataUrl}
-          download={note.mailFileName || "mail.msg"}
-          onClick={(e) => e.stopPropagation()}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openMailAttachment(note.mailFileDataUrl!, note.mailFileName || "mail.msg");
+          }}
           onPointerDown={(e) => e.stopPropagation()}
           title="ダウンロードして元のメールを開きます(既定のメールアプリに渡されます)"
           className="mx-2 mb-1.5 flex shrink-0 items-center gap-1 rounded bg-black/10 px-2 py-1 text-[11px] text-ink/70 hover:bg-black/20"
         >
           📧 元のメールを開く
-        </a>
+        </button>
       )}
     </div>
   );
@@ -4674,6 +4695,7 @@ function TodoCard({
 function ProjectCard({
   project,
   today,
+  showCompletedStages,
   zoom,
   zIndex,
   selected,
@@ -4691,6 +4713,9 @@ function ProjectCard({
 }: {
   project: ProjectItem;
   today: string;
+  /** trueなら完了済みの段階も打ち消し線で残す。falseなら従来どおり隠す(ToDoタブの
+   * 「完了済みのサブタスクを表示」、案件タブの「完了済みの段階を表示」と同じ考え方) */
+  showCompletedStages: boolean;
   zoom: number;
   zIndex: number;
   selected: boolean;
@@ -4716,7 +4741,7 @@ function ProjectCard({
   // 残っている段階の数に応じて、カード自体の高さを伸ばす(できるだけスクロールせず
   // 全部見えるようにする)。段階が非常に多い場合のみ、上限を超えた分がカード内
   // スクロールになる(computeProjectCardHeightの上限を参照)
-  const cardHeight = computeProjectCardHeight(project);
+  const cardHeight = computeProjectCardHeight(project, showCompletedStages);
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     x,
     y,
@@ -4729,7 +4754,7 @@ function ProjectCard({
   const doneCount = stages.filter(isStageDone).length;
   const progress = computeProjectProgress(stages);
   const overdue = project.dueDate < today;
-  const nextStages = stages.filter((st) => !isStageDone(st));
+  const visibleStages = showCompletedStages ? stages : stages.filter((st) => !isStageDone(st));
 
   return (
     // 案件は「期日まで段階を踏んでいく書類」。角を立て、上辺にアクセント色の見出し帯を
@@ -4813,26 +4838,39 @@ function ProjectCard({
         </div>
       )}
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-        {nextStages.length === 0 ? (
+        {visibleStages.length === 0 ? (
           <p className="text-[10px] text-cream/30">{stages.length === 0 ? "段階は未設定です" : "残っている段階はありません"}</p>
         ) : (
-          nextStages.map((st) => (
-            <button
-              key={st.id}
-              onClick={() => onToggleStage(st.id)}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
-              title="この段階を通過にする"
-            >
-              <span className="h-3 w-3 shrink-0 rounded-sm border border-cream/40" />
-              <span className="min-w-0 flex-1 truncate text-[11px] text-cream/80">{st.title}</span>
-              {/* 段階の対応状況。ToDoのサブタスクと同じ判子の見た目で揃える */}
-              {st.tag && <InlineStamp text={st.tag} />}
-              {st.dueDate && (
-                <span className={`shrink-0 text-[9px] ${st.dueDate < today ? "text-alert" : "text-cream/35"}`}>{st.dueDate}</span>
-              )}
-            </button>
-          ))
+          visibleStages.map((st) => {
+            const done = isStageDone(st);
+            return (
+              <button
+                key={st.id}
+                onClick={() => onToggleStage(st.id)}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
+                title={done ? "未完了に戻す" : "この段階を通過にする"}
+              >
+                {/* 完了済みはToDoのサブタスクと同じ「✓入りの丸」にして、打ち消し線で残す
+                    (showCompletedStagesがOFFの間はそもそもここに来ないので常に空の四角のまま) */}
+                <span
+                  className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-sm border text-[8px] leading-none ${
+                    done ? "border-cream/40 bg-cream/25 text-cream/70" : "border-cream/40"
+                  }`}
+                >
+                  {done ? "✓" : ""}
+                </span>
+                <span className={`min-w-0 flex-1 truncate text-[11px] ${done ? "text-cream/35 line-through" : "text-cream/80"}`}>
+                  {st.title}
+                </span>
+                {/* 段階の対応状況。ToDoのサブタスクと同じ判子の見た目で揃える */}
+                {done ? <InlineStamp text="済" tone="done" /> : st.tag ? <InlineStamp text={st.tag} /> : null}
+                {!done && st.dueDate && (
+                  <span className={`shrink-0 text-[9px] ${st.dueDate < today ? "text-alert" : "text-cream/35"}`}>{st.dueDate}</span>
+                )}
+              </button>
+            );
+          })
         )}
       </div>
     </div>

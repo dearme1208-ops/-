@@ -13,6 +13,7 @@ import { computeProjectForecast, type ProjectForecast } from "@/lib/projectForec
 import {
   buildStageCompletionOrder,
   computeProjectProgress,
+  incompletePreviousStageTitles,
   isStageDone,
   toggleProjectStage as toggleProjectStageShared,
 } from "@/lib/projectStage";
@@ -122,6 +123,9 @@ export default function ProjectsSection({
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [analysisProject, setAnalysisProject] = useState<ProjectItem | null>(null);
   const [wbsProject, setWbsProject] = useState<ProjectItem | null>(null);
+  const [stageCompleteConfirm, setStageCompleteConfirm] = useState<{ project: ProjectItem; stageId: string } | null>(
+    null
+  );
   const [addToTodayTarget, setAddToTodayTarget] = useState<ProjectItem | null>(null);
   const [stageAddTarget, setStageAddTarget] = useState<{ project: ProjectItem; stage: ProjectStage } | null>(null);
   const [stageAddStartNow, setStageAddStartNow] = useState(false);
@@ -427,8 +431,21 @@ export default function ProjectsSection({
     onAddedToToday?.();
   }
 
+  // チェック(未完了→完了)方向だけ確認モーダルを挟む。段階が多い案件では
+  // チェックボックスが小さく誤タップしやすいための保険(外す方向は確認しない)
   async function toggleProjectStage(project: ProjectItem, stageId: string) {
+    const stage = project.stages?.find((s) => s.id === stageId);
+    if (stage && !stage.completed) {
+      setStageCompleteConfirm({ project, stageId });
+      return;
+    }
     await toggleProjectStageShared(project, stageId);
+  }
+
+  async function confirmStageComplete() {
+    if (!stageCompleteConfirm) return;
+    await toggleProjectStageShared(stageCompleteConfirm.project, stageCompleteConfirm.stageId);
+    setStageCompleteConfirm(null);
   }
 
   // 段階を本日の作業に追加する前に、案件の業務区分(大項目)を引き継ぎ、
@@ -1091,6 +1108,43 @@ export default function ProjectsSection({
       {editingProject && <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
       {analysisProject && <ProjectAnalysisDialog project={analysisProject} onClose={() => setAnalysisProject(null)} />}
       {wbsProject && <WbsDialog project={wbsProject} onClose={() => setWbsProject(null)} />}
+
+      {stageCompleteConfirm &&
+        (() => {
+          const { project, stageId } = stageCompleteConfirm;
+          const stage = project.stages?.find((s) => s.id === stageId);
+          if (!stage) return null;
+          const incompletePrevious = incompletePreviousStageTitles(project, stageId);
+          return (
+            <Modal title="この段階を完了にしますか？" onClose={() => setStageCompleteConfirm(null)}>
+              <div className="space-y-2 text-sm text-cream/80">
+                <p>
+                  案件 <span className="text-cream/50">{project.title}</span> の段階 <b className="text-cream">{stage.title}</b> を完了にします。
+                </p>
+                {incompletePrevious.length > 0 && (
+                  <div className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2">
+                    <p className="text-xs font-bold text-alert">前の段階がまだ完了していません</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {incompletePrevious.map((title) => (
+                        <li key={title} className="truncate text-xs text-cream/70">
+                          ・{title}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button className="btn-pill-outline text-sm" onClick={() => setStageCompleteConfirm(null)}>
+                  やめる
+                </button>
+                <button className="btn-pill text-sm" onClick={confirmStageComplete}>
+                  完了にする
+                </button>
+              </div>
+            </Modal>
+          );
+        })()}
 
       {addToTodayTarget && (
         <CategoryWorkNameDialog

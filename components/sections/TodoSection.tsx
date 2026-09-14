@@ -37,7 +37,13 @@ import {
 } from "@/lib/time";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
-import { buildStageCompletionOrder, computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
+import {
+  buildStageCompletionOrder,
+  computeProjectProgress,
+  incompletePreviousStageTitles,
+  isStageDone,
+  toggleProjectStage,
+} from "@/lib/projectStage";
 import { foafNumberOf } from "@/lib/hayarigami";
 import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
@@ -46,7 +52,7 @@ import { itemWeight } from "@/lib/mountain";
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { DraftBoard, RankEmblem, ScoutBust } from "@/components/powerpro/PowerproCanvas";
 import { rankCssColor } from "@/lib/powerproArt";
-import { attachMailFile, readFileAsDataUrl, type MailAttachmentFields } from "@/lib/mailImport";
+import { attachMailFile, openMailAttachment, readFileAsDataUrl, type MailAttachmentFields } from "@/lib/mailImport";
 import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import { DEFAULT_MEMO_NOTE_COLOR, estimateChecklistNoteHeight, estimateTextNoteHeight } from "@/lib/memo";
@@ -2094,6 +2100,23 @@ function TodoProjectsView({ today }: { today: string }) {
     () => (projects ?? []).filter((p) => !p.completedAt).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [projects]
   );
+  // チェック(未完了→完了)方向だけ確認モーダルを挟む(案件タブと同じ考え方)
+  const [stageCompleteConfirm, setStageCompleteConfirm] = useState<{ project: ProjectItem; stageId: string } | null>(
+    null
+  );
+  function requestToggleStage(project: ProjectItem, stageId: string) {
+    const stage = project.stages?.find((s) => s.id === stageId);
+    if (stage && !stage.completed) {
+      setStageCompleteConfirm({ project, stageId });
+      return;
+    }
+    toggleProjectStage(project, stageId);
+  }
+  async function confirmStageComplete() {
+    if (!stageCompleteConfirm) return;
+    await toggleProjectStage(stageCompleteConfirm.project, stageCompleteConfirm.stageId);
+    setStageCompleteConfirm(null);
+  }
 
   return (
     <div className="panel space-y-3 p-4">
@@ -2139,7 +2162,7 @@ function TodoProjectsView({ today }: { today: string }) {
                         return (
                           <button
                             key={stage.id}
-                            onClick={() => toggleProjectStage(project, stage.id)}
+                            onClick={() => requestToggleStage(project, stage.id)}
                             className="flex w-full items-center gap-2 text-left text-xs text-cream/70 hover:text-cream"
                             title={order ? `${order.rank}番目に完了（${formatDateTimeJp(order.at)}）` : undefined}
                           >
@@ -2162,6 +2185,43 @@ function TodoProjectsView({ today }: { today: string }) {
           })}
         </div>
       )}
+
+      {stageCompleteConfirm &&
+        (() => {
+          const { project, stageId } = stageCompleteConfirm;
+          const stage = project.stages?.find((s) => s.id === stageId);
+          if (!stage) return null;
+          const incompletePrevious = incompletePreviousStageTitles(project, stageId);
+          return (
+            <Modal title="この段階を完了にしますか？" onClose={() => setStageCompleteConfirm(null)}>
+              <div className="space-y-2 text-sm text-cream/80">
+                <p>
+                  案件 <span className="text-cream/50">{project.title}</span> の段階 <b className="text-cream">{stage.title}</b> を完了にします。
+                </p>
+                {incompletePrevious.length > 0 && (
+                  <div className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2">
+                    <p className="text-xs font-bold text-alert">前の段階がまだ完了していません</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {incompletePrevious.map((title) => (
+                        <li key={title} className="truncate text-xs text-cream/70">
+                          ・{title}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button className="btn-pill-outline text-sm" onClick={() => setStageCompleteConfirm(null)}>
+                  やめる
+                </button>
+                <button className="btn-pill text-sm" onClick={confirmStageComplete}>
+                  完了にする
+                </button>
+              </div>
+            </Modal>
+          );
+        })()}
     </div>
   );
 }
@@ -2434,14 +2494,14 @@ function SubtaskRow({
         />
         {sub.mailFileDataUrl ? (
           <span className="flex shrink-0 items-center gap-0.5">
-            <a
-              href={sub.mailFileDataUrl}
-              download={sub.mailFileName || "mail.msg"}
+            <button
+              type="button"
+              onClick={() => openMailAttachment(sub.mailFileDataUrl!, sub.mailFileName || "mail.msg")}
               title={`ダウンロードして元のメールを開きます: ${sub.mailSubject ?? sub.mailFileName ?? ""}`}
               className="text-[11px] text-cream/40 hover:text-cream/70"
             >
               📧
-            </a>
+            </button>
             <button
               onClick={() => onUpdateSubtaskMail(sub, undefined)}
               className="text-[9px] text-cream/30 hover:text-alert"
@@ -3063,14 +3123,14 @@ function TaskMailField({ task }: { task: TodoTask }) {
       />
       {mail ? (
         <>
-          <a
-            href={mail.mailFileDataUrl}
-            download={mail.mailFileName || "mail.msg"}
+          <button
+            type="button"
+            onClick={() => openMailAttachment(mail.mailFileDataUrl, mail.mailFileName || "mail.msg")}
             title="ダウンロードして元のメールを開きます(既定のメールアプリに渡されます)"
             className="rounded-lg border border-cream/20 bg-ink px-3 py-1.5 text-xs text-cream hover:border-cream/40"
           >
             📧 {mail.mailSubject || mail.mailFileName}
-          </a>
+          </button>
           <button className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80" onClick={() => inputRef.current?.click()}>
             差し替え
           </button>

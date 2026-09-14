@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { attachMailFile, readFileAsDataUrl, type MailAttachmentFields } from "@/lib/mailImport";
+import { attachMailFile, openMailAttachment, readFileAsDataUrl, type MailAttachmentFields } from "@/lib/mailImport";
 import {
   DndContext,
   closestCenter,
@@ -145,14 +145,14 @@ function StageRow({
         />
         {stage.mailFileDataUrl ? (
           <span className="flex shrink-0 items-center gap-0.5">
-            <a
-              href={stage.mailFileDataUrl}
-              download={stage.mailFileName || "mail.msg"}
+            <button
+              type="button"
+              onClick={() => openMailAttachment(stage.mailFileDataUrl!, stage.mailFileName || "mail.msg")}
               title={`ダウンロードして元のメールを開きます: ${stage.mailSubject ?? stage.mailFileName ?? ""}`}
               className="text-xs text-cream/40 hover:text-cream/70"
             >
               📧
-            </a>
+            </button>
             <button
               onClick={() => onSetMail(stage.id, undefined)}
               className="text-[9px] text-cream/30 hover:text-alert"
@@ -516,14 +516,14 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
           />
           {mail ? (
             <>
-              <a
-                href={mail.mailFileDataUrl}
-                download={mail.mailFileName || "mail.msg"}
+              <button
+                type="button"
+                onClick={() => openMailAttachment(mail.mailFileDataUrl, mail.mailFileName || "mail.msg")}
                 title="ダウンロードして元のメールを開きます(既定のメールアプリに渡されます)"
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-xs text-cream hover:border-cream/40"
               >
                 📧 {mail.mailSubject || mail.mailFileName}
-              </a>
+              </button>
               <button className="text-xs text-cream/40 hover:text-alert" onClick={() => setMail(undefined)}>
                 削除
               </button>

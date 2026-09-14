@@ -65,3 +65,29 @@ export async function attachMailFile(file: File): Promise<MailAttachmentFields> 
   const mailFileDataUrl = await readFileAsDataUrl(file);
   return { mailFileDataUrl, mailFileName: file.name, mailSubject: mail.subject };
 }
+
+// 「元のメールを開く」の実体。data:URLをそのまま<a href download>のhrefに使うと、
+// 環境によってはdownload属性が効かずクリックしても何も起きないことがある
+// (モバイルのブラウザ・PWAとして起動している場合など)。ダウンロード自体は
+// このアプリの他の書き出し(downloadTextFile)と同じくBlob URLを都度作って
+// トリガーする方式にすることで確実性を上げる
+export function openMailAttachment(dataUrl: string, fileName: string): void {
+  const commaIdx = dataUrl.indexOf(",");
+  const header = commaIdx === -1 ? "" : dataUrl.slice(0, commaIdx);
+  const base64 = commaIdx === -1 ? dataUrl : dataUrl.slice(commaIdx + 1);
+  const mimeMatch = /^data:([^;]+);base64$/.exec(header);
+  const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // ダウンロード開始には一瞬かかるため、すぐには失効させない
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}

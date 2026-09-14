@@ -67,7 +67,17 @@ import {
   notify,
   requestNotificationPermission,
 } from "@/lib/notifications";
-import type { BreakRange, DailyTask, GeoPlace, MasterTask, ProjectItem, TimeSegment, Weekday, WorkRecord } from "@/lib/types";
+import type {
+  BreakRange,
+  DailyTask,
+  GeoPlace,
+  MasterTask,
+  ProjectItem,
+  TemplateItem,
+  TimeSegment,
+  Weekday,
+  WorkRecord,
+} from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import { showUndoToast } from "@/lib/toast";
 import Modal from "@/components/ui/Modal";
@@ -1451,20 +1461,30 @@ export default function TodaySection({
     setVoiceListening(false);
   }
 
-  async function generateFromTemplate() {
+  // ボタンを押した時点では中身を確認するだけで、実際の生成(既存の削除・追加)は
+  // 確認モーダルで「生成する」を押すまで行わない。ネイティブのconfirm/alertは
+  // テーマの見た目に合わず浮いてしまうため、他の確認と同じ自前のModalに揃えた
+  const [templateConfirm, setTemplateConfirm] = useState<{ items: TemplateItem[]; existingCount: number } | null>(
+    null
+  );
+
+  async function requestGenerateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
     if (items.length === 0) {
-      alert(`${WEEKDAY_LABELS[weekday]}曜日のテンプレートが空です。先に「曜日別テンプレート」で登録してください。`);
+      showUndoToast(`${WEEKDAY_LABELS[weekday]}曜日のテンプレートが空です。先に「曜日別テンプレート」で登録してください。`);
       return;
     }
+    const existingCount = await db.dailyTasks.where("date").equals(date).count();
+    setTemplateConfirm({ items, existingCount });
+  }
+
+  async function confirmGenerateFromTemplate() {
+    if (!templateConfirm) return;
     const existing = await db.dailyTasks.where("date").equals(date).toArray();
     if (existing.length > 0) {
-      if (!confirm("本日の作業リストは既にあります。テンプレートから再生成すると、進行中の記録は失われます。よろしいですか?")) {
-        return;
-      }
       await db.dailyTasks.bulkDelete(existing.map((e) => e.id));
     }
-    const newTasks: DailyTask[] = items.map((item, idx) => ({
+    const newTasks: DailyTask[] = templateConfirm.items.map((item, idx) => ({
       id: uid(),
       date,
       order: idx,
@@ -1478,6 +1498,7 @@ export default function TodaySection({
       isSpontaneous: false,
     }));
     await db.dailyTasks.bulkAdd(newTasks);
+    setTemplateConfirm(null);
   }
 
   // 当日まだ何も開始しておらず、体調記録も未設定の状態で最初の作業を開始しようとした場合、
@@ -3161,7 +3182,7 @@ export default function TodaySection({
                 </option>
               ))}
             </select>
-            <button className="btn-pill" onClick={generateFromTemplate}>
+            <button className="btn-pill" onClick={requestGenerateFromTemplate}>
               テンプレートから生成
             </button>
           </div>
@@ -3540,7 +3561,7 @@ export default function TodaySection({
             </>
           )}
           {tasks && tasks.length > 0 && (
-            <button className="btn-pill-outline text-sm" onClick={generateFromTemplate}>
+            <button className="btn-pill-outline text-sm" onClick={requestGenerateFromTemplate}>
               再生成
             </button>
           )}
@@ -3681,6 +3702,29 @@ export default function TodaySection({
           doneCount={(tasks ?? []).filter((t) => t.status === "done" && !t.isProvisional).length}
           onClose={() => setShowReflection(false)}
         />
+      )}
+
+      {templateConfirm && (
+        <Modal title="本日の作業リストを生成" onClose={() => setTemplateConfirm(null)}>
+          <div className="space-y-3 text-sm text-cream/80">
+            <p>
+              {WEEKDAY_LABELS[weekday]}曜日のテンプレート（{templateConfirm.items.length}件）から、本日の作業リストを作成します。
+            </p>
+            {templateConfirm.existingCount > 0 && (
+              <p className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2 text-alert">
+                本日の作業リストには既に{templateConfirm.existingCount}件あります。生成すると、これらは削除され進行中の記録も失われます。
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button className="btn-pill-outline text-sm" onClick={() => setTemplateConfirm(null)}>
+                キャンセル
+              </button>
+              <button className="btn-pill text-sm" onClick={confirmGenerateFromTemplate}>
+                生成する
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {pendingStart && provisionalTask && (

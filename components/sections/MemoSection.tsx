@@ -36,7 +36,7 @@ import {
   parseMemoBoardImport,
   serializeMemoBoard,
 } from "@/lib/memo";
-import { formatMailNoteText, parseMsgFile, readFileAsDataUrl } from "@/lib/mailImport";
+import { formatMailNoteText, openMailAttachment, parseMsgFile, readFileAsDataUrl } from "@/lib/mailImport";
 import type { BoardStamp, MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
 import StrokeLayer from "@/components/memo/StrokeLayer";
@@ -1569,16 +1569,18 @@ function StickyNoteCard({
         />
       )}
       {note.mailFileDataUrl && (
-        <a
-          href={note.mailFileDataUrl}
-          download={note.mailFileName || "mail.msg"}
-          onClick={(e) => e.stopPropagation()}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openMailAttachment(note.mailFileDataUrl!, note.mailFileName || "mail.msg");
+          }}
           onPointerDown={(e) => e.stopPropagation()}
           title="ダウンロードして元のメールを開きます(既定のメールアプリに渡されます)"
           className="mx-2 mb-1.5 flex shrink-0 items-center gap-1 rounded bg-black/10 px-2 py-1 text-[11px] text-black/70 hover:bg-black/20"
         >
           📧 元のメールを開く
-        </a>
+        </button>
       )}
       {!penMode && !connectMode && !note.autoSize && (
         <div
