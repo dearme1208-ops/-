@@ -17,7 +17,7 @@ import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import type { ProjectItem, ProjectStage } from "@/lib/types";
-import { computeProjectProgress } from "@/lib/projectStage";
+import { computeProjectProgress, effectiveProjectTag } from "@/lib/projectStage";
 import { formatHms, parseHmsToSeconds } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 
@@ -401,6 +401,8 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
     const rate = Number(hourlyRateStr);
     const estimatedTotalSeconds =
       estimatedTotalStr.trim() !== "" ? parseHmsToSeconds(estimatedTotalStr) : 0;
+    // 段階を持つ場合、対応状況は段階側から自動算出されるため手動の値では上書きしない
+    const hasStages = stages.length > 0;
     await db.projects.update(project.id, {
       title: title.trim(),
       groupName: groupName.trim() || undefined,
@@ -410,7 +412,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       hourlyRate: hourlyRateStr.trim() !== "" && Number.isFinite(rate) && rate >= 0 ? rate : undefined,
       estimatedTotalSeconds: estimatedTotalSeconds > 0 ? estimatedTotalSeconds : undefined,
       clientId: clientId || undefined,
-      tag: tag || undefined,
+      ...(hasStages ? {} : { tag: tag || undefined }),
       mailFileDataUrl: mail?.mailFileDataUrl,
       mailFileName: mail?.mailFileName,
       mailSubject: mail?.mailSubject,
@@ -466,19 +468,28 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">対応状況</label>
-          <select
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          >
-            <option value="">対応状況なし</option>
-            {tagOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-            {tag && !tagOptions.includes(tag) && <option value={tag}>{tag}</option>}
-          </select>
+          {stages.length > 0 ? (
+            <>
+              <span className="rounded-lg border border-cream/20 bg-cream/10 px-3 py-2 text-sm text-cream">
+                {effectiveProjectTag({ ...project, stages }, tagOptions) ?? "未設定"}
+              </span>
+              <span className="text-[10px] text-cream/40">段階の対応状況から自動的に決まります</span>
+            </>
+          ) : (
+            <select
+              value={tag}
+              onChange={(e) => setTag(e.target.value)}
+              className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            >
+              <option value="">対応状況なし</option>
+              {tagOptions.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+              {tag && !tagOptions.includes(tag) && <option value={tag}>{tag}</option>}
+            </select>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">取引先</label>

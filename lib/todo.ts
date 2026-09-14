@@ -2,6 +2,7 @@ import { db, uid } from "./db";
 import type { RecurrenceRule, TodoList, TodoTask } from "./types";
 import type { ParsedTodoRow } from "./todoCsv";
 import { todayStr } from "./time";
+import { highestPriorityTag } from "./tagPriority";
 
 // 対応状況の初期値（設定タブ「todo.tagPresets」の初期シード値。以後は設定タブで自由に増減できる）
 export const DEFAULT_TAG_PRESETS = ["社内確認中", "客先確認中", "打ち合わせ", "対応中", "保留"];
@@ -29,6 +30,23 @@ export function effectiveDueDate(task: TodoTask, subtasks: TodoTask[]): string |
   );
   if (dates.length === 0) return undefined;
   return dates.reduce((min, d) => (d < min ? d : min));
+}
+
+// タスク全体の対応状況。サブタスクを持たない場合は自分の対応状況をそのまま使う(=手動設定)。
+// サブタスクを持つ場合は、対応状況は完全にサブタスク側から自動算出され、自分自身に設定した
+// 対応状況は使われない(未完了サブタスクの中で最も優先度の高いものを採用し、未完了サブタスクに
+// 対応状況が1つも見当たらなければ完了済みも含めて探す)。effectiveDueDateと同じ考え方
+export function effectiveTag(task: TodoTask, subtasks: TodoTask[], priorityOrder: string[]): string | undefined {
+  if (subtasks.length === 0) return task.tag;
+  const fromOpen = highestPriorityTag(
+    subtasks.filter((s) => !s.completed).map((s) => s.tag),
+    priorityOrder
+  );
+  if (fromOpen) return fromOpen;
+  return highestPriorityTag(
+    subtasks.map((s) => s.tag),
+    priorityOrder
+  );
 }
 
 // タスクを完了にする(未完了 -> 完了の一方向)。繰り返しタスクは完了扱いにはならず、

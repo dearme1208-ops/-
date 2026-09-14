@@ -181,6 +181,16 @@ export default function SettingsSection() {
     setTagPresetsJson(serializePresetList(tagPresets.filter((v) => v !== value)));
     if (autoImportantTag === value) setAutoImportantTag("");
   }
+  // 対応状況の並び順は、サブタスク・案件の段階から親へ自動で対応状況を反映する際の
+  // 優先度としても使う(先頭ほど優先度が高い)ため、増減だけでなく並び替えができる必要がある
+  function moveTagPreset(value: string, direction: -1 | 1) {
+    const i = tagPresets.indexOf(value);
+    const j = i + direction;
+    if (i === -1 || j < 0 || j >= tagPresets.length) return;
+    const next = [...tagPresets];
+    [next[i], next[j]] = [next[j], next[i]];
+    setTagPresetsJson(serializePresetList(next));
+  }
   function addCategoryPreset(value: string) {
     if (categoryPresets.includes(value)) return;
     setCategoryPresetsJson(serializePresetList([...categoryPresets, value]));
@@ -1630,10 +1640,13 @@ export default function SettingsSection() {
 
       <div className="panel space-y-3 p-4">
         <h3 className="font-display text-sm font-bold text-cream/80">ToDoの対応状況の選択肢</h3>
-        <PresetListEditor presets={tagPresets} onAdd={addTagPreset} onRemove={removeTagPreset} placeholder="対応状況名" />
+        <TagPriorityEditor presets={tagPresets} onAdd={addTagPreset} onRemove={removeTagPreset} onMove={moveTagPreset} />
         <p className="text-xs text-cream/50">
           ToDoの「対応状況」ドロップダウン・かんばんの列に出てくる選択肢です。ここでの増減とは別に、ToDo登録・編集時は自由入力（「＋
           新しい対応状況...」）も引き続きできます。
+        </p>
+        <p className="text-xs text-cream/50">
+          並び順は<b className="text-cream/80">優先度</b>でもあります（上ほど高い）。サブタスク・案件の段階を持つ親タスク／案件は、対応状況を自分では設定できず、配下の未完了のサブタスク・段階の中で最も優先度の高いものが自動的に反映されます（配下が無ければこれまでどおり自分で設定します）。
         </p>
 
         <div className="border-t border-cream/10 pt-3">
@@ -1888,6 +1901,80 @@ export default function SettingsSection() {
 }
 
 // チップ形式の選択肢リストを増減編集する小さな汎用エディタ（対応状況・分類の両方で使う）
+// ToDoの対応状況専用の編集リスト。増減はPresetListEditorと同じだが、並び順そのものが
+// 優先度(サブタスク・段階から親への自動反映)を兼ねるため、↑↓で並び替えられるようにしてある
+function TagPriorityEditor({
+  presets,
+  onAdd,
+  onRemove,
+  onMove,
+}: {
+  presets: string[];
+  onAdd: (value: string) => void;
+  onRemove: (value: string) => void;
+  onMove: (value: string, direction: -1 | 1) => void;
+}) {
+  const [newValue, setNewValue] = useState("");
+
+  function add() {
+    const v = newValue.trim();
+    if (!v) return;
+    onAdd(v);
+    setNewValue("");
+  }
+
+  return (
+    <div className="space-y-2">
+      {presets.length === 0 ? (
+        <p className="text-xs text-cream/40">まだ何も登録されていません。</p>
+      ) : (
+        <ol className="space-y-1">
+          {presets.map((p, i) => (
+            <li
+              key={p}
+              className="flex items-center gap-2 rounded-lg border border-cream/20 bg-ink px-2.5 py-1.5 text-xs text-cream"
+            >
+              <span className="w-5 shrink-0 text-right text-cream/40 tabular-nums">{i + 1}</span>
+              <span className="min-w-0 flex-1 truncate">{p}</span>
+              <button
+                onClick={() => onMove(p, -1)}
+                disabled={i === 0}
+                aria-label={`${p}の優先度を上げる`}
+                className="text-cream/50 hover:text-cream disabled:pointer-events-none disabled:opacity-20"
+              >
+                ▲
+              </button>
+              <button
+                onClick={() => onMove(p, 1)}
+                disabled={i === presets.length - 1}
+                aria-label={`${p}の優先度を下げる`}
+                className="text-cream/50 hover:text-cream disabled:pointer-events-none disabled:opacity-20"
+              >
+                ▼
+              </button>
+              <button onClick={() => onRemove(p)} aria-label={`${p}を削除`} className="text-cream/40 hover:text-alert">
+                ✕
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="flex items-center gap-2">
+        <input
+          value={newValue}
+          onChange={(e) => setNewValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="対応状況名"
+          className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+        />
+        <button className="btn-pill-outline text-xs" onClick={add}>
+          追加（最後尾＝最も優先度低）
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PresetListEditor({
   presets,
   onAdd,

@@ -20,6 +20,7 @@ import {
   computeDateOrderedPosition,
   DEFAULT_TAG_PRESETS,
   effectiveDueDate,
+  effectiveTag,
   parsePresetList,
   upsertTodoFromCsv,
 } from "@/lib/todo";
@@ -128,7 +129,13 @@ function compareStatusTag(a: string | undefined, b: string | undefined, statusOr
   return av.localeCompare(bv, "ja");
 }
 
-function compareTodoTasksBySortMode(a: TodoTask, b: TodoTask, mode: TodoSortMode, statusOrder: string[]): number {
+function compareTodoTasksBySortMode(
+  a: TodoTask,
+  b: TodoTask,
+  mode: TodoSortMode,
+  statusOrder: string[],
+  subtasksByParent: Map<string, TodoTask[]>
+): number {
   switch (mode) {
     case "category":
       return compareJaOrBlankLast(a.category, b.category);
@@ -141,7 +148,11 @@ function compareTodoTasksBySortMode(a: TodoTask, b: TodoTask, mode: TodoSortMode
     case "important":
       return Number(b.important) - Number(a.important);
     case "status":
-      return compareStatusTag(a.tag, b.tag, statusOrder);
+      return compareStatusTag(
+        effectiveTag(a, subtasksByParent.get(a.id) ?? [], statusOrder),
+        effectiveTag(b, subtasksByParent.get(b.id) ?? [], statusOrder),
+        statusOrder
+      );
     default:
       return 0;
   }
@@ -546,9 +557,10 @@ export default function TodoSection({
           !(t.notes ?? "").toLowerCase().includes(q)
         )
           return false;
+        const tTag = effectiveTag(t, subtasksByParent.get(t.id) ?? [], tagOptions);
         if (filterTagsMulti.length > 0) {
-          if (!filterTagsMulti.includes(t.tag ?? "")) return false;
-        } else if (filterTag && t.tag !== filterTag) {
+          if (!filterTagsMulti.includes(tTag ?? "")) return false;
+        } else if (filterTag && tTag !== filterTag) {
           return false;
         }
         if (filterCategory && t.category !== filterCategory) return false;
@@ -569,7 +581,7 @@ export default function TodoSection({
         return dueA.localeCompare(dueB);
       }
       if (currentListId && !searchActive && sortMode !== "manual") {
-        const cmp = compareTodoTasksBySortMode(a, b, sortMode, tagOptions);
+        const cmp = compareTodoTasksBySortMode(a, b, sortMode, tagOptions, subtasksByParent);
         if (cmp !== 0) return cmp;
       }
       return a.order - b.order;
@@ -626,10 +638,10 @@ export default function TodoSection({
     }
 
     // 分類・対応状況ごとにタスクをグルーピングし、未設定は「未分類」「未設定」にまとめる
-    const groupByField = (tasks: TodoTask[], field: "category" | "tag", fallback: string): Map<string, TodoTask[]> => {
+    const groupByField = (tasks: TodoTask[], getValue: (t: TodoTask) => string | undefined, fallback: string): Map<string, TodoTask[]> => {
       const map = new Map<string, TodoTask[]>();
       for (const t of tasks) {
-        const key = (t[field] ?? "").trim() || fallback;
+        const key = (getValue(t) ?? "").trim() || fallback;
         if (!map.has(key)) map.set(key, []);
         map.get(key)!.push(t);
       }
@@ -670,9 +682,9 @@ export default function TodoSection({
       .filter((l) => (byList.get(l.id) ?? []).length > 0)
       .map((list) => {
         const listTasks = byList.get(list.id) ?? [];
-        const byCategory = groupByField(listTasks, "category", "未分類");
+        const byCategory = groupByField(listTasks, (t) => t.category, "未分類");
         const categoryNodes: TreeNode[] = Array.from(byCategory.entries()).map(([categoryLabel, categoryTasks]) => {
-          const byTag = groupByField(categoryTasks, "tag", "未設定");
+          const byTag = groupByField(categoryTasks, (t) => effectiveTag(t, subtasksByParent.get(t.id) ?? [], tagOptions), "未設定");
           const tagNodes: TreeNode[] = Array.from(byTag.entries()).map(([tagLabel, tagTasks]) => ({
             id: `${list.id}::${categoryLabel}::${tagLabel}`,
             label: tagLabel,
@@ -693,7 +705,7 @@ export default function TodoSection({
           children: categoryNodes,
         };
       });
-  }, [visibleTasks, showCompletedInTimeline, lists, subtasksByParent, today]);
+  }, [visibleTasks, showCompletedInTimeline, lists, subtasksByParent, today, tagOptions]);
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
 
@@ -1708,6 +1720,7 @@ export default function TodoSection({
         ) : displayMode === "kanban" ? (
           <KanbanBoard
             tasks={visibleTasks}
+            subtasksByParent={subtasksByParent}
             axis={kanbanAxis}
             onAxisChange={setKanbanAxis}
             tagOptions={tagOptions}
@@ -1826,6 +1839,8 @@ export default function TodoSection({
             tasks={incompleteTasks}
             today={today}
             parentTitleById={parentTitleById}
+            subtasksByParent={subtasksByParent}
+            tagOptions={tagOptions}
             selectedIds={selectedOverdueIds}
             onToggleSelect={toggleOverdueSelect}
             onSelectAll={selectAllOverdue}
@@ -2232,6 +2247,8 @@ function OverdueBulkList({
   tasks,
   today,
   parentTitleById,
+  subtasksByParent,
+  tagOptions,
   selectedIds,
   onToggleSelect,
   onSelectAll,
@@ -2245,6 +2262,8 @@ function OverdueBulkList({
   tasks: TodoTask[];
   today: string;
   parentTitleById: Map<string, string>;
+  subtasksByParent: Map<string, TodoTask[]>;
+  tagOptions: string[];
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onSelectAll: () => void;
@@ -2311,6 +2330,7 @@ function OverdueBulkList({
       <div className="space-y-1.5">
         {tasks.map((task) => {
           const daysOverdue = task.dueDate ? daysBetweenDateStrs(task.dueDate, today) : null;
+          const tag = task.parentTaskId ? task.tag : effectiveTag(task, subtasksByParent.get(task.id) ?? [], tagOptions);
           return (
             <div
               key={task.id}
@@ -2335,7 +2355,7 @@ function OverdueBulkList({
                 )}
                 <div className="truncate text-sm text-cream">{task.title}</div>
                 <div className="flex flex-wrap items-center gap-2 text-[10px] text-cream/50">
-                  {task.tag && <span>{task.tag}</span>}
+                  {tag && <span>{tag}</span>}
                   {task.category && <span>{task.category}</span>}
                   {task.customer && <span>{task.customer}</span>}
                 </div>
@@ -2665,6 +2685,7 @@ function TaskBlock({
             task={task}
             subtasks={subtasks}
             listTitle={listTitle}
+            tagOptions={tagOptions}
             onToggleComplete={onToggleComplete}
             onToggleImportant={onToggleImportant}
             onOpenDetail={onOpenDetail}
@@ -2790,6 +2811,7 @@ function TaskRow({
   task,
   subtasks,
   listTitle,
+  tagOptions,
   onToggleComplete,
   onToggleImportant,
   onOpenDetail,
@@ -2797,6 +2819,7 @@ function TaskRow({
   task: TodoTask;
   subtasks: TodoTask[];
   listTitle?: string;
+  tagOptions: string[];
   onToggleComplete: () => void;
   onToggleImportant: () => void;
   onOpenDetail: () => void;
@@ -2805,6 +2828,7 @@ function TaskRow({
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const { themedMode, wordingEnabled } = useVisualMode();
   const dueDate = effectiveDueDate(task, subtasks);
+  const tag = effectiveTag(task, subtasks, tagOptions);
   const overdue = !task.completed && !!dueDate && dueDate < today;
   const dueToday = !task.completed && !!dueDate && dueDate === today;
   const doneCount = subtasks.filter((s) => s.completed).length;
@@ -2914,15 +2938,15 @@ function TaskRow({
           )}
           {/* 対応状況と客先は、一覧を追うときに件名の次によく見る情報なので、
               リスト名・分類より一段大きく・濃く出す */}
-          {task.tag && (
+          {tag && (
             <span
               className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
-                !!autoImportantTag && task.tag === autoImportantTag
+                !!autoImportantTag && tag === autoImportantTag
                   ? "border-alert/50 bg-alert/15 text-alert"
                   : "border-cream/40 bg-cream/10 text-cream"
               }`}
             >
-              {task.tag}
+              {tag}
             </span>
           )}
           {task.category && (
@@ -3233,7 +3257,10 @@ function TaskDetailModal({
 
   async function save() {
     if (!title.trim()) return;
-    const tag = resolveTag();
+    // サブタスクを持つ場合、対応状況はサブタスク側から自動算出されるため手動では上書きしない
+    // (この場合tagModeのUIも読み取り専用のため、resolveTag()の値はそもそも使わない)
+    const hasSubtasks = subtasks.length > 0;
+    const tag = hasSubtasks ? effectiveTag(task, subtasks, tagOptions) : resolveTag();
     const updates: Partial<TodoTask> = {
       title: title.trim(),
       action: action.trim() || undefined,
@@ -3241,12 +3268,14 @@ function TaskDetailModal({
       notes: notes.trim() || undefined,
       startDate: startDate || undefined,
       dueDate: dueDate || undefined,
-      tag,
       category: resolveCategory(),
       customer: resolveCustomer(),
       clientId: clientId || undefined,
       recurrence: recurrenceEnabled ? recurrence : undefined,
     };
+    if (!hasSubtasks) {
+      updates.tag = tag;
+    }
     // 設定で指定したタグが選択されていれば自動的に重要にする（タグを外しても重要フラグは自動では解除しない）
     if (autoImportantTag && tag === autoImportantTag) {
       updates.important = true;
@@ -3388,26 +3417,37 @@ function TaskDetailModal({
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-cream/60">対応状況</label>
-          <select
-            value={tagMode}
-            onChange={(e) => setTagMode(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-          >
-            <option value={NO_TAG_VALUE}>対応状況なし</option>
-            {tagOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-            <option value={CUSTOM_TAG_VALUE}>＋ 新しい対応状況...</option>
-          </select>
-          {tagMode === CUSTOM_TAG_VALUE && (
-            <input
-              value={customTag}
-              onChange={(e) => setCustomTag(e.target.value)}
-              placeholder="対応状況名"
-              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-            />
+          {subtasks.length > 0 ? (
+            <>
+              <span className="rounded-full border border-cream/20 bg-cream/10 px-2 py-0.5 text-xs text-cream">
+                {effectiveTag(task, subtasks, tagOptions) ?? "未設定"}
+              </span>
+              <span className="text-[10px] text-cream/40">サブタスクの対応状況から自動的に決まります</span>
+            </>
+          ) : (
+            <>
+              <select
+                value={tagMode}
+                onChange={(e) => setTagMode(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+              >
+                <option value={NO_TAG_VALUE}>対応状況なし</option>
+                {tagOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+                <option value={CUSTOM_TAG_VALUE}>＋ 新しい対応状況...</option>
+              </select>
+              {tagMode === CUSTOM_TAG_VALUE && (
+                <input
+                  value={customTag}
+                  onChange={(e) => setCustomTag(e.target.value)}
+                  placeholder="対応状況名"
+                  className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                />
+              )}
+            </>
           )}
         </div>
 
@@ -3829,6 +3869,7 @@ function TaskDetailModal({
 // 対応状況(タグ)または分類(カテゴリ)を列にした、ドラッグ&ドロップで移動できるかんばん表示
 function KanbanBoard({
   tasks,
+  subtasksByParent,
   axis,
   onAxisChange,
   tagOptions,
@@ -3838,6 +3879,7 @@ function KanbanBoard({
   onOpenDetail,
 }: {
   tasks: TodoTask[];
+  subtasksByParent: Map<string, TodoTask[]>;
   axis: KanbanAxis;
   onAxisChange: (axis: KanbanAxis) => void;
   tagOptions: string[];
@@ -3849,16 +3891,18 @@ function KanbanBoard({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const columns = useMemo(() => [...(axis === "tag" ? tagOptions : categoryOptions), KANBAN_UNSET], [axis, tagOptions, categoryOptions]);
 
+  // 対応状況の列分けは、サブタスクを持つタスクなら自動算出したeffectiveTagで行う
+  // (対応状況はサブタスクから自動的に決まるため、手動のtask.tagはもう使わない)
   const tasksByColumn = useMemo(() => {
     const map = new Map<string, TodoTask[]>();
     for (const col of columns) map.set(col, []);
     for (const t of tasks) {
-      const value = axis === "tag" ? t.tag : t.category;
+      const value = axis === "tag" ? effectiveTag(t, subtasksByParent.get(t.id) ?? [], tagOptions) : t.category;
       const col = value && map.has(value) ? value : KANBAN_UNSET;
       map.get(col)!.push(t);
     }
     return map;
-  }, [tasks, axis, columns]);
+  }, [tasks, axis, columns, subtasksByParent, tagOptions]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -3868,6 +3912,8 @@ function KanbanBoard({
     const value = overId.slice(4);
     const task = tasks.find((t) => t.id === active.id);
     if (!task) return;
+    // 対応状況はサブタスクがあれば自動算出のため、ドラッグでの手動変更は無効
+    if (axis === "tag" && (subtasksByParent.get(task.id) ?? []).length > 0) return;
     const current = (axis === "tag" ? task.tag : task.category) ?? KANBAN_UNSET;
     if (current === value) return;
     onMoveTask(task, axis, value === KANBAN_UNSET ? undefined : value);
@@ -3899,6 +3945,8 @@ function KanbanBoard({
               columnId={col}
               label={col === KANBAN_UNSET ? "未設定" : col}
               tasks={tasksByColumn.get(col) ?? []}
+              subtasksByParent={subtasksByParent}
+              lockDrag={axis === "tag"}
               highlighted={axis === "tag" && !!autoImportantTag && col === autoImportantTag}
               onOpenDetail={onOpenDetail}
             />
@@ -3913,12 +3961,16 @@ function KanbanColumn({
   columnId,
   label,
   tasks,
+  subtasksByParent,
+  lockDrag,
   highlighted,
   onOpenDetail,
 }: {
   columnId: string;
   label: string;
   tasks: TodoTask[];
+  subtasksByParent: Map<string, TodoTask[]>;
+  lockDrag: boolean;
   highlighted: boolean;
   onOpenDetail: (task: TodoTask) => void;
 }) {
@@ -3936,7 +3988,13 @@ function KanbanColumn({
       </div>
       <div className="min-h-[2rem] space-y-1.5">
         {tasks.map((t) => (
-          <KanbanCard key={t.id} task={t} onOpenDetail={() => onOpenDetail(t)} />
+          <KanbanCard
+            key={t.id}
+            task={t}
+            // サブタスクを持つタスクの対応状況は自動算出のため、この軸ではドラッグ移動を無効にする
+            locked={lockDrag && (subtasksByParent.get(t.id) ?? []).length > 0}
+            onOpenDetail={() => onOpenDetail(t)}
+          />
         ))}
         {tasks.length === 0 && <p className="px-1 py-2 text-[10px] text-cream/30">なし</p>}
       </div>
@@ -3944,8 +4002,8 @@ function KanbanColumn({
   );
 }
 
-function KanbanCard({ task, onOpenDetail }: { task: TodoTask; onOpenDetail: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
+function KanbanCard({ task, locked, onOpenDetail }: { task: TodoTask; locked: boolean; onOpenDetail: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id, disabled: locked });
   const style = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.4 : 1,
@@ -3956,17 +4014,19 @@ function KanbanCard({ task, onOpenDetail }: { task: TodoTask; onOpenDetail: () =
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
+      {...(locked ? {} : listeners)}
       onClick={onOpenDetail}
-      className={`w-full cursor-grab rounded-lg border border-cream/10 bg-ink/50 px-2 py-1.5 text-left active:cursor-grabbing ${
-        task.completed ? "opacity-50" : ""
-      }`}
+      title={locked ? "対応状況はサブタスクから自動的に決まります(サブタスク側の対応状況を変更してください)" : undefined}
+      className={`w-full rounded-lg border border-cream/10 bg-ink/50 px-2 py-1.5 text-left ${
+        locked ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
+      } ${task.completed ? "opacity-50" : ""}`}
     >
       <div className="flex items-center gap-1">
         {task.important && <span className="text-alert">★</span>}
         <span className={`flex-1 truncate text-xs text-cream ${task.completed ? "text-cream/40 line-through" : ""}`}>
           {task.title}
         </span>
+        {locked && <span className="shrink-0 text-[10px] text-cream/30" aria-label="自動算出">🔒</span>}
       </div>
       <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-cream/50">
         {task.customer && <span>{task.customer}</span>}

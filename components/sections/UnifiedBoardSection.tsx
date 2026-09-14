@@ -7,7 +7,7 @@ import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib/time";
 import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
-import { completeTodoTask, DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
+import { completeTodoTask, DEFAULT_TAG_PRESETS, effectiveTag, parsePresetList } from "@/lib/todo";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { openMailAttachment } from "@/lib/mailImport";
 import { getRiskTier, useVisualMode } from "@/lib/theme";
@@ -45,7 +45,7 @@ import {
   TAG_BADGE_Z_BASE,
   type BoardBackgroundKind,
 } from "@/lib/memo";
-import { computeProjectProgress, isStageDone, toggleProjectStage } from "@/lib/projectStage";
+import { computeProjectProgress, effectiveProjectTag, isStageDone, toggleProjectStage } from "@/lib/projectStage";
 import { computeAutoAllocation } from "@/lib/allocate";
 import { computeProjectForecast } from "@/lib/projectForecast";
 import { exportElementToPng } from "@/lib/pdfExport";
@@ -507,17 +507,34 @@ export default function UnifiedBoardSection({
     const projectOverdue = projects.filter((p) => p.dueDate < today).length;
     let openStages = 0;
     for (const p of projects) openStages += (p.stages ?? []).filter((st) => !isStageDone(st)).length;
-    // 対応状況(tag)ごとの件数。何が滞留しているのかが件数で分かるようにする
+    // 対応状況(tag)ごとの件数。何が滞留しているのかが件数で分かるようにする。
+    // サブタスクを持つToDoは対応状況が自動算出のため、自身のtagではなく
+    // 未完了の各サブタスクのtagを(案件の未通過の段階と同じ粒度で)数える
     const tagCounts = new Map<string, number>();
     for (const t of todos) {
-      if (!t.tag) continue;
-      tagCounts.set(t.tag, (tagCounts.get(t.tag) ?? 0) + 1);
+      const subs = subtasksByParent.get(t.id) ?? [];
+      if (subs.length === 0) {
+        if (!t.tag) continue;
+        tagCounts.set(t.tag, (tagCounts.get(t.tag) ?? 0) + 1);
+      } else {
+        for (const s of subs) {
+          if (!s.tag || s.completed) continue;
+          tagCounts.set(s.tag, (tagCounts.get(s.tag) ?? 0) + 1);
+        }
+      }
     }
-    // 案件の未通過の段階に付いている対応状況も同じ内訳に入れる
+    // 案件も同じ考え方: 段階を持たない案件は自身のtagを、持つ案件は未通過の段階の
+    // 対応状況をそれぞれ内訳に入れる
     for (const p of projects) {
-      for (const st of p.stages ?? []) {
-        if (!st.tag || isStageDone(st)) continue;
-        tagCounts.set(st.tag, (tagCounts.get(st.tag) ?? 0) + 1);
+      const stages = p.stages ?? [];
+      if (stages.length === 0) {
+        if (!p.tag) continue;
+        tagCounts.set(p.tag, (tagCounts.get(p.tag) ?? 0) + 1);
+      } else {
+        for (const st of stages) {
+          if (!st.tag || isStageDone(st)) continue;
+          tagCounts.set(st.tag, (tagCounts.get(st.tag) ?? 0) + 1);
+        }
       }
     }
     const topTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
@@ -531,7 +548,7 @@ export default function UnifiedBoardSection({
       openStages,
       topTags,
     };
-  }, [hubMode, todos, projects, today, subtaskStats]);
+  }, [hubMode, todos, projects, today, subtaskStats, subtasksByParent]);
 
   // 付箋/本日の作業/ToDoカードを掴んだ際、他のカードの下に隠れたままにならないよう
   // 最前面に持ってくる。付箋・タスク・ToDoを1つの重なり順で扱うため、種類を問わず
@@ -1315,8 +1332,7 @@ export default function UnifiedBoardSection({
   function alignGroupKey(it: BoardItem): string {
     if (it.kind === "todo") {
       const todo = todos.find((t) => t.id === it.id);
-      const tag =
-        todo?.tag || (subtasksByParent.get(it.id) ?? []).find((s) => s.tag && !s.completed)?.tag || "";
+      const tag = todo ? effectiveTag(todo, subtasksByParent.get(it.id) ?? [], stampPresets) ?? "" : "";
       return tag ? `1:${tag}` : "2:";
     }
     return `3:${it.kind}`;
@@ -1604,13 +1620,27 @@ export default function UnifiedBoardSection({
   }
 
   function openTagList(tag: string) {
-    const items: HubListItem[] = [
-      ...todos.filter((t) => t.tag === tag).map((t) => ({ id: t.id, label: t.title, sub: "ToDo" })),
-    ];
+    const items: HubListItem[] = [];
+    for (const t of todos) {
+      const subs = subtasksByParent.get(t.id) ?? [];
+      if (subs.length === 0) {
+        if (t.tag === tag) items.push({ id: t.id, label: t.title, sub: "ToDo" });
+      } else {
+        for (const s of subs) {
+          if (s.tag !== tag || s.completed) continue;
+          items.push({ id: t.id, label: s.title, sub: `ToDo ${t.title}` });
+        }
+      }
+    }
     for (const p of projects) {
-      for (const st of p.stages ?? []) {
-        if (st.tag !== tag || isStageDone(st)) continue;
-        items.push({ id: p.id, label: st.title, sub: `案件 ${p.title}` });
+      const stages = p.stages ?? [];
+      if (stages.length === 0) {
+        if (p.tag === tag) items.push({ id: p.id, label: p.title, sub: "案件" });
+      } else {
+        for (const st of stages) {
+          if (st.tag !== tag || isStageDone(st)) continue;
+          items.push({ id: p.id, label: st.title, sub: `案件 ${p.title}` });
+        }
       }
     }
     setHubList({ title: `対応状況「${tag}」`, items });
@@ -2404,16 +2434,31 @@ export default function UnifiedBoardSection({
             {/* ToDoの「対応状況」(tag)が設定されていれば、手で貼らなくても自動でスタンプ風の
                 バッジをカードの左上に出す。手動のスタンプ(BoardStamp)とは別物で、DBには
                 保存せずtodoの現在値からその都度作るだけなので、対応状況を変えれば即座に
-                追従し、消せば自動で消える */}
+                追従し、消せば自動で消える。サブタスクを持つ場合は優先度に基づく自動算出値
+                (effectiveTag)を出す(サブタスクの中で最も優先度の高い対応状況) */}
             {visibleTodos
-              .filter((todo): todo is TodoTask & { tag: string } => !!todo.tag)
-              .map((todo) => (
+              .map((todo) => ({ todo, tag: effectiveTag(todo, subtasksByParent.get(todo.id) ?? [], stampPresets) }))
+              .filter((v): v is { todo: TodoTask; tag: string } => !!v.tag)
+              .map(({ todo, tag }) => (
                 <TagStatusBadge
                   key={`tagbadge:${todo.id}`}
-                  text={todo.tag}
+                  text={tag}
                   x={todo.boardX ?? 40}
                   y={todo.boardY ?? 40}
                   zIndex={TAG_BADGE_Z_BASE + (zIndexById[todo.id] ?? 1)}
+                />
+              ))}
+            {/* 案件も同様。段階を持つ案件は段階側から自動算出したeffectiveProjectTagを出す */}
+            {visibleProjects
+              .map((project) => ({ project, tag: effectiveProjectTag(project, stampPresets) }))
+              .filter((v): v is { project: ProjectItem; tag: string } => !!v.tag)
+              .map(({ project, tag }) => (
+                <TagStatusBadge
+                  key={`tagbadge:${project.id}`}
+                  text={tag}
+                  x={project.boardX ?? 40}
+                  y={project.boardY ?? 40}
+                  zIndex={TAG_BADGE_Z_BASE + (zIndexById[project.id] ?? 1)}
                 />
               ))}
             {visibleProjects.map((project) => (

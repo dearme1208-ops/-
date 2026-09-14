@@ -1,5 +1,6 @@
 import { db } from "./db";
 import type { ProjectItem, ProjectStage } from "./types";
+import { highestPriorityTag } from "./tagPriority";
 
 // 段階の進捗率(0〜1)。目標件数(targetCount)を設定した段階は completedCount/targetCount で、
 // それ以外は完了チェックの有無(0 or 1)で表す
@@ -73,6 +74,24 @@ export function incompletePreviousStageTitles(project: ProjectItem, stageId: str
   const idx = allStages.findIndex((s) => s.id === stageId);
   if (idx === -1) return [];
   return allStages.slice(0, idx).filter((s) => !s.completed).map((s) => s.title);
+}
+
+// 案件全体の対応状況。段階を持たない場合は案件自身の対応状況をそのまま使う(=手動設定)。
+// 段階を持つ場合は、対応状況は完全に段階側から自動算出され、案件自身に設定した対応状況は
+// 使われない(未完了の段階の中で最も優先度の高いものを採用し、未完了の段階に対応状況が
+// 1つも見当たらなければ完了済みも含めて探す)。ToDoのeffectiveTagと同じ考え方
+export function effectiveProjectTag(project: ProjectItem, priorityOrder: string[]): string | undefined {
+  const stages = project.stages ?? [];
+  if (stages.length === 0) return project.tag;
+  const fromOpen = highestPriorityTag(
+    stages.filter((s) => !isStageDone(s)).map((s) => s.tag),
+    priorityOrder
+  );
+  if (fromOpen) return fromOpen;
+  return highestPriorityTag(
+    stages.map((s) => s.tag),
+    priorityOrder
+  );
 }
 
 export async function toggleProjectStage(project: ProjectItem, stageId: string): Promise<void> {

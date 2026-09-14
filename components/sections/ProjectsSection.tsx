@@ -13,6 +13,7 @@ import { computeProjectForecast, type ProjectForecast } from "@/lib/projectForec
 import {
   buildStageCompletionOrder,
   computeProjectProgress,
+  effectiveProjectTag,
   incompletePreviousStageTitles,
   isStageDone,
   toggleProjectStage as toggleProjectStageShared,
@@ -1389,23 +1390,33 @@ function ProjectRow({
           )}
           {project.title}
           {/* 案件そのものの対応状況。段階(マイルストーン)ごとのtagとは別に、
-              案件全体としての状況(見積り中・受注確定 など)をここで持つ */}
-          <select
-            value={project.tag ?? ""}
-            onChange={(e) => onSetTag(e.target.value)}
-            title="対応状況"
-            className={`ml-2 rounded-full border px-1.5 py-0.5 align-middle text-[10px] font-bold outline-none ${
-              project.tag ? "border-cream/40 bg-cream/10 text-cream" : "border-cream/15 bg-transparent text-cream/30"
-            }`}
-          >
-            <option value="">対応状況なし</option>
-            {tagOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-            {project.tag && !tagOptions.includes(project.tag) && <option value={project.tag}>{project.tag}</option>}
-          </select>
+              案件全体としての状況(見積り中・受注確定 など)をここで持つ。
+              段階を持つ案件は、対応状況が段階側から自動算出されるため読み取り専用にする */}
+          {(project.stages ?? []).length > 0 ? (
+            <span
+              className="ml-2 rounded-full border border-cream/40 bg-cream/10 px-1.5 py-0.5 align-middle text-[10px] font-bold text-cream"
+              title="対応状況は段階から自動的に決まります"
+            >
+              {effectiveProjectTag(project, tagOptions) ?? "未設定"}
+            </span>
+          ) : (
+            <select
+              value={project.tag ?? ""}
+              onChange={(e) => onSetTag(e.target.value)}
+              title="対応状況"
+              className={`ml-2 rounded-full border px-1.5 py-0.5 align-middle text-[10px] font-bold outline-none ${
+                project.tag ? "border-cream/40 bg-cream/10 text-cream" : "border-cream/15 bg-transparent text-cream/30"
+              }`}
+            >
+              <option value="">対応状況なし</option>
+              {tagOptions.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+              {project.tag && !tagOptions.includes(project.tag) && <option value={project.tag}>{project.tag}</option>}
+            </select>
+          )}
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
           {project.groupName && (
             <span
