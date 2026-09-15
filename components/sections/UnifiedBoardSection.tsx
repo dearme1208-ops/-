@@ -1327,16 +1327,27 @@ export default function UnifiedBoardSection({
   // 整列。ドラッグで散らかった配置を、現在の並び(上から左から)を保ったまま
   // グリッド状に並べ直す。ロック中のカードは動かさない
   // ------------------------------------------------------------
-  // 整列の並び順を決めるキー。ToDoは対応状況ごとにまとめ(対応状況なしはその後ろ)、
-  // 作業・案件・付箋などは種類ごとにさらに後ろへ回す。
+  // 整列の並び順を決めるキー。ToDo・案件は対応状況ごとにまとめ、そのグループ自体の
+  // 並び順も設定タブで並び替えた優先度(stampPresets、先頭ほど優先度が高い)に揃える。
+  // 対応状況なしのToDo・案件はその後ろ、作業・付箋・図形などは種類ごとにさらに後ろへ回す。
   // 先頭の数字は種類の優先順で、同じキーのものが盤面の上で固まって見えるようにする
   function alignGroupKey(it: BoardItem): string {
+    let tag: string | undefined;
     if (it.kind === "todo") {
       const todo = todos.find((t) => t.id === it.id);
-      const tag = todo ? effectiveTag(todo, subtasksByParent.get(it.id) ?? [], stampPresets) ?? "" : "";
-      return tag ? `1:${tag}` : "2:";
+      tag = todo ? effectiveTag(todo, subtasksByParent.get(it.id) ?? [], stampPresets) : undefined;
+    } else if (it.kind === "project") {
+      const project = projects.find((p) => p.id === it.id);
+      tag = project ? effectiveProjectTag(project, stampPresets) : undefined;
+    } else {
+      return `3:${it.kind}`;
     }
-    return `3:${it.kind}`;
+    if (!tag) return "2:";
+    const rank = stampPresets.indexOf(tag);
+    const priorityRank = rank === -1 ? stampPresets.length : rank;
+    // 優先度の数値を先頭にゼロ埋めして文字列比較でも数値順になるようにし、
+    // 同順位(優先度リストに無い自由入力タグ同士など)はタグ文字列で分ける
+    return `1:${String(priorityRank).padStart(4, "0")}:${tag}`;
   }
 
   async function alignBoardItems() {
