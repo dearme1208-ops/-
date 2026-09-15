@@ -205,6 +205,7 @@ export interface ProjectItem {
   dueDate: string; // 期日 YYYY-MM-DD
   tag?: string; // 対応状況（社内確認中・客先確認中 など）。段階(ProjectStage.tag)・ToDoのtagと同じ選択肢を使う。
   // 案件そのものの状況を表すもので、個々の段階のtagとは独立している
+  url?: string; // 関連リンク。ToDoのurlと同じく、一覧のリンクボタンから直接開ける
   clientId?: string; // 取引先（任意）
   createdAt: number;
   completedAt?: number;

@@ -19,7 +19,7 @@ import {
   toggleProjectStage as toggleProjectStageShared,
 } from "@/lib/projectStage";
 import { useSetting } from "@/lib/settings";
-import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
+import { DEFAULT_TAG_PRESETS, normalizeUrl, parsePresetList } from "@/lib/todo";
 import { cardOverrunClass, useVisualMode, type ThemedMode } from "@/lib/theme";
 import {
   daysBetweenDateStrs,
@@ -1416,6 +1416,16 @@ function ProjectRow({
               ))}
               {project.tag && !tagOptions.includes(project.tag) && <option value={project.tag}>{project.tag}</option>}
             </select>
+          )}
+          {project.url && (
+            <button
+              onClick={() => window.open(normalizeUrl(project.url!), "_blank", "noopener,noreferrer")}
+              aria-label="リンクを開く"
+              title={project.url}
+              className="ml-2 align-middle text-sm text-cream/50 hover:text-cream"
+            >
+              🔗
+            </button>
           )}
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
           {project.groupName && (

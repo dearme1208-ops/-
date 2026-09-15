@@ -15,7 +15,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
-import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
+import { DEFAULT_TAG_PRESETS, normalizeUrl, parsePresetList } from "@/lib/todo";
 import type { ProjectItem, ProjectStage } from "@/lib/types";
 import { computeProjectProgress, effectiveProjectTag } from "@/lib/projectStage";
 import { formatHms, parseHmsToSeconds } from "@/lib/time";
@@ -284,6 +284,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   );
   const [clientId, setClientId] = useState(project.clientId ?? "");
   const [tag, setTag] = useState(project.tag ?? "");
+  const [url, setUrl] = useState(project.url ?? "");
   // 案件・段階の対応状況は、ToDoで使っている選択肢をそのまま共有する
   // (社内確認中・客先確認中 など、同じ語彙で揃えたいため)。案件そのものと各段階の
   // どちらも同じ選択肢から選べるが、値自体は別々に持つ(案件=全体の状況、段階=個々の進み具合)
@@ -412,6 +413,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       hourlyRate: hourlyRateStr.trim() !== "" && Number.isFinite(rate) && rate >= 0 ? rate : undefined,
       estimatedTotalSeconds: estimatedTotalSeconds > 0 ? estimatedTotalSeconds : undefined,
       clientId: clientId || undefined,
+      url: url.trim() || undefined,
       ...(hasStages ? {} : { tag: tag || undefined }),
       mailFileDataUrl: mail?.mailFileDataUrl,
       mailFileName: mail?.mailFileName,
@@ -505,6 +507,24 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
               </option>
             ))}
           </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            placeholder="URL（一覧のリンクボタンから開けます）"
+          />
+          {url.trim() && (
+            <button
+              type="button"
+              onClick={() => window.open(normalizeUrl(url.trim()), "_blank", "noopener,noreferrer")}
+              aria-label="リンクを開く"
+              className="shrink-0 text-lg text-cream/50 hover:text-cream"
+            >
+              🔗
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">添付メール</label>

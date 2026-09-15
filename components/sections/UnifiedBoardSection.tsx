@@ -533,7 +533,16 @@ export default function UnifiedBoardSection({
         }
       }
     }
-    const topTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    // 優先度順(設定タブで並び替えたstampPresets、先頭ほど優先度が高い)に並べる。
+    // 件数の多さではなく「何を優先して見るべきか」を出すのが狙いなので、件数が少なくても
+    // 優先度の高い対応状況を上位3件から漏らさない(同じ優先度なら件数が多い方を先に出す)
+    const rankOf = (tag: string) => {
+      const i = stampPresets.indexOf(tag);
+      return i === -1 ? stampPresets.length : i;
+    };
+    const topTags = [...tagCounts.entries()]
+      .sort((a, b) => rankOf(a[0]) - rankOf(b[0]) || b[1] - a[1])
+      .slice(0, 3);
     return {
       todoCount: todos.length,
       todoOverdue,
@@ -544,7 +553,7 @@ export default function UnifiedBoardSection({
       openStages,
       topTags,
     };
-  }, [hubMode, todos, projects, today, subtaskStats, subtasksByParent]);
+  }, [hubMode, todos, projects, today, subtaskStats, subtasksByParent, stampPresets]);
 
   // 付箋/本日の作業/ToDoカードを掴んだ際、他のカードの下に隠れたままにならないよう
   // 最前面に持ってくる。付箋・タスク・ToDoを1つの重なり順で扱うため、種類を問わず
@@ -4421,6 +4430,9 @@ function TodoCard({
     locked
   );
   const overdue = !!todo.dueDate && todo.dueDate < today;
+  // 期限切れほど強くはないが、今日が期日のものも見落とさないよう軽い縁取りで示す
+  // (期限切れの強調と重なる場合は期限切れの見た目を優先する)
+  const dueToday = !!todo.dueDate && todo.dueDate === today;
 
   return (
     // ToDoは「チェックして潰していく紙片」。角を大きめに丸め、左端に細い帯を通して、
@@ -4428,7 +4440,7 @@ function TodoCard({
     <div
       className={`absolute flex flex-col gap-1 overflow-hidden rounded-xl border-2 border-l-[6px] bg-ink/90 p-2 pl-2.5 shadow-md ${
         overdue ? "border-alert/70" : "border-cream/20 border-l-cream/45"
-      } ${hubAlert ? "hub-card-alert" : ""}`}
+      } ${dueToday && !overdue ? "ring-1 ring-alert/50" : ""} ${hubAlert ? "hub-card-alert" : ""}`}
       style={{ left, top, width: CARD_WIDTH, height: cardHeight, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
@@ -4517,9 +4529,12 @@ function TodoCard({
       {(todo.dueDate || subtaskStat) && (
         <div className="flex shrink-0 flex-wrap items-center gap-x-1.5 text-[10px]">
           {todo.dueDate && (
-            <span className={overdue ? "font-bold text-alert" : "text-cream/40"}>
+            <span className={overdue || dueToday ? "font-bold text-alert" : "text-cream/40"}>
               期日 {todo.dueDate}
               {overdue && "（超過）"}
+              {dueToday && !overdue && (
+                <span className="ml-1 rounded-full bg-alert/20 px-1.5 py-0.5 text-[9px] font-bold text-alert">本日</span>
+              )}
             </span>
           )}
           {subtaskStat && (
@@ -4632,6 +4647,8 @@ function ProjectCard({
   const doneCount = stages.filter(isStageDone).length;
   const progress = computeProjectProgress(stages);
   const overdue = project.dueDate < today;
+  // 期限切れほど強くはないが、今日が期日の案件も見落とさないよう軽い縁取りで示す
+  const dueToday = project.dueDate === today;
   const visibleStages = showCompletedStages ? stages : stages.filter((st) => !isStageDone(st));
 
   return (
@@ -4640,7 +4657,7 @@ function ProjectCard({
     <div
       className={`absolute flex flex-col gap-1 overflow-hidden rounded-sm border-2 border-t-[5px] bg-ink/90 p-2 shadow-md ${
         overdue ? "border-alert/70" : "border-cream/20 border-t-[rgb(var(--accent-rgb)/0.65)]"
-      } ${hubAlert ? "hub-card-alert" : ""}`}
+      } ${dueToday && !overdue ? "ring-1 ring-alert/50" : ""} ${hubAlert ? "hub-card-alert" : ""}`}
       style={{ left, top, width: CARD_WIDTH, height: cardHeight, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
@@ -4698,8 +4715,22 @@ function ProjectCard({
             {project.title}
           </p>
         )}
-        {/* 案件そのものに添付したメールを、詳細を開かずにカードから直接見られるようにする
+        {/* 案件そのものに添付したURL・メールを、詳細を開かずにカードから直接見られるようにする
             (段階ごとの添付メールは下の段階一覧側にそれぞれ出す) */}
+        {project.url && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(normalizeUrl(project.url!), "_blank", "noopener,noreferrer");
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="shrink-0 text-xs text-cream/50 hover:text-cream"
+            title={`リンクを開く: ${project.url}`}
+            aria-label="リンクを開く"
+          >
+            🔗
+          </button>
+        )}
         {project.mailFileDataUrl && (
           <button
             onClick={(e) => {
@@ -4716,9 +4747,12 @@ function ProjectCard({
         )}
       </div>
       <div className="flex items-center gap-1 text-[10px]">
-        <span className={overdue ? "font-bold text-alert" : "text-cream/40"}>
+        <span className={overdue || dueToday ? "font-bold text-alert" : "text-cream/40"}>
           期日 {project.dueDate}
           {overdue && "（超過）"}
+          {dueToday && !overdue && (
+            <span className="ml-1 rounded-full bg-alert/20 px-1.5 py-0.5 text-[9px] font-bold text-alert">本日</span>
+          )}
         </span>
         {stages.length > 0 && (
           <span className="ml-auto shrink-0 tabular-nums text-cream/50">
@@ -4779,7 +4813,13 @@ function ProjectCard({
                   </button>
                 )}
                 {!done && st.dueDate && (
-                  <span className={`shrink-0 text-[9px] ${st.dueDate < today ? "text-alert" : "text-cream/35"}`}>{st.dueDate}</span>
+                  <span
+                    className={`shrink-0 text-[9px] ${
+                      st.dueDate < today ? "font-bold text-alert" : st.dueDate === today ? "text-alert" : "text-cream/35"
+                    }`}
+                  >
+                    {st.dueDate}
+                  </span>
                 )}
               </div>
             );
