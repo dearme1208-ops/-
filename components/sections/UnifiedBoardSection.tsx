@@ -255,10 +255,6 @@ export default function UnifiedBoardSection({
   const background: BoardBackgroundKind = (BOARD_BACKGROUND_KINDS as readonly string[]).includes(backgroundStr)
     ? (backgroundStr as BoardBackgroundKind)
     : DEFAULT_BOARD_BACKGROUND;
-  // 盤面のまわりに机・壁・デスクライトを描く「机まわり」。地の模様とは独立した
-  // 切り替えで、どの地(コルク/黒板/方眼紙…)とも組み合わせられる
-  const [deskSceneStr, setDeskSceneStr] = useSetting(`board.deskScene.${selectedBoardId || "default"}`, "false");
-  const deskScene = deskSceneStr === "true";
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   // ボードに置く分だけでなく、下の一覧から選んで置けるようにするため未完了は全件見る
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
@@ -1868,16 +1864,6 @@ export default function UnifiedBoardSection({
             </div>
           )}
         </div>
-        <span className="ml-1 flex items-center gap-2 border-l border-cream/15 pl-3">
-          <button
-            className={deskScene ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setDeskSceneStr(deskScene ? "false" : "true")}
-            title="盤面のまわりに机・壁・デスクライトを描いて、席に着いて板を眺めている見え方にします"
-            aria-pressed={deskScene}
-          >
-            🪑 机まわり: {deskScene ? "ON" : "OFF"}
-          </button>
-        </span>
       </div>
       {/* 書き込みの道具。付箋・図形・手書き・消しゴムをこの1列にまとめる */}
       <div className="panel flex flex-wrap items-center gap-2 p-3">
@@ -2220,33 +2206,12 @@ export default function UnifiedBoardSection({
           追従させたくないので、スクロールするビューポート(boardViewportRef)の外側・
           このrelativeラッパーの中に兄弟として重ねる */}
       <div className={fullscreen ? "relative min-h-0 min-w-0 flex-1" : "relative min-w-0 flex-1"}>
-      {/* 「机まわり」。盤面のビューポートより先に描いて、その背後の部屋にする。
-          ビューポート側は下で内側に寄せ、板を壁に掛けたような見え方にする */}
-      {deskScene && <DeskSceneFrame intense={hubMode} />}
       <div
         ref={boardViewportRef}
-        className={`relative h-full w-full overflow-auto p-0 ${deskScene ? "rounded-lg" : "panel"}`}
+        className="relative h-full w-full overflow-auto p-0 panel"
         // 2本指のピンチを自前で拾うため、ブラウザ側のページ拡大に取られないようにする。
         // 1本指でのスクロールはこれまで通り効かせたいので pan-x pan-y は残す
-        style={
-          deskScene
-            ? {
-                touchAction: "pan-x pan-y",
-                ...(fullscreen ? {} : { height: "70vh" }),
-                // 壁に掛かった額縁。黒い太枠に内側の落ち影を入れて、板が枠の
-                // 奥に一段沈んで見えるようにする
-                border: "11px solid #15130f",
-                boxShadow:
-                  "0 26px 40px -16px rgba(30,20,10,0.75), 0 0 0 1px rgba(255,245,225,0.22), inset 0 3px 14px rgba(0,0,0,0.45)",
-                // 部屋の余白。下は床と机、左は側壁と棚の分だけ広く空ける
-                margin: hubMode ? "54px 52px 206px 158px" : "36px 36px 150px 106px",
-                width: "auto",
-                height: fullscreen ? "auto" : `calc(70vh - ${hubMode ? 282 : 208}px)`,
-              }
-            : fullscreen
-              ? { touchAction: "pan-x pan-y" }
-              : { touchAction: "pan-x pan-y", height: "70vh" }
-        }
+        style={fullscreen ? { touchAction: "pan-x pan-y" } : { touchAction: "pan-x pan-y", height: "70vh" }}
       >
         <div style={{ width: MEMO_BOARD_WIDTH * zoom, height: MEMO_BOARD_HEIGHT * zoom }}>
           <div
@@ -3424,219 +3389,6 @@ export default function UnifiedBoardSection({
 // 四隅のコーナーマーク・上から下へ流れるスキャンライン・右上の稼働中インジケーター(時計)を
 // 出すだけの飾りで、操作対象にはしない(pointer-events-none)。盤面のスクロール/ズームに
 // 追従してほしくないため、呼び出し側でスクロールするビューポートの外側(兄弟)に置いている
-// 「机まわり」。盤面のビューポートを、壁に掛かった額縁付きの板に見立て、その
-// まわりに部屋そのものを描く。奥の壁・左の側壁・奥へ伸びる板張りの床・壁付けの
-// 棚・板の手前に置かれた机、という一点透視の部屋で、「その部屋に立って壁の板に
-// 貼り出している」感覚をつくる。
-// 画像は持ち込まず、CSSのグラデーションと3D変形(perspective/rotateX)だけで組む。
-// intense(ハブモード)では部屋を広く取り、棚に物を置き、デスクライトの光まで足す
-function DeskSceneFrame({ intense }: { intense: boolean }) {
-  // 床の見える高さと、左の側壁の幅。呼び出し側のビューポートの余白と対になっている
-  const floorH = intense ? 190 : 138;
-  const sideW = intense ? 146 : 98;
-  // 壁と床の材質。参考にした「デスクトップ整理用の部屋」の配色に寄せ、
-  // 壁は温かみのあるグレージュ、床は中明度のオーク、棚は白で抜く
-  const wallLit = "#d9d2c6";
-  const wallDim = "#b9b1a3";
-  const sideWall = "#c3bbad";
-
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden="true">
-      {/* 奥の壁。天井側が明るく、床に近づくほど落ちる */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: `linear-gradient(180deg, ${wallLit} 0%, ${wallLit} 42%, ${wallDim} 100%)`,
-          zIndex: 0,
-        }}
-      />
-      {/* 部屋の照明。左上から回り込む光と、四隅の落ち */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: [
-            `radial-gradient(62% 54% at 14% 2%, rgba(255,236,205,${intense ? 0.5 : 0.36}), transparent 70%)`,
-            "radial-gradient(120% 100% at 50% 46%, transparent 42%, rgba(60,48,34,0.34) 100%)",
-          ].join(","),
-          zIndex: 1,
-        }}
-      />
-
-      {/* 左の側壁。手前が高く奥が低い台形にして、奥へ向かって回り込ませる */}
-      <div
-        className="absolute left-0 top-0"
-        style={{
-          width: sideW,
-          bottom: floorH,
-          background: `linear-gradient(90deg, ${wallDim} 0%, ${sideWall} 70%, ${wallLit} 100%)`,
-          clipPath: "polygon(0 0, 100% 7%, 100% 100%, 0 100%)",
-          zIndex: 2,
-        }}
-      />
-      {/* 壁が出会う入隅。細い影を落として面の境目を立てる */}
-      <div
-        className="absolute top-0"
-        style={{
-          left: sideW - 1,
-          bottom: floorH,
-          width: 10,
-          background: "linear-gradient(90deg, rgba(70,58,42,0.30), transparent)",
-          zIndex: 3,
-        }}
-      />
-
-      {/* 床。奥(上辺)を狭く、手前(下辺)を広く見せるため、上辺を軸に手前へ倒す。
-          板目の縦線が透視で収束し、奥行きのある板張りになる */}
-      <div
-        className="absolute inset-x-0 overflow-hidden"
-        style={{ bottom: 0, height: floorH, zIndex: 4 }}
-      >
-        <div
-          className="absolute inset-x-0 top-0"
-          style={{
-            height: floorH * 2.6,
-            transform: `perspective(${intense ? 430 : 330}px) rotateX(63deg)`,
-            transformOrigin: "center top",
-            backgroundColor: "#a4753f",
-            backgroundImage: [
-              // 板の継ぎ目(縦) — 透視で奥に収束する
-              "repeating-linear-gradient(90deg, rgba(60,34,12,0.38) 0 2px, transparent 2px 58px)",
-              // 板ごとの色ムラ
-              "repeating-linear-gradient(90deg, rgba(255,222,176,0.10) 0 26px, rgba(90,56,24,0.10) 26px 58px)",
-              // 木目の細かい流れ(横)
-              "repeating-linear-gradient(3deg, rgba(58,34,12,0.13) 0 1px, transparent 1px 7px)",
-              // 奥ほど暗く落とす
-              "linear-gradient(180deg, rgba(40,26,12,0.55) 0%, rgba(40,26,12,0.10) 34%, transparent 70%)",
-            ].join(","),
-          }}
-        />
-        {/* 床に落ちる窓明かりの照り返し */}
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: `radial-gradient(52% 120% at 34% 120%, rgba(255,232,190,${intense ? 0.22 : 0.14}), transparent 72%)`,
-          }}
-        />
-      </div>
-      {/* 巾木。壁と床の境目に白い幅木を通すと、床が「立っている面」に見える */}
-      <div
-        className="absolute inset-x-0"
-        style={{
-          bottom: floorH - 1,
-          height: 9,
-          background: "linear-gradient(180deg, #efe9df 0%, #d6cec1 70%, rgba(90,72,50,0.55) 100%)",
-          zIndex: 5,
-        }}
-      />
-
-      {/* 左壁の飾り棚。奥に向かって薄くなる白い棚板を数枚。
-          側壁の傾きに合わせて、右端(奥)を少し持ち上げる */}
-      {[0.16, 0.34, 0.52, 0.7].map((topRatio, i) => (
-        <div
-          key={topRatio}
-          className="absolute left-0"
-          style={{
-            top: `calc((100% - ${floorH}px) * ${topRatio})`,
-            width: sideW - 12,
-            height: 7,
-            background: "linear-gradient(180deg, #fbf8f3 0%, #e4ddd1 55%, rgba(86,68,46,0.55) 100%)",
-            clipPath: "polygon(0 0, 100% 22%, 100% 78%, 0 100%)",
-            boxShadow: "0 5px 9px -4px rgba(60,46,30,0.55)",
-            zIndex: 6,
-          }}
-        >
-          {intense && i % 2 === 0 && (
-            // 棚に置いてある物。奥行きに合わせて小さく、色は部屋に馴染む範囲で
-            <span
-              className="absolute"
-              style={{
-                left: 14 + i * 10,
-                bottom: 7,
-                width: 13,
-                height: 17,
-                background: i === 0 ? "linear-gradient(180deg,#8d9fb0,#5f7080)" : "linear-gradient(180deg,#c2a074,#8d6f47)",
-                borderRadius: 1,
-              }}
-            />
-          )}
-        </div>
-      ))}
-
-      {/* 机。板の手前・床の上に立たせる。天板は奥行きを持たせた台形、
-          右に引き出しユニット、左は細い脚。参考にした部屋の机の構成に寄せる */}
-      <div
-        className="absolute"
-        style={{
-          left: "50%",
-          // 床は3D変形(perspective/rotateX)のせいで単独の合成レイヤーに上がる。
-          // 机も同じ土俵へ上げておかないと、z-indexを勝たせても床の裏へ回ってしまう
-          transform: "translateX(-50%) translateZ(0)",
-          bottom: Math.round(floorH * 0.1),
-          width: intense ? 300 : 216,
-          height: intense ? 104 : 76,
-          zIndex: 7,
-        }}
-      >
-        {/* 机が床に落とす影 */}
-        <div
-          className="absolute inset-x-[-10%] bottom-0"
-          style={{ height: 16, background: "radial-gradient(50% 100% at 50% 100%, rgba(45,30,16,0.55), transparent 72%)" }}
-        />
-        {/* 天板 */}
-        <div
-          className="absolute inset-x-0 top-0"
-          style={{
-            height: intense ? 15 : 11,
-            background: "linear-gradient(180deg, #d8b483 0%, #c39c68 58%, #8e6e44 100%)",
-            clipPath: "polygon(4% 0, 96% 0, 100% 100%, 0 100%)",
-            boxShadow: "0 3px 6px -2px rgba(40,26,12,0.55)",
-          }}
-        />
-        {/* 引き出しユニット(右) */}
-        <div
-          className="absolute"
-          style={{
-            right: "10%",
-            top: intense ? 15 : 11,
-            width: "34%",
-            bottom: 6,
-            background: "linear-gradient(100deg, #f2eee7 0%, #ded7cb 70%, #b7ae9f 100%)",
-            boxShadow: "inset 0 0 0 1px rgba(120,104,80,0.35)",
-          }}
-        >
-          {[0.22, 0.5, 0.78].map((t) => (
-            <span
-              key={t}
-              className="absolute inset-x-[16%]"
-              style={{ top: `${t * 100}%`, height: 2, background: "rgba(120,104,80,0.55)" }}
-            />
-          ))}
-        </div>
-        {/* 脚(左) */}
-        <div
-          className="absolute"
-          style={{
-            left: "12%",
-            top: intense ? 15 : 11,
-            width: 5,
-            bottom: 6,
-            background: "linear-gradient(90deg, #6c6459, #46403a)",
-          }}
-        />
-        <div
-          className="absolute"
-          style={{
-            left: "7%",
-            bottom: 4,
-            width: "16%",
-            height: 4,
-            background: "linear-gradient(90deg, #6c6459, #46403a)",
-          }}
-        />
-      </div>
-    </div>
-  );
-}
 function HubHudFrame({ now }: { now: number }) {
   const d = new Date(now);
   const clock = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
