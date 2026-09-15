@@ -1258,6 +1258,7 @@ export default function UnifiedBoardSection({
   }
   const [showStampMenu, setShowStampMenu] = useState(false);
   const [customStampText, setCustomStampText] = useState("");
+  const [showBackgroundMenu, setShowBackgroundMenu] = useState(false);
 
   // ------------------------------------------------------------
   // 複数選択(クリック・Shift+クリック・ラバーバンド範囲選択)
@@ -1835,18 +1836,38 @@ export default function UnifiedBoardSection({
           </button>
         </div>
       </div>
-      {/* ボードの地の模様。見た目だけの切り替えで、カードの位置や重なりには影響しない */}
+      {/* ボードの地の模様。見た目だけの切り替えで、カードの位置や重なりには影響しない。
+          種類が8つあり常に並べると場所を取るため、ボタン1つ＋開閉するリストにまとめている */}
       <div className="panel flex flex-wrap items-center gap-2 p-3">
         <span className="text-xs text-cream/50">背景:</span>
-        {BOARD_BACKGROUND_KINDS.map((kind) => (
+        <div className="relative">
           <button
-            key={kind}
-            className={background === kind ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setBackgroundStr(kind)}
+            className={showBackgroundMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowBackgroundMenu((v) => !v)}
           >
-            {BOARD_BACKGROUND_LABELS[kind]}
+            {BOARD_BACKGROUND_LABELS[background]} ▾
           </button>
-        ))}
+          {showBackgroundMenu && (
+            <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+              {BOARD_BACKGROUND_KINDS.map((kind) => (
+                <button
+                  key={kind}
+                  className={
+                    background === kind
+                      ? "btn-pill whitespace-nowrap text-xs"
+                      : "btn-pill-outline whitespace-nowrap text-xs"
+                  }
+                  onClick={() => {
+                    setBackgroundStr(kind);
+                    setShowBackgroundMenu(false);
+                  }}
+                >
+                  {BOARD_BACKGROUND_LABELS[kind]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <span className="ml-1 flex items-center gap-2 border-l border-cream/15 pl-3">
           <button
             className={deskScene ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
