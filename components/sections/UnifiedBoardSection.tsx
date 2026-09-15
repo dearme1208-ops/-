@@ -946,7 +946,11 @@ export default function UnifiedBoardSection({
   useEffect(() => {
     maxShapeOrderRef.current = (shapes ?? []).reduce((m, s) => Math.max(m, s.order), 0);
   }, [shapes]);
-  const [showShapeMenu, setShowShapeMenu] = useState(false);
+  // 付箋・図形・スタンプの追加はどれも「盤面に何かを置く」一発アクションなので、
+  // 1つの「＋ 追加」ボタン配下にまとめて開閉する(showAddMenu)。手書き・消しゴムは
+  // 置いたら終わりではなく持続するモードの切り替えのため、これとは別に常時見える
+  // トグルボタンのまま残す
+  const [showAddMenu, setShowAddMenu] = useState(false);
   async function addShape(type: BoardShapeType) {
     if (!selectedBoardId) return;
     maxShapeOrderRef.current += 1;
@@ -967,7 +971,7 @@ export default function UnifiedBoardSection({
     });
     // 置いたばかりの図形が他のカードの下に隠れないようにする
     bringToFront(id);
-    setShowShapeMenu(false);
+    setShowAddMenu(false);
   }
   async function moveShape(id: string, x: number, y: number) {
     await db.boardShapes.update(id, { x, y });
@@ -1211,7 +1215,7 @@ export default function UnifiedBoardSection({
       createdAt: Date.now(),
     });
     bringToFront(id);
-    setShowStampMenu(false);
+    setShowAddMenu(false);
     setCustomStampText("");
   }
   async function moveStamp(id: string, x: number, y: number, width: number, height: number) {
@@ -1252,9 +1256,9 @@ export default function UnifiedBoardSection({
   async function toggleStampLock(id: string, currentlyLocked: boolean) {
     await db.boardStamps.update(id, { boardLocked: !currentlyLocked });
   }
-  const [showStampMenu, setShowStampMenu] = useState(false);
   const [customStampText, setCustomStampText] = useState("");
   const [showBackgroundMenu, setShowBackgroundMenu] = useState(false);
+  const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
 
   // ------------------------------------------------------------
   // 複数選択(クリック・Shift+クリック・ラバーバンド範囲選択)
@@ -1865,71 +1869,72 @@ export default function UnifiedBoardSection({
           )}
         </div>
       </div>
-      {/* 書き込みの道具。付箋・図形・手書き・消しゴムをこの1列にまとめる */}
+      {/* 書き込みの道具。付箋・図形・スタンプは「置いたら終わり」の一発アクションなので
+          「＋ 追加」1つのボタンにまとめる。手書き・消しゴムは持続するモードの切り替えなので
+          現在の状態が常に見えるよう、別枠のトグルボタンのまま残す */}
       <div className="panel flex flex-wrap items-center gap-2 p-3">
-        <button className="btn-pill-outline text-xs" onClick={addNote}>
-          ＋ 付箋
-        </button>
         <div className="relative">
           <button
-            className={showShapeMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowShapeMenu((v) => !v)}
+            className={showAddMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowAddMenu((v) => !v)}
           >
-            ＋ 図形
+            ＋ 追加 ▾
           </button>
-          {showShapeMenu && (
-            <div className="absolute left-0 top-full z-10 mt-1 flex gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
-              <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("rect")}>
-                ▭ 四角
+          {showAddMenu && (
+            <div className="absolute left-0 top-full z-10 mt-1 w-64 space-y-2 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
+              <button
+                className="btn-pill-outline w-full whitespace-nowrap text-xs"
+                onClick={() => {
+                  addNote();
+                  setShowAddMenu(false);
+                }}
+              >
+                ＋ 付箋
               </button>
-              <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("circle")}>
-                ○ 円
-              </button>
-              <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("line")}>
-                ─ 線
-              </button>
-              <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("arrow")}>
-                → 矢印
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="relative">
-          <button
-            className={showStampMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowStampMenu((v) => !v)}
-            title="対応状況などの一言スタンプを、付箋やToDo・案件などに重ねてくっ付けられます"
-          >
-            ＋ スタンプ
-          </button>
-          {showStampMenu && (
-            <div className="absolute left-0 top-full z-10 mt-1 w-60 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
-              {stampPresets.length > 0 && (
-                <>
-                  <p className="mb-1 text-[10px] text-cream/40">対応状況から選ぶ</p>
-                  <div className="mb-2 flex flex-wrap gap-1">
+              <div>
+                <p className="mb-1 text-[10px] text-cream/40">図形</p>
+                <div className="flex flex-wrap gap-1">
+                  <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("rect")}>
+                    ▭ 四角
+                  </button>
+                  <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("circle")}>
+                    ○ 円
+                  </button>
+                  <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("line")}>
+                    ─ 線
+                  </button>
+                  <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("arrow")}>
+                    → 矢印
+                  </button>
+                </div>
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] text-cream/40" title="対応状況などの一言スタンプを、付箋やToDo・案件などに重ねてくっ付けられます">
+                  スタンプ
+                </p>
+                {stampPresets.length > 0 && (
+                  <div className="mb-1 flex flex-wrap gap-1">
                     {stampPresets.map((preset) => (
                       <button key={preset} className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addStamp(preset)}>
                         {preset}
                       </button>
                     ))}
                   </div>
-                </>
-              )}
-              <p className="mb-1 text-[10px] text-cream/40">自由入力</p>
-              <div className="flex gap-1">
-                <input
-                  value={customStampText}
-                  onChange={(e) => setCustomStampText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") addStamp(customStampText);
-                  }}
-                  placeholder="一言を入力"
-                  className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
-                />
-                <button className="btn-pill-outline shrink-0 text-xs" onClick={() => addStamp(customStampText)}>
-                  追加
-                </button>
+                )}
+                <div className="flex gap-1">
+                  <input
+                    value={customStampText}
+                    onChange={(e) => setCustomStampText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addStamp(customStampText);
+                    }}
+                    placeholder="一言を入力"
+                    className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                  />
+                  <button className="btn-pill-outline shrink-0 text-xs" onClick={() => addStamp(customStampText)}>
+                    追加
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1998,27 +2003,42 @@ export default function UnifiedBoardSection({
           🧹 整列
         </button>
         {boardTagOptions.length > 0 && (
-          <span className="flex flex-wrap items-center gap-1.5 border-l border-cream/15 pl-2">
-            <span className="text-[10px] tracking-wider text-cream/40">対応状況</span>
+          <div className="relative border-l border-cream/15 pl-2">
             <button
-              className={tagFilter === null ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setTagFilterRaw(null)}
-              title="対応状況での絞り込みを解除します"
+              className={showTagFilterMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setShowTagFilterMenu((v) => !v)}
             >
-              すべて
+              対応状況: {tagFilter ?? "すべて"} ▾
             </button>
-            {boardTagOptions.map(([tag, count]) => (
-              <button
-                key={tag}
-                className={tagFilter === tag ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                onClick={() => setTagFilterRaw(tagFilter === tag ? null : tag)}
-                title={`対応状況が「${tag}」のToDoだけを盤面に出します`}
-              >
-                {tag}
-                <span className="ml-1 tabular-nums opacity-60">{count}</span>
-              </button>
-            ))}
-          </span>
+            {showTagFilterMenu && (
+              <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+                <button
+                  className={tagFilter === null ? "btn-pill whitespace-nowrap text-xs" : "btn-pill-outline whitespace-nowrap text-xs"}
+                  onClick={() => {
+                    setTagFilterRaw(null);
+                    setShowTagFilterMenu(false);
+                  }}
+                  title="対応状況での絞り込みを解除します"
+                >
+                  すべて
+                </button>
+                {boardTagOptions.map(([tag, count]) => (
+                  <button
+                    key={tag}
+                    className={tagFilter === tag ? "btn-pill whitespace-nowrap text-xs" : "btn-pill-outline whitespace-nowrap text-xs"}
+                    onClick={() => {
+                      setTagFilterRaw(tagFilter === tag ? null : tag);
+                      setShowTagFilterMenu(false);
+                    }}
+                    title={`対応状況が「${tag}」のToDoだけを盤面に出します`}
+                  >
+                    {tag}
+                    <span className="ml-1 tabular-nums opacity-60">{count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {hubMode && (
           <>
