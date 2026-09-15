@@ -3,6 +3,8 @@
 export interface TabDef {
   key: string;
   label: string;
+  /** タブを開かなくても件数が分かるよう、ラベル横に出す小さな数字バッジ(0/未指定なら出さない) */
+  badge?: number;
 }
 
 export default function TabNav({
@@ -28,6 +30,11 @@ export default function TabNav({
             }
           >
             {t.label}
+            {!!t.badge && (
+              <span className="ml-1.5 rounded-full bg-alert px-1.5 py-0.5 text-[10px] font-bold leading-none text-ink">
+                {t.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>

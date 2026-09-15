@@ -1268,6 +1268,7 @@ export default function UnifiedBoardSection({
   const [customStampText, setCustomStampText] = useState("");
   const [showBackgroundMenu, setShowBackgroundMenu] = useState(false);
   const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
+  const [showAlignMenu, setShowAlignMenu] = useState(false);
 
   // ------------------------------------------------------------
   // 複数選択(クリック・Shift+クリック・ラバーバンド範囲選択)
@@ -1336,11 +1337,25 @@ export default function UnifiedBoardSection({
   // 整列。ドラッグで散らかった配置を、現在の並び(上から左から)を保ったまま
   // グリッド状に並べ直す。ロック中のカードは動かさない
   // ------------------------------------------------------------
-  // 整列の並び順を決めるキー。ToDo・案件は対応状況ごとにまとめ、そのグループ自体の
-  // 並び順も設定タブで並び替えた優先度(stampPresets、先頭ほど優先度が高い)に揃える。
-  // 対応状況なしのToDo・案件はその後ろ、作業・付箋・図形などは種類ごとにさらに後ろへ回す。
-  // 先頭の数字は種類の優先順で、同じキーのものが盤面の上で固まって見えるようにする
-  function alignGroupKey(it: BoardItem): string {
+  // 整列の並び順を決めるキー。2つのモードを切り替えられる:
+  //   "tag" … ToDo・案件を対応状況ごとにまとめ、そのグループ自体の並び順も設定タブで
+  //           並び替えた優先度(stampPresets、先頭ほど優先度が高い)に揃える
+  //   "due" … ToDo・案件を期日が近い順にまとめる(期日なしは最後)
+  // どちらのモードでも、対象外のToDo・案件はその後ろ、作業・付箋・図形などは種類ごとに
+  // さらに後ろへ回す。先頭の数字は種類の優先順で、同じキーのものが盤面の上で固まって見える
+  type AlignMode = "tag" | "due";
+  function alignGroupKey(it: BoardItem, mode: AlignMode): string {
+    if (mode === "due") {
+      let due: string | undefined;
+      if (it.kind === "todo") {
+        due = todos.find((t) => t.id === it.id)?.dueDate;
+      } else if (it.kind === "project") {
+        due = projects.find((p) => p.id === it.id)?.dueDate;
+      } else {
+        return `3:${it.kind}`;
+      }
+      return due ? `1:${due}` : "2:";
+    }
     let tag: string | undefined;
     if (it.kind === "todo") {
       const todo = todos.find((t) => t.id === it.id);
@@ -1359,12 +1374,12 @@ export default function UnifiedBoardSection({
     return `1:${String(priorityRank).padStart(4, "0")}:${tag}`;
   }
 
-  async function alignBoardItems() {
+  async function alignBoardItems(mode: AlignMode) {
     const sorted = boardItems
       .filter((it) => !it.locked)
       .sort((a, b) => {
-        const ka = alignGroupKey(a);
-        const kb = alignGroupKey(b);
+        const ka = alignGroupKey(a, mode);
+        const kb = alignGroupKey(b, mode);
         if (ka !== kb) return ka.localeCompare(kb, "ja");
         return a.y - b.y || a.x - b.x;
       });
@@ -1375,8 +1390,8 @@ export default function UnifiedBoardSection({
     let rowHeight = 0;
     let currentKey: string | null = null;
     for (const it of sorted) {
-      const key = alignGroupKey(it);
-      // 対応状況が変わったら改行して、group同士が横に混ざらないようにする
+      const key = alignGroupKey(it, mode);
+      // グループが変わったら改行して、group同士が横に混ざらないようにする
       const groupChanged = currentKey !== null && key !== currentKey;
       if (col >= cols || groupChanged) {
         col = 0;
@@ -1934,11 +1949,28 @@ export default function UnifiedBoardSection({
                 </p>
                 {stampPresets.length > 0 && (
                   <div className="mb-1 flex flex-wrap gap-1">
-                    {stampPresets.map((preset) => (
-                      <button key={preset} className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addStamp(preset)}>
-                        {preset}
-                      </button>
-                    ))}
+                    {/* 並び順=優先度(先頭ほど高い)なので、上位1/3は強調・下位1/3は控えめにして、
+                        文字を読まなくても優先度の高さが一目で分かるようにする */}
+                    {stampPresets.map((preset, i) => {
+                      const total = stampPresets.length;
+                      const highPriority = i < total / 3;
+                      const lowPriority = i >= total - total / 3 && total > 2;
+                      return (
+                        <button
+                          key={preset}
+                          className={`whitespace-nowrap text-xs ${
+                            highPriority
+                              ? "btn-pill-outline border-alert/60 font-bold text-cream"
+                              : lowPriority
+                                ? "btn-pill-outline text-cream/40"
+                                : "btn-pill-outline"
+                          }`}
+                          onClick={() => addStamp(preset)}
+                        >
+                          {preset}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
                 <div className="flex gap-1">
@@ -2019,9 +2051,37 @@ export default function UnifiedBoardSection({
             </button>
           </>
         )}
-        <button className="btn-pill-outline text-xs" onClick={alignBoardItems} title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)">
-          🧹 整列
-        </button>
+        <div className="relative">
+          <button
+            className={showAlignMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowAlignMenu((v) => !v)}
+            title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)"
+          >
+            🧹 整列 ▾
+          </button>
+          {showAlignMenu && (
+            <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+              <button
+                className="btn-pill-outline whitespace-nowrap text-xs"
+                onClick={() => {
+                  alignBoardItems("tag");
+                  setShowAlignMenu(false);
+                }}
+              >
+                対応状況順
+              </button>
+              <button
+                className="btn-pill-outline whitespace-nowrap text-xs"
+                onClick={() => {
+                  alignBoardItems("due");
+                  setShowAlignMenu(false);
+                }}
+              >
+                期日順
+              </button>
+            </div>
+          )}
+        </div>
         {boardTagOptions.length > 0 && (
           <div className="relative border-l border-cream/15 pl-2">
             <button

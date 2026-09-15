@@ -112,14 +112,35 @@ export default function HomePage() {
   // メニューを出せるモードで、設定がONのときだけ
   const useMainMenu = menuSkinFor(mode) !== null && mainMenuStr === "true";
   const showMenu = useMainMenu && menuOpen;
+
+  // 統合ボードのタブに、開かなくても分かるよう「期限切れ・本日期日」件数のバッジを出す。
+  // ボードに置いてある(boardXが設定された)ToDo・案件だけを対象にする(タブを開いた時に
+  // 実際に目に入るものと一致させるため)
+  const badgeDate = todayStr();
+  const boardBadgeTodos = useLiveQuery(() => db.todoTasks.toArray(), []);
+  const boardBadgeProjects = useLiveQuery(() => db.projects.toArray(), []);
+  const boardUrgentCount = useMemo(() => {
+    let count = 0;
+    for (const t of boardBadgeTodos ?? []) {
+      if (t.completed || t.parentTaskId || t.boardX === undefined || !t.dueDate) continue;
+      if (t.dueDate <= badgeDate) count++;
+    }
+    for (const p of boardBadgeProjects ?? []) {
+      if (p.completedAt || p.boardX === undefined) continue;
+      if (p.dueDate <= badgeDate) count++;
+    }
+    return count;
+  }, [boardBadgeTodos, boardBadgeProjects, badgeDate]);
+
   const tabs = useMemo(() => {
     const allKeys = TABS.map((t) => t.key as TabKey);
     const visibleKeys = new Set(visibleTabKeys(mode, allKeys));
     return TABS.filter((t) => visibleKeys.has(t.key as TabKey)).map((t) => ({
       key: t.key,
       label: tabLabel(t.key, wordingMode, t.label),
+      badge: t.key === "board" ? boardUrgentCount : undefined,
     }));
-  }, [mode, wordingMode]);
+  }, [mode, wordingMode, boardUrgentCount]);
 
   // Claudeモードのようにタブ構成を絞るモードへ切り替えた際、今開いているタブが
   // 非表示になっていたら「本日の作業」タブへ戻す(存在しないタブが開いたままにならないように)
