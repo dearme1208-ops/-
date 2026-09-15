@@ -21,6 +21,7 @@ import {
   DEFAULT_TAG_PRESETS,
   effectiveDueDate,
   effectiveTag,
+  normalizeUrl,
   parsePresetList,
   upsertTodoFromCsv,
 } from "@/lib/todo";
@@ -175,11 +176,6 @@ type KanbanAxis = "tag" | "category";
 // 別のフラグ(todo.autoStatusViewSeeded)で管理する
 const AUTO_STATUS_VIEW_TAGS = ["対応中", "客先確認中", "社内確認中"];
 const AUTO_STATUS_VIEW_NAME = "対応中・確認中";
-
-// スキームなしで貼られたURL（例: example.com）もリンクボタンから開けるよう補う
-function normalizeUrl(url: string): string {
-  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
-}
 
 export default function TodoSection({
   initialDetailTaskId,

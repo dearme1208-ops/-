@@ -7,6 +7,11 @@ import { highestPriorityTag } from "./tagPriority";
 // 対応状況の初期値（設定タブ「todo.tagPresets」の初期シード値。以後は設定タブで自由に増減できる）
 export const DEFAULT_TAG_PRESETS = ["社内確認中", "客先確認中", "打ち合わせ", "対応中", "保留"];
 
+// スキームなしで貼られたURL（例: example.com）もリンクボタンから開けるよう補う
+export function normalizeUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
 // 選択肢リスト（対応状況・分類）は設定タブでJSON配列の文字列として保持する。
 // 分類は既定値を持たず、設定タブで登録したものだけが選択肢・かんばんの列になる
 export function parsePresetList(json: string): string[] {

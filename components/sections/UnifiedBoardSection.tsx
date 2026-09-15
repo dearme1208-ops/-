@@ -7,7 +7,7 @@ import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib/time";
 import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
-import { completeTodoTask, DEFAULT_TAG_PRESETS, effectiveTag, parsePresetList } from "@/lib/todo";
+import { completeTodoTask, DEFAULT_TAG_PRESETS, effectiveTag, normalizeUrl, parsePresetList } from "@/lib/todo";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { openMailAttachment } from "@/lib/mailImport";
 import { getRiskTier, useVisualMode } from "@/lib/theme";
@@ -4473,6 +4473,35 @@ function TodoCard({
         ) : (
           <p className="min-w-0 flex-1 text-sm text-cream">{todo.title}</p>
         )}
+        {/* 添付したURL・メールを、詳細を開かずにカードから直接見られるようにする */}
+        {todo.url && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(normalizeUrl(todo.url!), "_blank", "noopener,noreferrer");
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="shrink-0 text-xs text-cream/50 hover:text-cream"
+            title={`リンクを開く: ${todo.url}`}
+            aria-label="リンクを開く"
+          >
+            🔗
+          </button>
+        )}
+        {todo.mailFileDataUrl && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openMailAttachment(todo.mailFileDataUrl!, todo.mailFileName || "mail.msg");
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="shrink-0 text-xs text-cream/50 hover:text-cream"
+            title={`添付メールを開く: ${todo.mailSubject ?? todo.mailFileName ?? ""}`}
+            aria-label="添付メールを開く"
+          >
+            📧
+          </button>
+        )}
       </div>
       {(todo.dueDate || subtaskStat) && (
         <div className="flex shrink-0 flex-wrap items-center gap-x-1.5 text-[10px]">
@@ -4658,6 +4687,22 @@ function ProjectCard({
             {project.title}
           </p>
         )}
+        {/* 案件そのものに添付したメールを、詳細を開かずにカードから直接見られるようにする
+            (段階ごとの添付メールは下の段階一覧側にそれぞれ出す) */}
+        {project.mailFileDataUrl && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openMailAttachment(project.mailFileDataUrl!, project.mailFileName || "mail.msg");
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="shrink-0 text-xs text-cream/50 hover:text-cream"
+            title={`添付メールを開く: ${project.mailSubject ?? project.mailFileName ?? ""}`}
+            aria-label="添付メールを開く"
+          >
+            📧
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-1 text-[10px]">
         <span className={overdue ? "font-bold text-alert" : "text-cream/40"}>
@@ -4682,11 +4727,16 @@ function ProjectCard({
           visibleStages.map((st) => {
             const done = isStageDone(st);
             return (
-              <button
+              <div
                 key={st.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onToggleStage(st.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") onToggleStage(st.id);
+                }}
                 onPointerDown={(e) => e.stopPropagation()}
-                className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
+                className="flex w-full cursor-pointer items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
                 title={done ? "未完了に戻す" : "この段階を通過にする"}
               >
                 {/* 完了済みはToDoのサブタスクと同じ「✓入りの丸」にして、打ち消し線で残す
@@ -4703,10 +4753,24 @@ function ProjectCard({
                 </span>
                 {/* 段階の対応状況。ToDoのサブタスクと同じ判子の見た目で揃える */}
                 {done ? <InlineStamp text="済" tone="done" /> : st.tag ? <InlineStamp text={st.tag} /> : null}
+                {st.mailFileDataUrl && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openMailAttachment(st.mailFileDataUrl!, st.mailFileName || "mail.msg");
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="shrink-0 text-[10px] text-cream/50 hover:text-cream"
+                    title={`添付メールを開く: ${st.mailSubject ?? st.mailFileName ?? ""}`}
+                    aria-label="添付メールを開く"
+                  >
+                    📧
+                  </button>
+                )}
                 {!done && st.dueDate && (
                   <span className={`shrink-0 text-[9px] ${st.dueDate < today ? "text-alert" : "text-cream/35"}`}>{st.dueDate}</span>
                 )}
-              </button>
+              </div>
             );
           })
         )}
