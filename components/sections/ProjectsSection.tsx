@@ -562,8 +562,9 @@ export default function ProjectsSection({
 
       return {
         id: project.id,
-        label: project.title,
-        sublabel: project.workName,
+        // グループ名が登録されている場合は、件名の代わりにそれを題目として表示する
+        label: project.groupName || project.title,
+        sublabel: project.groupName ? `${project.title} / ${project.workName}` : project.workName,
         emphasis: overdue,
         badges: projectBadges,
         children,
@@ -1388,7 +1389,7 @@ function ProjectRow({
               )}
             </span>
           )}
-          {project.title}
+          {project.groupName || project.title}
           {/* 案件そのものの対応状況。段階(マイルストーン)ごとのtagとは別に、
               案件全体としての状況(見積り中・受注確定 など)をここで持つ。
               段階を持つ案件は、対応状況が段階側から自動算出されるため読み取り専用にする */}
@@ -1431,9 +1432,9 @@ function ProjectRow({
           {project.groupName && (
             <span
               className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60"
-              title="この案件が属するグループ(件名・詳細作業名が違っても同じグループの案件はまとめて集計されます)"
+              title="この案件自体の件名(グループ名が登録されているため、題目にはグループ名を表示しています)"
             >
-              🔗 {project.groupName}
+              📄 {project.title}
             </span>
           )}
           {clientName && (

@@ -1077,7 +1077,7 @@ export default function UnifiedBoardSection({
     }
     for (const p of projects) {
       if (p.boardX === undefined || p.boardY === undefined) continue;
-      items.push({ kind: "project", id: p.id, x: p.boardX, y: p.boardY, width: CARD_WIDTH, height: computeProjectCardHeight(p, showCompletedProjectStages), label: p.title, locked: !!p.boardLocked });
+      items.push({ kind: "project", id: p.id, x: p.boardX, y: p.boardY, width: CARD_WIDTH, height: computeProjectCardHeight(p, showCompletedProjectStages), label: p.groupName ? `${p.groupName} ${p.title}` : p.title, locked: !!p.boardLocked });
     }
     for (const n of notes ?? []) {
       const label = n.isChecklist ? (n.checklistItems ?? []).map((i) => i.text).join(" ") : n.text;
@@ -4968,18 +4968,20 @@ function ProjectCard({
         >
           案件
         </span>
+        {/* グループ名が登録されている場合は、件名の代わりにそれを題目として表示する
+            (案件タブの一覧・系統図と同じ扱い) */}
         {onOpenDetail ? (
           <button
             onClick={onOpenDetail}
             onPointerDown={(e) => e.stopPropagation()}
             className="min-w-0 flex-1 truncate text-left text-sm font-bold text-cream hover:underline"
-            title="案件タブでこの案件を開く"
+            title={project.groupName ? `案件タブでこの案件を開く（件名: ${project.title}）` : "案件タブでこの案件を開く"}
           >
-            {project.title}
+            {project.groupName || project.title}
           </button>
         ) : (
           <p className="min-w-0 flex-1 truncate text-sm font-bold text-cream" title={project.title}>
-            {project.title}
+            {project.groupName || project.title}
           </p>
         )}
         {/* 案件そのものに添付したURL・メールを、詳細を開かずにカードから直接見られるようにする
