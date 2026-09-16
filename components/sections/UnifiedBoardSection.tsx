@@ -10,7 +10,7 @@ import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib
 import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
 import { completeTodoTask, DEFAULT_TAG_PRESETS, effectiveTag, normalizeUrl, parsePresetList } from "@/lib/todo";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { openMailAttachment } from "@/lib/mailImport";
+import { openMailAttachment, readFileAsDataUrl } from "@/lib/mailImport";
 import { getRiskTier, useVisualMode } from "@/lib/theme";
 import {
   BOARD_BACKGROUND_KINDS,
@@ -1340,6 +1340,22 @@ export default function UnifiedBoardSection({
     const q = boardSearchQuery.trim().toLowerCase();
     return new Set(boardItems.filter((it) => it.label.toLowerCase().includes(q)).map((it) => it.id));
   }, [boardSearchActive, boardSearchQuery, boardItems]);
+
+  // 検索結果がちょうど1件に絞れたら、盤面が広くて画面外にあっても気づけるよう
+  // 自動でその場所まで寄せる。同じ1件に何度も寄せ直して操作の邪魔にならないよう、
+  // 直前に自動で寄せた先と同じ間は寄せ直さない
+  const lastAutoFocusedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!matchingIds || matchingIds.size !== 1) {
+      lastAutoFocusedIdRef.current = null;
+      return;
+    }
+    const onlyId = Array.from(matchingIds)[0];
+    if (lastAutoFocusedIdRef.current === onlyId) return;
+    lastAutoFocusedIdRef.current = onlyId;
+    focusBoardItem(onlyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchingIds]);
 
   // ------------------------------------------------------------
   // 整列。ドラッグで散らかった配置を、現在の並び(上から左から)を保ったまま
@@ -4486,6 +4502,11 @@ function TodoCard({
   const [imageExpanded, setImageExpanded] = useState(false);
   // どのサブタスクの画像を原寸大表示中か(サブタスクごとに1枚まで添付できるため、idで管理する)
   const [expandedSubtaskImageId, setExpandedSubtaskImageId] = useState<string | null>(null);
+  // 原寸大表示中の画像を差し替える際に使う、隠しファイル入力(本体用・サブタスク用で分ける)
+  const imageReplaceInputRef = useRef<HTMLInputElement>(null);
+  const subtaskImageReplaceInputRef = useRef<HTMLInputElement>(null);
+  // カード本体へ画像ファイルをドラッグ&ドロップしている間、枠を強調して落とせることを示す
+  const [cardDragOver, setCardDragOver] = useState(false);
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
   const x = todo.boardX ?? 40;
@@ -4504,17 +4525,42 @@ function TodoCard({
   // 期限切れほど強くはないが、今日が期日のものも見落とさないよう軽い縁取りで示す
   // (期限切れの強調と重なる場合は期限切れの見た目を優先する)
   const dueToday = !!todo.dueDate && todo.dueDate === today;
+  // 期日がなく重要でもない、長期間手つかずのカードは経過日数に応じて徐々に色褪せさせる
+  // (ToDoタブのTaskRowと同じ考え方。期日ベースの赤系警告とは重ならない範囲だけを対象にする)
+  const ageDays = todo.completed || todo.dueDate || todo.important
+    ? 0
+    : daysBetweenDateStrs(todayStr(new Date(todo.createdAt)), today);
+  const agingClass = ageDays >= 30 ? "opacity-45 grayscale" : ageDays >= 14 ? "opacity-70 grayscale-[50%]" : "";
 
   return (
     // ToDoは「チェックして潰していく紙片」。角を大きめに丸め、左端に細い帯を通して、
     // 角ばった書類然とした案件カード(下のProjectCard)とひと目で見分けられるようにする
     <div
-      className={`absolute flex flex-col gap-1 overflow-hidden rounded-xl border-2 border-l-[6px] bg-ink/90 p-2 pl-2.5 shadow-md ${
+      title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
+      className={`absolute flex flex-col gap-1 overflow-hidden rounded-xl border-2 border-l-[6px] bg-ink/90 p-2 pl-2.5 shadow-md transition-[opacity,filter] ${
         overdue ? "border-alert/70" : "border-cream/20 border-l-cream/45"
-      } ${dueToday && !overdue ? "ring-1 ring-alert/50" : ""} ${hubAlert ? "hub-card-alert" : ""}`}
+      } ${dueToday && !overdue ? "ring-1 ring-alert/50" : ""} ${hubAlert ? "hub-card-alert" : ""} ${
+        cardDragOver ? "ring-2 ring-[rgb(var(--accent-rgb))]" : ""
+      } ${agingClass}`}
       style={{ left, top, width: CARD_WIDTH, height: cardHeight, zIndex, ...boardItemVisualStyle(selected, matched, dimmed) }}
       onPointerDownCapture={onFocus}
       onClick={(e) => onSelect(e.shiftKey)}
+      onDragOver={(e) => {
+        // OSからの画像ファイルのドラッグ&ドロップで、カードに直接添付できるようにする
+        if (e.dataTransfer.types.includes("Files")) {
+          e.preventDefault();
+          setCardDragOver(true);
+        }
+      }}
+      onDragLeave={() => setCardDragOver(false)}
+      onDrop={async (e) => {
+        e.preventDefault();
+        setCardDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (!file || !file.type.startsWith("image/")) return;
+        const dataUrl = await readFileAsDataUrl(file);
+        await db.todoTasks.update(todo.id, { imageDataUrl: dataUrl });
+      }}
     >
       <DragHandle
         tone="dark"
@@ -4642,6 +4688,20 @@ function TodoCard({
                 onToggleSubtask(sub);
               }}
               onPointerDown={(e) => e.stopPropagation()}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("Files")) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files?.[0];
+                if (!file || !file.type.startsWith("image/")) return;
+                const dataUrl = await readFileAsDataUrl(file);
+                await db.todoTasks.update(sub.id, { imageDataUrl: dataUrl });
+              }}
               className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
               title={sub.completed ? "未完了に戻す" : "このサブタスクを完了にする"}
             >
@@ -4694,14 +4754,41 @@ function TodoCard({
           // 使うと「ビューポート基準」ではなくこの変形済み祖先基準になってしまい、
           // 表示位置・サイズが大きくずれる。document.bodyへポータルで逃がして回避する
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4"
             onClick={(e) => {
               e.stopPropagation();
               setImageExpanded(false);
             }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <img src={todo.imageDataUrl} alt={todo.title} className="max-h-[85vh] max-w-full rounded-lg object-contain" />
+            <img src={todo.imageDataUrl} alt={todo.title} className="max-h-[75vh] max-w-full rounded-lg object-contain" />
+            <div className="flex gap-2" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+              <button onClick={() => imageReplaceInputRef.current?.click()} className="btn-pill-outline text-xs">
+                差し替え
+              </button>
+              <button
+                onClick={async () => {
+                  await db.todoTasks.update(todo.id, { imageDataUrl: undefined });
+                  setImageExpanded(false);
+                }}
+                className="btn-pill-outline text-xs text-alert"
+              >
+                削除
+              </button>
+            </div>
+            <input
+              ref={imageReplaceInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const dataUrl = await readFileAsDataUrl(file);
+                await db.todoTasks.update(todo.id, { imageDataUrl: dataUrl });
+                e.target.value = "";
+              }}
+            />
           </div>,
           document.body
         )}
@@ -4711,7 +4798,7 @@ function TodoCard({
           if (!expandedSub?.imageDataUrl) return null;
           return createPortal(
             <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+              className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4"
               onClick={(e) => {
                 e.stopPropagation();
                 setExpandedSubtaskImageId(null);
@@ -4721,7 +4808,34 @@ function TodoCard({
               <img
                 src={expandedSub.imageDataUrl}
                 alt={expandedSub.title}
-                className="max-h-[85vh] max-w-full rounded-lg object-contain"
+                className="max-h-[75vh] max-w-full rounded-lg object-contain"
+              />
+              <div className="flex gap-2" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                <button onClick={() => subtaskImageReplaceInputRef.current?.click()} className="btn-pill-outline text-xs">
+                  差し替え
+                </button>
+                <button
+                  onClick={async () => {
+                    await db.todoTasks.update(expandedSub.id, { imageDataUrl: undefined });
+                    setExpandedSubtaskImageId(null);
+                  }}
+                  className="btn-pill-outline text-xs text-alert"
+                >
+                  削除
+                </button>
+              </div>
+              <input
+                ref={subtaskImageReplaceInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const dataUrl = await readFileAsDataUrl(file);
+                  await db.todoTasks.update(expandedSub.id, { imageDataUrl: dataUrl });
+                  e.target.value = "";
+                }}
               />
             </div>,
             document.body
@@ -4779,6 +4893,8 @@ function ProjectCard({
   const pinned = !!project.boardPinned;
   // どの段階の画像を原寸大表示中か(段階ごとに1枚まで添付できるため、段階idで管理する)
   const [expandedImageStageId, setExpandedImageStageId] = useState<string | null>(null);
+  // 原寸大表示中の段階画像を差し替える際に使う、隠しファイル入力
+  const stageImageReplaceInputRef = useRef<HTMLInputElement>(null);
   const x = project.boardX ?? 40;
   const y = project.boardY ?? 40;
   const stages = project.stages ?? [];
@@ -4932,6 +5048,22 @@ function ProjectCard({
                   if (e.key === "Enter" || e.key === " ") onToggleStage(st.id);
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes("Files")) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const file = e.dataTransfer.files?.[0];
+                  if (!file || !file.type.startsWith("image/")) return;
+                  const dataUrl = await readFileAsDataUrl(file);
+                  await db.projects.update(project.id, {
+                    stages: stages.map((s) => (s.id === st.id ? { ...s, imageDataUrl: dataUrl } : s)),
+                  });
+                }}
                 className="flex w-full cursor-pointer items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
                 title={done ? "未完了に戻す" : "この段階を通過にする"}
               >
@@ -4997,9 +5129,15 @@ function ProjectCard({
           const expandedStage = stages.find((s) => s.id === expandedImageStageId);
           if (!expandedStage?.imageDataUrl) return null;
           // TodoCardと同じ理由(盤面のtransform: scaleに巻き込まれるのを避ける)でポータルを使う
+          const updateStageImage = async (dataUrl: string | undefined) => {
+            await db.projects.update(
+              project.id,
+              { stages: stages.map((s) => (s.id === expandedStage.id ? { ...s, imageDataUrl: dataUrl } : s)) }
+            );
+          };
           return createPortal(
             <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+              className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4"
               onClick={(e) => {
                 e.stopPropagation();
                 setExpandedImageStageId(null);
@@ -5009,7 +5147,34 @@ function ProjectCard({
               <img
                 src={expandedStage.imageDataUrl}
                 alt={expandedStage.title}
-                className="max-h-[85vh] max-w-full rounded-lg object-contain"
+                className="max-h-[75vh] max-w-full rounded-lg object-contain"
+              />
+              <div className="flex gap-2" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                <button onClick={() => stageImageReplaceInputRef.current?.click()} className="btn-pill-outline text-xs">
+                  差し替え
+                </button>
+                <button
+                  onClick={async () => {
+                    await updateStageImage(undefined);
+                    setExpandedImageStageId(null);
+                  }}
+                  className="btn-pill-outline text-xs text-alert"
+                >
+                  削除
+                </button>
+              </div>
+              <input
+                ref={stageImageReplaceInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const dataUrl = await readFileAsDataUrl(file);
+                  await updateStageImage(dataUrl);
+                  e.target.value = "";
+                }}
               />
             </div>,
             document.body
