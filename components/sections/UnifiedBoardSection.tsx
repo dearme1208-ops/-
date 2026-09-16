@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
@@ -84,9 +85,12 @@ function computeProjectCardHeight(project: ProjectItem, showCompletedStages: boo
 // 件数だけを「サブタスク 2/4」と書いていた頃と違い、中身をその場で見て潰せるようにする
 const TODO_CARD_SUBTASK_ROW_HEIGHT = 22;
 const TODO_CARD_MAX_HEIGHT = 420;
-function computeTodoCardHeight(subtaskCount: number): number {
-  if (subtaskCount === 0) return TODO_CARD_HEIGHT;
-  return Math.min(TODO_CARD_MAX_HEIGHT, TODO_CARD_HEIGHT + subtaskCount * TODO_CARD_SUBTASK_ROW_HEIGHT);
+// 添付画像を常時表示する分の高さ(サムネイル本体+上下の余白)
+const TODO_CARD_IMAGE_HEIGHT = 72;
+function computeTodoCardHeight(subtaskCount: number, hasImage: boolean): number {
+  const base = TODO_CARD_HEIGHT + (hasImage ? TODO_CARD_IMAGE_HEIGHT : 0);
+  if (subtaskCount === 0) return base;
+  return Math.min(TODO_CARD_MAX_HEIGHT, base + subtaskCount * TODO_CARD_SUBTASK_ROW_HEIGHT);
 }
 const PLACEMENT_GRID = 30;
 const PLACEMENT_MARGIN = 10;
@@ -375,8 +379,12 @@ export default function UnifiedBoardSection({
   const visibleProjectIds = useMemo(() => new Set(visibleProjects.map((p) => p.id)), [visibleProjects]);
 
   const todoCardHeight = useCallback(
-    (todoId: string) => computeTodoCardHeight((subtasksByParent.get(todoId) ?? []).length),
-    [subtasksByParent]
+    (todoId: string) =>
+      computeTodoCardHeight(
+        (subtasksByParent.get(todoId) ?? []).length,
+        !!todos.find((t) => t.id === todoId)?.imageDataUrl
+      ),
+    [subtasksByParent, todos]
   );
 
   // 新しく現れた(まだboardX/boardYを持たない)作業・ToDoカードに、既存の付箋/カードと
@@ -4475,11 +4483,12 @@ function TodoCard({
 }) {
   const locked = !!todo.boardLocked;
   const pinned = !!todo.boardPinned;
+  const [imageExpanded, setImageExpanded] = useState(false);
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
   const x = todo.boardX ?? 40;
   const y = todo.boardY ?? 40;
-  const cardHeight = computeTodoCardHeight(subtasks.length);
+  const cardHeight = computeTodoCardHeight(subtasks.length, !!todo.imageDataUrl);
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     x,
     y,
@@ -4604,6 +4613,21 @@ function TodoCard({
           )}
         </div>
       )}
+      {/* 添付画像はクリックしないと見えないと見落とされがちなので、盤面に出ている間は
+          常にサムネイルで表示し続ける(クリックで原寸大表示) */}
+      {todo.imageDataUrl && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setImageExpanded(true);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="block h-16 w-full shrink-0 overflow-hidden rounded-md border border-cream/15"
+          title="画像を表示"
+        >
+          <img src={todo.imageDataUrl} alt="" className="h-full w-full object-cover" />
+        </button>
+      )}
       {/* サブタスクを直下に並べる。案件カードの段階と同じく、その場で押して完了に
           できるようにし、対応状況(tag)と完了はスタンプで示す */}
       {subtasks.length > 0 && (
@@ -4638,6 +4662,24 @@ function TodoCard({
           ))}
         </div>
       )}
+      {imageExpanded &&
+        todo.imageDataUrl &&
+        createPortal(
+          // 盤面はズーム倍率をtransform: scaleで掛けているため、その内側でposition: fixedを
+          // 使うと「ビューポート基準」ではなくこの変形済み祖先基準になってしまい、
+          // 表示位置・サイズが大きくずれる。document.bodyへポータルで逃がして回避する
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            onClick={(e) => {
+              e.stopPropagation();
+              setImageExpanded(false);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <img src={todo.imageDataUrl} alt={todo.title} className="max-h-[85vh] max-w-full rounded-lg object-contain" />
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -4688,6 +4730,8 @@ function ProjectCard({
 }) {
   const locked = !!project.boardLocked;
   const pinned = !!project.boardPinned;
+  // どの段階の画像を原寸大表示中か(段階ごとに1枚まで添付できるため、段階idで管理する)
+  const [expandedImageStageId, setExpandedImageStageId] = useState<string | null>(null);
   const x = project.boardX ?? 40;
   const y = project.boardY ?? 40;
   const stages = project.stages ?? [];
@@ -4858,6 +4902,21 @@ function ProjectCard({
                 </span>
                 {/* 段階の対応状況。ToDoのサブタスクと同じ判子の見た目で揃える */}
                 {done ? <InlineStamp text="済" tone="done" /> : st.tag ? <InlineStamp text={st.tag} /> : null}
+                {/* 添付画像はクリックしないと見えないと見落とされがちなので、小さいサムネイルを
+                    常時表示し続ける(クリックで原寸大表示) */}
+                {st.imageDataUrl && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedImageStageId(st.id);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="block h-4 w-4 shrink-0 overflow-hidden rounded border border-cream/20"
+                    title="画像を表示"
+                  >
+                    <img src={st.imageDataUrl} alt="" className="h-full w-full object-cover" />
+                  </button>
+                )}
                 {st.mailFileDataUrl && (
                   <button
                     onClick={(e) => {
@@ -4886,6 +4945,29 @@ function ProjectCard({
           })
         )}
       </div>
+      {expandedImageStageId &&
+        (() => {
+          const expandedStage = stages.find((s) => s.id === expandedImageStageId);
+          if (!expandedStage?.imageDataUrl) return null;
+          // TodoCardと同じ理由(盤面のtransform: scaleに巻き込まれるのを避ける)でポータルを使う
+          return createPortal(
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpandedImageStageId(null);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <img
+                src={expandedStage.imageDataUrl}
+                alt={expandedStage.title}
+                className="max-h-[85vh] max-w-full rounded-lg object-contain"
+              />
+            </div>,
+            document.body
+          );
+        })()}
     </div>
   );
 }
