@@ -104,6 +104,9 @@ export interface DailyTask {
   isTrouble?: boolean; // トラブル対応タスクかどうか
   resumeTaskIds?: string[]; // 中断した（一時停止させられた）作業のID一覧。この作業の完了時にまとめて再開する
   note?: string; // 完了時の一言メモ
+  guessSeconds?: number; // 開始前後にユーザー自身が申告した「何分で終わりそうか」の予想。
+  // システムが算出するpredictedSeconds(過去実績からの自動推定)とは別物で、完了時に実績と
+  // 突き合わせて的中度を見せる「予測ゲーム」用。未入力なら比較UIは出さない
   scheduledTime?: string; // HH:MM。カレンダー予定インポート等で設定され、その時刻になったら自動的に差し込み開始する
   autoStartNotified?: boolean; // scheduledTimeによる自動開始・通知をすでに行ったか（二重発火防止）
   autoStartDisabled?: boolean; // true の場合、scheduledTimeになっても自動開始せず時刻の目安表示のみにする

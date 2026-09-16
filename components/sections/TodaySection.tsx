@@ -95,6 +95,7 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
 import DayCardModal from "@/components/DayCardModal";
 import TodayMemoPanel from "@/components/TodayMemoPanel";
+import TodayHandoffPanel from "@/components/TodayHandoffPanel";
 import type { DayCardData } from "@/lib/dayCard";
 import TomorrowDraftModal from "@/components/TomorrowDraftModal";
 import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
@@ -2816,6 +2817,25 @@ export default function TodaySection({
                 {remainingMs >= 0 ? `残り ${formatMsClock(remainingMs)}` : `超過 ${formatMsClock(-remainingMs)}`}
               </div>
             )}
+            {task.status !== "done" && (
+              <div className="mt-1 flex items-center justify-end gap-1 text-xs text-cream/40">
+                <span title="開始前後に自分で予想を立てておくと、完了時に的中度が見られます">🎯予想</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={task.guessSeconds ? Math.round(task.guessSeconds / 60) : ""}
+                  onChange={(e) => {
+                    const min = Number(e.target.value);
+                    db.dailyTasks.update(task.id, {
+                      guessSeconds: Number.isFinite(min) && min > 0 ? Math.round(min * 60) : undefined,
+                    });
+                  }}
+                  placeholder="-"
+                  className="w-12 rounded border border-cream/20 bg-ink px-1 py-0.5 text-right tabular-nums text-cream"
+                />
+                <span>分</span>
+              </div>
+            )}
             <div className="mt-1 flex flex-wrap justify-end gap-2">
               {task.status === "pending" && (
                 <>
@@ -2908,6 +2928,21 @@ export default function TodaySection({
                       {formatClock(task.startedAt)}〜{formatClock(task.endedAt)}
                     </div>
                   )}
+                  {!!task.guessSeconds &&
+                    (() => {
+                      const actualSeconds = Math.round(baseAccumulatedMs(task) / 1000);
+                      if (actualSeconds <= 0) return null;
+                      const guessMin = Math.round(task.guessSeconds! / 60);
+                      const actualMin = Math.round(actualSeconds / 60);
+                      const diffPct = Math.round((Math.abs(actualSeconds - task.guessSeconds!) / task.guessSeconds!) * 100);
+                      const label =
+                        diffPct <= 10 ? "🎯ほぼ的中" : actualSeconds > task.guessSeconds! ? `${diffPct}%長引いた` : `${diffPct}%早く終わった`;
+                      return (
+                        <div className="text-xs tabular-nums text-cream/40">
+                          予想{guessMin}分→実績{actualMin}分・{label}
+                        </div>
+                      );
+                    })()}
                   <button
                     className="mt-1 text-xs text-cream/40 hover:text-alert"
                     onClick={() => setDeletingCompletedTask(task)}
@@ -3050,6 +3085,7 @@ export default function TodaySection({
           </button>
         </div>
       )}
+      <TodayHandoffPanel today={date} />
       {showStatusPanel && (
         <TodayStatusPanel
           tasks={tasks ?? []}

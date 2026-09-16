@@ -21,6 +21,7 @@ import { formatClock, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } fro
 import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
+import DayReplayModal from "@/components/DayReplayModal";
 
 // 時刻入力(HH:MM)の変更を、元のタイムスタンプの日付部分は保ったまま時刻だけ差し替える。
 // 日をまたいだ実績(例: 23:42開始〜翌7:02終了)でも、開始・終了それぞれの本来の日付がずれないようにする
@@ -44,6 +45,9 @@ export default function RecordsSection() {
   const showCsvTools = showCsvToolsStr === "true";
   // パソコンを閉じていた等で計測できず、後日まとめて過去の実績を手入力したい場合に使う
   const [showAddRecord, setShowAddRecord] = useState(false);
+  // 選んだ1日をタイムラプス風に再生するモーダルの対象日(nullなら非表示)
+  const [replayDate, setReplayDate] = useState<string | null>(null);
+  const [replayPickerDate, setReplayPickerDate] = useState("");
 
   const records = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
 
@@ -374,6 +378,25 @@ export default function RecordsSection() {
         )}
       </div>
 
+      <div className="panel flex flex-wrap items-center gap-2 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">📼 一日のリプレイ</h3>
+        <p className="w-full text-xs text-cream/40 sm:w-auto sm:flex-1">
+          選んだ日の実績を、朝から順にタイムラプス風に再生します。
+        </p>
+        <input
+          type="date"
+          value={replayPickerDate || records?.[0]?.date || ""}
+          onChange={(e) => setReplayPickerDate(e.target.value)}
+          className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <button
+          className="btn-pill text-sm"
+          onClick={() => setReplayDate(replayPickerDate || records?.[0]?.date || todayStr())}
+        >
+          📼 この日を再生
+        </button>
+      </div>
+
       <div className="panel p-4">
         <button
           className="flex w-full items-center justify-between text-left"
@@ -519,6 +542,7 @@ export default function RecordsSection() {
           onClose={() => setShowAddRecord(false)}
         />
       )}
+      {replayDate && <DayReplayModal date={replayDate} onClose={() => setReplayDate(null)} />}
     </div>
   );
 }
