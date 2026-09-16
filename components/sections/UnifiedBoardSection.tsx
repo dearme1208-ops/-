@@ -4484,6 +4484,8 @@ function TodoCard({
   const locked = !!todo.boardLocked;
   const pinned = !!todo.boardPinned;
   const [imageExpanded, setImageExpanded] = useState(false);
+  // どのサブタスクの画像を原寸大表示中か(サブタスクごとに1枚まで添付できるため、idで管理する)
+  const [expandedSubtaskImageId, setExpandedSubtaskImageId] = useState<string | null>(null);
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
   const x = todo.boardX ?? 40;
@@ -4658,6 +4660,29 @@ function TodoCard({
                 {sub.title}
               </span>
               {sub.completed ? <InlineStamp text="済" tone="done" /> : sub.tag ? <InlineStamp text={sub.tag} /> : null}
+              {/* サブタスクの添付画像も、クリックしないと見えないと見落とされがちなので、
+                  小さいサムネイルアイコンを常時出し、押すと原寸大表示する */}
+              {sub.imageDataUrl && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpandedSubtaskImageId(sub.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.stopPropagation();
+                      setExpandedSubtaskImageId(sub.id);
+                    }
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="block h-4 w-4 shrink-0 cursor-pointer overflow-hidden rounded border border-cream/20"
+                  title="画像を表示"
+                >
+                  <img src={sub.imageDataUrl} alt="" className="h-full w-full object-cover" />
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -4680,6 +4705,28 @@ function TodoCard({
           </div>,
           document.body
         )}
+      {expandedSubtaskImageId &&
+        (() => {
+          const expandedSub = subtasks.find((s) => s.id === expandedSubtaskImageId);
+          if (!expandedSub?.imageDataUrl) return null;
+          return createPortal(
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpandedSubtaskImageId(null);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <img
+                src={expandedSub.imageDataUrl}
+                alt={expandedSub.title}
+                className="max-h-[85vh] max-w-full rounded-lg object-contain"
+              />
+            </div>,
+            document.body
+          );
+        })()}
     </div>
   );
 }
