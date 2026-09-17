@@ -58,6 +58,7 @@ import { attachMailFile, openMailAttachment, readFileAsDataUrl, type MailAttachm
 import type { DailyTask, MemoNote, ProjectItem, RecurrenceRule, RecurrenceType, TodoList, TodoTask } from "@/lib/types";
 import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types";
 import { DEFAULT_MEMO_NOTE_COLOR, estimateChecklistNoteHeight, estimateTextNoteHeight } from "@/lib/memo";
+import { placeTodoOnBoard, removeTodoFromBoard } from "@/lib/boardPlacement";
 import Modal from "@/components/ui/Modal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
@@ -3023,6 +3024,20 @@ function TaskRow({
           🔗
         </button>
       )}
+      {!task.parentTaskId && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (task.boardX !== undefined) removeTodoFromBoard(task.id);
+            else placeTodoOnBoard(task.id);
+          }}
+          aria-label={task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}
+          title={task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}
+          className={`shrink-0 text-lg ${task.boardX !== undefined ? "text-cream" : "text-cream/30 hover:text-cream/60"}`}
+        >
+          🗂
+        </button>
+      )}
       <button onClick={onToggleImportant} aria-label="重要" className="shrink-0 text-lg">
         {task.important ? <span className="text-alert">★</span> : <span className="text-cream/30">☆</span>}
       </button>
@@ -3598,6 +3613,17 @@ function TaskDetailModal({
           >
             📝 メモに変換
           </button>
+          {!task.parentTaskId && (
+            <button
+              className={task.boardX !== undefined ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => {
+                if (task.boardX !== undefined) removeTodoFromBoard(task.id);
+                else placeTodoOnBoard(task.id);
+              }}
+            >
+              🗂 {task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}
+            </button>
+          )}
         </div>
 
         {showReflectDialog && (

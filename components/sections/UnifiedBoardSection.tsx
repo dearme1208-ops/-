@@ -47,6 +47,14 @@ import {
   type BoardBackgroundKind,
 } from "@/lib/memo";
 import { computeProjectProgress, effectiveProjectTag, isStageDone, toggleProjectStage } from "@/lib/projectStage";
+import {
+  BOARD_CARD_WIDTH,
+  computeProjectCardHeight,
+  computeTodoCardHeight,
+  findFreeSlot,
+  PLACEMENT_MARGIN,
+  type BoardRect,
+} from "@/lib/boardPlacement";
 import { computeAutoAllocation } from "@/lib/allocate";
 import { computeProjectForecast } from "@/lib/projectForecast";
 import { exportElementToPng } from "@/lib/pdfExport";
@@ -63,37 +71,11 @@ import type { BoardShape, BoardShapeType, BoardStamp, DailyTask, MasterTask, Mem
 // どちらのタブで開いても同じ付箋が見える。本日の作業・ToDoは付箋のような
 // x/y座標を持たないため、この画面専用のboardX/boardYフィールドに位置を保存する
 // (本日の作業は日付が変われば入れ替わるため、位置も自然にリセットされる)
-const CARD_WIDTH = 220;
+// カードサイズ・空き場所探索(findFreeSlot)・computeProjectCardHeight/computeTodoCardHeightは
+// ToDo/案件タブの「ボードに置く」からも同じ配置ロジックを使えるよう@/lib/boardPlacementへ
+// 切り出してある。CARD_WIDTHはこのファイル内での参照数が多いためそのままの名前で使う
+const CARD_WIDTH = BOARD_CARD_WIDTH;
 const TASK_CARD_HEIGHT = 110;
-const TODO_CARD_HEIGHT = 90;
-// 案件カードは残っている段階の数に応じて縦に伸びる(スクロールで探すより、
-// できるだけそのまま全部見える方を優先する)。ただし段階が非常に多い案件が
-// 盤面を占領しすぎないよう、上限を超えた分はこれまで通りカード内スクロールになる
-const PROJECT_CARD_MIN_HEIGHT = 132;
-const PROJECT_CARD_MAX_HEIGHT = 480;
-// ヘッダー・期日・進捗バーなど、段階以外の固定分(要素間のgapを含む)。
-// 足りないと最後の段階が1行分だけ見切れてしまう
-const PROJECT_CARD_CHROME_HEIGHT = 102;
-const PROJECT_CARD_STAGE_ROW_HEIGHT = 22;
-function computeProjectCardHeight(project: ProjectItem, showCompletedStages: boolean): number {
-  const stages = project.stages ?? [];
-  const count = showCompletedStages ? stages.length : stages.filter((st) => !isStageDone(st)).length;
-  const fit = PROJECT_CARD_CHROME_HEIGHT + count * PROJECT_CARD_STAGE_ROW_HEIGHT;
-  return Math.max(PROJECT_CARD_MIN_HEIGHT, Math.min(PROJECT_CARD_MAX_HEIGHT, fit));
-}
-// ToDoカードも案件カードと同じように、抱えているサブタスクの数だけ縦に伸ばす。
-// 件数だけを「サブタスク 2/4」と書いていた頃と違い、中身をその場で見て潰せるようにする
-const TODO_CARD_SUBTASK_ROW_HEIGHT = 22;
-const TODO_CARD_MAX_HEIGHT = 420;
-// 添付画像を常時表示する分の高さ(サムネイル本体+上下の余白)
-const TODO_CARD_IMAGE_HEIGHT = 72;
-function computeTodoCardHeight(subtaskCount: number, hasImage: boolean): number {
-  const base = TODO_CARD_HEIGHT + (hasImage ? TODO_CARD_IMAGE_HEIGHT : 0);
-  if (subtaskCount === 0) return base;
-  return Math.min(TODO_CARD_MAX_HEIGHT, base + subtaskCount * TODO_CARD_SUBTASK_ROW_HEIGHT);
-}
-const PLACEMENT_GRID = 30;
-const PLACEMENT_MARGIN = 10;
 const MINIMAP_WIDTH = 180;
 const MINIMAP_HEIGHT = Math.round((MINIMAP_WIDTH * MEMO_BOARD_HEIGHT) / MEMO_BOARD_WIDTH);
 
@@ -159,13 +141,6 @@ function stampColorForText(text: string): string {
   return STAMP_COLOR_KEYS[hashString(text) % STAMP_COLOR_KEYS.length];
 }
 
-interface BoardRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 // 種類をまたいでボード上のアイテムを扱うための共通の形。整列・検索・複数選択・
 // 矢印キー移動・削除キーなど、カードの種類を問わない操作の土台にする
 type BoardItemKind = "task" | "todo" | "project" | "note" | "shape";
@@ -174,29 +149,6 @@ interface BoardItem extends BoardRect {
   id: string;
   label: string; // 検索対象の文字列。無ければ空文字
   locked: boolean;
-}
-
-function rectsOverlap(a: BoardRect, b: BoardRect): boolean {
-  return !(
-    a.x + a.width + PLACEMENT_MARGIN <= b.x ||
-    b.x + b.width + PLACEMENT_MARGIN <= a.x ||
-    a.y + a.height + PLACEMENT_MARGIN <= b.y ||
-    b.y + b.height + PLACEMENT_MARGIN <= a.y
-  );
-}
-
-// 既存のカード(付箋・本日の作業・ToDo)と重ならない置き場所を、盤面を左上から
-// 走査して探す。手動でドラッグして重ねるのは自由なままにしたいので、この関数は
-// 「まだ位置が決まっていない新規カード」の初期配置にだけ使う
-function findFreeSlot(occupied: BoardRect[], width: number, height: number): { x: number; y: number } {
-  for (let y = 20; y <= MEMO_BOARD_HEIGHT - height; y += PLACEMENT_GRID) {
-    for (let x = 20; x <= MEMO_BOARD_WIDTH - width; x += PLACEMENT_GRID) {
-      const candidate: BoardRect = { x, y, width, height };
-      if (!occupied.some((r) => rectsOverlap(candidate, r))) return { x, y };
-    }
-  }
-  // 盤面が埋まりきっている場合(通常はまず起きない)は右下に寄せて返す
-  return { x: MEMO_BOARD_WIDTH - width, y: MEMO_BOARD_HEIGHT - height };
 }
 
 export default function UnifiedBoardSection({

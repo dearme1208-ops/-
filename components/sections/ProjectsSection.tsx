@@ -10,6 +10,7 @@ import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/proj
 import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { computeProjectForecast, type ProjectForecast } from "@/lib/projectForecast";
+import { placeProjectOnBoard, removeProjectFromBoard } from "@/lib/boardPlacement";
 import {
   buildStageCompletionOrder,
   computeProjectProgress,
@@ -1752,6 +1753,15 @@ function ProjectRow({
         </button>
         <button className="text-xs text-cream/60 hover:text-cream" onClick={onWbs} title="WBS(作業分解構成図)">
           WBS
+        </button>
+        <button
+          className="text-xs text-cream/60 hover:text-cream"
+          onClick={() => {
+            if (project.boardX !== undefined) removeProjectFromBoard(project.id);
+            else placeProjectOnBoard(project.id);
+          }}
+        >
+          {project.boardX !== undefined ? "ボードから外す" : "ボードに置く"}
         </button>
         <button className="text-xs text-alert" onClick={onDelete}>
           削除
