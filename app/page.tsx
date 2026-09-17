@@ -59,6 +59,7 @@ const MandalaSection = dynamic(() => import("@/components/sections/MandalaSectio
 const MemoSection = dynamic(() => import("@/components/sections/MemoSection"), { ssr: false });
 const UnifiedBoardSection = dynamic(() => import("@/components/sections/UnifiedBoardSection"), { ssr: false });
 const OriginSheetSection = dynamic(() => import("@/components/sections/OriginSheetSection"), { ssr: false });
+const ObservatorySection = dynamic(() => import("@/components/sections/ObservatorySection"), { ssr: false });
 
 const TABS: TabDef[] = [
   { key: "today", label: "本日の作業" },
@@ -76,6 +77,7 @@ const TABS: TabDef[] = [
   { key: "mandala", label: "マンダラチャート" },
   { key: "memo", label: "メモ" },
   { key: "board", label: "統合ボード" },
+  { key: "observatory", label: "観測所" },
   { key: "report", label: "日報・週報・月報" },
   { key: "records", label: "実績編集" },
   { key: "appearance", label: "モード選択" },
@@ -341,6 +343,7 @@ export default function HomePage() {
           }}
         />
       )}
+      {active === "observatory" && <ObservatorySection />}
       {active === "report" && mode === "claude" && <ClaudeReportSection />}
       {active === "report" && mode !== "claude" && (
         <ReportSection
