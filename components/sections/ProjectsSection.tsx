@@ -361,6 +361,13 @@ export default function ProjectsSection({
 
   async function deleteProject(item: ProjectItem) {
     await db.projects.delete(item.id);
+    // 削除した案件を先行案件として参照していた、残る案件からその参照を外す
+    for (const p of projects ?? []) {
+      if (!p.predecessorProjectIds?.includes(item.id)) continue;
+      await db.projects.update(p.id, {
+        predecessorProjectIds: p.predecessorProjectIds.filter((pid) => pid !== item.id),
+      });
+    }
     showUndoToast(`「${item.title}」を削除しました`, async () => {
       await db.projects.add(item);
     });
@@ -1068,6 +1075,43 @@ export default function ProjectsSection({
                     className="absolute top-0 bottom-0 border-l-2 border-alert/70"
                     style={{ left: todayIndex * pxPerDay }}
                   />
+                  {/* 先行案件の依存線。WBSの先行タスク矢印と同じ考え方で、案件単位で描く。
+                      日付の自動調整はせず、後続の開始(登録日)が先行の終了(期日)より前にある
+                      場合に赤で気づきとして示すだけ */}
+                  <svg
+                    className="pointer-events-none absolute inset-0"
+                    width={totalDays * pxPerDay}
+                    height={timelineRows.length * ROW_H}
+                  >
+                    <defs>
+                      <marker id="project-gantt-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                        <path d="M0,0 L6,3 L0,6 Z" fill="rgb(var(--cream-rgb) / 0.5)" />
+                      </marker>
+                    </defs>
+                    {timelineRows.flatMap((row, idx) =>
+                      (row.project.predecessorProjectIds ?? []).map((predId) => {
+                        const predIdx = timelineRows.findIndex((r) => r.project.id === predId);
+                        if (predIdx === -1) return null; // 先行案件が完了済みで非表示、または削除済み
+                        const pred = timelineRows[predIdx];
+                        const y1 = predIdx * ROW_H + ROW_H / 2;
+                        const y2 = idx * ROW_H + ROW_H / 2;
+                        const x1 = pred.barEnd * pxPerDay;
+                        const x2 = row.barStart * pxPerDay;
+                        const conflict = x2 < x1;
+                        const midX = conflict ? x1 + 10 : x1 + Math.max(6, (x2 - x1) / 2);
+                        return (
+                          <path
+                            key={`${predId}->${row.project.id}`}
+                            d={`M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`}
+                            fill="none"
+                            stroke={conflict ? "rgb(var(--accent-rgb) / 0.8)" : "rgb(var(--cream-rgb) / 0.35)"}
+                            strokeWidth={1.5}
+                            markerEnd="url(#project-gantt-arrow)"
+                          />
+                        );
+                      })
+                    )}
+                  </svg>
                   {timelineRows.map((r, idx) => {
                     const top = idx * ROW_H;
                     const left = r.barStart * pxPerDay;

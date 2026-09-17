@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { DragEvent as ReactDragEvent } from "react";
+import { db } from "@/lib/db";
 import { todayStr } from "@/lib/time";
 import { isStageDone } from "@/lib/projectStage";
 import { DOW_LABELS, buildMonthGrid, buildWeekGrid, type WeekViewMode } from "@/lib/calendarGrid";
@@ -17,6 +19,34 @@ export default function ProjectsCalendarView({ projects, today }: { projects: Pr
   const [weekViewMode] = useSetting("calendar.weekViewMode", "fixedStart");
   const [weekStartDayStr] = useSetting("calendar.weekStartDay", "0");
   const weekStartDay = Number(weekStartDayStr);
+  // マス目へドラッグして期日を動かす
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  function handleEntryDragStart(e: ReactDragEvent, entry: CalendarEntry) {
+    if (entry.kind === "project") {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "project", projectId: entry.project.id }));
+    } else {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "stage", projectId: entry.project.id, stageId: entry.stage.id }));
+    }
+  }
+  function handleCellDrop(e: ReactDragEvent, cellDate: string) {
+    e.preventDefault();
+    setDragOverDate(null);
+    let payload: { kind: "project" | "stage"; projectId: string; stageId?: string };
+    try {
+      payload = JSON.parse(e.dataTransfer.getData("text/plain"));
+    } catch {
+      return;
+    }
+    if (payload.kind === "project") {
+      db.projects.update(payload.projectId, { dueDate: cellDate });
+      return;
+    }
+    const project = projects.find((p) => p.id === payload.projectId);
+    if (!project) return;
+    db.projects.update(project.id, {
+      stages: (project.stages ?? []).map((s) => (s.id === payload.stageId ? { ...s, dueDate: cellDate } : s)),
+    });
+  }
 
   const byDate = useMemo(() => {
     const map = new Map<string, CalendarEntry[]>();
@@ -70,6 +100,7 @@ export default function ProjectsCalendarView({ projects, today }: { projects: Pr
 
   return (
     <div>
+      <p className="mb-1 text-[10px] text-cream/40">項目をドラッグして別の日に落とすと、期日を変更できます</p>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-display text-base font-bold">{headerLabel}</h3>
         <div className="flex items-center gap-1">
@@ -112,8 +143,14 @@ export default function ProjectsCalendarView({ projects, today }: { projects: Pr
             return (
               <div
                 key={dateStr}
-                className={`${granularity === "month" ? "min-h-[76px]" : "min-h-[160px]"} rounded-lg border p-1 ${
-                  isToday ? "border-cream/60 bg-cream/5" : "border-cream/10"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOverDate(dateStr);
+                }}
+                onDragLeave={() => setDragOverDate((d) => (d === dateStr ? null : d))}
+                onDrop={(e) => handleCellDrop(e, dateStr)}
+                className={`${granularity === "month" ? "min-h-[76px]" : "min-h-[160px]"} rounded-lg border p-1 transition-colors ${
+                  dragOverDate === dateStr ? "border-cream/60 bg-cream/10" : isToday ? "border-cream/60 bg-cream/5" : "border-cream/10"
                 } ${inMonth ? "" : "opacity-30"}`}
               >
                 <div className={`text-[11px] ${isToday ? "font-bold text-cream" : "text-cream/50"}`}>
@@ -124,11 +161,14 @@ export default function ProjectsCalendarView({ projects, today }: { projects: Pr
                     if (entry.kind === "project") {
                       const p = entry.project;
                       const overdue = !p.completedAt && p.dueDate < today;
+                      const draggableProject = !p.completedAt;
                       return (
                         <div
                           key={p.id}
-                          title={`${p.title} / ${p.workName}`}
-                          className={`truncate rounded px-1 py-0.5 text-[10px] ${
+                          title={draggableProject ? `${p.title} / ${p.workName}（ドラッグで期日を変更できます）` : `${p.title} / ${p.workName}`}
+                          draggable={draggableProject}
+                          onDragStart={(e) => handleEntryDragStart(e, entry)}
+                          className={`truncate rounded px-1 py-0.5 text-[10px] ${draggableProject ? "cursor-grab active:cursor-grabbing" : ""} ${
                             p.completedAt
                               ? "bg-cream/10 text-cream/40 line-through"
                               : overdue
@@ -136,18 +176,21 @@ export default function ProjectsCalendarView({ projects, today }: { projects: Pr
                                 : "bg-cream/80 text-ink"
                           }`}
                         >
-                          {p.title}
+                          {p.groupName || p.title}
                         </div>
                       );
                     }
                     const { project: p, stage } = entry;
                     const done = isStageDone(stage);
                     const overdue = !done && !!stage.dueDate && stage.dueDate < today;
+                    const draggableStage = !done;
                     return (
                       <div
                         key={`${p.id}::${stage.id}`}
-                        title={`${p.title} / ${stage.title}`}
-                        className={`truncate rounded border px-1 py-0.5 text-[10px] ${
+                        title={draggableStage ? `${p.title} / ${stage.title}（ドラッグで期日を変更できます）` : `${p.title} / ${stage.title}`}
+                        draggable={draggableStage}
+                        onDragStart={(e) => handleEntryDragStart(e, entry)}
+                        className={`truncate rounded border px-1 py-0.5 text-[10px] ${draggableStage ? "cursor-grab active:cursor-grabbing" : ""} ${
                           done
                             ? "border-cream/10 text-cream/40 line-through"
                             : overdue

@@ -209,6 +209,9 @@ export interface ProjectItem {
   tag?: string; // 対応状況（社内確認中・客先確認中 など）。段階(ProjectStage.tag)・ToDoのtagと同じ選択肢を使う。
   // 案件そのものの状況を表すもので、個々の段階のtagとは独立している
   url?: string; // 関連リンク。ToDoのurlと同じく、一覧のリンクボタンから直接開ける
+  predecessorProjectIds?: string[]; // 先行案件(この案件が始まる前に終わっているべき案件)。
+  // WBSのpredecessorIdsと同じ考え方だが、こちらは案件単位(段階単位ではない)。
+  // 期日ガントチャートに依存の矢印を描くためだけに使い、日付の自動調整はしない
   clientId?: string; // 取引先（任意）
   createdAt: number;
   completedAt?: number;

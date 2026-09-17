@@ -304,6 +304,10 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   );
   const [mailImportError, setMailImportError] = useState(false);
   const mailInputRef = useRef<HTMLInputElement>(null);
+  const [predecessorProjectIds, setPredecessorProjectIds] = useState<string[]>(project.predecessorProjectIds ?? []);
+  function togglePredecessor(id: string) {
+    setPredecessorProjectIds((prev) => (prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id]));
+  }
   const [stages, setStages] = useState<ProjectStage[]>(project.stages ?? []);
   const [newStageTitle, setNewStageTitle] = useState("");
   const [newStageTargetCount, setNewStageTargetCount] = useState("");
@@ -414,6 +418,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       estimatedTotalSeconds: estimatedTotalSeconds > 0 ? estimatedTotalSeconds : undefined,
       clientId: clientId || undefined,
       url: url.trim() || undefined,
+      predecessorProjectIds: predecessorProjectIds.length > 0 ? predecessorProjectIds : undefined,
       ...(hasStages ? {} : { tag: tag || undefined }),
       mailFileDataUrl: mail?.mailFileDataUrl,
       mailFileName: mail?.mailFileName,
@@ -525,6 +530,29 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
               🔗
             </button>
           )}
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-cream/60">
+            先行案件（この案件が始まる前に終わっているべき案件。ガントチャートに矢印で表示されます）
+          </p>
+          <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border border-cream/20 bg-ink px-3 py-2">
+            {(allProjectsForGroupNames ?? [])
+              .filter((p) => p.id !== project.id)
+              .map((p) => (
+                <label key={p.id} className="flex items-center gap-2 text-xs text-cream/80">
+                  <input
+                    type="checkbox"
+                    checked={predecessorProjectIds.includes(p.id)}
+                    onChange={() => togglePredecessor(p.id)}
+                    className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-cream"
+                  />
+                  <span className={p.completedAt ? "text-cream/40 line-through" : ""}>{p.groupName || p.title}</span>
+                </label>
+              ))}
+            {(allProjectsForGroupNames ?? []).length <= 1 && (
+              <p className="text-[10px] text-cream/40">他に案件がありません</p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">添付メール</label>
