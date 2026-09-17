@@ -222,7 +222,13 @@ export const MEMO_NOTE_AUTO_MAX_WIDTH = 420; // 自動サイズ時、横に広�
 // 並んでおり、MEMO_NOTE_MIN_WIDTH(手動リサイズ時の絶対下限,100px)まで縮めると
 // その操作列自体が折り返して崩れてしまう。180pxなら操作列が2行に収まる
 const MEMO_NOTE_AUTO_MIN_WIDTH = 180;
-const MEMO_NOTE_TEXT_HORIZONTAL_CHROME = 16; // 本文textareaのpx-2(左右16px)相当
+// 本文textareaのpx-2(左右16px)+ 付箋本体のborder-2(左右4px)相当。
+// この値ぴったりに幅を合わせると、キャンバスでの一括計測とwrappedLineCountの
+// 1文字ずつの累積計測との間のごく僅かな端数差(サブピクセル)だけで簡単に折り返し
+// 判定側が上振れしてしまう(境界に余白が無いため)。SAFETY_MARGINで数px の遊びを
+// 持たせ、実際には収まる文章が不要に改行されるのを防ぐ
+const MEMO_NOTE_TEXT_HORIZONTAL_CHROME = 20;
+const MEMO_NOTE_WIDTH_SAFETY_MARGIN = 6;
 const MEMO_NOTE_CHECKLIST_HORIZONTAL_CHROME = 54; // チェックリスト行のチェックボックス・削除ボタン・余白相当
 
 let measureCtx: CanvasRenderingContext2D | null | undefined;
@@ -281,7 +287,10 @@ export function estimateAutoTextNoteSize(text: string, font: string): { width: n
   for (const line of lines) longest = Math.max(longest, ctx.measureText(line).width);
   const width = Math.max(
     MEMO_NOTE_AUTO_MIN_WIDTH,
-    Math.min(MEMO_NOTE_AUTO_MAX_WIDTH, Math.ceil(longest) + MEMO_NOTE_TEXT_HORIZONTAL_CHROME)
+    Math.min(
+      MEMO_NOTE_AUTO_MAX_WIDTH,
+      Math.ceil(longest) + MEMO_NOTE_TEXT_HORIZONTAL_CHROME + MEMO_NOTE_WIDTH_SAFETY_MARGIN
+    )
   );
   const maxTextWidth = width - MEMO_NOTE_TEXT_HORIZONTAL_CHROME;
   let rows = 0;
