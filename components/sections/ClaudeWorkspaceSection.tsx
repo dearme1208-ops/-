@@ -8,6 +8,7 @@ import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
 import { daysBetweenDateStrs, formatMsClock, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
+import { useSetting } from "@/lib/settings";
 import { useVisualMode } from "@/lib/theme";
 import { buildThinking, confidenceLabel } from "@/lib/claudeThinking";
 import { claudeWordsFor } from "@/lib/claudeWords";
@@ -41,6 +42,12 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
   const [newProjectDue, setNewProjectDue] = useState("");
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [newStageTitle, setNewStageTitle] = useState<Record<string, string>>({});
+  // 完了済みの段階・サブタスクを表示するかどうか。段階側は案件タブ・統合ボードと同じ
+  // 設定キー(projects.showCompletedStages)を共有し、どちらで切り替えても一致させる
+  const [showCompletedStagesStr, setShowCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
+  const showCompletedStages = showCompletedStagesStr === "true";
+  const [showCompletedSubtasksStr, setShowCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
+  const showCompletedSubtasks = showCompletedSubtasksStr === "true";
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -383,6 +390,26 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
             {suggestion.reason}）。
           </p>
         )}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-[11px] text-cream/40">
+          <label className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={showCompletedStages}
+              onChange={(e) => setShowCompletedStagesStr(e.target.checked ? "true" : "false")}
+              className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-alert"
+            />
+            完了済みの段階を表示
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={showCompletedSubtasks}
+              onChange={(e) => setShowCompletedSubtasksStr(e.target.checked ? "true" : "false")}
+              className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-alert"
+            />
+            完了済みのサブタスクを表示
+          </label>
+        </div>
         <div className="h-px w-full bg-cream/10" />
       </header>
 
@@ -539,21 +566,27 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
               </div>
             )}
 
-            {(project.stages ?? []).length > 0 && (
-              <div className="space-y-1">
-                {(project.stages ?? []).map((stage) => (
-                  <label key={stage.id} className="flex items-center gap-2 text-sm text-cream/80">
-                    <input
-                      type="checkbox"
-                      checked={stage.completed}
-                      onChange={() => toggleStage(project, stage)}
-                      className="h-4 w-4 rounded border-cream/30 bg-ink accent-alert"
-                    />
-                    <span className={stage.completed ? "text-cream/40 line-through" : ""}>{stage.title}</span>
-                  </label>
-                ))}
-              </div>
-            )}
+            {(project.stages ?? []).length > 0 && (() => {
+              const allStages = project.stages ?? [];
+              const visibleStages = showCompletedStages ? allStages : allStages.filter((s) => !s.completed);
+              const hiddenCount = allStages.length - visibleStages.length;
+              return (
+                <div className="space-y-1">
+                  {visibleStages.map((stage) => (
+                    <label key={stage.id} className="flex items-center gap-2 text-sm text-cream/80">
+                      <input
+                        type="checkbox"
+                        checked={stage.completed}
+                        onChange={() => toggleStage(project, stage)}
+                        className="h-4 w-4 rounded border-cream/30 bg-ink accent-alert"
+                      />
+                      <span className={stage.completed ? "text-cream/40 line-through" : ""}>{stage.title}</span>
+                    </label>
+                  ))}
+                  {hiddenCount > 0 && <p className="text-[11px] text-cream/30">完了済み{hiddenCount}件を非表示中</p>}
+                </div>
+              );
+            })()}
             <input
               value={newStageTitle[project.id] ?? ""}
               onChange={(e) => setNewStageTitle((prev) => ({ ...prev, [project.id]: e.target.value }))}
@@ -658,23 +691,29 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
                       }`}
                     />
                   </div>
-                  {subCount > 0 && expandedSubtasksOf.has(t.id) && (
-                    <div className="mt-1.5 space-y-1 border-t border-cream/10 pl-6 pt-1.5">
-                      {(subtasksByParent.get(t.id) ?? []).map((sub) => (
-                        <label key={sub.id} className="flex items-center gap-1.5">
-                          <input
-                            type="checkbox"
-                            checked={sub.completed}
-                            onChange={() => toggleSubtaskComplete(sub)}
-                            className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-cream"
-                          />
-                          <span className={`text-xs ${sub.completed ? "text-cream/30 line-through" : "text-cream/75"}`}>
-                            {sub.title}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
+                  {subCount > 0 && expandedSubtasksOf.has(t.id) && (() => {
+                    const allSubs = subtasksByParent.get(t.id) ?? [];
+                    const visibleSubs = showCompletedSubtasks ? allSubs : allSubs.filter((s) => !s.completed);
+                    const hiddenCount = allSubs.length - visibleSubs.length;
+                    return (
+                      <div className="mt-1.5 space-y-1 border-t border-cream/10 pl-6 pt-1.5">
+                        {visibleSubs.map((sub) => (
+                          <label key={sub.id} className="flex items-center gap-1.5">
+                            <input
+                              type="checkbox"
+                              checked={sub.completed}
+                              onChange={() => toggleSubtaskComplete(sub)}
+                              className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-cream"
+                            />
+                            <span className={`text-xs ${sub.completed ? "text-cream/30 line-through" : "text-cream/75"}`}>
+                              {sub.title}
+                            </span>
+                          </label>
+                        ))}
+                        {hiddenCount > 0 && <p className="text-[10px] text-cream/25">完了済み{hiddenCount}件を非表示中</p>}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
