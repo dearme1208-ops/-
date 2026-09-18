@@ -56,6 +56,8 @@ import {
   type BoardRect,
 } from "@/lib/boardPlacement";
 import { computeAutoAllocation } from "@/lib/allocate";
+import { BOARD_VIEW_MODES, type BoardViewMode } from "@/lib/boardViewModes";
+import AltBoardView from "@/components/board/AltBoardView";
 import { computeProjectForecast } from "@/lib/projectForecast";
 import { exportElementToPng } from "@/lib/pdfExport";
 import Modal from "@/components/ui/Modal";
@@ -1810,8 +1812,40 @@ export default function UnifiedBoardSection({
   const unplacedTodos = openTodos.filter((t) => t.boardX === undefined && !isTodoAutoShown(t));
   const unplacedProjects = openProjects.filter((p) => p.boardX === undefined);
 
+  // 「ボード」以外の表示切替タブ。ボード表示の自由配置・付箋/図形編集はそのまま残しつつ、
+  // 同じ(置いた)ToDo・案件・本日の作業を全く違う見た目で眺められるようにする
+  const [viewModeStr, setViewModeStr] = useSetting("board.viewMode", "board");
+  const viewMode = (BOARD_VIEW_MODES.some((m) => m.key === viewModeStr) ? viewModeStr : "board") as BoardViewMode;
+
   return (
     <div className={fullscreen ? "fixed inset-0 z-50 flex flex-col gap-3 overflow-y-auto bg-ink p-3" : "space-y-3"}>
+      <div className="panel flex flex-wrap items-center gap-2 p-3">
+        <span className="text-xs text-cream/50">表示:</span>
+        {BOARD_VIEW_MODES.map((m) => (
+          <button
+            key={m.key}
+            className={viewMode === m.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setViewModeStr(m.key)}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {viewMode !== "board" ? (
+        <AltBoardView
+          mode={viewMode}
+          todos={todos}
+          projects={projects}
+          boardTasks={boardTasks}
+          subtaskStats={subtaskStats}
+          subtasksByParent={subtasksByParent}
+          tagOptions={stampPresets}
+          today={today}
+          onOpenTodo={(id) => setDetailTodoId(id)}
+          onOpenProject={(id) => onOpenProjectEdit?.(id)}
+        />
+      ) : (
+        <>
       <div className="panel flex flex-wrap items-center gap-2 p-3">
         <span className="text-xs text-cream/50">メモ帳:</span>
         {(boards ?? []).map((b) => (
@@ -3456,6 +3490,8 @@ export default function UnifiedBoardSection({
             </div>
           </div>
         </Modal>
+      )}
+        </>
       )}
     </div>
   );
