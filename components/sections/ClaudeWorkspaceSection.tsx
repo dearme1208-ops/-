@@ -55,6 +55,27 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
     }
     return map;
   }, [allTodoTasks]);
+  // 「N件のサブタスク」をタップした時に、その場でチェックリストとして開閉するために使う。
+  // ここもタブを跨がず完結させたいというこの画面の方針(冒頭コメント参照)に合わせている
+  const subtasksByParent = useMemo(() => {
+    const map = new Map<string, TodoTask[]>();
+    for (const t of allTodoTasks ?? []) {
+      if (t.parentTaskId) map.set(t.parentTaskId, [...(map.get(t.parentTaskId) ?? []), t]);
+    }
+    return map;
+  }, [allTodoTasks]);
+  const [expandedSubtasksOf, setExpandedSubtasksOf] = useState<Set<string>>(new Set());
+  function toggleSubtasksExpanded(parentId: string) {
+    setExpandedSubtasksOf((prev) => {
+      const next = new Set(prev);
+      if (next.has(parentId)) next.delete(parentId);
+      else next.add(parentId);
+      return next;
+    });
+  }
+  async function toggleSubtaskComplete(sub: TodoTask) {
+    await db.todoTasks.update(sub.id, { completed: !sub.completed, completedAt: !sub.completed ? Date.now() : undefined });
+  }
 
   const runningDaily = (dailyTasks ?? []).find((d) => d.status === "running") ?? null;
   const dailyByTodoId = useMemo(() => {
@@ -618,7 +639,14 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
                           一時停止
                         </button>
                       )}
-                      {subCount > 0 && <span className="text-[10px] text-cream/30">{subCount}件のサブタスク</span>}
+                      {subCount > 0 && (
+                        <button
+                          className="text-[10px] text-cream/30 hover:text-cream/60"
+                          onClick={() => toggleSubtasksExpanded(t.id)}
+                        >
+                          {expandedSubtasksOf.has(t.id) ? "▾" : "▸"} {subCount}件のサブタスク
+                        </button>
+                      )}
                     </div>
                     <input
                       key={t.id + (t.dueDate ?? "")}
@@ -630,6 +658,23 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
                       }`}
                     />
                   </div>
+                  {subCount > 0 && expandedSubtasksOf.has(t.id) && (
+                    <div className="mt-1.5 space-y-1 border-t border-cream/10 pl-6 pt-1.5">
+                      {(subtasksByParent.get(t.id) ?? []).map((sub) => (
+                        <label key={sub.id} className="flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={sub.completed}
+                            onChange={() => toggleSubtaskComplete(sub)}
+                            className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-cream"
+                          />
+                          <span className={`text-xs ${sub.completed ? "text-cream/30 line-through" : "text-cream/75"}`}>
+                            {sub.title}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
