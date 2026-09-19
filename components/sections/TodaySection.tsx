@@ -39,6 +39,7 @@ import {
   segmentsAccumulatedMs,
 } from "@/lib/tasks";
 import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
+import { DEFAULT_IMPORT_DAYS, parseIcsToScheduleRows } from "@/lib/icsImport";
 import { downloadTextFile } from "@/lib/report";
 import { computeStreakDays } from "@/lib/streak";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
@@ -2378,19 +2379,44 @@ export default function TodaySection({
     downloadTextFile("schedule_template.csv", scheduleCsvTemplate());
   }
 
-  async function importScheduleCsv(file: File) {
+  // 予定CSVと、カレンダー(.ics)の両方を受ける。.icsはOutlook/Googleカレンダー/スマホの
+  // カレンダーがそのまま書き出せる形式で、解析はブラウザ内で完結する。
+  // どちらも同じ ScheduleRow に落としてから取り込むので、以降の扱いは共通
+  async function importScheduleFile(file: File) {
     const text = await file.text();
-    const { rows, errors } = parseScheduleCsv(text);
+    const isIcs = /\.ics$/i.test(file.name) || /BEGIN:VCALENDAR/i.test(text.slice(0, 200));
+
+    let rows;
+    let errors: string[];
+    let notes: string[] = [];
+    if (isIcs) {
+      const parsed = parseIcsToScheduleRows(text);
+      rows = parsed.rows;
+      errors = parsed.errors;
+      if (parsed.skipped > 0) notes.push(`終日・中止の予定${parsed.skipped}件は取り込みませんでした`);
+      if (parsed.timezones.length > 0) {
+        notes.push(`書き出し元のタイムゾーン: ${parsed.timezones.join("、")}（時刻は書かれたまま取り込みます）`);
+      }
+    } else {
+      const parsed = parseScheduleCsv(text);
+      rows = parsed.rows;
+      errors = parsed.errors;
+    }
+
     setScheduleImportErrors(errors);
     if (rows.length === 0) {
-      setScheduleImportResult("");
+      setScheduleImportResult(notes.join(" / "));
       if (errors.length === 0) {
-        alert("取り込める予定がありませんでした（このCSVにはヘッダーのみで、予定のデータ行がありません）。");
+        alert(
+          isIcs
+            ? `今日から${DEFAULT_IMPORT_DAYS}日以内に、取り込める予定が見つかりませんでした。`
+            : "取り込める予定がありませんでした（このCSVにはヘッダーのみで、予定のデータ行がありません）。"
+        );
       }
       return;
     }
     const { created } = await importScheduleRows(rows);
-    setScheduleImportResult(`${created}件の予定を取り込みました。`);
+    setScheduleImportResult([`${created}件の予定を取り込みました。`, ...notes].join(" / "));
   }
 
   async function enableNotifications() {
@@ -3587,17 +3613,21 @@ export default function TodaySection({
               <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
                 予定CSVテンプレート
               </button>
-              <button className="btn-pill-outline text-sm" onClick={() => scheduleFileInputRef.current?.click()}>
-                予定インポート
+              <button
+                className="btn-pill-outline text-sm"
+                onClick={() => scheduleFileInputRef.current?.click()}
+                title={`予定CSV、またはカレンダーの.icsファイル（今日から${DEFAULT_IMPORT_DAYS}日以内の予定）を取り込みます`}
+              >
+                予定インポート（CSV/.ics）
               </button>
               <input
                 ref={scheduleFileInputRef}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,.ics,text/csv,text/calendar"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) importScheduleCsv(file);
+                  if (file) importScheduleFile(file);
                   e.target.value = "";
                 }}
               />

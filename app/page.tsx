@@ -13,6 +13,7 @@ import ThemeInit from "@/components/ThemeInit";
 import VisualModeInit from "@/components/VisualModeInit";
 import AccessibilityInit from "@/components/AccessibilityInit";
 import StoragePersistInit from "@/components/StoragePersistInit";
+import AutoBackupInit from "@/components/AutoBackupInit";
 import LobotomyOverrunWatcher from "@/components/LobotomyOverrunWatcher";
 import ToastHost from "@/components/ui/ToastHost";
 import ConfettiHost from "@/components/ui/ConfettiHost";
@@ -193,6 +194,7 @@ export default function HomePage() {
       <VisualModeInit />
       <AccessibilityInit />
       <StoragePersistInit />
+      <AutoBackupInit />
       <LobotomyOverrunWatcher />
       <ToastHost />
       <ConfettiHost />

@@ -8,6 +8,15 @@ import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib/todo";
 import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
 import { exportBackup, importBackup, type BackupFile } from "@/lib/backup";
+import {
+  chooseAutoBackupFolder,
+  clearAutoBackupFolder,
+  daysSinceLastBackup,
+  getAutoBackupFolderName,
+  isAutoBackupSupported,
+  markManualBackup,
+  runAutoBackup,
+} from "@/lib/autoBackup";
 import { buildArchive, deleteArchivedRange } from "@/lib/archive";
 import { downloadTextFile } from "@/lib/report";
 import { todayStr } from "@/lib/time";
@@ -21,6 +30,12 @@ import { WEEKDAY_JP } from "@/lib/types";
 
 export default function SettingsSection() {
   const [backupStatus, setBackupStatus] = useState("");
+  const [autoBackupFolder, setAutoBackupFolder] = useState<string | null>(null);
+  const [autoBackupStatus, setAutoBackupStatus] = useState("");
+  // 最後にバックアップしてからの日数。自動バックアップが使えない環境でも
+  // 「長らく取っていない」ことだけは気付けるようにするための表示
+  const [staleBackupDays, setStaleBackupDays] = useState<number | null>(null);
+  const autoBackupSupported = isAutoBackupSupported();
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [archiveBeforeMonth, setArchiveBeforeMonth] = useState(() => todayStr().slice(0, 7));
   const [archiveStatus, setArchiveStatus] = useState("");
@@ -399,10 +414,44 @@ export default function SettingsSection() {
     if (editingWeatherPlaceId === id) resetWeatherPlaceForm();
   }
 
+  // 保存先の指定と最終バックアップ日は非同期・localStorage経由なので、描画後に読み直す
+  useEffect(() => {
+    void getAutoBackupFolderName().then(setAutoBackupFolder);
+    setStaleBackupDays(daysSinceLastBackup());
+  }, []);
+
   async function downloadBackup() {
     const data = await exportBackup();
     downloadTextFile(`koutei-hyo_backup_${todayStr()}.json`, JSON.stringify(data, null, 2));
+    markManualBackup();
+    setStaleBackupDays(daysSinceLastBackup());
     setBackupStatus("バックアップをダウンロードしました。");
+  }
+
+  async function chooseAutoBackup() {
+    try {
+      const name = await chooseAutoBackupFolder();
+      if (!name) return;
+      setAutoBackupFolder(name);
+      // 選んだ直後に1本書いて、本当に書ける場所かどうかをその場で確かめる
+      const result = await runAutoBackup({ force: true, interactive: true });
+      setAutoBackupStatus(result.message);
+      setStaleBackupDays(daysSinceLastBackup());
+    } catch {
+      // フォルダ選択のキャンセル。何も言わない
+    }
+  }
+
+  async function runAutoBackupNow() {
+    const result = await runAutoBackup({ force: true, interactive: true });
+    setAutoBackupStatus(result.message);
+    setStaleBackupDays(daysSinceLastBackup());
+  }
+
+  async function disableAutoBackup() {
+    await clearAutoBackupFolder();
+    setAutoBackupFolder(null);
+    setAutoBackupStatus("保存先の指定を解除しました。");
   }
 
   // バックエンド・クラウド同期を持たないこのアプリで、他の自分の端末にその場でデータを
@@ -1862,6 +1911,51 @@ export default function SettingsSection() {
         <p className="text-xs text-cream/50">
           このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は現在のデータを全て上書きします。「他の端末に共有」は、クラウドを経由せずOSの共有機能(AirDrop/近くのデバイス等)でその場だけ他の自分の端末にファイルを渡したい場合にお使いください。渡した端末側では「バックアップから復元」で取り込めます。
         </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">自動バックアップ</h3>
+        {autoBackupSupported ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <button className="btn-pill-outline text-sm" onClick={chooseAutoBackup}>
+                {autoBackupFolder ? "保存先を選び直す" : "保存先フォルダを選ぶ"}
+              </button>
+              {autoBackupFolder && (
+                <>
+                  <button className="btn-pill-outline text-sm" onClick={runAutoBackupNow}>
+                    今すぐ書き出す
+                  </button>
+                  <button className="text-xs text-cream/60 hover:text-cream" onClick={disableAutoBackup}>
+                    自動バックアップをやめる
+                  </button>
+                </>
+              )}
+            </div>
+            {autoBackupFolder && (
+              <p className="text-xs text-cream/70">
+                保存先: <span className="text-cream">{autoBackupFolder}</span>
+              </p>
+            )}
+            {autoBackupStatus && <p className="text-xs text-cream/70">{autoBackupStatus}</p>}
+            <p className="text-xs text-cream/50">
+              保存先を指定しておくと、アプリを開いた日に1回だけ、そのフォルダへ自動で書き出します。同じ日は上書きされ、14世代より古いファイルは消えます。保存先にiCloud
+              Drive・OneDrive・Dropbox等の同期フォルダを選べば、そのまま他の端末からも取り出せます（読み込みは「バックアップから復元」から行ってください）。
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-cream/50">
+            この端末・ブラウザは保存先フォルダの指定に対応していません（iPhone/iPadのSafariや多くのスマートフォンが該当します）。お手数ですが、上の「バックアップをダウンロード」を定期的にお使いください。
+          </p>
+        )}
+        {staleBackupDays !== null && staleBackupDays >= 7 && (
+          <p className="text-xs text-alert">
+            最後にバックアップしてから{staleBackupDays}日経っています。
+          </p>
+        )}
+        {staleBackupDays === null && (
+          <p className="text-xs text-alert">この端末ではまだ一度もバックアップしていません。</p>
+        )}
       </div>
 
       <div className="panel space-y-3 p-4">
