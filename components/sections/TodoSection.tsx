@@ -440,6 +440,23 @@ export default function TodoSection({
     }
     return items;
   }, [topLevelTasks, subtasksByParent, today]);
+
+  // マイデイ・重要・期限日も、本日の作業タブの実行中/予定/完了と同じく、開かなくても
+  // 中身の量が分かるよう件数を出す(未完了のみを数える。完了済みは注意を要さないため)。
+  // 現在の絞り込みview(visibleTasks)とは無関係に、常にその区分の件数を出したいので、
+  // topLevelTasksから独立して求める
+  const mydayCount = useMemo(
+    () => topLevelTasks.filter((t) => !t.completed && t.myDayDate === today).length,
+    [topLevelTasks, today]
+  );
+  const importantCount = useMemo(
+    () => topLevelTasks.filter((t) => !t.completed && t.important).length,
+    [topLevelTasks]
+  );
+  const plannedCount = useMemo(
+    () => topLevelTasks.filter((t) => !t.completed && !!effectiveDueDate(t, subtasksByParent.get(t.id) ?? [])).length,
+    [topLevelTasks, subtasksByParent]
+  );
   const parentTitleById = useMemo(() => new Map(topLevelTasks.map((t) => [t.id, t.title])), [topLevelTasks]);
   // 一覧表示(通常view)でのタスク複数選択+一括操作。期限超過ビューの一括操作とは別の独立した仕組み
   const [bulkSelectionMode, setBulkSelectionMode] = useState(false);
@@ -1204,15 +1221,19 @@ export default function TodoSection({
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         {!bottomViewBar &&
-          (["myday", "important", "planned"] as ViewKey[]).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={view === v ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-            >
-              {v === "myday" ? "☀ マイデイ" : v === "important" ? "★ 重要" : "📅 期限日"}
-            </button>
-          ))}
+          (["myday", "important", "planned"] as ViewKey[]).map((v) => {
+            const count = v === "myday" ? mydayCount : v === "important" ? importantCount : plannedCount;
+            return (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={view === v ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+              >
+                {v === "myday" ? "☀ マイデイ" : v === "important" ? "★ 重要" : "📅 期限日"}
+                {count > 0 && `（${count}）`}
+              </button>
+            );
+          })}
         {!bottomViewBar && (
           <button
             onClick={() => setView("overdue")}
@@ -2034,9 +2055,9 @@ export default function TodoSection({
       {bottomViewBar && (
         <BottomTabBar
           items={[
-            { key: "myday", icon: "☀", label: "マイデイ" },
-            { key: "important", icon: "★", label: "重要" },
-            { key: "planned", icon: "📅", label: "期限日" },
+            { key: "myday", icon: "☀", label: "マイデイ", count: mydayCount },
+            { key: "important", icon: "★", label: "重要", count: importantCount },
+            { key: "planned", icon: "📅", label: "期限日", count: plannedCount },
             { key: "overdue", icon: "⚠", label: "期限切れ", count: overdueTasks.length },
           ]}
           activeKey={view}
