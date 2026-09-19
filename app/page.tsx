@@ -23,7 +23,7 @@ import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
 import TodoReminderPopup from "@/components/TodoReminderPopup";
 import OnboardingGuide from "@/components/OnboardingGuide";
-import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
+import { parseHiddenTabKeys, tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
 import { menuSkinFor } from "@/lib/mainMenu";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
@@ -137,15 +137,19 @@ export default function HomePage() {
     return count;
   }, [boardBadgeTodos, boardBadgeProjects, badgeDate]);
 
+  // 森モード中、家庭モード管理タブでユーザー自身が個別に隠したタブ
+  const [homeHiddenTabsJson] = useSetting("home.hiddenTabKeys", "[]");
+  const homeHiddenTabs = useMemo(() => parseHiddenTabKeys(homeHiddenTabsJson), [homeHiddenTabsJson]);
+
   const tabs = useMemo(() => {
     const allKeys = TABS.map((t) => t.key as TabKey);
-    const visibleKeys = new Set(visibleTabKeys(mode, allKeys));
+    const visibleKeys = new Set(visibleTabKeys(mode, allKeys, homeHiddenTabs));
     return TABS.filter((t) => visibleKeys.has(t.key as TabKey)).map((t) => ({
       key: t.key,
       label: tabLabel(t.key, wordingMode, t.label),
       badge: t.key === "board" ? boardUrgentCount : undefined,
     }));
-  }, [mode, wordingMode, boardUrgentCount]);
+  }, [mode, wordingMode, boardUrgentCount, homeHiddenTabs]);
 
   // Claudeモードのようにタブ構成を絞るモードへ切り替えた際、今開いているタブが
   // 非表示になっていたら「本日の作業」タブへ戻す(存在しないタブが開いたままにならないように)

@@ -208,11 +208,31 @@ export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
   ],
 };
 
-export function visibleTabKeys(mode: VisualMode, allKeys: TabKey[]): TabKey[] {
+// 森モードだけ、家庭モード管理タブ(🌲茂みへ隠す)でユーザー自身が個別にタブの
+// 表示/非表示を選べるようにする。ここに挙げたタブは、隠すと元に戻す手段を失う
+// (このタブ自体・モードを抜ける手段・設定・本日の作業)ため、常に対象から外す
+export const HOME_TAB_TOGGLE_LOCKED: TabKey[] = ["today", "homeMaster", "appearance", "settings"];
+
+export function parseHiddenTabKeys(json: string): TabKey[] {
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr.filter((v): v is TabKey => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function serializeHiddenTabKeys(keys: TabKey[]): string {
+  return JSON.stringify(keys);
+}
+
+export function visibleTabKeys(mode: VisualMode, allKeys: TabKey[], userHiddenKeys: TabKey[] = []): TabKey[] {
   const base = mode === "off" ? allKeys : (VISIBLE_TABS_BY_MODE[mode as ThemedMode] ?? allKeys);
   // 「茂みへ隠す」タブは、除外設定が意味を持つ森モード中だけ出す
   // (他のモードでは作業マスタタブから紛らわしくならないよう隠しておく)
-  return mode === "home" ? base : base.filter((k) => k !== "homeMaster");
+  const withHomeMaster = mode === "home" ? base : base.filter((k) => k !== "homeMaster");
+  if (mode !== "home" || userHiddenKeys.length === 0) return withHomeMaster;
+  return withHomeMaster.filter((k) => HOME_TAB_TOGGLE_LOCKED.includes(k) || !userHiddenKeys.includes(k));
 }
 
 // 想定/予測に対する超過の度合い(実績が想定の何倍か)に応じて表示する階級バッジ。

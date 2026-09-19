@@ -3,7 +3,21 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { useSetting } from "@/lib/settings";
+import {
+  HOME_TAB_TOGGLE_LOCKED,
+  TAB_LABELS_BY_MODE,
+  parseHiddenTabKeys,
+  serializeHiddenTabKeys,
+  type TabKey,
+} from "@/lib/theme";
 import type { MasterTask } from "@/lib/types";
+
+// タブ一覧に出す並び順。app/page.tsxのTABS配列と同じ順に揃えてある
+// (揃えておかないと、この画面の並びと実際のタブバーの並びが食い違ってしまう)
+const TAB_ORDER = Object.keys(TAB_LABELS_BY_MODE.home) as TabKey[];
+// 隠すと元に戻す手段を失うタブは、選ぶ余地自体を与えない
+const TOGGLEABLE_TAB_KEYS = TAB_ORDER.filter((k) => !HOME_TAB_TOGGLE_LOCKED.includes(k));
 
 // 森モード(旧・家庭モード)の「茂みへ隠す」タブ。作業マスタ本体(MasterSection)とは
 // 別に置き、森モード中に「実り・累積」等の主要な集計画面(実績編集・集計/ランキング・
@@ -13,6 +27,16 @@ import type { MasterTask } from "@/lib/types";
 export default function HomeMasterSection() {
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const [showArchived, setShowArchived] = useState(false);
+
+  // 残業分析など、森モード中は見たくない集計タブそのものを非表示にする設定。
+  // マスタの除外(実績を隠す)とは別に、タブの存在自体を消す
+  const [hiddenTabsJson, setHiddenTabsJson] = useSetting("home.hiddenTabKeys", "[]");
+  const hiddenTabs = useMemo(() => parseHiddenTabKeys(hiddenTabsJson), [hiddenTabsJson]);
+
+  async function toggleTabHidden(key: TabKey) {
+    const next = hiddenTabs.includes(key) ? hiddenTabs.filter((k) => k !== key) : [...hiddenTabs, key];
+    await setHiddenTabsJson(serializeHiddenTabKeys(next));
+  }
 
   const groups = useMemo(() => {
     const list = (tasks ?? []).filter((t) => showArchived || !t.archived);
@@ -46,6 +70,28 @@ export default function HomeMasterSection() {
 
   return (
     <div className="space-y-4">
+      <div className="panel space-y-2 p-4">
+        <h3 className="font-display text-base font-bold">🍃 見せる木を選ぶ</h3>
+        <p className="text-xs text-cream/60">
+          チェックを外したタブは、森モード中はタブ一覧そのものから消えます(データは消えず、他のモードに切り替えればまた見られます)。残業分析など、森の中では見たくない画面を静かにしまっておけます。
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {TOGGLEABLE_TAB_KEYS.map((key) => {
+            const visible = !hiddenTabs.includes(key);
+            return (
+              <button
+                key={key}
+                onClick={() => toggleTabHidden(key)}
+                className={visible ? "btn-pill text-xs" : "btn-pill-outline text-xs opacity-50"}
+                title={visible ? "タップで隠す" : "タップで見せる"}
+              >
+                {visible ? "🌿" : "🍂"} {TAB_LABELS_BY_MODE.home[key]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="panel space-y-2 p-4">
         <h3 className="font-display text-base font-bold">🌲 茂みへ隠す</h3>
         <p className="text-xs text-cream/60">
