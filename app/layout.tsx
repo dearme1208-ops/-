@@ -4,6 +4,7 @@ import "./globals.css";
 import HeaderArt from "@/components/HeaderArt";
 import BadgeUpdater from "@/components/BadgeUpdater";
 import AppTitle from "@/components/AppTitle";
+import ForestAmbience from "@/components/forest/ForestAmbience";
 import { BOOT_INLINE_SCRIPT, BOOT_TITLE_SCRIPT } from "@/lib/boot";
 
 const oswald = Oswald({
@@ -131,6 +132,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="v11-watermark" aria-hidden="true" />
         <div className="nat-watermark" aria-hidden="true" />
         <div className="adv-watermark" aria-hidden="true" />
+        {/* 森モードのみ、画面全体にうっすら胞子(綿毛)を漂わせる。
+            他テーマの透かしと違いCanvasなので、モード外では要素自体を出さない */}
+        <ForestAmbience />
         <div className="frame-corners">
           <span className="corner-tr" />
           <span className="corner-br" />

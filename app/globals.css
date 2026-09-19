@@ -520,6 +520,44 @@ html[data-high-contrast="true"] :focus-visible {
     background: rgb(var(--accent-rgb) / 0.6);
     border-radius: 999px;
   }
+  /* ヘッダーのCanvas(林)と本文の境目に硬い線を残さないよう、
+     下端を地の色へ溶かして「林の足元がそのまま画面に続く」ように見せる */
+  html[data-visual-mode="home"] header {
+    border-bottom-color: rgb(var(--accent-rgb) / 0.16);
+  }
+  html[data-visual-mode="home"] header::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 28px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, rgb(var(--ink-rgb) / 0.85));
+  }
+  /* アプリ名は林の奥から差す月明かりに照らされている体で、文字のふちに淡い緑を灯す */
+  html[data-visual-mode="home"] .app-title {
+    text-shadow:
+      0 0 18px rgb(var(--accent-rgb) / 0.45),
+      0 2px 10px rgb(0 0 0 / 0.8);
+  }
+  /* 触れたパネルだけ、苔が呼吸するようにふちの光暈が強まる */
+  html[data-visual-mode="home"] .panel {
+    transition: box-shadow 420ms ease, border-color 420ms ease;
+  }
+  html[data-visual-mode="home"] .panel:hover {
+    border-color: rgb(var(--accent-rgb) / 0.38);
+    box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.16), 0 18px 34px -20px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(var(--accent-rgb) / 0.16);
+  }
+  /* 画面全体に漂う胞子(綿毛)のCanvas。他テーマの透かしと同じ重ね方にして
+     操作は妨げず、本文の可読性を落とさない薄さで描く */
+  .forest-ambience {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    opacity: 0.85;
+  }
 
   /* 原点モード: このアプリの原型である「工程表.xlsm」。Excelの作業ウィンドウそのままの
      薄いグレーの地に真っ白なシート、という配色にする。アクセント(警告色)は、元ブックが
