@@ -43,6 +43,7 @@ const ClaudeReportSection = dynamic(() => import("@/components/sections/ClaudeRe
 const ClaudeInsightsSection = dynamic(() => import("@/components/sections/ClaudeInsightsSection"), { ssr: false });
 const NatsuyasumiSection = dynamic(() => import("@/components/sections/NatsuyasumiSection"), { ssr: false });
 const MasterSection = dynamic(() => import("@/components/sections/MasterSection"), { ssr: false });
+const HomeMasterSection = dynamic(() => import("@/components/sections/HomeMasterSection"), { ssr: false });
 const TemplateSection = dynamic(() => import("@/components/sections/TemplateSection"), { ssr: false });
 const GanttSection = dynamic(() => import("@/components/sections/GanttSection"), { ssr: false });
 const AggregationSection = dynamic(() => import("@/components/sections/AggregationSection"), { ssr: false });
@@ -66,6 +67,7 @@ const TABS: TabDef[] = [
   { key: "todo", label: "ToDo" },
   { key: "projects", label: "案件" },
   { key: "master", label: "作業マスタ" },
+  { key: "homeMaster", label: "家庭モード管理" },
   { key: "template", label: "曜日別テンプレート" },
   { key: "gantt", label: "ガントチャート" },
   { key: "aggregation", label: "集計・ランキング" },
@@ -311,6 +313,7 @@ export default function HomePage() {
         />
       )}
       {active === "master" && <MasterSection />}
+      {active === "homeMaster" && <HomeMasterSection />}
       {active === "template" && <TemplateSection />}
       {active === "gantt" && <GanttSection />}
       {active === "aggregation" && mode === "adventurer" && <AdventurerStatusSection />}

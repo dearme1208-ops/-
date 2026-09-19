@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+import { useHomeFilteredRecords } from "@/lib/homeMode";
 import {
   findOrCreateMasterTask,
   recomputeEstimateFromRecords,
@@ -49,7 +50,8 @@ export default function RecordsSection() {
   const [replayDate, setReplayDate] = useState<string | null>(null);
   const [replayPickerDate, setReplayPickerDate] = useState("");
 
-  const records = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
+  const recordsRaw = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
+  const records = useHomeFilteredRecords(recordsRaw);
 
   // 「今日の記録」(本日タブの自由記述欄)を日付ごとに見返せる履歴パネル。
   // デフォルトは折りたたみ(件数が増えると場所を取るため)、開閉状態は設定に永続化する

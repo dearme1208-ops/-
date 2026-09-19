@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { useSetting } from "@/lib/settings";
 import { currentFiscalYear } from "@/lib/period";
 import {
@@ -23,7 +24,8 @@ export default function YearlyChartSection() {
   const [standardHoursStr] = useSetting("overtime.standardDailyHours", "8");
   const standardDailyHours = Math.max(0, Number(standardHoursStr) || 0);
 
-  const records = useLiveQuery(() => db.records.toArray(), []);
+  const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
+  const records = useHomeFilteredRecords(recordsRaw);
   const settings = useLiveQuery(() => db.settings.toArray(), []);
 
   const settingsMap = useMemo(() => new Map((settings ?? []).map((s) => [s.key, s.value])), [settings]);

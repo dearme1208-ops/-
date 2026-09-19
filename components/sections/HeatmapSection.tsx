@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { formatHms } from "@/lib/time";
 import { computeHourDowMatrix } from "@/lib/heatmap";
 import { computeCalendarHeatmap, heatLevel } from "@/lib/calendarHeatmap";
@@ -22,7 +23,8 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 export default function HeatmapSection() {
   const [viewMode, setViewMode] = useState<ViewMode>("category");
   const [sortKey, setSortKey] = useState<SortKey>("name");
-  const records = useLiveQuery(() => db.records.toArray(), []);
+  const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
+  const records = useHomeFilteredRecords(recordsRaw);
   // ホバーが効かないタッチ端末でも確実に内訳を見せるため、セルタップ時にここへ整形済みの
   // 詳細文を入れ、テーブル下の詳細パネルで表示する(GanttSectionと同じパターン)
   const [selectedHourDetail, setSelectedHourDetail] = useState<string | null>(null);

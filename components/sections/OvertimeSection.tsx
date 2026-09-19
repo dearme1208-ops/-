@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { useSetting } from "@/lib/settings";
 import { breakdownByCategory, breakdownByProject, computeMonthlyOvertime, formatHoursJp, type BreakdownRow } from "@/lib/overtime";
 import { formatDateJp } from "@/lib/time";
@@ -18,7 +19,8 @@ export default function OvertimeSection() {
   const [standardHoursStr, setStandardHoursStr] = useSetting("overtime.standardDailyHours", "8");
   const standardDailySeconds = Math.max(0, Number(standardHoursStr) || 0) * 3600;
 
-  const records = useLiveQuery(() => db.records.toArray(), []);
+  const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
+  const records = useHomeFilteredRecords(recordsRaw);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const settings = useLiveQuery(() => db.settings.toArray(), []);
 

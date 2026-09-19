@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
+import { useHomeFilteredRecords } from "@/lib/homeMode";
 import {
   aggregateRecords,
   computeHalfYearComparison,
@@ -79,7 +80,8 @@ export default function AggregationSection() {
     setCollapsed((c) => ({ ...c, [key]: !c[key] }));
   }
 
-  const records = useLiveQuery(() => db.records.toArray(), []);
+  const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
+  const records = useHomeFilteredRecords(recordsRaw);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
   // 曜日別バーの内訳ダイアログでも同じ絞り込み後のレコードを使うため、平均の算出と分けて保持する

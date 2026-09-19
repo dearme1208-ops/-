@@ -120,6 +120,12 @@ export default function AppearanceSection() {
             📗 原点モード
           </button>
           <button
+            className={visualMode === "home" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setVisualMode("home")}
+          >
+            🏠 家庭モード
+          </button>
+          <button
             className={visualMode === "custom" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVisualMode("custom")}
           >

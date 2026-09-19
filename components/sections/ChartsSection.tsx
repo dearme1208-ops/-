@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { aggregateRecords, type SortMetric } from "@/lib/aggregate";
 import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
 import { buildTrend, TREND_GRANULARITY_LABELS, type TrendGranularity } from "@/lib/trend";
@@ -21,7 +22,8 @@ export default function ChartsSection() {
   const [granularity, setGranularity] = useState<TrendGranularity>("day");
   const [todoGranularity, setTodoGranularity] = useState<TrendGranularity>("day");
 
-  const records = useLiveQuery(() => db.records.toArray(), []);
+  const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
+  const records = useHomeFilteredRecords(recordsRaw);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
 
   const rankingRows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy).slice(0, TOP_N) : [];

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { subDays, subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
+import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { aggregateRecords, aggregateKey } from "@/lib/aggregate";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
@@ -44,7 +45,8 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
   const categoryRates = useMemo(() => parseCategoryRates(categoryRatesJson), [categoryRatesJson]);
   const costEnabled = defaultHourlyRate !== null || Object.keys(categoryRates).length > 0;
 
-  const records = useLiveQuery(() => db.records.toArray(), []);
+  const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
+  const records = useHomeFilteredRecords(recordsRaw);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const dailyTasks = useLiveQuery(() => db.dailyTasks.toArray(), []);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);

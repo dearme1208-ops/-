@@ -59,7 +59,8 @@ export type VisualMode =
   | "powerpro"
   | "hayarigami"
   | "mountain"
-  | "origin";
+  | "origin"
+  | "home";
 export type ThemedMode =
   | "lobotomy"
   | "va11halla"
@@ -74,7 +75,8 @@ export type ThemedMode =
   | "powerpro"
   | "hayarigami"
   | "mountain"
-  | "origin";
+  | "origin"
+  | "home";
 
 const THEMED_MODES: ThemedMode[] = [
   "lobotomy",
@@ -91,6 +93,7 @@ const THEMED_MODES: ThemedMode[] = [
   "hayarigami",
   "mountain",
   "origin",
+  "home",
 ];
 
 /** 保存されている文字列を、実在する演出テーマへ正規化する */
@@ -114,6 +117,7 @@ export function useVisualMode(): {
   hayarigamiMode: boolean;
   mountainMode: boolean;
   originMode: boolean;
+  homeMode: boolean;
   themedMode: ThemedMode | null;
   // 色・形・アニメーションは常にthemedMode通りに適用される一方、
   // アプリ名・タブ名・バッジ文言・メッセージ等の「文言」だけは
@@ -143,6 +147,7 @@ export function useVisualMode(): {
     hayarigamiMode: mode === "hayarigami",
     mountainMode: mode === "mountain",
     originMode: mode === "origin",
+    homeMode: mode === "home",
     themedMode,
     wordingEnabled,
     wordingMode: wordingEnabled ? mode : "off",
@@ -340,7 +345,8 @@ export type RiskTier =
   | (typeof RISK_TIERS_POWERPRO)[number]
   | (typeof RISK_TIERS_HAYARIGAMI)[number]
   | (typeof RISK_TIERS_MOUNTAIN)[number]
-  | (typeof RISK_TIERS_ORIGIN)[number];
+  | (typeof RISK_TIERS_ORIGIN)[number]
+  | (typeof RISK_TIERS_HOME)[number];
 
 // 登山モード: 山の遭難リスクのエスカレーション。想定(コースタイム)から
 // どれだけ離れているかを、行動時間の遅れがそのまま危険度になる山の言葉で表す
@@ -350,6 +356,16 @@ export const RISK_TIERS_MOUNTAIN = [
   { threshold: 1.8, name: "日没に追われる", level: 2 },
   { threshold: 1.3, name: "コースタイム超過", level: 1 },
   { threshold: 1, name: "順調な歩き", level: 0 },
+] as const;
+
+// 家庭モード: 色・タブ構成の総入れ替えまでは行わず、まだ機能面(作業マスタの除外設定)
+// だけの実装であるため、階級名も演出色を付けずニュートラルな言い回しのままにしてある
+export const RISK_TIERS_HOME = [
+  { threshold: 4, name: "危険", level: 4 },
+  { threshold: 2.5, name: "警戒", level: 3 },
+  { threshold: 1.8, name: "高", level: 2 },
+  { threshold: 1.3, name: "やや高", level: 1 },
+  { threshold: 1, name: "低", level: 0 },
 ] as const;
 
 const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name: string; level: number }[]> = {
@@ -367,6 +383,7 @@ const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name:
   hayarigami: RISK_TIERS_HAYARIGAMI,
   mountain: RISK_TIERS_MOUNTAIN,
   origin: RISK_TIERS_ORIGIN,
+  home: RISK_TIERS_HOME,
 };
 
 export function getRiskTier(ratio: number, mode: ThemedMode): RiskTier {
@@ -445,6 +462,7 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   hayarigami: "card-running-hyr",
   mountain: "card-running-mtn",
   origin: "card-running-claude",
+  home: "card-running",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -465,6 +483,7 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   hayarigami: "card-overrun-hyr",
   mountain: "card-overrun-mtn",
   origin: "card-overrun-claude",
+  home: "card-overrun",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -485,6 +504,7 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   hayarigami: "hazard-bar-hyr",
   mountain: "hazard-bar-mtn",
   origin: "hazard-bar-claude",
+  home: "hazard-bar",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -505,6 +525,7 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   hayarigami: "gantt-bar-overrun-hyr",
   mountain: "gantt-bar-overrun-mtn",
   origin: "gantt-bar-overrun-claude",
+  home: "gantt-bar-overrun",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
@@ -588,6 +609,7 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   hayarigami: "怪異調査ファイル",
   mountain: "登攀記録",
   origin: "工程表.xlsm",
+  home: "家庭モード",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -599,6 +621,7 @@ export type TabKey =
   | "todo"
   | "projects"
   | "master"
+  | "homeMaster"
   | "template"
   | "gantt"
   | "aggregation"
@@ -622,6 +645,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "未処理命令",
     projects: "契約対象",
     master: "個体図鑑",
+    homeMaster: "家庭モード管理",
     template: "曜日別作業指令",
     gantt: "観測記録",
     aggregation: "業績評定",
@@ -644,6 +668,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "伝票",
     projects: "常連客リスト",
     master: "メニュー表",
+    homeMaster: "家庭モード管理",
     template: "曜日別シフト",
     gantt: "営業記録",
     aggregation: "売上ランキング",
@@ -666,6 +691,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "計画メモ",
     projects: "協力者リスト",
     master: "ペルソナ図鑑",
+    homeMaster: "家庭モード管理",
     template: "曜日別ルーティン",
     gantt: "行動記録",
     aggregation: "成果ランキング",
@@ -688,6 +714,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "しゅくだい",
     projects: "自由研究",
     master: "道具箱",
+    homeMaster: "家庭モード管理",
     template: "時間割",
     gantt: "生活記録表",
     aggregation: "がんばり表",
@@ -710,6 +737,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "タスク",
     projects: "プロジェクト",
     master: "スキル",
+    homeMaster: "家庭モード管理",
     template: "ルーティン",
     gantt: "タイムライン",
     aggregation: "インサイト",
@@ -734,6 +762,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "こと",
     projects: "つづくこと",
     master: "積み重ね",
+    homeMaster: "家庭モード管理",
     template: "週の型",
     gantt: "歩み",
     aggregation: "積算",
@@ -758,6 +787,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "QUEUE",
     projects: "POSITIONS",
     master: "INSTRUMENTS",
+    homeMaster: "家庭モード管理",
     template: "SCHEDULE",
     gantt: "TIMELINE",
     aggregation: "RANKINGS",
@@ -784,6 +814,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "クエスト帳",
     projects: "大冒険",
     master: "モンスター図鑑",
+    homeMaster: "家庭モード管理",
     template: "曜日別しゅぎょう",
     gantt: "冒険の記録",
     aggregation: "冒険者ステータス",
@@ -809,6 +840,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "ToDo",
     projects: "案件",
     master: "作業マスタ",
+    homeMaster: "家庭モード管理",
     template: "曜日別テンプレート",
     gantt: "ガントチャート",
     aggregation: "集計・ランキング",
@@ -833,6 +865,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "予約票",
     projects: "特別コレクション",
     master: "蔵書目録",
+    homeMaster: "家庭モード管理",
     template: "曜日別開館予定",
     gantt: "貸出記録",
     aggregation: "貸出統計",
@@ -857,6 +890,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "スカウトリスト",
     projects: "契約案件",
     master: "選手名鑑",
+    homeMaster: "家庭モード管理",
     template: "曜日別練習計画",
     gantt: "練習日誌",
     aggregation: "成績ランキング",
@@ -879,6 +913,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "未解決の噂",
     projects: "継続捜査事件",
     master: "怪異名鑑",
+    homeMaster: "家庭モード管理",
     template: "曜日別 巡回ルート",
     gantt: "時系列 捜査記録",
     aggregation: "怪異別 遭遇統計",
@@ -904,6 +939,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "やることリスト",
     projects: "案件",
     master: "作業項目",
+    homeMaster: "家庭モード管理",
     template: "曜日別テンプレート",
     gantt: "時間軸",
     aggregation: "集計",
@@ -926,6 +962,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     todo: "登山計画",
     projects: "登攀中の山",
     master: "ルート図鑑",
+    homeMaster: "家庭モード管理",
     template: "曜日別の行程",
     gantt: "行動記録",
     aggregation: "登頂記録",
@@ -942,6 +979,31 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     records: "行動記録の訂正",
     appearance: "登山スタイル選択",
     settings: "装備と設定",
+  },
+  // 家庭モード: 色・形・アニメーション・タブ名の総入れ替えまではまだ行わず、通常表記と
+  // 同じ言い回しのまま(機能面の「作業マスタの除外設定」だけを提供する段階のため)
+  home: {
+    today: "本日の作業",
+    todo: "ToDo",
+    projects: "案件",
+    master: "作業マスタ",
+    homeMaster: "家庭モード管理",
+    template: "曜日別テンプレート",
+    gantt: "ガントチャート",
+    aggregation: "集計・ランキング",
+    charts: "グラフ",
+    heatmap: "ヒートマップ",
+    attention: "要注意リスト",
+    overtime: "残業分析",
+    yearlyChart: "年表",
+    mandala: "マンダラチャート",
+    memo: "メモ",
+    board: "統合ボード",
+    observatory: "観測所",
+    report: "日報・週報・月報",
+    records: "実績編集",
+    appearance: "モード選択",
+    settings: "設定",
   },
 };
 
