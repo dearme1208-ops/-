@@ -489,6 +489,37 @@ html[data-high-contrast="true"] :focus-visible {
     -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
     mask-image: linear-gradient(to bottom, #000, transparent);
   }
+  /* ページ全体に、苔むした岩肌のようなごく細かいノイズ地を敷く。ヘッダー付近だけの
+     演出で終わらせず、下までスクロールしても森の中にいる質感を切らさないようにする */
+  html[data-visual-mode="home"] body {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+    background-attachment: fixed;
+  }
+  /* パネルも同じ苔ノイズをまとわせ、縁にごく淡い緑の光暈を足して「生きている」質感にする */
+  html[data-visual-mode="home"] .panel {
+    border-radius: 1.35rem;
+    border: 1px solid rgb(var(--accent-rgb) / 0.22);
+    box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.08), 0 14px 28px -20px rgb(0 0 0 / 0.7), inset 0 1px 0 rgb(var(--accent-rgb) / 0.08);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  }
+  html[data-visual-mode="home"] ::selection {
+    background: rgb(var(--accent-rgb) / 0.45);
+    color: rgb(var(--ink-rgb));
+  }
+  html[data-visual-mode="home"] {
+    scrollbar-color: rgb(var(--accent-rgb) / 0.7) rgb(var(--panel-rgb));
+  }
+  html[data-visual-mode="home"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  html[data-visual-mode="home"] ::-webkit-scrollbar-track {
+    background: rgb(var(--panel-rgb));
+  }
+  html[data-visual-mode="home"] ::-webkit-scrollbar-thumb {
+    background: rgb(var(--accent-rgb) / 0.6);
+    border-radius: 999px;
+  }
 
   /* 原点モード: このアプリの原型である「工程表.xlsm」。Excelの作業ウィンドウそのままの
      薄いグレーの地に真っ白なシート、という配色にする。アクセント(警告色)は、元ブックが
@@ -1968,6 +1999,21 @@ html[data-high-contrast="true"] :focus-visible {
     );
     background-size: 200% 100%;
     animation: hazard-bar-scroll 2.4s linear infinite;
+  }
+  /* ヘッダーの木立の麓を漂う蛍。なつやすみモードの蛍より少し不規則にゆらめかせる */
+  .forest-firefly {
+    animation: forest-firefly-glow 3.4s ease-in-out infinite;
+  }
+  @keyframes forest-firefly-glow {
+    0%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(-4px);
+    }
   }
 
   /* --- 流行り神風モード: ホラーサウンドノベルらしく、実行中は「気配」程度のごく淡い明滅、

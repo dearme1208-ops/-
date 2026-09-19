@@ -726,9 +726,89 @@ function OriginArt() {
   );
 }
 
+// 森モード: 他テーマのような街・空といった人工物は一切描かず、夜の針葉樹林だけで
+// 構成する。奥の霧がかった木立→中景の木立→麓を漂う蛍→手前の大きな木立(額縁)、と
+// 4層に重ねることで、他のどのテーマとも似ない「自然物だけの」情景にしている
+function pineTierPoints(x: number, baseY: number, w: number, h: number): string {
+  return `${x - w / 2},${baseY} ${x + w / 2},${baseY} ${x},${baseY - h}`;
+}
+function PineTree({ x, baseY, scale, fill, opacity }: { x: number; baseY: number; scale: number; fill: string; opacity?: number }) {
+  return (
+    <g opacity={opacity}>
+      <rect x={x - 3 * scale} y={baseY - 6 * scale} width={6 * scale} height={10 * scale} fill={fill} />
+      <polygon points={pineTierPoints(x, baseY - 4 * scale, 58 * scale, 42 * scale)} fill={fill} />
+      <polygon points={pineTierPoints(x, baseY - 26 * scale, 46 * scale, 40 * scale)} fill={fill} />
+      <polygon points={pineTierPoints(x, baseY - 48 * scale, 34 * scale, 38 * scale)} fill={fill} />
+    </g>
+  );
+}
+const FOREST_BACK_TREES = [
+  { x: 40, scale: 0.55 }, { x: 130, scale: 0.7 }, { x: 230, scale: 0.5 }, { x: 330, scale: 0.65 },
+  { x: 500, scale: 0.55 }, { x: 620, scale: 0.7 }, { x: 760, scale: 0.5 }, { x: 900, scale: 0.6 },
+  { x: 1020, scale: 0.7 }, { x: 1140, scale: 0.55 },
+];
+const FOREST_MID_TREES = [
+  { x: 10, scale: 0.85 }, { x: 90, scale: 1.0 }, { x: 190, scale: 0.75 },
+  { x: 560, scale: 0.9 }, { x: 660, scale: 1.05 },
+  { x: 980, scale: 0.8 }, { x: 1080, scale: 1.0 }, { x: 1180, scale: 0.85 },
+];
+const FOREST_FRONT_TREES = [
+  { x: -10, scale: 1.55 }, { x: 60, scale: 1.3 },
+  { x: 1150, scale: 1.4 }, { x: 1220, scale: 1.6 },
+];
+const FOREST_FIREFLIES = [
+  { x: 250, y: 150 }, { x: 420, y: 130 }, { x: 700, y: 160 }, { x: 850, y: 120 }, { x: 1000, y: 155 }, { x: 480, y: 175 },
+];
+function ForestArt() {
+  return (
+    <svg viewBox="0 0 1200 220" preserveAspectRatio="none" className="h-24 w-full sm:h-28" role="img" aria-label="夜の針葉樹林と蛍のイラスト">
+      <defs>
+        <linearGradient id="forestSky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgb(4 10 8)" />
+          <stop offset="100%" stopColor="rgb(var(--panel-rgb))" />
+        </linearGradient>
+        <radialGradient id="forestMoon" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="rgb(225 235 210)" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="rgb(225 235 210)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect x="0" y="0" width="1200" height="220" fill="url(#forestSky)" />
+      <circle cx="1040" cy="52" r="70" fill="url(#forestMoon)" />
+      <circle cx="1040" cy="52" r="26" fill="rgb(225 235 210)" opacity="0.85" />
+      {FOREST_BACK_TREES.map((t, i) => (
+        <PineTree key={`b${i}`} x={t.x} baseY={190} scale={t.scale} fill="rgb(var(--cream-rgb))" opacity={0.12} />
+      ))}
+      {FOREST_MID_TREES.map((t, i) => (
+        <PineTree key={`m${i}`} x={t.x} baseY={210} scale={t.scale} fill="rgb(var(--panel-rgb))" opacity={0.85} />
+      ))}
+      <g>
+        {FOREST_FIREFLIES.map((f, i) => (
+          <g key={i} className="forest-firefly" style={{ animationDelay: `${i * 0.6}s` }}>
+            <circle cx={f.x} cy={f.y} r="7" fill="rgb(190 255 150)" opacity="0.25" />
+            <circle cx={f.x} cy={f.y} r="2.4" fill="rgb(210 255 170)" opacity="0.95" />
+          </g>
+        ))}
+      </g>
+      {FOREST_FRONT_TREES.map((t, i) => (
+        <PineTree key={`f${i}`} x={t.x} baseY={222} scale={t.scale} fill="rgb(var(--ink-rgb))" />
+      ))}
+    </svg>
+  );
+}
+
 export default function HeaderArt() {
-  const { mode, natsuyasumiMode, claudeMode, persona5Mode, lobotomyMode, va11hallaMode, zenMode, terminalMode, originMode } =
-    useVisualMode();
+  const {
+    mode,
+    natsuyasumiMode,
+    claudeMode,
+    persona5Mode,
+    lobotomyMode,
+    va11hallaMode,
+    zenMode,
+    terminalMode,
+    originMode,
+    homeMode,
+  } = useVisualMode();
   // ロボトミー/VA-11 HALL-A/ペルソナ5/ぼくのなつやすみの4テーマは、設定画面から
   // 自分の画像にヘッダーを差し替えられる。未設定(空文字)なら従来どおりテーマ専用の
   // イラストを描画する(=「オリジナル」)。Claude/禅/オフには画像差し替えの仕組みは無い
@@ -760,6 +840,7 @@ export default function HeaderArt() {
     );
   }
   if (originMode) return <OriginArt />;
+  if (homeMode) return <ForestArt />;
   if (claudeMode) return <ClaudeArt />;
   if (zenMode) return <ZenArt />;
   if (terminalMode) return <TerminalArt />;
