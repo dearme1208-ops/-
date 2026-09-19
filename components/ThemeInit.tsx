@@ -6,9 +6,11 @@ import { writeBootSnapshot } from "@/lib/boot";
 import { DEFAULT_ACCENT_RGB, DEFAULT_CUSTOM_CREAM_RGB, DEFAULT_CUSTOM_INK_RGB, DEFAULT_CUSTOM_PANEL_RGB } from "@/lib/theme";
 
 // 設定されたアクセントカラーをCSS変数として<html>に反映する。
-// 演出テーマが「カスタム」の場合のみ、背景/文字/パネル色も合わせてインラインで上書きする
+// 演出テーマが「オフ」または「カスタム」の場合のみ適用する(演出テーマ側が既に
+// 自分の世界観に合わせたアクセント色をhtml[data-visual-mode]セレクタで定義しているため)。
+// 「カスタム」の場合のみ、背景/文字/パネル色も合わせてインラインで上書きする
 // (インラインstyleは他の演出テーマのhtml[data-visual-mode]セレクタより優先されるため、
-// カスタム以外のモードでは必ずこれらのプロパティを削除して通常のCSSカスケードに戻す)
+// 演出テーマ選択中は必ずこれらのプロパティを削除して通常のCSSカスケードに戻す)
 export default function ThemeInit() {
   const [accentRgb] = useSetting("theme.accentRgb", DEFAULT_ACCENT_RGB);
   const [visualMode] = useSetting("theme.visualMode", "off");
@@ -17,9 +19,15 @@ export default function ThemeInit() {
   const [customPanelRgb] = useSetting("theme.custom.panelRgb", DEFAULT_CUSTOM_PANEL_RGB);
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--accent-rgb", accentRgb);
-    writeBootSnapshot({ accentRgb });
-  }, [accentRgb]);
+    const root = document.documentElement.style;
+    if (visualMode === "off" || visualMode === "custom") {
+      root.setProperty("--accent-rgb", accentRgb);
+      writeBootSnapshot({ accentRgb });
+    } else {
+      root.removeProperty("--accent-rgb");
+      writeBootSnapshot({ accentRgb: "" });
+    }
+  }, [accentRgb, visualMode]);
 
   useEffect(() => {
     const root = document.documentElement.style;

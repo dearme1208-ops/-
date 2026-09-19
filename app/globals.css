@@ -460,6 +460,36 @@ html[data-high-contrast="true"] :focus-visible {
     mask-image: linear-gradient(to bottom, #000, transparent);
   }
 
+  /* 森モード(旧・家庭モード): 深い針葉樹林の夜。地は苔むした岩と樹皮を思わせる暗い緑、
+     アクセントは葉の隙間から差し込む木漏れ日の琥珀色にする。危機感を煽らない静かな
+     世界観のため、他の演出テーマより彩度を落とし気味にしてある */
+  html[data-visual-mode="home"] {
+    color-scheme: dark;
+    --accent-rgb: 196 150 74;
+    --ink-rgb: 10 18 14;
+    --cream-rgb: 219 230 210;
+    --panel-rgb: 18 28 22;
+  }
+  /* 画面の上端に、木漏れ日が斜めに差し込む光の筋をうっすら敷く。山モードの稜線と同じ
+     考え方で、内容は隠さずどのタブにいても「森の中にいる」空気を保つための背景 */
+  html[data-visual-mode="home"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 220px;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      linear-gradient(to bottom, rgb(var(--accent-rgb) / 0.14), transparent 75%),
+      repeating-linear-gradient(
+        20deg,
+        rgb(var(--accent-rgb) / 0.06) 0 3px,
+        transparent 3px 34px
+      );
+    -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+    mask-image: linear-gradient(to bottom, #000, transparent);
+  }
+
   /* 原点モード: このアプリの原型である「工程表.xlsm」。Excelの作業ウィンドウそのままの
      薄いグレーの地に真っ白なシート、という配色にする。アクセント(警告色)は、元ブックが
      予定外の行に使っていた赤 RGB(255,210,215) を文字に耐える濃さまで落としたもの */
@@ -1901,6 +1931,45 @@ html[data-high-contrast="true"] :focus-visible {
     animation: hazard-bar-scroll 1.6s linear infinite;
   }
 
+  /* --- 森モード: 計測中は葉が風にそよぐような、ゆっくりとした呼吸に近い明滅にする。
+     超過時も煽らず、木漏れ日が少しだけ濃くなる程度の控えめな変化にとどめる --- */
+  .card-running-forest {
+    animation: card-running-forest-sway 4.6s ease-in-out infinite;
+  }
+  @keyframes card-running-forest-sway {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.16), 0 2px 10px -4px rgb(var(--accent-rgb) / 0.15);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.4), 0 4px 16px -4px rgb(var(--accent-rgb) / 0.32);
+    }
+  }
+  .card-overrun-forest {
+    animation: card-overrun-forest-glow 2.6s ease-in-out infinite;
+  }
+  @keyframes card-overrun-forest-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.35), inset 0 -20px 24px -20px rgb(var(--accent-rgb) / 0.3);
+    }
+    50% {
+      box-shadow: 0 0 0 1.5px rgb(var(--accent-rgb) / 0.6), inset 0 -28px 28px -18px rgb(var(--accent-rgb) / 0.45);
+    }
+  }
+  /* 群生の分布のような、粒の粗い横縞にする */
+  .hazard-bar-forest {
+    height: 4px;
+    border-radius: 999px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb) / 0.85) 0 5px,
+      rgb(var(--accent-rgb) / 0.18) 5px 12px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 2.4s linear infinite;
+  }
+
   /* --- 流行り神風モード: ホラーサウンドノベルらしく、実行中は「気配」程度のごく淡い明滅、
      超過(怪異接触)では不規則に途切れる明滅で「何かがおかしい」感じを出す。
      他テーマの規則的な脈動と違い、意図的にタイミングをずらして落ち着かなくしている --- */
@@ -2610,6 +2679,16 @@ html[data-high-contrast="true"] :focus-visible {
     );
     background-size: 200% 100%;
     animation: hazard-bar-scroll 1.6s linear infinite;
+  }
+  .gantt-bar-overrun-forest {
+    border-radius: 999px;
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb) / 0.85) 0 5px,
+      rgb(var(--accent-rgb) / 0.2) 5px 12px
+    );
+    background-size: 200% 100%;
+    animation: hazard-bar-scroll 2.4s linear infinite;
   }
   .gantt-bar-overrun-terminal {
     background-image: repeating-linear-gradient(

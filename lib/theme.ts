@@ -210,7 +210,7 @@ export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
 
 export function visibleTabKeys(mode: VisualMode, allKeys: TabKey[]): TabKey[] {
   const base = mode === "off" ? allKeys : (VISIBLE_TABS_BY_MODE[mode as ThemedMode] ?? allKeys);
-  // 「家庭モード管理」タブは、除外設定が意味を持つ家庭モード中だけ出す
+  // 「茂みへ隠す」タブは、除外設定が意味を持つ森モード中だけ出す
   // (他のモードでは作業マスタタブから紛らわしくならないよう隠しておく)
   return mode === "home" ? base : base.filter((k) => k !== "homeMaster");
 }
@@ -359,14 +359,14 @@ export const RISK_TIERS_MOUNTAIN = [
   { threshold: 1, name: "順調な歩き", level: 0 },
 ] as const;
 
-// 家庭モード: 色・タブ構成の総入れ替えまでは行わず、まだ機能面(作業マスタの除外設定)
-// だけの実装であるため、階級名も演出色を付けずニュートラルな言い回しのままにしてある
+// 森モード(旧・家庭モード): 危機感を煽らず、森の天候の移ろいに見立てた階級にする
+// (ぼくのなつやすみ風の天気階級と近い発想だが、より落ち着いたトーンにしてある)
 export const RISK_TIERS_HOME = [
-  { threshold: 4, name: "危険", level: 4 },
-  { threshold: 2.5, name: "警戒", level: 3 },
-  { threshold: 1.8, name: "高", level: 2 },
-  { threshold: 1.3, name: "やや高", level: 1 },
-  { threshold: 1, name: "低", level: 0 },
+  { threshold: 4, name: "倒木注意", level: 4 },
+  { threshold: 2.5, name: "嵐", level: 3 },
+  { threshold: 1.8, name: "小雨", level: 2 },
+  { threshold: 1.3, name: "曇り空", level: 1 },
+  { threshold: 1, name: "そよ風", level: 0 },
 ] as const;
 
 const RISK_TIERS_BY_MODE: Record<ThemedMode, readonly { threshold: number; name: string; level: number }[]> = {
@@ -419,9 +419,11 @@ export function riskBadgeClasses(level: number, mode: ThemedMode): string {
                         ? "risk-badge-hyr border-alert/80 bg-black/70 text-alert font-bold tracking-[0.2em]"
                         : mode === "origin"
                           ? "rounded-none border-alert/70 bg-alert/15 text-alert font-bold"
-                          : "border-alert/70 bg-alert/20 text-alert";
+                          : mode === "home"
+                            ? "border-alert/25 bg-alert/10 text-alert font-normal"
+                            : "border-alert/70 bg-alert/20 text-alert";
   const roundness =
-    mode === "claude" || mode === "zen" || mode === "adventurer" || mode === "powerpro"
+    mode === "claude" || mode === "zen" || mode === "adventurer" || mode === "powerpro" || mode === "home"
       ? "rounded-full px-2.5"
       : "rounded px-1.5";
   return `risk-badge risk-badge-${level} border ${roundness} py-0.5 text-[10px] font-bold ${shape}`;
@@ -442,6 +444,7 @@ export function riskBadgeLabel(tier: RiskTier, mode: ThemedMode | null): string 
   if (mode === "library") return tier.name;
   if (mode === "powerpro") return tier.name;
   if (mode === "hayarigami") return `怪異度・${tier.name}`;
+  if (mode === "home") return tier.name;
   if (mode === "origin") return tier.name;
   return `危険度 ${tier.name}`;
 }
@@ -463,7 +466,7 @@ const CARD_RUNNING_CLASS: Record<ThemedMode, string> = {
   hayarigami: "card-running-hyr",
   mountain: "card-running-mtn",
   origin: "card-running-claude",
-  home: "card-running",
+  home: "card-running-forest",
 };
 export function cardRunningClass(mode: ThemedMode): string {
   return CARD_RUNNING_CLASS[mode];
@@ -484,7 +487,7 @@ const CARD_OVERRUN_CLASS: Record<ThemedMode, string> = {
   hayarigami: "card-overrun-hyr",
   mountain: "card-overrun-mtn",
   origin: "card-overrun-claude",
-  home: "card-overrun",
+  home: "card-overrun-forest",
 };
 export function cardOverrunClass(mode: ThemedMode): string {
   return CARD_OVERRUN_CLASS[mode];
@@ -505,7 +508,7 @@ const HAZARD_BAR_CLASS: Record<ThemedMode, string> = {
   hayarigami: "hazard-bar-hyr",
   mountain: "hazard-bar-mtn",
   origin: "hazard-bar-claude",
-  home: "hazard-bar",
+  home: "hazard-bar-forest",
 };
 export function hazardBarClass(mode: ThemedMode): string {
   return HAZARD_BAR_CLASS[mode];
@@ -526,7 +529,7 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   hayarigami: "gantt-bar-overrun-hyr",
   mountain: "gantt-bar-overrun-mtn",
   origin: "gantt-bar-overrun-claude",
-  home: "gantt-bar-overrun",
+  home: "gantt-bar-overrun-forest",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];
@@ -553,6 +556,7 @@ export function runningLabel(mode: ThemedMode | null): string {
   if (mode === "powerpro") return "練習中";
   if (mode === "hayarigami") return "調査中";
   if (mode === "origin") return "計測中";
+  if (mode === "home") return "森の中";
   return "計測中";
 }
 
@@ -569,6 +573,7 @@ export function overrunLabel(mode: ThemedMode | null): string {
   if (mode === "powerpro") return "💦 疲労蓄積・練習過多";
   if (mode === "hayarigami") return "🩸 怪異接触・想定を超過";
   if (mode === "origin") return "■ 想定時間を超過（赤）";
+  if (mode === "home") return "🌿 想定より長く森にいます";
   return "⚠ 計測中・予測超過";
 }
 
@@ -587,6 +592,7 @@ export function completionLabel(mode: ThemedMode | null): string {
   if (mode === "powerpro") return "練習完了！";
   if (mode === "hayarigami") return "怪異、解決";
   if (mode === "origin") return "K列に 1";
+  if (mode === "home") return "森を抜けました";
   return "完了しました";
 }
 
@@ -610,7 +616,7 @@ export const APP_TITLE_BY_MODE: Record<ThemedMode, string> = {
   hayarigami: "怪異調査ファイル",
   mountain: "登攀記録",
   origin: "工程表.xlsm",
-  home: "家庭モード",
+  home: "森のログ",
 };
 
 export function appTitle(mode: VisualMode): string {
@@ -981,30 +987,30 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
     appearance: "登山スタイル選択",
     settings: "装備と設定",
   },
-  // 家庭モード: 色・形・アニメーション・タブ名の総入れ替えまではまだ行わず、通常表記と
-  // 同じ言い回しのまま(機能面の「作業マスタの除外設定」だけを提供する段階のため)
+  // 森モード(旧・家庭モード): 深い森の中で記録をつける管理人、という世界観でタブ名を
+  // 総入れ替えする。危機感を煽らないよう、階級・完了演出と同じく穏やかな言い回しにしてある
   home: {
-    today: "本日の作業",
-    todo: "ToDo",
-    projects: "案件",
-    master: "作業マスタ",
-    homeMaster: "家庭モード管理",
-    template: "曜日別テンプレート",
-    gantt: "ガントチャート",
-    aggregation: "集計・ランキング",
-    charts: "グラフ",
-    heatmap: "ヒートマップ",
-    attention: "要注意リスト",
-    overtime: "残業分析",
-    yearlyChart: "年表",
-    mandala: "マンダラチャート",
-    memo: "メモ",
-    board: "統合ボード",
-    observatory: "観測所",
-    report: "日報・週報・月報",
-    records: "実績編集",
-    appearance: "モード選択",
-    settings: "設定",
+    today: "今日の足あと",
+    todo: "芽吹きの種",
+    projects: "育てている木",
+    master: "樹木図鑑",
+    homeMaster: "茂みへ隠す",
+    template: "週の巡り",
+    gantt: "生育の記録",
+    aggregation: "実りの集計",
+    charts: "茂りグラフ",
+    heatmap: "群生マップ",
+    attention: "枯れかけリスト",
+    overtime: "夜の手入れ",
+    yearlyChart: "年輪の記録",
+    mandala: "若木の計画",
+    memo: "木の葉メモ",
+    board: "森の全景",
+    observatory: "森の観測小屋",
+    report: "季節だより",
+    records: "年輪の書き直し",
+    appearance: "植生を選ぶ",
+    settings: "手入れ道具",
   },
 };
 

@@ -5,11 +5,11 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import type { MasterTask } from "@/lib/types";
 
-// 家庭モード管理タブ。作業マスタ本体(MasterSection)とは別に置き、家庭モード中に
-// 「実績・累積」等の主要な集計画面(実績編集・集計/ランキング・グラフ・ヒートマップ・
-// 年表・残業分析・日報週報月報)から除外したい作業マスタだけをチェックボックスで選べる。
-// 除外指定はMasterTask.excludedFromHomeとして保存し、実際のフィルタはlib/homeMode.tsの
-// useHomeFilteredRecordsが各画面側でdb.recordsに適用する
+// 森モード(旧・家庭モード)の「茂みへ隠す」タブ。作業マスタ本体(MasterSection)とは
+// 別に置き、森モード中に「実り・累積」等の主要な集計画面(実績編集・集計/ランキング・
+// グラフ・ヒートマップ・年表・残業分析・日報週報月報)から茂みの奥へ隠したい作業マスタ
+// だけをチェックボックスで選べる。除外指定はMasterTask.excludedFromHomeとして保存し、
+// 実際のフィルタはlib/homeMode.tsのuseHomeFilteredRecordsが各画面側でdb.recordsに適用する
 export default function HomeMasterSection() {
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const [showArchived, setShowArchived] = useState(false);
@@ -47,11 +47,11 @@ export default function HomeMasterSection() {
   return (
     <div className="space-y-4">
       <div className="panel space-y-2 p-4">
-        <h3 className="font-display text-base font-bold">🏠 家庭モード管理</h3>
+        <h3 className="font-display text-base font-bold">🌲 茂みへ隠す</h3>
         <p className="text-xs text-cream/60">
-          チェックを入れた作業マスタは、家庭モード中は実績編集・集計・ランキング・グラフ・ヒートマップ・年表・残業分析・日報週報月報から除外されます(このマスタに紐づく実績のみが対象で、マスタ自体や本日の作業は消えません)。
+          チェックを入れた作業マスタは、森モード中は実績編集・集計・ランキング・グラフ・ヒートマップ・年表・残業分析・日報週報月報から茂みの奥へ隠れます(このマスタに紐づく実績のみが対象で、マスタ自体や本日の作業は消えません)。
         </p>
-        {excludedCount > 0 && <p className="text-xs text-cream/40">現在 {excludedCount}件を除外中</p>}
+        {excludedCount > 0 && <p className="text-xs text-cream/40">現在 {excludedCount}件を茂みに隠しています</p>}
         <label className="flex items-center gap-1.5 text-xs text-cream/60">
           <input
             type="checkbox"
@@ -74,7 +74,7 @@ export default function HomeMasterSection() {
           <div className="flex items-center justify-between gap-2">
             <h4 className="text-sm font-bold text-cream/70">{category}</h4>
             <button className="btn-pill-outline px-2 py-0.5 text-[11px]" onClick={() => setGroupExcluded(list, !allExcluded)}>
-              {allExcluded ? "まとめて解除" : "まとめてチェック"}
+              {allExcluded ? "まとめて出す" : "まとめて隠す"}
             </button>
           </div>
           <div className="space-y-1">
@@ -93,7 +93,7 @@ export default function HomeMasterSection() {
                 />
                 <span className={t.archived ? "text-cream/40" : "text-cream/85"}>{t.name}</span>
                 {t.archived && <span className="text-[10px] text-cream/30">(アーカイブ済み)</span>}
-                {t.excludedFromHome && <span className="ml-auto text-[10px] text-alert">家庭モードで除外中</span>}
+                {t.excludedFromHome && <span className="ml-auto text-[10px] text-alert">茂みの中</span>}
               </label>
             ))}
           </div>

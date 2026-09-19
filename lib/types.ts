@@ -22,7 +22,7 @@ export interface MasterTask {
   quickSlot?: number; // 1〜4。ホーム画面ショートカット(?quickstart=N)から開始/終了できる枠に割り当て済みの場合に設定
   clientId?: string; // この作業がどの取引先向けかの括り（任意）。案件のclientIdと同じ取引先マスタ(db.clients)を共有する。
   // 設定すると、この作業マスタに紐づく実績(WorkRecord.masterTaskId経由)を取引先ごとに集計できる
-  excludedFromHome?: boolean; // 「家庭モード管理」タブでの除外指定。trueの場合、家庭モード中は
+  excludedFromHome?: boolean; // 森モード「茂みへ隠す」タブでの除外指定。trueの場合、森モード中は
   // この作業マスタに紐づく実績(WorkRecord.masterTaskId経由)が主要な集計画面から除外される
 }
 
