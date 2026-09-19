@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { todayStr, formatHms } from "@/lib/time";
 import { computeDailyChallenges, trendWindowRange, type ChallengeResult } from "@/lib/dailyChallenges";
+import { countStagesCompletedOn } from "@/lib/stageProgress";
 import { fireConfetti } from "@/lib/confetti";
 import { showUndoToast } from "@/lib/toast";
 
@@ -37,6 +38,7 @@ export default function DailyChallengePanel() {
     () => (projects ?? []).filter((p) => p.completedAt && todayStr(new Date(p.completedAt)) === date).length,
     [projects, date]
   );
+  const stageCompletedToday = useMemo(() => countStagesCompletedOn(projects ?? [], date), [projects, date]);
 
   const challenges: ChallengeResult[] = useMemo(() => {
     if (!tasks) return [];
@@ -46,11 +48,12 @@ export default function DailyChallengePanel() {
         tasks,
         todoCompletedToday,
         projectCompletedToday,
+        stageCompletedToday,
         journalNonEmpty: journal.trim().length > 0,
       },
       trendRecords
     );
-  }, [tasks, todoCompletedToday, projectCompletedToday, journal, date, trendRecords]);
+  }, [tasks, todoCompletedToday, projectCompletedToday, stageCompletedToday, journal, date, trendRecords]);
 
   // マウント時点で既に達成済みだったものは「たった今達成した」扱いにしない
   // (タブを開き直すたびに紙吹雪が出るのを防ぐ)。以後、未達成→達成に切り替わった

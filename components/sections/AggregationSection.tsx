@@ -30,6 +30,7 @@ import LineChart from "@/components/charts/LineChart";
 import CategoryChainGraph from "@/components/charts/CategoryChainGraph";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 import FocusContinuityPanel from "@/components/FocusContinuityPanel";
+import StageProgressPanel from "@/components/StageProgressPanel";
 import PersonalBestPanel from "@/components/PersonalBestPanel";
 import LifeArtModal from "@/components/LifeArtModal";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
@@ -84,6 +85,7 @@ export default function AggregationSection() {
   const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const projects = useLiveQuery(() => db.projects.toArray(), []);
   const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
   // 曜日別バーの内訳ダイアログでも同じ絞り込み後のレコードを使うため、平均の算出と分けて保持する
   const weekdayFilteredRecords = useMemo(() => {
@@ -465,6 +467,13 @@ export default function AggregationSection() {
         records={records}
         collapsed={!!collapsed.focusContinuity}
         onToggle={() => toggleSection("focusContinuity")}
+      />
+
+      <StageProgressPanel
+        records={records}
+        projects={projects}
+        collapsed={!!collapsed.stageProgress}
+        onToggle={() => toggleSection("stageProgress")}
       />
 
       {(switchCost.low || switchCost.high) && (

@@ -8,6 +8,10 @@ export interface DailyChallengeContext {
   tasks: DailyTask[]; // 本日のdailyTasks(仮計測含む全件)
   todoCompletedToday: number;
   projectCompletedToday: number;
+  // 案件"全体"の完了(projectCompletedToday)とは別に、段階(マイルストーン)単位の
+  // 完了を独立して数える。段階は案件そのものよりずっと頻繁に完了するため、
+  // 達成感を刻む単位として別枠で持たせる価値がある
+  stageCompletedToday: number;
   journalNonEmpty: boolean;
 }
 
@@ -203,6 +207,15 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     target: 1,
     param: 0,
     compute: (ctx) => ctx.todoCompletedToday + ctx.projectCompletedToday,
+  },
+  {
+    id: "stage-progress",
+    icon: "🧩",
+    title: "段階前進",
+    description: "案件の段階を1つ完了する",
+    target: 1,
+    param: 0,
+    compute: (ctx) => ctx.stageCompletedToday,
   },
   {
     id: "speed-run",

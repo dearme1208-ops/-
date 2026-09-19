@@ -16,14 +16,15 @@ export default function PersonalBestPanel() {
   const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const projects = useLiveQuery(() => db.projects.toArray(), []);
 
   const bests = useMemo(
-    () => (records && masterTasks ? computePersonalBests(records, masterTasks) : []),
-    [records, masterTasks]
+    () => (records && masterTasks ? computePersonalBests(records, masterTasks, projects ?? []) : []),
+    [records, masterTasks, projects]
   );
   const newTodayIds = useMemo(
-    () => (records && masterTasks ? computeNewBestsToday(records, masterTasks, date) : new Set<string>()),
-    [records, masterTasks, date]
+    () => (records && masterTasks ? computeNewBestsToday(records, masterTasks, date, projects ?? []) : new Set<string>()),
+    [records, masterTasks, date, projects]
   );
 
   const celebratedRef = useRef<{ date: string; ids: Set<string> } | null>(null);
