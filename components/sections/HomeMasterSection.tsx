@@ -32,6 +32,16 @@ export default function HomeMasterSection() {
     await db.masterTasks.update(t.id, { excludedFromHome: !t.excludedFromHome });
   }
 
+  // 大項目(カテゴリ)単位で、含まれる作業マスタ全部の除外を一括ON/OFFする。
+  // 既に全件除外済みなら一括解除、そうでなければ(未除外・一部除外どちらでも)一括で除外にする
+  async function setGroupExcluded(list: MasterTask[], excluded: boolean) {
+    await db.transaction("rw", db.masterTasks, async () => {
+      for (const t of list) {
+        await db.masterTasks.update(t.id, { excludedFromHome: excluded });
+      }
+    });
+  }
+
   if (!tasks) return <div className="panel p-4 text-sm text-cream/50">読み込み中…</div>;
 
   return (
@@ -57,9 +67,16 @@ export default function HomeMasterSection() {
         <p className="panel p-4 text-sm text-cream/50">作業マスタがまだ登録されていません。</p>
       )}
 
-      {groups.map(([category, list]) => (
+      {groups.map(([category, list]) => {
+        const allExcluded = list.every((t) => t.excludedFromHome);
+        return (
         <div key={category} className="panel space-y-1.5 p-4">
-          <h4 className="text-sm font-bold text-cream/70">{category}</h4>
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-bold text-cream/70">{category}</h4>
+            <button className="btn-pill-outline px-2 py-0.5 text-[11px]" onClick={() => setGroupExcluded(list, !allExcluded)}>
+              {allExcluded ? "まとめて解除" : "まとめてチェック"}
+            </button>
+          </div>
           <div className="space-y-1">
             {list.map((t) => (
               <label
@@ -81,7 +98,8 @@ export default function HomeMasterSection() {
             ))}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
