@@ -17,16 +17,19 @@ export default function TabNav({
   onChange: (key: string) => void;
 }) {
   return (
-    <nav className="-mx-4 mb-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+    // tab-nav / tab-chip は演出テーマ側がタブ列だけを狙い撃ちするための目印。
+    // 素の見た目は他のボタンと同じ(btn-pill系)なので、テーマを当てない限り変化はない
+    <nav className="tab-nav -mx-4 mb-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
       <div className="flex w-max gap-2 sm:w-full sm:flex-wrap">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => onChange(t.key)}
+            data-active={active === t.key ? "true" : "false"}
             className={
               active === t.key
-                ? "btn-pill whitespace-nowrap text-sm"
-                : "btn-pill-outline whitespace-nowrap text-sm"
+                ? "tab-chip btn-pill whitespace-nowrap text-sm"
+                : "tab-chip btn-pill-outline whitespace-nowrap text-sm"
             }
           >
             {t.label}

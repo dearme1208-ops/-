@@ -41,6 +41,13 @@
   --adv-danger-rgb: 196 60 48;
   --adv-gold-rgb: 214 158 40;
   --adv-rare-rgb: 138 92 196;
+  /* 森モード専用(固定色)。基調色の緑(--accent-rgb)は「若葉」役に残し、
+     それだけでは足りない自然物の色を足す。樹皮=木札やボタンの地、露=入力の焦点、
+     琥珀と錆=天候の階級が上がったときの警告色(緑一色だと危険が読み取れないため) */
+  --forest-bark-rgb: 46 38 29;
+  --forest-dew-rgb: 150 205 214;
+  --forest-amber-rgb: 208 162 84;
+  --forest-rust-rgb: 168 88 56;
 }
 
 html,
@@ -497,7 +504,8 @@ html[data-high-contrast="true"] :focus-visible {
   }
   /* パネルも同じ苔ノイズをまとわせ、縁にごく淡い緑の光暈を足して「生きている」質感にする */
   html[data-visual-mode="home"] .panel {
-    border-radius: 1.35rem;
+    /* 四隅を揃えず、木札やボタンと同じ「切り出した板」のシルエットに統一する */
+    border-radius: 1.5rem 0.7rem 1.5rem 0.7rem;
     border: 1px solid rgb(var(--accent-rgb) / 0.22);
     box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.08), 0 14px 28px -20px rgb(0 0 0 / 0.7), inset 0 1px 0 rgb(var(--accent-rgb) / 0.08);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
@@ -547,6 +555,210 @@ html[data-high-contrast="true"] :focus-visible {
     border-color: rgb(var(--accent-rgb) / 0.38);
     box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.16), 0 18px 34px -20px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(var(--accent-rgb) / 0.16);
   }
+  /* --- ここから森モードのUI。丸ピルの並びをやめ、「林床に並べた木札」に作り替える --- */
+
+  /* タブ列は地面。下端に苔の線を一本通し、札が刺さっている面を作る */
+  html[data-visual-mode="home"] .tab-nav {
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgb(var(--accent-rgb) / 0.18);
+    background: linear-gradient(to bottom, transparent 55%, rgb(var(--accent-rgb) / 0.05));
+  }
+  /* 木札そのもの。角丸を左右で変えて、真円のピルに見えないようにする */
+  html[data-visual-mode="home"] .tab-chip {
+    position: relative;
+    border-radius: 1.3rem 0.5rem 1.3rem 0.5rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    transition: transform 260ms cubic-bezier(0.2, 0.8, 0.3, 1), box-shadow 260ms ease,
+      background-color 260ms ease, border-color 260ms ease, color 260ms ease;
+  }
+  /* 未選択: 樹皮。斜めの木目をうっすら流して、平らな面に見えないようにする */
+  html[data-visual-mode="home"] .tab-chip[data-active="false"] {
+    color: rgb(var(--cream-rgb) / 0.72);
+    border-color: rgb(var(--accent-rgb) / 0.2);
+    background-color: rgb(var(--forest-bark-rgb) / 0.55);
+    background-image: repeating-linear-gradient(88deg, rgb(0 0 0 / 0.18) 0 1px, transparent 1px 6px);
+    box-shadow: inset 0 1px 0 rgb(var(--cream-rgb) / 0.05);
+  }
+  html[data-visual-mode="home"] .tab-chip[data-active="false"]:hover {
+    color: rgb(var(--cream-rgb) / 0.95);
+    border-color: rgb(var(--accent-rgb) / 0.45);
+    background-color: rgb(var(--forest-bark-rgb) / 0.85);
+    transform: translateY(-1px);
+  }
+  /* 選択中: 苔がむした札。斜めの光を受けている体で、緑の階調と内側のハイライトを乗せる */
+  html[data-visual-mode="home"] .tab-chip[data-active="true"] {
+    color: rgb(var(--ink-rgb));
+    background-color: transparent;
+    background-image: linear-gradient(
+      135deg,
+      rgb(var(--accent-rgb)) 0%,
+      rgb(166 212 138) 52%,
+      rgb(var(--accent-rgb)) 100%
+    );
+    box-shadow: 0 0 20px -5px rgb(var(--accent-rgb) / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.3);
+  }
+  /* 選択中の札の根元だけ、地面から若芽が一本伸びている印を置く */
+  html[data-visual-mode="home"] .tab-chip[data-active="true"]::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -0.6rem;
+    width: 6px;
+    height: 6px;
+    transform: translateX(-50%) rotate(45deg);
+    border-radius: 2px 0 2px 0;
+    background: rgb(var(--accent-rgb));
+    box-shadow: 0 0 10px rgb(var(--accent-rgb) / 0.85);
+  }
+
+  /* ボタンもタブと同じ木札のシルエットに揃える(タブ自身は上の規則が持つので除く) */
+  /* p-1/p-1.5 はアイコン1つだけの正方形ボタン。木札の非対称な角丸を当てると
+     歪んだ丸に見えてしまうので、そこだけは真円のまま残す */
+  html[data-visual-mode="home"] .btn-pill:not(.tab-chip):not([class~="p-1"]):not([class~="p-1.5"]),
+  html[data-visual-mode="home"] .btn-pill-outline:not(.tab-chip):not([class~="p-1"]):not([class~="p-1.5"]),
+  html[data-visual-mode="home"] .btn-pill-danger:not(.tab-chip):not([class~="p-1"]):not([class~="p-1.5"]) {
+    border-radius: 1.1rem 0.45rem 1.1rem 0.45rem;
+  }
+  html[data-visual-mode="home"] .btn-pill:not(.tab-chip),
+  html[data-visual-mode="home"] .btn-pill-outline:not(.tab-chip),
+  html[data-visual-mode="home"] .btn-pill-danger:not(.tab-chip) {
+    font-weight: 600;
+  }
+  /* :not(.bg-alert) / :not(.border-alert) は、呼び出し側が色を指定している
+     強調ボタンを塗り潰さないための除外。シルエット(角丸)だけは全部に効かせる */
+  html[data-visual-mode="home"] .btn-pill:not(.tab-chip):not(.bg-alert) {
+    color: rgb(var(--ink-rgb));
+    background-color: transparent;
+    background-image: linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(158 206 128));
+    box-shadow: 0 0 16px -6px rgb(var(--accent-rgb) / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.28);
+  }
+  html[data-visual-mode="home"] .btn-pill-outline:not(.tab-chip):not(.border-alert) {
+    border-color: rgb(var(--accent-rgb) / 0.3);
+  }
+  html[data-visual-mode="home"] .btn-pill-outline:not(.tab-chip):not(.border-alert):hover {
+    border-color: rgb(var(--accent-rgb) / 0.55);
+    background-color: rgb(var(--accent-rgb) / 0.12);
+  }
+  /* 破壊的な操作だけは緑から外す。森モードではalert(=緑)が基調色なので、
+     このままでは「消す」ボタンが若葉色になってしまい、取り返しのつかない操作だと読めない */
+  html[data-visual-mode="home"] .btn-pill-danger {
+    background-color: rgb(var(--forest-rust-rgb));
+    color: rgb(248 240 230);
+    box-shadow: 0 0 14px -6px rgb(var(--forest-rust-rgb));
+  }
+
+  /* 入力欄は、樹皮をくり抜いた窪み。触れている間だけ露が光るように縁が灯る */
+  html[data-visual-mode="home"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  html[data-visual-mode="home"] textarea,
+  html[data-visual-mode="home"] select {
+    border-radius: 0.8rem;
+    background-color: rgb(var(--ink-rgb) / 0.55);
+    border-color: rgb(var(--accent-rgb) / 0.22);
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+  html[data-visual-mode="home"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):focus,
+  html[data-visual-mode="home"] textarea:focus,
+  html[data-visual-mode="home"] select:focus {
+    border-color: rgb(var(--forest-dew-rgb) / 0.6);
+    box-shadow: 0 0 0 3px rgb(var(--forest-dew-rgb) / 0.14);
+  }
+  /* チェック・ラジオ・スライダーのOS既定色も若葉色に寄せる */
+  html[data-visual-mode="home"] input[type="checkbox"],
+  html[data-visual-mode="home"] input[type="radio"],
+  html[data-visual-mode="home"] input[type="range"],
+  html[data-visual-mode="home"] progress {
+    accent-color: rgb(var(--accent-rgb));
+  }
+  /* キーボード操作の focus も露の色で統一する(既定の青い輪郭は森から浮くため) */
+  html[data-visual-mode="home"] :focus-visible {
+    outline: 2px solid rgb(var(--forest-dew-rgb) / 0.75);
+    outline-offset: 2px;
+  }
+
+  /* 見出しの下に年輪を一本。右へ向かって消えていく非対称の線にして、
+     定規で引いた区切り線ではなく「木に刻まれた跡」に見せる */
+  html[data-visual-mode="home"] h2.font-display {
+    position: relative;
+    padding-bottom: 0.3rem;
+    letter-spacing: 0.03em;
+  }
+  html[data-visual-mode="home"] h2.font-display::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 4.5rem;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.75), rgb(var(--accent-rgb) / 0));
+  }
+  /* 小見出しにも同じ跡を、一段細く短く */
+  html[data-visual-mode="home"] h3.font-display {
+    position: relative;
+    padding-bottom: 0.28rem;
+  }
+  html[data-visual-mode="home"] h3.font-display::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 2.6rem;
+    height: 1px;
+    background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.55), rgb(var(--accent-rgb) / 0));
+  }
+
+  /* タブ横の件数バッジ。基調色の緑のままでは「急ぎ」が伝わらないので、
+     落ち葉の琥珀で一段手前に出す */
+  html[data-visual-mode="home"] .tab-chip > span {
+    background-color: rgb(var(--forest-amber-rgb));
+    color: rgb(var(--ink-rgb));
+  }
+
+  /* 天候の階級バッジ。森モードは基調色が緑一色なので、そのままでは
+     「そよ風」も「倒木注意」も同じ色になってしまう。空模様が崩れるほど
+     緑→露の青→琥珀→錆、と色を移して一目で読み取れるようにする */
+  html[data-visual-mode="home"] .risk-badge-1 {
+    border-color: rgb(var(--cream-rgb) / 0.3);
+    background-color: rgb(var(--cream-rgb) / 0.08);
+    color: rgb(var(--cream-rgb) / 0.8);
+  }
+  html[data-visual-mode="home"] .risk-badge-2 {
+    border-color: rgb(var(--forest-dew-rgb) / 0.4);
+    background-color: rgb(var(--forest-dew-rgb) / 0.12);
+    color: rgb(var(--forest-dew-rgb));
+  }
+  html[data-visual-mode="home"] .risk-badge-3 {
+    border-color: rgb(var(--forest-amber-rgb) / 0.5);
+    background-color: rgb(var(--forest-amber-rgb) / 0.14);
+    color: rgb(var(--forest-amber-rgb));
+  }
+  html[data-visual-mode="home"] .risk-badge-4 {
+    border-color: rgb(var(--forest-rust-rgb) / 0.6);
+    background-color: rgb(var(--forest-rust-rgb) / 0.18);
+    color: rgb(226 150 120);
+  }
+
+  /* 画面四隅の括弧は、森モードでは角張らせず蔓が巻きついた丸みにする */
+  html[data-visual-mode="home"] .frame-corners::before,
+  html[data-visual-mode="home"] .frame-corners::after,
+  html[data-visual-mode="home"] .frame-corners .corner-tr,
+  html[data-visual-mode="home"] .frame-corners .corner-br {
+    border-color: rgb(var(--accent-rgb) / 0.45);
+  }
+  html[data-visual-mode="home"] .frame-corners::before {
+    border-top-left-radius: 14px;
+  }
+  html[data-visual-mode="home"] .frame-corners::after {
+    border-bottom-left-radius: 14px;
+  }
+  html[data-visual-mode="home"] .frame-corners .corner-tr {
+    border-top-right-radius: 14px;
+  }
+  html[data-visual-mode="home"] .frame-corners .corner-br {
+    border-bottom-right-radius: 14px;
+  }
+
   /* 画面全体に漂う胞子(綿毛)のCanvas。他テーマの透かしと同じ重ね方にして
      操作は妨げず、本文の可読性を落とさない薄さで描く */
   .forest-ambience {
