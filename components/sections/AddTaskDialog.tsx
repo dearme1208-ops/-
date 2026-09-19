@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { useSetting } from "@/lib/settings";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
@@ -58,13 +59,14 @@ export default function AddTaskDialog({
   const [setPlan, setSetPlan] = useState(false);
 
   // お気に入りはメニュー型でしか使わないので、それ以外のときは引きに行かない
-  const favorites = useLiveQuery<MasterTask[]>(
+  const favoritesRaw = useLiveQuery<MasterTask[]>(
     () =>
       style === "menu"
         ? db.masterTasks.filter((m) => !!m.isFavorite && !m.archived).toArray()
         : Promise.resolve([] as MasterTask[]),
     [style]
   );
+  const favorites = useHomeFilteredMasterTasks(favoritesRaw);
 
   async function insertTask(
     taskCategory: string,

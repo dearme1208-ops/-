@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
 import type { MasterTask } from "@/lib/types";
 
 export default function MasterTaskPicker({
@@ -15,7 +16,8 @@ export default function MasterTaskPicker({
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
-  const allTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const allTasksRaw = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const allTasks = useHomeFilteredMasterTasks(allTasksRaw);
 
   const categories = useMemo(() => {
     if (!allTasks) return [];

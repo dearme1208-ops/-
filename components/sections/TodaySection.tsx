@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
+import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
 import {
   adjustStopTimeForBreaks,
@@ -337,10 +338,11 @@ export default function TodaySection({
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
     [date]
   );
-  const favorites = useLiveQuery(
+  const favoritesRaw = useLiveQuery(
     () => db.masterTasks.filter((t) => t.isFavorite && !t.archived).toArray(),
     []
   );
+  const favorites = useHomeFilteredMasterTasks(favoritesRaw);
   // お気に入りパネルの「完了した業務から再開」欄用: 本日中に同じ作業を何度も完了していても
   // 1つにまとめる(再開ボタンとして意味があるのは「その作業をもう一度始める」ことだけなので)
   const doneTodayUnique = useMemo(() => {

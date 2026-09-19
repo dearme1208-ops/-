@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
 import { useVisualMode } from "./theme";
-import type { WorkRecord } from "./types";
+import type { MasterTask, WorkRecord } from "./types";
 
 // 家庭モード中、「家庭モード管理」タブで除外指定した作業マスタに紐づく実績を、
 // 主要な集計画面(実績編集・集計/ランキング・グラフ・ヒートマップ・年表・残業分析・
@@ -17,4 +17,16 @@ export function useHomeFilteredRecords(records: WorkRecord[] | undefined): WorkR
     if (excludedIds.size === 0) return records;
     return records.filter((r) => !r.masterTaskId || !excludedIds.has(r.masterTaskId));
   }, [records, homeMode, masters]);
+}
+
+// 家庭モード中、「家庭モード管理」タブで除外指定した作業マスタを、作業を追加/開始する際の
+// 一覧(マスタから作業を追加のピッカー・お気に入りのクイックスタート等)から取り除く。
+// 実績自体は消さない(useHomeFilteredRecords)のに対し、こちらは「これから新しく
+// この作業を始める」導線からだけ隠す
+export function useHomeFilteredMasterTasks<T extends MasterTask>(tasks: T[] | undefined): T[] | undefined {
+  const { homeMode } = useVisualMode();
+  return useMemo(() => {
+    if (!tasks || !homeMode) return tasks;
+    return tasks.filter((t) => !t.excludedFromHome);
+  }, [tasks, homeMode]);
 }
