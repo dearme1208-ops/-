@@ -20,7 +20,57 @@ import { useVisualMode } from "@/lib/theme";
 import type { MasterTask, WorkRecord } from "@/lib/types";
 import { formatYen, computeCost, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { showUndoToast } from "@/lib/toast";
+import {
+  distributionsByMaster,
+  estimateStanding,
+  MIN_DISTRIBUTION_SAMPLES,
+  type EstimateDistribution,
+} from "@/lib/estimation";
 import Modal from "@/components/ui/Modal";
+
+// 実績の分布を1行で見せる。P50は自分の予定を立てるとき、P80は相手に締切を
+// 約束するときの目安。押せば、その値をそのまま想定時間に採用できる
+function EstimateDistributionRow({
+  dist,
+  sampleCount,
+  estimatedSeconds,
+  onAdopt,
+}: {
+  dist: EstimateDistribution | undefined;
+  sampleCount: number;
+  estimatedSeconds: number;
+  onAdopt: (seconds: number) => void;
+}) {
+  // 数件しかないうちに百分位数を出しても外れ値ひとつで跳ねるだけなので、
+  // 黙って隠さず「あと何件で出せるか」を伝える
+  if (!dist) {
+    // 件数は足りているのに分布が出ない = 全件が外れ値として除外されている等。
+    // その場合は何も言わない(件数表示と食い違って混乱するため)
+    if (sampleCount <= 0 || sampleCount >= MIN_DISTRIBUTION_SAMPLES) return null;
+    return (
+      <div className="mt-0.5 text-[11px] text-cream/35">
+        あと{MIN_DISTRIBUTION_SAMPLES - sampleCount}件でP50/P80が出せます
+      </div>
+    );
+  }
+  return (
+    <div
+      className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-cream/50"
+      title={`${estimateStanding(estimatedSeconds, dist)}（実績${dist.sampleCount}件・最長${formatHms(dist.max)}）`}
+    >
+      <span className="tabular-nums">P50 {formatHms(dist.p50)}</span>
+      <span className="tabular-nums">P80 {formatHms(dist.p80)}</span>
+      {dist.spread >= 1.5 && <span className="text-alert/70">ばらつき大 ×{dist.spread.toFixed(1)}</span>}
+      <button
+        className="underline decoration-dotted hover:text-cream/80"
+        onClick={() => onAdopt(dist.p80)}
+        title="8割がこの時間内に収まる値を想定時間にします"
+      >
+        P80を採用
+      </button>
+    </div>
+  );
+}
 
 type SortKey = "name" | "sampleCount" | "estimatedSeconds";
 
@@ -71,6 +121,9 @@ export default function MasterSection() {
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
   const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
+  // 想定時間は実績の「平均」で自動更新されるが、平均だけでは裾の長さが見えない。
+  // 同じ実績から分布(P50/P80)も出して、見積もりの安全率を選べるようにする
+  const distributions = useMemo(() => distributionsByMaster(records ?? []), [records]);
   const [defaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
   const defaultHourlyRate = Number(defaultHourlyRateStr) > 0 ? Number(defaultHourlyRateStr) : null;
   const [categoryRatesJson] = useSetting("cost.categoryRates", "{}");
@@ -712,6 +765,12 @@ export default function MasterSection() {
                         >
                           実績サンプル数 {t.sampleCount}
                         </button>
+                        <EstimateDistributionRow
+                          dist={distributions.get(t.id)}
+                          sampleCount={t.sampleCount}
+                          estimatedSeconds={t.estimatedSeconds}
+                          onAdopt={(seconds) => updateEstimate(t, formatHms(seconds))}
+                        />
                         <input
                           key={`tags-${(t.tags ?? []).join(",")}`}
                           defaultValue={(t.tags ?? []).join(", ")}

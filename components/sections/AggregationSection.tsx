@@ -29,6 +29,7 @@ import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
 import LineChart from "@/components/charts/LineChart";
 import CategoryChainGraph from "@/components/charts/CategoryChainGraph";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
+import FocusContinuityPanel from "@/components/FocusContinuityPanel";
 import PersonalBestPanel from "@/components/PersonalBestPanel";
 import LifeArtModal from "@/components/LifeArtModal";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
@@ -457,6 +458,14 @@ export default function AggregationSection() {
           onClose={() => setWeekdayDetailDow(null)}
         />
       )}
+
+      {/* 切り替えコスト分析が「日ごとの件数」という粗い粒度で見ているのに対して、
+          こちらは一時停止で刻まれた区間そのものから連続性を測る */}
+      <FocusContinuityPanel
+        records={records}
+        collapsed={!!collapsed.focusContinuity}
+        onToggle={() => toggleSection("focusContinuity")}
+      />
 
       {(switchCost.low || switchCost.high) && (
         <CollapsiblePanel
