@@ -1039,3 +1039,31 @@ export function tabLabel(key: string, mode: VisualMode, fallback: string): strin
   const table = TAB_LABELS_BY_MODE[mode];
   return (table as Record<string, string>)[key] ?? fallback;
 }
+
+// タブの既定(演出テーマなし)の名前と並び順。app/page.tsxのタブバーが唯一の
+// 情報源になるとテーマ側から参照できないため、ここを両者共通の情報源にする。
+// 森モード管理タブの「見せる木を選ぶ」のように、テーマの文言をオフにした際
+// 何に戻すべきかを知る必要がある場所でも使う
+export const PLAIN_TAB_LABELS: Record<TabKey, string> = {
+  today: "本日の作業",
+  todo: "ToDo",
+  projects: "案件",
+  master: "作業マスタ",
+  homeMaster: "家庭モード管理",
+  template: "曜日別テンプレート",
+  gantt: "ガントチャート",
+  aggregation: "集計・ランキング",
+  charts: "グラフ",
+  heatmap: "ヒートマップ",
+  attention: "要注意リスト",
+  overtime: "残業分析",
+  yearlyChart: "年表",
+  mandala: "マンダラチャート",
+  memo: "メモ",
+  board: "統合ボード",
+  observatory: "観測所",
+  report: "日報・週報・月報",
+  records: "実績編集",
+  appearance: "モード選択",
+  settings: "設定",
+};

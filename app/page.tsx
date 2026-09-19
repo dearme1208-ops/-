@@ -23,7 +23,7 @@ import OrphanTaskModal from "@/components/OrphanTaskModal";
 import TodoReminderModal from "@/components/TodoReminderModal";
 import TodoReminderPopup from "@/components/TodoReminderPopup";
 import OnboardingGuide from "@/components/OnboardingGuide";
-import { parseHiddenTabKeys, tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
+import { PLAIN_TAB_LABELS, parseHiddenTabKeys, tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
 import { menuSkinFor } from "@/lib/mainMenu";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
@@ -63,29 +63,32 @@ const UnifiedBoardSection = dynamic(() => import("@/components/sections/UnifiedB
 const OriginSheetSection = dynamic(() => import("@/components/sections/OriginSheetSection"), { ssr: false });
 const ObservatorySection = dynamic(() => import("@/components/sections/ObservatorySection"), { ssr: false });
 
-const TABS: TabDef[] = [
-  { key: "today", label: "本日の作業" },
-  { key: "todo", label: "ToDo" },
-  { key: "projects", label: "案件" },
-  { key: "master", label: "作業マスタ" },
-  { key: "homeMaster", label: "家庭モード管理" },
-  { key: "template", label: "曜日別テンプレート" },
-  { key: "gantt", label: "ガントチャート" },
-  { key: "aggregation", label: "集計・ランキング" },
-  { key: "charts", label: "グラフ" },
-  { key: "heatmap", label: "ヒートマップ" },
-  { key: "attention", label: "要注意リスト" },
-  { key: "overtime", label: "残業分析" },
-  { key: "yearlyChart", label: "年表" },
-  { key: "mandala", label: "マンダラチャート" },
-  { key: "memo", label: "メモ" },
-  { key: "board", label: "統合ボード" },
-  { key: "observatory", label: "観測所" },
-  { key: "report", label: "日報・週報・月報" },
-  { key: "records", label: "実績編集" },
-  { key: "appearance", label: "モード選択" },
-  { key: "settings", label: "設定" },
+// 並び順の唯一の情報源。ラベルはPLAIN_TAB_LABELS(lib/theme.ts)を共通の
+// 情報源にし、家庭モード管理タブ等の他の画面ともここで語彙がずれないようにする
+const TAB_ORDER: TabKey[] = [
+  "today",
+  "todo",
+  "projects",
+  "master",
+  "homeMaster",
+  "template",
+  "gantt",
+  "aggregation",
+  "charts",
+  "heatmap",
+  "attention",
+  "overtime",
+  "yearlyChart",
+  "mandala",
+  "memo",
+  "board",
+  "observatory",
+  "report",
+  "records",
+  "appearance",
+  "settings",
 ];
+const TABS: TabDef[] = TAB_ORDER.map((key) => ({ key, label: PLAIN_TAB_LABELS[key] }));
 
 export default function HomePage() {
   const [active, setActive] = useState("today");

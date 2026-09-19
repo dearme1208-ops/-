@@ -6,16 +6,19 @@ import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import {
   HOME_TAB_TOGGLE_LOCKED,
-  TAB_LABELS_BY_MODE,
+  PLAIN_TAB_LABELS,
   parseHiddenTabKeys,
   serializeHiddenTabKeys,
+  tabLabel,
+  useVisualMode,
   type TabKey,
 } from "@/lib/theme";
 import type { MasterTask } from "@/lib/types";
 
-// タブ一覧に出す並び順。app/page.tsxのTABS配列と同じ順に揃えてある
-// (揃えておかないと、この画面の並びと実際のタブバーの並びが食い違ってしまう)
-const TAB_ORDER = Object.keys(TAB_LABELS_BY_MODE.home) as TabKey[];
+// タブ一覧に出す並び順。PLAIN_TAB_LABELS(app/page.tsxのタブバーと共通の情報源)の
+// 定義順をそのまま使う(揃えておかないと、この画面の並びと実際のタブバーの並びが
+// 食い違ってしまう)
+const TAB_ORDER = Object.keys(PLAIN_TAB_LABELS) as TabKey[];
 // 隠すと元に戻す手段を失うタブは、選ぶ余地自体を与えない
 const TOGGLEABLE_TAB_KEYS = TAB_ORDER.filter((k) => !HOME_TAB_TOGGLE_LOCKED.includes(k));
 
@@ -27,6 +30,9 @@ const TOGGLEABLE_TAB_KEYS = TAB_ORDER.filter((k) => !HOME_TAB_TOGGLE_LOCKED.incl
 export default function HomeMasterSection() {
   const tasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const [showArchived, setShowArchived] = useState(false);
+  // 「見せる木を選ぶ」のタブ名も、他の画面と同じく演出文言のON/OFF設定に従わせる。
+  // OFFなら森語彙(茂りグラフ等)ではなく素の名前(グラフ等)で出す
+  const { wordingMode } = useVisualMode();
 
   // 残業分析など、森モード中は見たくない集計タブそのものを非表示にする設定。
   // マスタの除外(実績を隠す)とは別に、タブの存在自体を消す
@@ -85,7 +91,7 @@ export default function HomeMasterSection() {
                 className={visible ? "btn-pill text-xs" : "btn-pill-outline text-xs opacity-50"}
                 title={visible ? "タップで隠す" : "タップで見せる"}
               >
-                {visible ? "🌿" : "🍂"} {TAB_LABELS_BY_MODE.home[key]}
+                {visible ? "🌿" : "🍂"} {tabLabel(key, wordingMode, PLAIN_TAB_LABELS[key])}
               </button>
             );
           })}
