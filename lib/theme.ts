@@ -209,9 +209,10 @@ export const VISIBLE_TABS_BY_MODE: Partial<Record<ThemedMode, TabKey[]>> = {
 };
 
 export function visibleTabKeys(mode: VisualMode, allKeys: TabKey[]): TabKey[] {
-  if (mode === "off") return allKeys;
-  const allowed = VISIBLE_TABS_BY_MODE[mode as ThemedMode];
-  return allowed ?? allKeys;
+  const base = mode === "off" ? allKeys : (VISIBLE_TABS_BY_MODE[mode as ThemedMode] ?? allKeys);
+  // 「家庭モード管理」タブは、除外設定が意味を持つ家庭モード中だけ出す
+  // (他のモードでは作業マスタタブから紛らわしくならないよう隠しておく)
+  return mode === "home" ? base : base.filter((k) => k !== "homeMaster");
 }
 
 // 想定/予測に対する超過の度合い(実績が想定の何倍か)に応じて表示する階級バッジ。
