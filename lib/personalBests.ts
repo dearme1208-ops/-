@@ -1,6 +1,6 @@
 import type { MasterTask, ProjectItem, WorkRecord } from "./types";
-import { daysBetweenDateStrs, formatHms, todayStr } from "./time";
-import { stageCompletionCountByDate } from "./stageProgress";
+import { daysBetweenDateStrs, formatDateJp, formatHms, shiftDateStr, todayStr } from "./time";
+import { stageCompletionCountByDate, stagesCompletedOn } from "./stageProgress";
 
 export interface PersonalBest {
   id: string;
@@ -8,8 +8,10 @@ export interface PersonalBest {
   label: string;
   value: number; // 比較用の生値(秒・件・日・pt)
   valueLabel: string; // 表示用に整形した値
-  date: string; // 達成日(YYYY-MM-DD)
+  date: string; // 達成日(YYYY-MM-DD)。連続記録系はストリークの最終日
   detail?: string; // 作業名など補足
+  rangeStart?: string; // 連続記録系のみ、ストリークの初日(YYYY-MM-DD)
+  recordId?: string; // 想定比の最高記録のみ、その元になった実績のID(同日同名の重複を避けるため)
 }
 
 const MIN_PRODUCTIVITY_SAMPLE_SECONDS = 60; // 極端に短い作業のpctが偶然跳ねるのを防ぐ下限
@@ -55,13 +57,21 @@ export function computePersonalBests(
   const sortedDates = [...secondsByDate.keys()].sort();
   let bestStreak = 0;
   let bestStreakEnd = "";
+  let bestStreakStart = "";
   let curStreak = 0;
+  let curStreakStart = "";
   let prevDate: string | null = null;
   for (const d of sortedDates) {
-    curStreak = prevDate && daysBetweenDateStrs(prevDate, d) === 1 ? curStreak + 1 : 1;
+    if (prevDate && daysBetweenDateStrs(prevDate, d) === 1) {
+      curStreak += 1;
+    } else {
+      curStreak = 1;
+      curStreakStart = d;
+    }
     if (curStreak > bestStreak) {
       bestStreak = curStreak;
       bestStreakEnd = d;
+      bestStreakStart = curStreakStart;
     }
     prevDate = d;
   }
@@ -73,6 +83,7 @@ export function computePersonalBests(
   let bestPct = 0;
   let bestPctDate = "";
   let bestPctDetail = "";
+  let bestPctRecordId = "";
   for (const r of valid) {
     if (r.seconds < MIN_PRODUCTIVITY_SAMPLE_SECONDS) continue;
     const estimatedSeconds = estimatedByKey.get(`${r.category}::${r.name}`);
@@ -82,6 +93,7 @@ export function computePersonalBests(
       bestPct = pct;
       bestPctDate = r.date;
       bestPctDetail = `${r.category} / ${r.name}`;
+      bestPctRecordId = r.id;
     }
   }
 
@@ -93,7 +105,15 @@ export function computePersonalBests(
     results.push({ id: "best-day-count", icon: "🎯", label: "1日の最多記録件数", value: bestCount, valueLabel: `${bestCount}件`, date: bestCountDate });
   }
   if (bestStreak > 0) {
-    results.push({ id: "best-streak", icon: "🔥", label: "最長連続記録日数", value: bestStreak, valueLabel: `${bestStreak}日`, date: bestStreakEnd });
+    results.push({
+      id: "best-streak",
+      icon: "🔥",
+      label: "最長連続記録日数",
+      value: bestStreak,
+      valueLabel: `${bestStreak}日`,
+      date: bestStreakEnd,
+      rangeStart: bestStreakStart,
+    });
   }
   if (bestPct > 0) {
     results.push({
@@ -104,6 +124,7 @@ export function computePersonalBests(
       valueLabel: `${Math.round(bestPct)}%`,
       date: bestPctDate,
       detail: bestPctDetail,
+      recordId: bestPctRecordId,
     });
   }
   results.push(...stageBests);
@@ -128,13 +149,21 @@ function computeStageBests(projects: ProjectItem[]): PersonalBest[] {
   const sortedDates = [...countByDate.keys()].sort();
   let bestStreak = 0;
   let bestStreakEnd = "";
+  let bestStreakStart = "";
   let curStreak = 0;
+  let curStreakStart = "";
   let prevDate: string | null = null;
   for (const d of sortedDates) {
-    curStreak = prevDate && daysBetweenDateStrs(prevDate, d) === 1 ? curStreak + 1 : 1;
+    if (prevDate && daysBetweenDateStrs(prevDate, d) === 1) {
+      curStreak += 1;
+    } else {
+      curStreak = 1;
+      curStreakStart = d;
+    }
     if (curStreak > bestStreak) {
       bestStreak = curStreak;
       bestStreakEnd = d;
+      bestStreakStart = curStreakStart;
     }
     prevDate = d;
   }
@@ -158,6 +187,7 @@ function computeStageBests(projects: ProjectItem[]): PersonalBest[] {
       value: bestStreak,
       valueLabel: `${bestStreak}日`,
       date: bestStreakEnd,
+      rangeStart: bestStreakStart,
     });
   }
   return results;
@@ -192,4 +222,95 @@ export function computeNewBestsToday(
     if (prevValue === undefined || b.value > prevValue) updated.add(b.id);
   }
   return updated;
+}
+
+export interface PersonalBestDetailRow {
+  label: string;
+  sublabel?: string;
+  value: string;
+}
+
+export interface PersonalBestDetail {
+  title: string;
+  intro?: string;
+  rows: PersonalBestDetailRow[];
+  emptyMessage?: string;
+}
+
+function enumerateDates(start: string, end: string): string[] {
+  const out: string[] = [];
+  for (let d = start; d <= end; d = shiftDateStr(d, 1)) {
+    out.push(d);
+    if (out.length > 400) break; // 壊れた範囲で無限ループしないための保険
+  }
+  return out;
+}
+
+// カードをタップした際の内訳。自己ベストの種類ごとに「何がその記録を作ったか」を
+// 遡って見せる。値は再計算せず、達成日・範囲・(想定比のみ)元の実績IDから
+// 該当する実績・段階をrecords/projectsから引き直すだけにしてある
+export function buildPersonalBestDetail(
+  best: PersonalBest,
+  records: WorkRecord[],
+  projects: ProjectItem[]
+): PersonalBestDetail {
+  switch (best.id) {
+    case "best-day-hours":
+    case "best-day-count": {
+      const dayRecords = records
+        .filter((r) => !r.excludedFromStats && r.seconds > 0 && r.date === best.date)
+        .sort((a, b) => b.seconds - a.seconds);
+      return {
+        title: `${formatDateJp(best.date)}の実績`,
+        rows: dayRecords.map((r) => ({ label: r.name, sublabel: r.category, value: formatHms(r.seconds) })),
+        emptyMessage: "この日の実績が見当たりません。",
+      };
+    }
+    case "best-streak": {
+      const start = best.rangeStart ?? best.date;
+      const byDate = new Map<string, number>();
+      for (const r of records) {
+        if (r.excludedFromStats || r.seconds <= 0) continue;
+        byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.seconds);
+      }
+      return {
+        title: `${formatDateJp(start)}〜${formatDateJp(best.date)}の連続記録`,
+        intro: `${best.valueLabel}続けて実績が記録されています(土日は記録が無くても途切れません)`,
+        rows: enumerateDates(start, best.date).map((d) => ({ label: formatDateJp(d), value: formatHms(byDate.get(d) ?? 0) })),
+      };
+    }
+    case "best-pct": {
+      const record = records.find((r) => r.id === best.recordId);
+      if (!record) return { title: best.label, rows: [], emptyMessage: "元になった実績が見当たりません。" };
+      return {
+        title: `${record.category} / ${record.name}`,
+        intro: formatDateJp(record.date),
+        rows: [{ label: "実際にかかった時間", value: formatHms(record.seconds) }],
+      };
+    }
+    case "best-stage-day-count": {
+      const stages = stagesCompletedOn(projects, best.date);
+      return {
+        title: `${formatDateJp(best.date)}に完了した段階`,
+        rows: stages.map((s) => ({ label: s.stageTitle, sublabel: s.projectTitle, value: "完了" })),
+        emptyMessage: "この日に完了した段階が見当たりません。",
+      };
+    }
+    case "best-stage-streak": {
+      const start = best.rangeStart ?? best.date;
+      return {
+        title: `${formatDateJp(start)}〜${formatDateJp(best.date)}の連続記録`,
+        intro: `${best.valueLabel}連続で段階が完了しています`,
+        rows: enumerateDates(start, best.date).map((d) => {
+          const stages = stagesCompletedOn(projects, d);
+          return {
+            label: formatDateJp(d),
+            value: stages.length > 0 ? stages.map((s) => s.stageTitle).join("、") : "—",
+          };
+        }),
+      };
+    }
+    default:
+      return { title: best.label, rows: [] };
+  }
 }

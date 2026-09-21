@@ -39,13 +39,6 @@ import {
 } from "@/lib/time";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
-import {
-  buildStageCompletionOrder,
-  computeProjectProgress,
-  incompletePreviousStageTitles,
-  isStageDone,
-  toggleProjectStage,
-} from "@/lib/projectStage";
 import { foafNumberOf } from "@/lib/hayarigami";
 import { wordsFor as hayarigamiWordsFor } from "@/lib/hayarigamiWords";
 import SceneCanvas from "@/components/hayarigami/SceneCanvas";
@@ -83,7 +76,7 @@ const MAX_PX_PER_DAY = 80;
 const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
-type ViewKey = "myday" | "important" | "planned" | "overdue" | "projects" | `list:${string}`;
+type ViewKey = "myday" | "important" | "planned" | "overdue" | `list:${string}`;
 type DisplayMode = "list" | "gantt" | "calendar" | "kanban" | "tree";
 
 // リスト内の並び替え。「手動」はドラッグ&ドロップで決めたorder順、それ以外は
@@ -199,8 +192,6 @@ export default function TodoSection({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [bottomViewBarStr] = useSetting("todo.bottomViewBar", "false");
   const bottomViewBar = bottomViewBarStr === "true";
-  const [showProjectsViewStr] = useSetting("todo.showProjectsView", "false");
-  const showProjectsView = showProjectsViewStr === "true";
   const [tabBarStyle] = useSetting("ui.bottomTabBarStyle", "pill");
   const [tabBarAdaptiveEmphasisStr] = useSetting("ui.bottomTabBarAdaptiveEmphasis", "false");
   const tabBarAdaptiveEmphasis = tabBarAdaptiveEmphasisStr === "true";
@@ -1242,14 +1233,6 @@ export default function TodoSection({
             ⚠ 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
           </button>
         )}
-        {showProjectsView && (
-          <button
-            onClick={() => setView("projects")}
-            className={view === "projects" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-          >
-            📁 案件
-          </button>
-        )}
         {(lists ?? []).map((l) => (
           <div key={l.id} className="flex items-center">
             <button
@@ -1429,9 +1412,6 @@ export default function TodoSection({
         </div>
       )}
 
-      {view === "projects" ? (
-        <TodoProjectsView today={today} />
-      ) : (
       <div className="panel p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-bold">{panelTitle}</h2>
@@ -2050,7 +2030,6 @@ export default function TodoSection({
           </>
         )}
       </div>
-      )}
 
       {bottomViewBar && (
         <BottomTabBar
@@ -2120,141 +2099,6 @@ export default function TodoSection({
           </div>
         </Modal>
       )}
-    </div>
-  );
-}
-
-// ToDoタブから案件タブに移動せずに、進行中の案件を確認・段階のチェックができる
-// 軽量ビュー(設定でON/OFFできる)。案件そのものの編集(期日・単価・段階の追加等)は
-// 引き続き案件タブで行う前提のため、ここでは進捗確認とチェックだけに絞っている
-function TodoProjectsView({ today }: { today: string }) {
-  const projects = useLiveQuery(() => db.projects.toArray(), []);
-  const activeProjects = useMemo(
-    () => (projects ?? []).filter((p) => !p.completedAt).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [projects]
-  );
-  // チェック(未完了→完了)方向だけ確認モーダルを挟む(案件タブと同じ考え方)
-  const [stageCompleteConfirm, setStageCompleteConfirm] = useState<{ project: ProjectItem; stageId: string } | null>(
-    null
-  );
-  function requestToggleStage(project: ProjectItem, stageId: string) {
-    const stage = project.stages?.find((s) => s.id === stageId);
-    if (stage && !stage.completed) {
-      setStageCompleteConfirm({ project, stageId });
-      return;
-    }
-    toggleProjectStage(project, stageId);
-  }
-  async function confirmStageComplete() {
-    if (!stageCompleteConfirm) return;
-    await toggleProjectStage(stageCompleteConfirm.project, stageCompleteConfirm.stageId);
-    setStageCompleteConfirm(null);
-  }
-
-  return (
-    <div className="panel space-y-3 p-4">
-      <h2 className="font-display text-lg font-bold">📁 案件（{activeProjects.length}）</h2>
-      <p className="text-xs text-cream/50">
-        進行中の案件をここから確認・段階のチェックができます。期日や単価などの編集は「案件」タブで行ってください。
-      </p>
-      {activeProjects.length === 0 ? (
-        <p className="text-sm text-cream/50">進行中の案件はありません。</p>
-      ) : (
-        <div className="space-y-2">
-          {activeProjects.map((project) => {
-            const overdue = project.dueDate < today;
-            const progress = computeProjectProgress(project.stages);
-            return (
-              <div key={project.id} className="rounded-lg bg-ink/50 px-3 py-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-xs text-cream/50">
-                      {project.title}
-                      {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
-                    </div>
-                    <div className="text-sm text-cream">{project.workName}</div>
-                  </div>
-                  <span className={`text-xs font-bold ${overdue ? "text-alert" : "text-cream/60"}`}>
-                    期日 {project.dueDate}
-                    {overdue && "（超過）"}
-                  </span>
-                </div>
-                {progress !== null && (
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink">
-                    <div className="h-full rounded-full bg-cream/70" style={{ width: `${Math.round(progress * 100)}%` }} />
-                  </div>
-                )}
-                {project.stages && project.stages.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {(() => {
-                      // 案件タブと同じく、完了済みの段階にはチェックの代わりに完了した順番を出す
-                      const stageOrder = buildStageCompletionOrder(project.stages);
-                      return project.stages.map((stage) => {
-                        const done = isStageDone(stage);
-                        const order = stageOrder.get(stage.id);
-                        return (
-                          <button
-                            key={stage.id}
-                            onClick={() => requestToggleStage(project, stage.id)}
-                            className="flex w-full items-center gap-2 text-left text-xs text-cream/70 hover:text-cream"
-                            title={order ? `${order.rank}番目に完了（${formatDateTimeJp(order.at)}）` : undefined}
-                          >
-                            <span
-                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] font-bold tabular-nums ${
-                                done ? "border-cream bg-cream text-ink" : "border-cream/40"
-                              } ${order?.aheadOfPlan ? "ring-1 ring-alert/60" : ""}`}
-                            >
-                              {done ? (order ? order.rank : "✓") : ""}
-                            </span>
-                            <span className={done ? "text-cream/40 line-through" : ""}>{stage.title || "（段階名未入力）"}</span>
-                          </button>
-                        );
-                      });
-                    })()}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {stageCompleteConfirm &&
-        (() => {
-          const { project, stageId } = stageCompleteConfirm;
-          const stage = project.stages?.find((s) => s.id === stageId);
-          if (!stage) return null;
-          const incompletePrevious = incompletePreviousStageTitles(project, stageId);
-          return (
-            <Modal title="この段階を完了にしますか？" onClose={() => setStageCompleteConfirm(null)}>
-              <div className="space-y-2 text-sm text-cream/80">
-                <p>
-                  案件 <span className="text-cream/50">{project.title}</span> の段階 <b className="text-cream">{stage.title}</b> を完了にします。
-                </p>
-                {incompletePrevious.length > 0 && (
-                  <div className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2">
-                    <p className="text-xs font-bold text-alert">前の段階がまだ完了していません</p>
-                    <ul className="mt-1 space-y-0.5">
-                      {incompletePrevious.map((title) => (
-                        <li key={title} className="truncate text-xs text-cream/70">
-                          ・{title}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <button className="btn-pill-outline text-sm" onClick={() => setStageCompleteConfirm(null)}>
-                  やめる
-                </button>
-                <button className="btn-pill text-sm" onClick={confirmStageComplete}>
-                  完了にする
-                </button>
-              </div>
-            </Modal>
-          );
-        })()}
     </div>
   );
 }

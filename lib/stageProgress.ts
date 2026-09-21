@@ -188,3 +188,20 @@ export function stageCompletionCountByDate(projects: ProjectItem[]): Map<string,
 export function countStagesCompletedOn(projects: ProjectItem[], dateStr: string): number {
   return stageCompletionCountByDate(projects).get(dateStr) ?? 0;
 }
+
+export interface CompletedStageOn {
+  projectTitle: string;
+  stageTitle: string;
+}
+
+/** 指定した日に完了した段階の一覧(自己ベストの詳細表示用) */
+export function stagesCompletedOn(projects: ProjectItem[], dateStr: string): CompletedStageOn[] {
+  const out: CompletedStageOn[] = [];
+  for (const p of projects) {
+    for (const s of p.stages ?? []) {
+      if (!isStageDone(s) || s.completedAt == null) continue;
+      if (todayStr(new Date(s.completedAt)) === dateStr) out.push({ projectTitle: p.title, stageTitle: s.title });
+    }
+  }
+  return out;
+}
