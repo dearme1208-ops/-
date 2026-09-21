@@ -1229,9 +1229,6 @@ export default function UnifiedBoardSection({
   }
   const [customStampText, setCustomStampText] = useState("");
   const [showBackgroundMenu, setShowBackgroundMenu] = useState(false);
-  // 背景の模様は一度決めたらもう触らない表示設定なので、盤面より先に常時1行を
-  // 占領しないよう既定では畳んでおく
-  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
   // 使い方の説明も常時1行を占領するほどではないため、必要な時だけ開けるようにする
   const [showBoardHelp, setShowBoardHelp] = useState(false);
   const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
@@ -1820,37 +1817,396 @@ export default function UnifiedBoardSection({
   // 「ボード」以外の表示切替タブ。ボード表示の自由配置・付箋/図形編集はそのまま残しつつ、
   // 同じ(置いた)ToDo・案件・本日の作業を全く違う見た目で眺められるようにする
   const [viewModeStr, setViewModeStr] = useSetting("board.viewMode", "board");
+  // たまにしか使わない道具(メモ帳の切替・ズーム・背景・検索・整列・書き出しなど)を
+  // 開いているか。次回もそのままにしたいのでDBへ残す。
+  // ただし検索や絞り込みが効いている間は、操作欄が隠れていると「なぜ一部しか出ていないのか」
+  // が分からなくなるため、畳んでいても強制的に開く
+  const [showToolsStr, setShowToolsStr] = useSetting("board.showTools", "false");
+  const showTools = showToolsStr === "true";
+  const toolsOpen = showTools || boardSearchActive || tagFilter !== null;
   const viewMode = (BOARD_VIEW_MODES.some((m) => m.key === viewModeStr) ? viewModeStr : "board") as BoardViewMode;
 
   return (
     <div className={fullscreen ? "fixed inset-0 z-50 flex flex-col gap-3 overflow-y-auto bg-ink p-3" : "space-y-3"}>
-      <div className="panel flex flex-wrap items-center gap-2 p-3">
-        <span className="text-xs text-cream/50">表示:</span>
-        {/* 11択のボタン列は狭い画面では何行にも折り返して盤面より先に場所を取ってしまうため、
-            狭い画面(smブレークポイント未満)だけ1つのドロップダウンに差し替える。
-            選んでいる状態(viewMode)は共通のsettingそのものなので、どちらで切り替えても揃う */}
-        <select
-          value={viewMode}
-          onChange={(e) => setViewModeStr(e.target.value as BoardViewMode)}
-          className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream sm:hidden"
-        >
-          {BOARD_VIEW_MODES.map((m) => (
-            <option key={m.key} value={m.key}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-        <div className="hidden flex-wrap items-center gap-2 sm:flex">
-          {BOARD_VIEW_MODES.map((m) => (
-            <button
-              key={m.key}
-              className={viewMode === m.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setViewModeStr(m.key)}
+      {/* 道具は1枚の棚にまとめる。よく使うもの(追加・手書き・消しゴム・一覧から置く・
+          全画面)だけを常に出し、たまにしか触らないもの(メモ帳の切替・ズーム・背景・検索・
+          整列・対応状況・書き出し・本日の作業の扱い)は「道具」の中へ畳む。狭い画面では
+          主列を横スクロールの1行にして、盤面が最初の画面に入るようにする */}
+      <div className="panel p-3">
+        <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <div className="flex w-max items-center gap-2 sm:w-full sm:flex-wrap">
+            <span className="text-xs text-cream/50">表示:</span>
+            {/* 11択のボタン列は狭い画面では何行にも折り返して盤面より先に場所を取ってしまうため、
+                狭い画面(smブレークポイント未満)だけ1つのドロップダウンに差し替える。
+                選んでいる状態(viewMode)は共通のsettingそのものなので、どちらで切り替えても揃う */}
+            <select
+              value={viewMode}
+              onChange={(e) => setViewModeStr(e.target.value as BoardViewMode)}
+              className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream sm:hidden"
             >
-              {m.label}
-            </button>
-          ))}
+              {BOARD_VIEW_MODES.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <div className="hidden flex-wrap items-center gap-2 sm:flex">
+              {BOARD_VIEW_MODES.map((m) => (
+                <button
+                  key={m.key}
+                  className={viewMode === m.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  onClick={() => setViewModeStr(m.key)}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {viewMode === "board" && (
+              <>
+                <div className="relative">
+                  <button
+                    className={showAddMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setShowAddMenu((v) => !v)}
+                  >
+                    ＋ 追加 ▾
+                  </button>
+                  {showAddMenu && (
+                    <div className="absolute left-0 top-full z-10 mt-1 w-64 space-y-2 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
+                      <button
+                        className="btn-pill-outline w-full whitespace-nowrap text-xs"
+                        onClick={() => {
+                          addNote();
+                          setShowAddMenu(false);
+                        }}
+                      >
+                        ＋ 付箋
+                      </button>
+                      <div>
+                        <p className="mb-1 text-[10px] text-cream/40">図形</p>
+                        <div className="flex flex-wrap gap-1">
+                          <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("rect")}>
+                            ▭ 四角
+                          </button>
+                          <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("circle")}>
+                            ○ 円
+                          </button>
+                          <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("line")}>
+                            ─ 線
+                          </button>
+                          <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("arrow")}>
+                            → 矢印
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[10px] text-cream/40" title="対応状況などの一言スタンプを、付箋やToDo・案件などに重ねてくっ付けられます">
+                          スタンプ
+                        </p>
+                        {stampPresets.length > 0 && (
+                          <div className="mb-1 flex flex-wrap gap-1">
+                            {/* 並び順=優先度(先頭ほど高い)なので、上位1/3は強調・下位1/3は控えめにして、
+                                文字を読まなくても優先度の高さが一目で分かるようにする */}
+                            {stampPresets.map((preset, i) => {
+                              const total = stampPresets.length;
+                              const highPriority = i < total / 3;
+                              const lowPriority = i >= total - total / 3 && total > 2;
+                              return (
+                                <button
+                                  key={preset}
+                                  className={`whitespace-nowrap text-xs ${
+                                    highPriority
+                                      ? "btn-pill-outline border-alert/60 font-bold text-cream"
+                                      : lowPriority
+                                        ? "btn-pill-outline text-cream/40"
+                                        : "btn-pill-outline"
+                                  }`}
+                                  onClick={() => addStamp(preset)}
+                                >
+                                  {preset}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="flex gap-1">
+                          <input
+                            value={customStampText}
+                            onChange={(e) => setCustomStampText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") addStamp(customStampText);
+                            }}
+                            placeholder="一言を入力"
+                            className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                          />
+                          <button className="btn-pill-outline shrink-0 text-xs" onClick={() => addStamp(customStampText)}>
+                            追加
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <button className={penMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={togglePen}>
+                  ✏️ 手書き: {penMode ? "ON" : "OFF"}
+                </button>
+                <button className={eraseMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={toggleErase}>
+                  🧹 消しゴム: {eraseMode ? "ON" : "OFF"}
+                </button>
+                {penMode && (
+                  <>
+                    {MEMO_PEN_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => setPenColor(c)}
+                        className={`h-6 w-6 rounded-full border-2 ${penColor === c ? "border-cream" : "border-transparent"}`}
+                        style={{ backgroundColor: c }}
+                        aria-label={`ペンの色を${c}にする`}
+                      />
+                    ))}
+                    <input
+                      type="range"
+                      min={1}
+                      max={12}
+                      value={penWidth}
+                      onChange={(e) => setPenWidth(Number(e.target.value))}
+                      className="w-24"
+                      aria-label="ペンの太さ"
+                    />
+                    <span className="text-xs tabular-nums text-cream/50">{penWidth}px</span>
+                  </>
+                )}
+                {(strokes ?? []).length > 0 && (
+                  <button className="btn-pill-outline text-xs text-alert" onClick={clearStrokes}>
+                    手書きを全消去
+                  </button>
+                )}
+                <button
+                  className={showPalette ? "btn-pill ml-auto text-xs" : "btn-pill-outline ml-auto text-xs"}
+                  onClick={() => setShowPalette((v) => !v)}
+                >
+                  🗂 一覧から置く（ToDo {unplacedTodos.length} / 案件 {unplacedProjects.length}）
+                </button>
+                <button
+                  className={fullscreen ? "btn-pill px-2 py-1 text-xs" : "btn-pill-outline px-2 py-1 text-xs"}
+                  onClick={() => setFullscreen((v) => !v)}
+                  title={fullscreen ? "全画面表示を終了します(Escでも終了できます)" : "タブ列などを隠し、盤面を画面いっぱいに表示します"}
+                >
+                  {fullscreen ? "✕ 全画面終了" : "⛶ 全画面"}
+                </button>
+                {selectedIds.size > 0 && (
+                  <span className="ml-auto flex items-center gap-2 text-xs text-cream/60">
+                    {selectedIds.size}件選択中(矢印キーで移動・Deleteで下げる/消す)
+                    <button className="btn-pill-outline text-xs" onClick={() => setSelectedIds(new Set())}>
+                      選択解除
+                    </button>
+                  </span>
+                )}
+              </>
+            )}
+          </div>
         </div>
+        {/* 「道具」だけは横スクロールの外に置く。主列の右端に入れてしまうと、
+            畳んだ道具を開くのに毎回横スクロールが必要になって本末転倒になるため */}
+        {viewMode === "board" && (
+          <button
+            className={`${toolsOpen ? "btn-pill" : "btn-pill-outline"} shrink-0 whitespace-nowrap text-xs`}
+            onClick={() => setShowToolsStr(showTools ? "false" : "true")}
+            aria-pressed={toolsOpen}
+            title="メモ帳の切替・ズーム・背景・検索・整列・書き出しなど、たまにしか使わない道具を開きます"
+          >
+            🛠 道具
+          </button>
+        )}
+        </div>
+        {/* 検索や絞り込みが効いている間は、その操作欄が隠れていると
+            「なぜ一部しか出ていないのか」が分からなくなるので必ず開いておく */}
+        {viewMode === "board" && toolsOpen && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-cream/10 pt-2">
+            <span className="text-xs text-cream/50">メモ帳:</span>
+            {(boards ?? []).map((b) => (
+              <button
+                key={b.id}
+                className={b.id === selectedBoardId ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setSelectedBoardId(b.id)}
+              >
+                {b.title}
+              </button>
+            ))}
+            <button className="btn-pill-outline px-2 py-1 text-xs" onClick={() => setZoom(zoom - 0.1)}>
+              −
+            </button>
+            <span className="w-12 text-center text-xs tabular-nums text-cream/60">{Math.round(zoom * 100)}%</span>
+            <button className="btn-pill-outline px-2 py-1 text-xs" onClick={() => setZoom(zoom + 0.1)}>
+              +
+            </button>
+            <button
+              className="btn-pill-outline px-2 py-1 text-xs"
+              onClick={() => setZoomStr(String(fitZoom))}
+              title={`ボード全体の幅(${MEMO_BOARD_WIDTH}px)を画面に収める倍率にします`}
+            >
+              幅に合わせる
+            </button>
+            <span className="text-xs text-cream/50">背景:</span>
+            <div className="relative">
+              <button
+                className={showBackgroundMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setShowBackgroundMenu((v) => !v)}
+              >
+                {BOARD_BACKGROUND_LABELS[background]} ▾
+              </button>
+              {showBackgroundMenu && (
+                <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+                  {BOARD_BACKGROUND_KINDS.map((kind) => (
+                    <button
+                      key={kind}
+                      className={
+                        background === kind
+                          ? "btn-pill whitespace-nowrap text-xs"
+                          : "btn-pill-outline whitespace-nowrap text-xs"
+                      }
+                      onClick={() => {
+                        setBackgroundStr(kind);
+                        setShowBackgroundMenu(false);
+                      }}
+                    >
+                      {BOARD_BACKGROUND_LABELS[kind]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input
+              value={boardSearchQuery}
+              onChange={(e) => setBoardSearchQuery(e.target.value)}
+              placeholder="🔍 件名・本文・ラベルで検索"
+              className="w-56 rounded-lg border border-cream/20 bg-ink px-3 py-1.5 text-xs text-cream"
+            />
+            {boardSearchActive && (
+              <>
+                <span className="text-xs text-cream/50">{matchingIds?.size ?? 0}件ヒット</span>
+                <button className="btn-pill-outline text-xs" onClick={() => setBoardSearchQuery("")}>
+                  クリア
+                </button>
+              </>
+            )}
+            <div className="relative">
+              <button
+                className={showAlignMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setShowAlignMenu((v) => !v)}
+                title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)"
+              >
+                🧹 整列 ▾
+              </button>
+              {showAlignMenu && (
+                <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+                  <button
+                    className="btn-pill-outline whitespace-nowrap text-xs"
+                    onClick={() => {
+                      alignBoardItems("tag");
+                      setShowAlignMenu(false);
+                    }}
+                  >
+                    対応状況順
+                  </button>
+                  <button
+                    className="btn-pill-outline whitespace-nowrap text-xs"
+                    onClick={() => {
+                      alignBoardItems("due");
+                      setShowAlignMenu(false);
+                    }}
+                  >
+                    期日順
+                  </button>
+                </div>
+              )}
+            </div>
+            {boardTagOptions.length > 0 && (
+              <div className="relative border-l border-cream/15 pl-2">
+                <button
+                  className={showTagFilterMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  onClick={() => setShowTagFilterMenu((v) => !v)}
+                >
+                  対応状況: {tagFilter ?? "すべて"} ▾
+                </button>
+                {showTagFilterMenu && (
+                  <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+                    <button
+                      className={tagFilter === null ? "btn-pill whitespace-nowrap text-xs" : "btn-pill-outline whitespace-nowrap text-xs"}
+                      onClick={() => {
+                        setTagFilterRaw(null);
+                        setShowTagFilterMenu(false);
+                      }}
+                      title="対応状況での絞り込みを解除します"
+                    >
+                      すべて
+                    </button>
+                    {boardTagOptions.map(([tag, count]) => (
+                      <button
+                        key={tag}
+                        className={tagFilter === tag ? "btn-pill whitespace-nowrap text-xs" : "btn-pill-outline whitespace-nowrap text-xs"}
+                        onClick={() => {
+                          setTagFilterRaw(tagFilter === tag ? null : tag);
+                          setShowTagFilterMenu(false);
+                        }}
+                        title={`対応状況が「${tag}」のToDoだけを盤面に出します`}
+                      >
+                        {tag}
+                        <span className="ml-1 tabular-nums opacity-60">{count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {hubMode && (
+              <>
+                <button
+                  className={timeAxisMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  onClick={() => setTimeAxisMode((v) => !v)}
+                  title="所定労働時間の目盛りを盤面に表示します"
+                >
+                  🕐 時間軸: {timeAxisMode ? "ON" : "OFF"}
+                </button>
+                <button
+                  className="btn-pill-outline text-xs"
+                  onClick={arrangeByTimeAxis}
+                  title="作業カードを開始時刻(未着手は予定時刻)に沿って横に並べ直します(ロック中は動きません)"
+                >
+                  📐 時間軸で並べる
+                </button>
+              </>
+            )}
+            <button className="btn-pill-outline text-xs" onClick={exportBoardImage} disabled={exportingImage} title="盤面全体を画像(.png)として保存します">
+              {exportingImage ? "書き出し中…" : "📷 画像として保存"}
+            </button>
+            {!fullscreen && (
+              <>
+                {/* お気に入りを全部並べると、その数だけこの行が伸びて盤面が下がってしまう。
+                    まず1つのボタンで受けて、選び方(お気に入り/マスタ/自由入力)は中で選ばせる */}
+                <button className="btn-pill-outline text-xs" onClick={() => setShowAddWork(true)}>
+                  ＋ 作業を追加
+                </button>
+                <button
+                  className={`${showCompletedProjectStages ? "btn-pill" : "btn-pill-outline"} text-xs`}
+                  onClick={() => setShowCompletedProjectStagesStr(showCompletedProjectStages ? "false" : "true")}
+                  title="案件カードで、完了済みの段階も残す(打ち消し線)か隠すか。案件タブの同じ設定と連動します"
+                  aria-pressed={showCompletedProjectStages}
+                >
+                  🏁 完了済みの段階: {showCompletedProjectStages ? "表示" : "非表示"}
+                </button>
+                <button
+                  className={`${tasksOutside ? "btn-pill" : "btn-pill-outline"} text-xs`}
+                  onClick={() => setTasksOutsideStr(tasksOutside ? "false" : "true")}
+                  title="本日の作業カードを、盤面の中ではなく盤面の外に横一列で並べます"
+                  aria-pressed={tasksOutside}
+                >
+                  🗂 作業を外に出す: {tasksOutside ? "ON" : "OFF"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
       {viewMode !== "board" ? (
         <AltBoardView
@@ -1867,328 +2223,6 @@ export default function UnifiedBoardSection({
         />
       ) : (
         <>
-      <div className="panel flex flex-wrap items-center gap-2 p-3">
-        <span className="text-xs text-cream/50">メモ帳:</span>
-        {(boards ?? []).map((b) => (
-          <button
-            key={b.id}
-            className={b.id === selectedBoardId ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setSelectedBoardId(b.id)}
-          >
-            {b.title}
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-2">
-          <button className="btn-pill-outline px-2 py-1 text-xs" onClick={() => setZoom(zoom - 0.1)}>
-            −
-          </button>
-          <span className="w-12 text-center text-xs tabular-nums text-cream/60">{Math.round(zoom * 100)}%</span>
-          <button className="btn-pill-outline px-2 py-1 text-xs" onClick={() => setZoom(zoom + 0.1)}>
-            +
-          </button>
-          <button
-            className="btn-pill-outline px-2 py-1 text-xs"
-            onClick={() => setZoomStr(String(fitZoom))}
-            title={`ボード全体の幅(${MEMO_BOARD_WIDTH}px)を画面に収める倍率にします`}
-          >
-            幅に合わせる
-          </button>
-          <button
-            className={fullscreen ? "btn-pill px-2 py-1 text-xs" : "btn-pill-outline px-2 py-1 text-xs"}
-            onClick={() => setFullscreen((v) => !v)}
-            title={fullscreen ? "全画面表示を終了します(Escでも終了できます)" : "タブ列などを隠し、盤面を画面いっぱいに表示します"}
-          >
-            {fullscreen ? "✕ 全画面終了" : "⛶ 全画面"}
-          </button>
-          <button
-            className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80"
-            onClick={() => setShowDisplaySettings((v) => !v)}
-          >
-            {showDisplaySettings ? "▲ 表示設定を閉じる" : "▼ 表示設定"}
-          </button>
-        </div>
-      </div>
-      {/* ボードの地の模様。一度決めたらもう触らない表示設定なので、盤面より先に
-          常時1行を占領しないよう既定では畳んでおく */}
-      {showDisplaySettings && (
-      <div className="panel flex flex-wrap items-center gap-2 p-3">
-        <span className="text-xs text-cream/50">背景:</span>
-        <div className="relative">
-          <button
-            className={showBackgroundMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowBackgroundMenu((v) => !v)}
-          >
-            {BOARD_BACKGROUND_LABELS[background]} ▾
-          </button>
-          {showBackgroundMenu && (
-            <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
-              {BOARD_BACKGROUND_KINDS.map((kind) => (
-                <button
-                  key={kind}
-                  className={
-                    background === kind
-                      ? "btn-pill whitespace-nowrap text-xs"
-                      : "btn-pill-outline whitespace-nowrap text-xs"
-                  }
-                  onClick={() => {
-                    setBackgroundStr(kind);
-                    setShowBackgroundMenu(false);
-                  }}
-                >
-                  {BOARD_BACKGROUND_LABELS[kind]}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-      )}
-      {/* 書き込みの道具。付箋・図形・スタンプは「置いたら終わり」の一発アクションなので
-          「＋ 追加」1つのボタンにまとめる。手書き・消しゴムは持続するモードの切り替えなので
-          現在の状態が常に見えるよう、別枠のトグルボタンのまま残す */}
-      <div className="panel flex flex-wrap items-center gap-2 p-3">
-        <div className="relative">
-          <button
-            className={showAddMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowAddMenu((v) => !v)}
-          >
-            ＋ 追加 ▾
-          </button>
-          {showAddMenu && (
-            <div className="absolute left-0 top-full z-10 mt-1 w-64 space-y-2 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
-              <button
-                className="btn-pill-outline w-full whitespace-nowrap text-xs"
-                onClick={() => {
-                  addNote();
-                  setShowAddMenu(false);
-                }}
-              >
-                ＋ 付箋
-              </button>
-              <div>
-                <p className="mb-1 text-[10px] text-cream/40">図形</p>
-                <div className="flex flex-wrap gap-1">
-                  <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("rect")}>
-                    ▭ 四角
-                  </button>
-                  <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("circle")}>
-                    ○ 円
-                  </button>
-                  <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("line")}>
-                    ─ 線
-                  </button>
-                  <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("arrow")}>
-                    → 矢印
-                  </button>
-                </div>
-              </div>
-              <div>
-                <p className="mb-1 text-[10px] text-cream/40" title="対応状況などの一言スタンプを、付箋やToDo・案件などに重ねてくっ付けられます">
-                  スタンプ
-                </p>
-                {stampPresets.length > 0 && (
-                  <div className="mb-1 flex flex-wrap gap-1">
-                    {/* 並び順=優先度(先頭ほど高い)なので、上位1/3は強調・下位1/3は控えめにして、
-                        文字を読まなくても優先度の高さが一目で分かるようにする */}
-                    {stampPresets.map((preset, i) => {
-                      const total = stampPresets.length;
-                      const highPriority = i < total / 3;
-                      const lowPriority = i >= total - total / 3 && total > 2;
-                      return (
-                        <button
-                          key={preset}
-                          className={`whitespace-nowrap text-xs ${
-                            highPriority
-                              ? "btn-pill-outline border-alert/60 font-bold text-cream"
-                              : lowPriority
-                                ? "btn-pill-outline text-cream/40"
-                                : "btn-pill-outline"
-                          }`}
-                          onClick={() => addStamp(preset)}
-                        >
-                          {preset}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="flex gap-1">
-                  <input
-                    value={customStampText}
-                    onChange={(e) => setCustomStampText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addStamp(customStampText);
-                    }}
-                    placeholder="一言を入力"
-                    className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
-                  />
-                  <button className="btn-pill-outline shrink-0 text-xs" onClick={() => addStamp(customStampText)}>
-                    追加
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-        <button className={penMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={togglePen}>
-          ✏️ 手書き: {penMode ? "ON" : "OFF"}
-        </button>
-        <button className={eraseMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={toggleErase}>
-          🧹 消しゴム: {eraseMode ? "ON" : "OFF"}
-        </button>
-        {penMode && (
-          <>
-            {MEMO_PEN_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => setPenColor(c)}
-                className={`h-6 w-6 rounded-full border-2 ${penColor === c ? "border-cream" : "border-transparent"}`}
-                style={{ backgroundColor: c }}
-                aria-label={`ペンの色を${c}にする`}
-              />
-            ))}
-            <input
-              type="range"
-              min={1}
-              max={12}
-              value={penWidth}
-              onChange={(e) => setPenWidth(Number(e.target.value))}
-              className="w-24"
-              aria-label="ペンの太さ"
-            />
-            <span className="text-xs tabular-nums text-cream/50">{penWidth}px</span>
-          </>
-        )}
-        {(strokes ?? []).length > 0 && (
-          <button className="btn-pill-outline text-xs text-alert" onClick={clearStrokes}>
-            手書きを全消去
-          </button>
-        )}
-        <button
-          className={showPalette ? "btn-pill ml-auto text-xs" : "btn-pill-outline ml-auto text-xs"}
-          onClick={() => setShowPalette((v) => !v)}
-        >
-          🗂 一覧から置く（ToDo {unplacedTodos.length} / 案件 {unplacedProjects.length}）
-        </button>
-      </div>
-
-      {/* 検索・整列・選択操作。件名/本文/ラベルで探して目立たせたり、散らかった配置を
-          グリッド状に並べ直したりする。複数選択はカードをShift+クリック、または
-          何もない盤面をドラッグして範囲選択する */}
-      <div className="panel flex flex-wrap items-center gap-2 p-3">
-        <input
-          value={boardSearchQuery}
-          onChange={(e) => setBoardSearchQuery(e.target.value)}
-          placeholder="🔍 件名・本文・ラベルで検索"
-          className="w-56 rounded-lg border border-cream/20 bg-ink px-3 py-1.5 text-xs text-cream"
-        />
-        {boardSearchActive && (
-          <>
-            <span className="text-xs text-cream/50">{matchingIds?.size ?? 0}件ヒット</span>
-            <button className="btn-pill-outline text-xs" onClick={() => setBoardSearchQuery("")}>
-              クリア
-            </button>
-          </>
-        )}
-        <div className="relative">
-          <button
-            className={showAlignMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowAlignMenu((v) => !v)}
-            title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)"
-          >
-            🧹 整列 ▾
-          </button>
-          {showAlignMenu && (
-            <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
-              <button
-                className="btn-pill-outline whitespace-nowrap text-xs"
-                onClick={() => {
-                  alignBoardItems("tag");
-                  setShowAlignMenu(false);
-                }}
-              >
-                対応状況順
-              </button>
-              <button
-                className="btn-pill-outline whitespace-nowrap text-xs"
-                onClick={() => {
-                  alignBoardItems("due");
-                  setShowAlignMenu(false);
-                }}
-              >
-                期日順
-              </button>
-            </div>
-          )}
-        </div>
-        {boardTagOptions.length > 0 && (
-          <div className="relative border-l border-cream/15 pl-2">
-            <button
-              className={showTagFilterMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setShowTagFilterMenu((v) => !v)}
-            >
-              対応状況: {tagFilter ?? "すべて"} ▾
-            </button>
-            {showTagFilterMenu && (
-              <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
-                <button
-                  className={tagFilter === null ? "btn-pill whitespace-nowrap text-xs" : "btn-pill-outline whitespace-nowrap text-xs"}
-                  onClick={() => {
-                    setTagFilterRaw(null);
-                    setShowTagFilterMenu(false);
-                  }}
-                  title="対応状況での絞り込みを解除します"
-                >
-                  すべて
-                </button>
-                {boardTagOptions.map(([tag, count]) => (
-                  <button
-                    key={tag}
-                    className={tagFilter === tag ? "btn-pill whitespace-nowrap text-xs" : "btn-pill-outline whitespace-nowrap text-xs"}
-                    onClick={() => {
-                      setTagFilterRaw(tagFilter === tag ? null : tag);
-                      setShowTagFilterMenu(false);
-                    }}
-                    title={`対応状況が「${tag}」のToDoだけを盤面に出します`}
-                  >
-                    {tag}
-                    <span className="ml-1 tabular-nums opacity-60">{count}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {hubMode && (
-          <>
-            <button
-              className={timeAxisMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setTimeAxisMode((v) => !v)}
-              title="所定労働時間の目盛りを盤面に表示します"
-            >
-              🕐 時間軸: {timeAxisMode ? "ON" : "OFF"}
-            </button>
-            <button
-              className="btn-pill-outline text-xs"
-              onClick={arrangeByTimeAxis}
-              title="作業カードを開始時刻(未着手は予定時刻)に沿って横に並べ直します(ロック中は動きません)"
-            >
-              📐 時間軸で並べる
-            </button>
-          </>
-        )}
-        <button className="btn-pill-outline text-xs" onClick={exportBoardImage} disabled={exportingImage} title="盤面全体を画像(.png)として保存します">
-          {exportingImage ? "書き出し中…" : "📷 画像として保存"}
-        </button>
-        {selectedIds.size > 0 && (
-          <span className="ml-auto flex items-center gap-2 text-xs text-cream/60">
-            {selectedIds.size}件選択中(矢印キーで移動・Deleteで下げる/消す)
-            <button className="btn-pill-outline text-xs" onClick={() => setSelectedIds(new Set())}>
-              選択解除
-            </button>
-          </span>
-        )}
-      </div>
 
       {/* 一覧。まだ盤面に無いToDoと案件を並べ、押した順に空いている場所へ置いていく */}
       {showPalette && (
@@ -2279,31 +2313,6 @@ export default function UnifiedBoardSection({
         </div>
       )}
 
-      {!fullscreen && (
-        <div className="panel flex flex-wrap items-center gap-2 p-3">
-          {/* お気に入りを全部並べると、その数だけこの行が伸びて盤面が下がってしまう。
-              まず1つのボタンで受けて、選び方(お気に入り/マスタ/自由入力)は中で選ばせる */}
-          <button className="btn-pill-outline text-xs" onClick={() => setShowAddWork(true)}>
-            ＋ 作業を追加
-          </button>
-          <button
-            className={`${showCompletedProjectStages ? "btn-pill" : "btn-pill-outline"} ml-auto text-xs`}
-            onClick={() => setShowCompletedProjectStagesStr(showCompletedProjectStages ? "false" : "true")}
-            title="案件カードで、完了済みの段階も残す(打ち消し線)か隠すか。案件タブの同じ設定と連動します"
-            aria-pressed={showCompletedProjectStages}
-          >
-            🏁 完了済みの段階: {showCompletedProjectStages ? "表示" : "非表示"}
-          </button>
-          <button
-            className={`${tasksOutside ? "btn-pill" : "btn-pill-outline"} text-xs`}
-            onClick={() => setTasksOutsideStr(tasksOutside ? "false" : "true")}
-            title="本日の作業カードを、盤面の中ではなく盤面の外に横一列で並べます"
-            aria-pressed={tasksOutside}
-          >
-            🗂 作業を外に出す: {tasksOutside ? "ON" : "OFF"}
-          </button>
-        </div>
-      )}
 
       {/* 盤面の外に出した本日の作業。横一列に流し込み、入りきらない分は横スクロールする。
           盤面の自由配置とは別物なので、ドラッグでの移動や選択はしない */}
