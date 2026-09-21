@@ -13,6 +13,7 @@ import { baseAccumulatedMs } from "@/lib/tasks";
 import { generateReportText, downloadTextFile, computeDailyOverlayComparison } from "@/lib/report";
 import { generateWeeklyNarrative } from "@/lib/weeklyNarrative";
 import { computeTodoPeriodSummary, openTasksAsOf } from "@/lib/todoTrend";
+import { collectPeriodCompletions, completionLabel, hasAnyCompletion } from "@/lib/reportCompletions";
 import { exportElementToPdf } from "@/lib/pdfExport";
 import { recordsToIcs } from "@/lib/ics";
 import { dailyAvgPrecipProbability } from "@/lib/weather";
@@ -198,6 +199,11 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
       : [];
     const todoOpenAtEndList = range ? openTasksAsOf(todoTasks ?? [], range.end.getTime()) : [];
     const todoOpenAtStartList = range ? openTasksAsOf(todoTasks ?? [], range.start.getTime()) : [];
+    // 実際に終わったもの(案件の段階・ToDo・サブタスク)。件数の増減だけでは
+    // 報告に使えないため、名前で並べられるようにここで集めておく
+    const completions = range
+      ? collectPeriodCompletions(todoTasks ?? [], projects ?? [], range.start.getTime(), range.end.getTime())
+      : null;
 
     return {
       rangeLabel,
@@ -221,6 +227,7 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
       todoCompletedList,
       todoOpenAtEndList,
       todoOpenAtStartList,
+      completions,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, masterTasks, dailyTasks, todoTasks, projects, weatherForecasts, kind, afterHoursCutoff, standardDailySeconds, today]);
@@ -264,7 +271,16 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
 
   function download() {
     if (!records || !masterTasks) return;
-    const text = generateReportText(title, filter, records, masterTasks, afterHoursCutoff, note, todoTasks ?? []);
+    const text = generateReportText(
+      title,
+      filter,
+      records,
+      masterTasks,
+      afterHoursCutoff,
+      note,
+      todoTasks ?? [],
+      projects ?? []
+    );
     const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
     downloadTextFile(`report_${label}_${todayStr()}.txt`, text);
   }
@@ -322,6 +338,26 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
           `<li>${esc(a.category)} / ${esc(a.name)}: 想定${formatHms(a.estimatedSeconds)} → 平均${formatHms(a.avgSeconds)}（+${Math.round(a.overRatio * 100)}%）</li>`
       )
       .join("");
+    // 完了したもの(案件の段階・ToDo・サブタスク)。種類ごとに小見出しを付けて並べる
+    const completionsHtml = data.completions
+      ? [
+          data.completions.stages.length > 0
+            ? `<p><b>案件の段階（${data.completions.stages.length}）</b></p><ul>${data.completions.stages
+                .map((s) => `<li>${esc(s.projectTitle)} › ${esc(s.stageTitle)}</li>`)
+                .join("")}</ul>`
+            : "",
+          data.completions.todos.length > 0
+            ? `<p><b>ToDo（${data.completions.todos.length}）</b></p><ul>${data.completions.todos
+                .map((t) => `<li>${esc(completionLabel(t))}</li>`)
+                .join("")}</ul>`
+            : "",
+          data.completions.subtasks.length > 0
+            ? `<p><b>サブタスク（${data.completions.subtasks.length}）</b></p><ul>${data.completions.subtasks
+                .map((t) => `<li>${esc(completionLabel(t))}</li>`)
+                .join("")}</ul>`
+            : "",
+        ].join("")
+      : "";
     const html = `<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><title>${esc(title)} ${esc(data.rangeLabel)}</title>
 <style>
@@ -351,6 +387,7 @@ ${
       }${data.todoSummary.openAtEnd - data.todoSummary.openAtStart}）　新規${data.todoSummary.createdInPeriod}件・完了${data.todoSummary.completedInPeriod}件</p>`
     : ""
 }
+${data.completions && hasAnyCompletion(data.completions) ? `<h2>完了したこと</h2>${completionsHtml}` : ""}
 ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 </body></html>`;
     const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
@@ -771,6 +808,57 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                   {data.todoSummary.completedInPeriod}件
                 </button>
               </p>
+            </div>
+          )}
+
+          {/* 件数ではなく「何が終わったか」。そのまま報告の本文に写せるよう、
+              案件の段階・ToDo・サブタスクを名前で並べる */}
+          {data.completions && hasAnyCompletion(data.completions) && (
+            <div className="panel p-4">
+              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">✅ 完了したこと</h3>
+              <div className="space-y-3">
+                {data.completions.stages.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-bold text-cream/70">
+                      案件の段階（{data.completions.stages.length}）
+                    </p>
+                    <ul className="space-y-1">
+                      {data.completions.stages.map((s, i) => (
+                        <li key={`stage-${i}`} className="text-sm text-cream/85">
+                          <span className="text-cream/50">{s.projectTitle} ›</span> {s.stageTitle}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {data.completions.todos.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-bold text-cream/70">ToDo（{data.completions.todos.length}）</p>
+                    <ul className="space-y-1">
+                      {data.completions.todos.map((t, i) => (
+                        <li key={`todo-${i}`} className="text-sm text-cream/85">
+                          {t.title}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {data.completions.subtasks.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-bold text-cream/70">
+                      サブタスク（{data.completions.subtasks.length}）
+                    </p>
+                    <ul className="space-y-1">
+                      {data.completions.subtasks.map((t, i) => (
+                        <li key={`sub-${i}`} className="text-sm text-cream/85">
+                          {t.parentTitle && <span className="text-cream/50">{t.parentTitle} › </span>}
+                          {t.title}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
