@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
+import { useSetting } from "@/lib/settings";
 import { pickTodayHint } from "@/lib/todayHint";
 
 // 要注意リストタブにしか出ていなかった分析結果から、今この瞬間に効くものを1つだけ
 // 本日タブへ返す。出すのは常に1件で、該当が無ければ何も出さない
 export default function TodayHintPanel() {
+  const [showHintStr] = useSetting("today.showHint", "true");
+  const showHint = showHintStr === "true";
   const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -22,11 +25,12 @@ export default function TodayHintPanel() {
   }, []);
 
   const hint = useMemo(() => {
+    if (!showHint) return null;
     if (!records || !masterTasks || !conditionLogs) return null;
     return pickTodayHint({ records, masterTasks, conditionLogs, now: new Date() });
     // hourは「時間帯が変わったら選び直す」ためだけの依存
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, masterTasks, conditionLogs, hour]);
+  }, [showHint, records, masterTasks, conditionLogs, hour]);
 
   if (!hint) return null;
 

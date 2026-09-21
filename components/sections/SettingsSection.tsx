@@ -112,6 +112,10 @@ export default function SettingsSection() {
   const showNextMovePick = showNextMovePickStr === "true";
   const [showDailyChallengeStr, setShowDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
   const showDailyChallenge = showDailyChallengeStr === "true";
+  const [showTodayHintStr, setShowTodayHintStr] = useSetting("today.showHint", "true");
+  const showTodayHint = showTodayHintStr === "true";
+  const [showBackupNudgeStr, setShowBackupNudgeStr] = useSetting("backup.showNudge", "true");
+  const showBackupNudge = showBackupNudgeStr === "true";
   const [patternSuggestNotifyEnabledStr, setPatternSuggestNotifyEnabledStr] = useSetting(
     "notify.patternSuggestEnabled",
     "false"
@@ -1230,9 +1234,21 @@ export default function SettingsSection() {
           >
             デイリーチャレンジ: {showDailyChallenge ? "ON" : "OFF"}
           </button>
+          <button
+            className={showTodayHint ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowTodayHintStr(showTodayHint ? "false" : "true")}
+          >
+            今日効く助言: {showTodayHint ? "ON" : "OFF"}
+          </button>
+          <button
+            className={showBackupNudge ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowBackupNudgeStr(showBackupNudge ? "false" : "true")}
+          >
+            バックアップの催促: {showBackupNudge ? "ON" : "OFF"}
+          </button>
         </div>
         <p className="text-xs text-cream/50">
-          OFFにしたパネルは本日タブに表示されなくなります（記録や設定自体は消えません。自動配分はモード自体を「オフ」にしても止められますが、ここでOFFにするとパネルごと非表示にできます）。
+          OFFにしたパネルは本日タブに表示されなくなります（記録や設定自体は消えません。自動配分はモード自体を「オフ」にしても止められますが、ここでOFFにするとパネルごと非表示にできます）。「今日効く助言」は要注意リストの分析から今の時間帯に効くものを1件だけ出すもので、OFFにしても要注意リストタブでは今までどおり見られます。「バックアップの催促」をOFFにすると、長く書き出していなくても本日タブでは報せません（このタブの「データのバックアップ」からはいつでも書き出せます）。
         </p>
         <div className="border-t border-cream/10 pt-3">
           <button

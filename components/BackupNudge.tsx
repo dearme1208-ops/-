@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { daysSinceLastBackup } from "@/lib/autoBackup";
 import { canShareBackupFile, downloadBackupFile, shareBackupFile } from "@/lib/backupFile";
+import { useSetting } from "@/lib/settings";
 import { showUndoToast } from "@/lib/toast";
 
 // 自動バックアップはフォルダを選べる環境(ほぼPCのChrome系)でしか動かないため、
@@ -11,6 +12,8 @@ import { showUndoToast } from "@/lib/toast";
 const NUDGE_AFTER_DAYS = 14;
 
 export default function BackupNudge() {
+  const [showNudgeStr] = useSetting("backup.showNudge", "true");
+  const showNudge = showNudgeStr === "true";
   // undefined = まだ読んでいない(localStorageは描画後にしか触れない)
   const [days, setDays] = useState<number | null | undefined>(undefined);
   const [canShare, setCanShare] = useState(false);
@@ -21,6 +24,7 @@ export default function BackupNudge() {
     setCanShare(canShareBackupFile());
   }, []);
 
+  if (!showNudge) return null;
   if (days === undefined) return null;
   if (days !== null && days < NUDGE_AFTER_DAYS) return null;
 
