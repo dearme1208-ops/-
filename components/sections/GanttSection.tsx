@@ -134,6 +134,10 @@ export default function GanttSection() {
   const [autoFitOnOpenStr, setAutoFitOnOpenStr] = useSetting("gantt.autoFitOnOpen", "false");
   const autoFitOnOpen = autoFitOnOpenStr === "true";
   const autoFitDateRef = useRef<string | null>(null);
+  // 初期表示位置・表示開始時刻・重ね方などは「一度決めたらもう触らない」表示設定なので、
+  // 日付・表示モード・ズームより下にまとめ、既定では畳んでおく(毎回全部展開されると
+  // 肝心のチャートに辿り着くまでの行数が多くなりすぎるため)
+  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
   const [stackBarsStr, setStackBarsStr] = useSetting("gantt.stackBars", "false");
   const [compactViewStr, setCompactViewStr] = useSetting("gantt.compactView", "false");
   const [groupModeStr, setGroupModeStr] = useSetting("gantt.groupMode", "detail");
@@ -711,9 +715,17 @@ export default function GanttSection() {
             </button>
           </div>
         )}
+        {viewMode === "day" && (
+          <button
+            className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80"
+            onClick={() => setShowDisplaySettings((v) => !v)}
+          >
+            {showDisplaySettings ? "▲ 表示設定を閉じる" : "▼ 表示設定"}
+          </button>
+        )}
       </div>
 
-      {viewMode === "day" && (
+      {viewMode === "day" && showDisplaySettings && (
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">初期表示位置</label>

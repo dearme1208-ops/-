@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
 import { readBootSnapshot, type BootSnapshot } from "./boot";
@@ -77,4 +77,30 @@ export function useDraftSetting(key: string, defaultValue: string): [string, (va
   }
 
   return [draft, setDraftValue];
+}
+
+// 折りたたみパネルの開閉状態(キー→畳んでいるか)をDBへ永続化する版。
+// useState<Record<string, boolean>>({})の代わりにこれを使うだけで、次回そのタブを
+// 開いたときも畳んだ状態が残る(TodayStatusPanelの1枚版の複数パネル版)。
+// setter は useState と同じ関数更新形("(prev) => next")も受け取れるので、
+// 既存のsetCollapsed((c) => ({ ...c, [key]: !c[key] }))呼び出し側はそのまま使い回せる
+export function useCollapsedPanels(
+  settingKey: string,
+  defaultCollapsed: Record<string, boolean> = {}
+): [Record<string, boolean>, (updater: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void] {
+  const [json, setJson] = useSetting(settingKey, JSON.stringify(defaultCollapsed));
+  const collapsed = useMemo<Record<string, boolean>>(() => {
+    try {
+      const obj = JSON.parse(json);
+      return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : defaultCollapsed;
+    } catch {
+      return defaultCollapsed;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [json]);
+  function setCollapsed(updater: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) {
+    const next = typeof updater === "function" ? updater(collapsed) : updater;
+    setJson(JSON.stringify(next));
+  }
+  return [collapsed, setCollapsed];
 }

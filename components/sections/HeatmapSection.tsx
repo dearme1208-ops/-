@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
@@ -19,6 +19,44 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "total", label: "合計時間順" },
   { key: "count", label: "実績件数順" },
 ];
+
+// 横スクロールできる表の右端が画面外に隠れていると、そこに続きがあると
+// 気づいてもらえないことがあるため、まだ右にスクロールできる間だけ右端を
+// 薄くフェードさせて「まだ続きがある」ことを示す(最後まで見たら自然に消える)
+function ScrollFadeHint({ children }: { children: React.ReactNode }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function update() {
+      if (!el) return;
+      setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 4);
+    }
+    update();
+    el.addEventListener("scroll", update);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  return (
+    <div className="relative">
+      <div ref={scrollRef} className="panel overflow-x-auto p-4">
+        {children}
+      </div>
+      {canScrollRight && (
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-2xl bg-gradient-to-l from-panel to-transparent" />
+      )}
+    </div>
+  );
+}
 
 export default function HeatmapSection() {
   const [viewMode, setViewMode] = useState<ViewMode>("category");
@@ -146,7 +184,7 @@ export default function HeatmapSection() {
       )}
 
       {viewMode === "hour" && (
-        <div className="panel overflow-x-auto p-4">
+        <ScrollFadeHint>
           <table className="w-full min-w-[560px] border-separate border-spacing-1 text-sm">
             <thead>
               <tr>
@@ -203,11 +241,11 @@ export default function HeatmapSection() {
               </button>
             </div>
           )}
-        </div>
+        </ScrollFadeHint>
       )}
 
       {viewMode === "calendar" && (
-        <div className="panel overflow-x-auto p-4">
+        <ScrollFadeHint>
           <div className="inline-flex gap-[3px]">
             {calendarByWeek.map((week, wi) => (
               <div key={wi} className="flex flex-col gap-[3px]">
@@ -238,11 +276,11 @@ export default function HeatmapSection() {
             ))}
             多い
           </div>
-        </div>
+        </ScrollFadeHint>
       )}
 
       {viewMode === "category" && (
-      <div className="panel overflow-x-auto p-4">
+      <ScrollFadeHint>
         <table className="w-full min-w-[640px] border-separate border-spacing-1 text-sm">
           <thead>
             <tr>
@@ -285,7 +323,7 @@ export default function HeatmapSection() {
           </p>
         )}
         {categories.length === 0 && <p className="py-6 text-sm text-cream/50">データがありません。</p>}
-      </div>
+      </ScrollFadeHint>
       )}
     </div>
   );

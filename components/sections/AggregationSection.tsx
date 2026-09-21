@@ -22,7 +22,7 @@ import { computeSwitchCostAnalysis } from "@/lib/switchcost";
 import { computeCategoryChain } from "@/lib/categoryChain";
 import { computeTimeByTag } from "@/lib/tags";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
-import { useSetting } from "@/lib/settings";
+import { useCollapsedPanels, useSetting } from "@/lib/settings";
 import { appTitle, useVisualMode } from "@/lib/theme";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
@@ -55,7 +55,9 @@ export default function AggregationSection() {
   const [period, setPeriod] = useState<PeriodType>("all");
   const [fiscalYear, setFiscalYear] = useState(() => currentFiscalYear());
   const [sortBy, setSortBy] = useState<SortMetric>("total");
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // 折りたたみは次回もそのまま残す(タブを再訪するたびに全パネルが展開に
+  // 戻ってしまうと、興味のない集計まで毎回スクロールで通過することになるため)
+  const [collapsed, setCollapsed] = useCollapsedPanels("aggregation.collapsedPanels");
   const [trendRow, setTrendRow] = useState<AggregateRow | null>(null);
   const [totalTrendGranularity, setTotalTrendGranularity] = useState<TrendGranularity>("half");
   const [totalTrendChartType, setTotalTrendChartType] = useState<"bar" | "line">("bar");

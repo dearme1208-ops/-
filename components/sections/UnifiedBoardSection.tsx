@@ -1229,6 +1229,11 @@ export default function UnifiedBoardSection({
   }
   const [customStampText, setCustomStampText] = useState("");
   const [showBackgroundMenu, setShowBackgroundMenu] = useState(false);
+  // 背景の模様は一度決めたらもう触らない表示設定なので、盤面より先に常時1行を
+  // 占領しないよう既定では畳んでおく
+  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
+  // 使い方の説明も常時1行を占領するほどではないため、必要な時だけ開けるようにする
+  const [showBoardHelp, setShowBoardHelp] = useState(false);
   const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
   const [showAlignMenu, setShowAlignMenu] = useState(false);
 
@@ -1821,15 +1826,31 @@ export default function UnifiedBoardSection({
     <div className={fullscreen ? "fixed inset-0 z-50 flex flex-col gap-3 overflow-y-auto bg-ink p-3" : "space-y-3"}>
       <div className="panel flex flex-wrap items-center gap-2 p-3">
         <span className="text-xs text-cream/50">表示:</span>
-        {BOARD_VIEW_MODES.map((m) => (
-          <button
-            key={m.key}
-            className={viewMode === m.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setViewModeStr(m.key)}
-          >
-            {m.label}
-          </button>
-        ))}
+        {/* 11択のボタン列は狭い画面では何行にも折り返して盤面より先に場所を取ってしまうため、
+            狭い画面(smブレークポイント未満)だけ1つのドロップダウンに差し替える。
+            選んでいる状態(viewMode)は共通のsettingそのものなので、どちらで切り替えても揃う */}
+        <select
+          value={viewMode}
+          onChange={(e) => setViewModeStr(e.target.value as BoardViewMode)}
+          className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream sm:hidden"
+        >
+          {BOARD_VIEW_MODES.map((m) => (
+            <option key={m.key} value={m.key}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+        <div className="hidden flex-wrap items-center gap-2 sm:flex">
+          {BOARD_VIEW_MODES.map((m) => (
+            <button
+              key={m.key}
+              className={viewMode === m.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setViewModeStr(m.key)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
       </div>
       {viewMode !== "board" ? (
         <AltBoardView
@@ -1879,10 +1900,17 @@ export default function UnifiedBoardSection({
           >
             {fullscreen ? "✕ 全画面終了" : "⛶ 全画面"}
           </button>
+          <button
+            className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80"
+            onClick={() => setShowDisplaySettings((v) => !v)}
+          >
+            {showDisplaySettings ? "▲ 表示設定を閉じる" : "▼ 表示設定"}
+          </button>
         </div>
       </div>
-      {/* ボードの地の模様。見た目だけの切り替えで、カードの位置や重なりには影響しない。
-          種類が8つあり常に並べると場所を取るため、ボタン1つ＋開閉するリストにまとめている */}
+      {/* ボードの地の模様。一度決めたらもう触らない表示設定なので、盤面より先に
+          常時1行を占領しないよう既定では畳んでおく */}
+      {showDisplaySettings && (
       <div className="panel flex flex-wrap items-center gap-2 p-3">
         <span className="text-xs text-cream/50">背景:</span>
         <div className="relative">
@@ -1914,6 +1942,7 @@ export default function UnifiedBoardSection({
           )}
         </div>
       </div>
+      )}
       {/* 書き込みの道具。付箋・図形・スタンプは「置いたら終わり」の一発アクションなので
           「＋ 追加」1つのボタンにまとめる。手書き・消しゴムは持続するモードの切り替えなので
           現在の状態が常に見えるよう、別枠のトグルボタンのまま残す */}
@@ -2226,17 +2255,28 @@ export default function UnifiedBoardSection({
         </div>
       )}
 
+      {/* 常時1行以上を占める案内文だったのを、必要な時だけ開ける「？」に変えた */}
       {!fullscreen && (
-        <p className="flex flex-wrap items-center gap-2 px-1 text-xs text-cream/50">
-          付箋と手書きはメモタブと同じものです（どちらで書いても両方に出ます）。ToDoは「一覧から置く」内で選んだ条件（既定はマイデイ）に当てはまるものが自動で並び、それ以外と案件は同じく「一覧から置く」から置きます。カードの
-          <span className="text-cream">✕</span>
-          でボードから下げられます（ToDoはマイデイからも外れます。項目自体は消えません）。
-          {onOpenTodo && (
-            <button className="text-cream underline decoration-dotted underline-offset-2 hover:text-cream/70" onClick={onOpenTodo}>
-              ToDoタブへ →
-            </button>
+        <div className="px-1">
+          <button
+            className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80"
+            onClick={() => setShowBoardHelp((v) => !v)}
+          >
+            {showBoardHelp ? "▲ 使い方を閉じる" : "？ 使い方"}
+          </button>
+          {showBoardHelp && (
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-cream/50">
+              付箋と手書きはメモタブと同じものです（どちらで書いても両方に出ます）。ToDoは「一覧から置く」内で選んだ条件（既定はマイデイ）に当てはまるものが自動で並び、それ以外と案件は同じく「一覧から置く」から置きます。カードの
+              <span className="text-cream">✕</span>
+              でボードから下げられます（ToDoはマイデイからも外れます。項目自体は消えません）。
+              {onOpenTodo && (
+                <button className="text-cream underline decoration-dotted underline-offset-2 hover:text-cream/70" onClick={onOpenTodo}>
+                  ToDoタブへ →
+                </button>
+              )}
+            </p>
           )}
-        </p>
+        </div>
       )}
 
       {!fullscreen && (

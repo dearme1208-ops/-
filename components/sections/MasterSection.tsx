@@ -15,7 +15,7 @@ import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/masterCsv";
 import { downloadTextFile } from "@/lib/report";
 import { computeStaleMasterTasks } from "@/lib/staleMaster";
-import { useSetting } from "@/lib/settings";
+import { useCollapsedPanels, useSetting } from "@/lib/settings";
 import { useVisualMode } from "@/lib/theme";
 import type { MasterTask, WorkRecord } from "@/lib/types";
 import { formatYen, computeCost, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
@@ -84,7 +84,9 @@ export default function MasterSection() {
   const { adventurerMode } = useVisualMode();
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // 折りたたみは次回もそのまま残す(大項目ごとに畳んでも、タブを再訪するたびに
+  // 全部展開に戻ってしまうと畳んだ意味が無いため)
+  const [collapsed, setCollapsed] = useCollapsedPanels("master.collapsedPanels");
   const [showNew, setShowNew] = useState(false);
   // 本日の作業タブの「簡易表示（アイコンのみ）」設定を、一覧の「+ 追加」ボタンでも共有する
   const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");

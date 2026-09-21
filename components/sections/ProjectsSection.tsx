@@ -138,8 +138,12 @@ export default function ProjectsSection({
     daysTaken: number;
     onTime: boolean;
   } | null>(null);
-  const [showForm, setShowForm] = useState(true);
+  // 案件一覧が主役のタブなのに、フォームが毎回一覧より先に全展開されると
+  // スクロール量が増えるだけなので、既定では畳んでおく
+  const [showForm, setShowForm] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
+  // 取引先の登録・編集も毎日は触らないため、フォームと同じく既定では畳んでおく
+  const [showClients, setShowClients] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -758,27 +762,39 @@ export default function ProjectsSection({
       </div>
 
       <div className="panel p-4">
-        <h2 className="mb-2 font-display text-lg font-bold">取引先</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          {(clients ?? []).map((c) => (
-            <span key={c.id} className="flex items-center gap-1 rounded-full border border-cream/20 px-3 py-1.5 text-sm">
-              {c.name}
-              <button onClick={() => renameClient(c)} className="text-cream/50 hover:text-cream" aria-label={`${c.name}の名前を変更`}>
-                ✎
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowClients((v) => !v)}
+        >
+          <h2 className="font-display text-lg font-bold">
+            取引先{(clients ?? []).length > 0 && `（${(clients ?? []).length}）`}
+          </h2>
+          <span className="text-cream/60">{showClients ? "▼" : "▶"}</span>
+        </button>
+        {showClients && (
+          <>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {(clients ?? []).map((c) => (
+                <span key={c.id} className="flex items-center gap-1 rounded-full border border-cream/20 px-3 py-1.5 text-sm">
+                  {c.name}
+                  <button onClick={() => renameClient(c)} className="text-cream/50 hover:text-cream" aria-label={`${c.name}の名前を変更`}>
+                    ✎
+                  </button>
+                  <button onClick={() => deleteClient(c)} className="text-cream/50 hover:text-alert" aria-label={`${c.name}を削除`}>
+                    ✕
+                  </button>
+                </span>
+              ))}
+              <button className="btn-pill-outline text-sm" onClick={addClient}>
+                + 取引先を追加
               </button>
-              <button onClick={() => deleteClient(c)} className="text-cream/50 hover:text-alert" aria-label={`${c.name}を削除`}>
-                ✕
-              </button>
-            </span>
-          ))}
-          <button className="btn-pill-outline text-sm" onClick={addClient}>
-            + 取引先を追加
-          </button>
-        </div>
-        {(clients ?? []).length === 0 && (
-          <p className="mt-2 text-xs text-cream/50">
-            取引先を登録すると、案件・ToDoにタグ付けして、取引先ごとの案件数や作業時間をまとめて見られるようになります。
-          </p>
+            </div>
+            {(clients ?? []).length === 0 && (
+              <p className="mt-2 text-xs text-cream/50">
+                取引先を登録すると、案件・ToDoにタグ付けして、取引先ごとの案件数や作業時間をまとめて見られるようになります。
+              </p>
+            )}
+          </>
         )}
       </div>
 
