@@ -95,6 +95,8 @@ import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
+import TodayHintPanel from "@/components/TodayHintPanel";
+import BackupNudge from "@/components/BackupNudge";
 import DayCardModal from "@/components/DayCardModal";
 import TodayMemoPanel from "@/components/TodayMemoPanel";
 import TodayHandoffPanel from "@/components/TodayHandoffPanel";
@@ -3124,6 +3126,8 @@ export default function TodaySection({
         />
       )}
       {showDailyChallenge && <DailyChallengePanel />}
+      <TodayHintPanel />
+      <BackupNudge />
       <TodayMemoPanel onOpenMemo={onOpenMemo} />
       {startedForceStopRanges.length > 0 && (
         <div className="panel space-y-2 p-4">

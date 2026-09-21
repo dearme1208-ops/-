@@ -7,14 +7,14 @@ import { useSetting } from "@/lib/settings";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib/todo";
 import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
-import { exportBackup, importBackup, type BackupFile } from "@/lib/backup";
+import { importBackup, type BackupFile } from "@/lib/backup";
+import { downloadBackupFile, shareBackupFile } from "@/lib/backupFile";
 import {
   chooseAutoBackupFolder,
   clearAutoBackupFolder,
   daysSinceLastBackup,
   getAutoBackupFolderName,
   isAutoBackupSupported,
-  markManualBackup,
   runAutoBackup,
 } from "@/lib/autoBackup";
 import { buildArchive, deleteArchivedRange } from "@/lib/archive";
@@ -419,11 +419,8 @@ export default function SettingsSection() {
   }, []);
 
   async function downloadBackup() {
-    const data = await exportBackup();
-    downloadTextFile(`koutei-hyo_backup_${todayStr()}.json`, JSON.stringify(data, null, 2));
-    markManualBackup();
+    setBackupStatus(await downloadBackupFile());
     setStaleBackupDays(daysSinceLastBackup());
-    setBackupStatus("バックアップをダウンロードしました。");
   }
 
   async function chooseAutoBackup() {
@@ -456,17 +453,9 @@ export default function SettingsSection() {
   // 移したい場合向け。OSの共有機能(AirDrop/近くのデバイス/Bluetooth等)経由でファイルを
   // 直接渡せるので、サーバーを介さず「今だけ・この2台だけ」で完結する
   async function shareBackup() {
-    const data = await exportBackup();
-    const file = new File([JSON.stringify(data, null, 2)], `koutei-hyo_backup_${todayStr()}.json`, {
-      type: "application/json",
-    });
-    if (typeof navigator === "undefined" || !navigator.share || !navigator.canShare?.({ files: [file] })) {
-      setBackupStatus("この端末・ブラウザは共有機能に対応していません。「バックアップをダウンロード」をご利用ください。");
-      return;
-    }
     try {
-      await navigator.share({ files: [file], title: "工程表バックアップ" });
-      setBackupStatus("共有しました。");
+      setBackupStatus(await shareBackupFile());
+      setStaleBackupDays(daysSinceLastBackup());
     } catch {
       // ユーザーがキャンセルした場合など。エラー表示は不要
     }
