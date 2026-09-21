@@ -192,6 +192,10 @@ export default function TodoSection({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [bottomViewBarStr] = useSetting("todo.bottomViewBar", "false");
   const bottomViewBar = bottomViewBarStr === "true";
+  // 本日の作業タブの「簡易表示（アイコンのみ）」と同じ設定を共有する。
+  // ToDoの「＋ 新しいリスト」もその方針に揃え、ONの間はアイコンだけにする
+  const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
+  const simpleButtons = simpleButtonsStr === "true";
   const [tabBarStyle] = useSetting("ui.bottomTabBarStyle", "pill");
   const [tabBarAdaptiveEmphasisStr] = useSetting("ui.bottomTabBarAdaptiveEmphasis", "false");
   const tabBarAdaptiveEmphasis = tabBarAdaptiveEmphasisStr === "true";
@@ -1260,6 +1264,15 @@ export default function TodoSection({
               ×
             </button>
           </div>
+        ) : simpleButtons ? (
+          <button
+            className="btn-pill-outline px-3 py-2 text-base"
+            onClick={() => setShowNewList(true)}
+            title="新しいリストを追加"
+            aria-label="新しいリストを追加"
+          >
+            ➕
+          </button>
         ) : (
           <button className="btn-pill-outline text-sm" onClick={() => setShowNewList(true)}>
             + 新しいリスト
