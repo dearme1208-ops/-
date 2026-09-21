@@ -38,7 +38,7 @@ function DayBar({ day, maxMs }: { day: DayFocus; maxMs: number }) {
   return (
     <div className="flex items-center gap-2">
       <span className="w-12 shrink-0 text-[10px] tabular-nums text-cream/40">{day.date.slice(5)}</span>
-      <div className="h-2.5 grow overflow-hidden rounded-full bg-cream/10">
+      <div className="progress-track h-2.5 grow overflow-hidden rounded-full bg-cream/10">
         <div className="h-full rounded-full bg-cream/25" style={{ width: `${width}%` }}>
           {/* 濃い部分が「25分以上続いた区間」。細切れの日は色が乗らない */}
           <div className="h-full rounded-full bg-alert/80" style={{ width: `${deepShare}%` }} />

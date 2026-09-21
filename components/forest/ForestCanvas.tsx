@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
   buildForestScene,
+  computeForestSeason,
   computeForestTimeBand,
   drawForestScene,
   type ForestScene,
+  type ForestSeason,
   type ForestTimeBand,
 } from "@/lib/forestScene";
 
@@ -19,10 +21,15 @@ import {
 export default function ForestCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [band, setBand] = useState<ForestTimeBand>(() => computeForestTimeBand(new Date().getHours()));
+  const [season, setSeason] = useState<ForestSeason>(() => computeForestSeason(new Date().getMonth() + 1));
 
-  // 時間帯(暁・昼・夕・夜)。日をまたいで開きっぱなしでも景色が変わるよう定期的に見直す
+  // 時間帯(暁・昼・夕・夜)と季節。日をまたいで開きっぱなしでも景色が変わるよう定期的に見直す
   useEffect(() => {
-    const tick = () => setBand(computeForestTimeBand(new Date().getHours()));
+    const tick = () => {
+      const now = new Date();
+      setBand(computeForestTimeBand(now.getHours()));
+      setSeason(computeForestSeason(now.getMonth() + 1));
+    };
     tick();
     const id = window.setInterval(tick, 5 * 60 * 1000);
     return () => window.clearInterval(id);
@@ -57,14 +64,17 @@ export default function ForestCanvas() {
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      scene = buildForestScene(w, h, dpr, band);
+      scene = buildForestScene(w, h, dpr, band, season);
     };
 
     const render = (t: number) => {
       if (!scene) return;
       const ax = pointerSeen ? px : 0.5 + Math.sin(t * 0.07) * 0.34;
       const ay = pointerSeen ? py : 0.5 + Math.sin(t * 0.045 + 1.2) * 0.18;
-      drawForestScene(ctx, scene, t, { px: ax, py: ay, still: reduced });
+      // 下へスクロールするほど視点が沈み、手前の木立がせり上がる。
+      // ヘッダーが画面から抜けるまでの短い間だけ効かせたいので、自身の高さで頭打ちにする
+      const scrolled = Math.min(1, window.scrollY / Math.max(1, cssH));
+      drawForestScene(ctx, scene, t, { px: ax, py: Math.min(1, ay + scrolled * 0.55), still: reduced });
     };
 
     const start = performance.now();
@@ -115,7 +125,7 @@ export default function ForestCanvas() {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pointermove", onPointer);
     };
-  }, [band]);
+  }, [band, season]);
 
   return (
     <canvas

@@ -759,6 +759,55 @@ html[data-high-contrast="true"] :focus-visible {
     border-bottom-right-radius: 14px;
   }
 
+  /* ダイアログの暗幕。森モードでは純黒ではなく「日が翳って森が暗くなる」体にして、
+     背後の緑をわずかに残したまま沈ませる(奥がぼやけるので手前のパネルも立つ) */
+  html[data-visual-mode="home"] .modal-scrim {
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgb(var(--accent-rgb) / 0.1), transparent 70%),
+      rgb(3 9 7 / 0.82);
+    backdrop-filter: blur(2px) saturate(0.85);
+  }
+
+  /* チェックボックスは、印が付くと葉が芽生える。OS既定の四角いチェックのままだと
+     ここだけ森の外の部品に見えるため、森モードでだけ描き替える */
+  html[data-visual-mode="home"] input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid rgb(var(--accent-rgb) / 0.45);
+    border-radius: 0.3rem 0.12rem 0.3rem 0.12rem;
+    background-color: rgb(var(--ink-rgb) / 0.7);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 78% 78%;
+    transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+  html[data-visual-mode="home"] input[type="checkbox"]:hover {
+    border-color: rgb(var(--accent-rgb) / 0.7);
+  }
+  html[data-visual-mode="home"] input[type="checkbox"]:checked {
+    border-color: rgb(var(--accent-rgb) / 0.75);
+    background-color: rgb(var(--accent-rgb) / 0.18);
+    box-shadow: 0 0 8px -2px rgb(var(--accent-rgb) / 0.6);
+    /* 一枚の葉(葉脈つき)。currentColorが使えないのでアクセントの緑を直に置く */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 4C11 4 4 9 4 17c0 1 .2 2 .5 3 .9-3.4 3.2-6.2 6.6-7.8-2.3 1.9-3.9 4.5-4.6 7.4C14 21 20 14.5 20 4z' fill='%237ab460'/%3E%3Cpath d='M19 5C15 9 11 13 6.5 19.5' stroke='%23dbe6d2' stroke-width='1.1' fill='none' stroke-linecap='round' opacity='.75'/%3E%3C/svg%3E");
+  }
+
+  /* 進捗バーの溝。素のグレーの帯だと森の中でここだけ工業製品に見えるので、
+     溝は樹皮、伸びていく部分は苔、という見立てにする(.hazard-bar-forestと同じ考え方) */
+  html[data-visual-mode="home"] .progress-track {
+    background-color: rgb(var(--forest-bark-rgb) / 0.55);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.45);
+  }
+  html[data-visual-mode="home"] .progress-track > * {
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--accent-rgb) / 0.85),
+      rgb(166 212 138) 55%,
+      rgb(var(--accent-rgb) / 0.9)
+    );
+    box-shadow: 0 0 10px -3px rgb(var(--accent-rgb) / 0.75);
+  }
+
   /* 画面全体に漂う胞子(綿毛)のCanvas。他テーマの透かしと同じ重ね方にして
      操作は妨げず、本文の可読性を落とさない薄さで描く */
   .forest-ambience {
@@ -769,6 +818,30 @@ html[data-high-contrast="true"] :focus-visible {
     height: 100%;
     pointer-events: none;
     opacity: 0.85;
+  }
+
+  /* 林床。ページの終わりに近づくと下端からせり上がり、「森の奥まで下りてきた」
+     ことを示す。fixedなので本文の高さには一切影響しない。
+     地面のシルエット・下草・きのこを1タイルに描き、横に繰り返して敷く */
+  .forest-floor {
+    position: fixed;
+    inset: auto 0 0 0;
+    height: 96px;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 600ms ease, transform 600ms ease;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='96' viewBox='0 0 320 96'%3E%3Cpath d='M0 62c24-6 40 4 62 2s34-10 58-8 40 10 66 7 42-11 66-8 44 9 68 5v38H0z' fill='%230c1a13'/%3E%3Cpath d='M0 74c30-5 52 5 84 3s52-9 86-6 56 8 88 4 44-4 62-6v27H0z' fill='%23081109'/%3E%3Cg fill='%237ab460' opacity='.5'%3E%3Cpath d='M40 66c-2-8 1-14 4-18-1 7 0 13 2 18zM46 66c2-7 6-11 10-13-4 4-6 8-7 13zM214 70c-2-7 0-13 3-17-1 6 0 11 1 17zM220 70c2-6 5-9 9-11-3 3-5 7-6 11z'/%3E%3C/g%3E%3Cg fill='%23a8584e' opacity='.75'%3E%3Cpath d='M128 78c0-6 5-10 11-10s11 4 11 10z'/%3E%3Crect x='136' y='78' width='6' height='9' rx='2' fill='%23d8c9a8'/%3E%3C/g%3E%3Cg fill='%23c08a4a' opacity='.6'%3E%3Cpath d='M268 82c0-4 3-7 7-7s7 3 7 7z'/%3E%3Crect x='273' y='82' width='4' height='6' rx='1.5' fill='%23e2d6ba'/%3E%3C/g%3E%3Cg fill='%23c08a4a' opacity='.45'%3E%3Cellipse cx='92' cy='84' rx='7' ry='3' transform='rotate(-16 92 84)'/%3E%3Cellipse cx='186' cy='88' rx='6' ry='2.6' transform='rotate(12 186 88)'/%3E%3Cellipse cx='300' cy='86' rx='7' ry='3' transform='rotate(-8 300 86)'/%3E%3C/g%3E%3C/svg%3E"),
+      linear-gradient(to top, rgb(var(--ink-rgb)) 18%, rgb(var(--ink-rgb) / 0.55) 55%, transparent);
+    background-repeat: repeat-x, no-repeat;
+    background-position: bottom center, bottom center;
+    background-size: 320px 96px, 100% 100%;
+  }
+  .forest-floor[data-near="true"] {
+    opacity: 1;
+    transform: translateY(0);
   }
 
   /* 原点モード: このアプリの原型である「工程表.xlsm」。Excelの作業ウィンドウそのままの

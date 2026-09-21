@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useVisualMode } from "@/lib/theme";
 import { mulberry32 } from "@/lib/forestScene";
 
@@ -15,6 +15,8 @@ interface Spore {
   as: number;
   phase: number;
   alpha: number;
+  /** 手前(1)か奥(0)か。スクロールに対する動きの大きさを変えて奥行きを出す */
+  depth: number;
 }
 
 // 画面全体にうっすら漂う胞子(綿毛)。ヘッダーの林から風が抜けてきた、という見立てで
@@ -23,6 +25,8 @@ interface Spore {
 export default function ForestAmbience() {
   const { homeMode } = useVisualMode();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // ページの終わりに近づいたか。近づいたら下端から林床がせり上がる
+  const [nearBottom, setNearBottom] = useState(false);
 
   useEffect(() => {
     if (!homeMode) return;
@@ -57,7 +61,16 @@ export default function ForestAmbience() {
         as: 0.12 + rand() * 0.28,
         phase: rand() * Math.PI * 2,
         alpha: 0.1 + rand() * 0.2,
+        depth: rand(),
       }));
+    };
+
+    // スクロール量。下へ進むほど手前の綿毛を大きく流し、奥はゆっくり動かすことで
+    // 「森の中を下りていく」奥行きを出す(rAFの中で読むと毎フレームのレイアウト
+    // 読み取りになるので、scrollイベント側で控えておく)
+    let scrollY = window.scrollY;
+    const onScroll = () => {
+      scrollY = window.scrollY;
     };
 
     const start = performance.now();
@@ -66,8 +79,10 @@ export default function ForestAmbience() {
       ctx.clearRect(0, 0, w, h);
       ctx.globalCompositeOperation = "lighter";
       for (const s of spores) {
-        // 上昇しつづけ、画面上端を抜けたら下から出し直す(剰余で位置を巻き戻す)
-        const y = h + s.r * 4 - ((s.y + t * s.vy) % (h + s.r * 8));
+        // 上昇しつづけ、画面上端を抜けたら下から出し直す(剰余で位置を巻き戻す)。
+        // スクロール量を足すことで、下へ進むほど手前の綿毛が速く後ろへ流れる
+        const parallax = scrollY * (0.05 + s.depth * 0.25);
+        const y = h + s.r * 4 - ((s.y + t * s.vy + parallax) % (h + s.r * 8));
         const x = s.x + Math.sin(t * s.as + s.phase) * s.ax;
         const pulse = 0.65 + 0.35 * Math.sin(t * s.as * 2.3 + s.phase);
         const g = ctx.createRadialGradient(x, y, 0, x, y, s.r * 4);
@@ -95,16 +110,43 @@ export default function ForestAmbience() {
     resize();
     play();
     window.addEventListener("resize", resize);
+    window.addEventListener("scroll", onScroll, { passive: true });
     document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
       stop();
       window.removeEventListener("resize", resize);
+      window.removeEventListener("scroll", onScroll);
       document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [homeMode]);
+
+  // 林床のせり上がりはCanvasと別に持つ。動きを止める設定でもここは単純なフェードなので、
+  // 「いちばん下まで来た」ことは同じように見せる
+  useEffect(() => {
+    if (!homeMode) return;
+    const update = () => {
+      const doc = document.documentElement;
+      // そもそもスクロールしない短いページでは「下りてきた」演出にならないので出さない
+      const scrollable = doc.scrollHeight > window.innerHeight + 240;
+      const remaining = doc.scrollHeight - (window.scrollY + window.innerHeight);
+      setNearBottom(scrollable && remaining < 140);
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
     };
   }, [homeMode]);
 
   if (!homeMode) return null;
 
-  return <canvas ref={canvasRef} className="forest-ambience" aria-hidden="true" />;
+  return (
+    <>
+      <canvas ref={canvasRef} className="forest-ambience" aria-hidden="true" />
+      <div className="forest-floor" data-near={nearBottom ? "true" : "false"} aria-hidden="true" />
+    </>
+  );
 }

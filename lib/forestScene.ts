@@ -9,6 +9,7 @@
 // 色数を増やさずに5層の前後関係が読み取れるようにしてある。
 
 export type ForestTimeBand = "dawn" | "day" | "dusk" | "night";
+export type ForestSeason = "spring" | "summer" | "autumn" | "winter";
 export type RGB = [number, number, number];
 
 export const rgba = (c: RGB, a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
@@ -21,12 +22,24 @@ export function computeForestTimeBand(hour: number): ForestTimeBand {
   return "night";
 }
 
+/** 実際の月(1〜12)から季節を決める。時間帯と掛け合わせて16通りの景色になる */
+export function computeForestSeason(month: number): ForestSeason {
+  if (month >= 3 && month <= 5) return "spring";
+  if (month >= 6 && month <= 8) return "summer";
+  if (month >= 9 && month <= 11) return "autumn";
+  return "winter";
+}
+
 export interface ForestPalette {
   skyTop: RGB;
   skyMid: RGB;
   skyBottom: RGB;
   haze: RGB;
   hazeAlpha: number;
+  /** 舞い落ちるものの色。季節で葉→花びら→紅葉→雪と変わる(未設定なら時間帯から決める) */
+  leafTint?: RGB;
+  /** 冬だけ、舞うものを葉ではなく雪片(丸)にする */
+  snow?: boolean;
   /** 遠景→近景の順に5色。遠いほど明るく(霞み)、近いほど暗く(影) */
   layers: [RGB, RGB, RGB, RGB, RGB];
   ray: RGB;
@@ -132,6 +145,102 @@ export const FOREST_PALETTES: Record<ForestTimeBand, ForestPalette> = {
   },
 };
 
+// 季節の補正。時間帯パレット(FOREST_PALETTES)を土台に、木立の色・舞うもの・霧・
+// 光芒・蛍の量だけを掛け合わせる。時間帯ごとに4枚のパレットを書き直すのではなく
+// 補正で乗せることで、「夏の夜」「冬の暁」のような組み合わせが自動で出来上がる
+interface SeasonModifier {
+  /** 木立の各層をこの色へ寄せる量(0〜1) */
+  layerTint: RGB;
+  layerMix: number;
+  /** 空をこの色へわずかに寄せる(冬の白み、秋の赤みなど) */
+  skyTint: RGB;
+  skyMix: number;
+  leafTint: RGB;
+  leafDensityMul: number;
+  mistAlphaMul: number;
+  rayAlphaMul: number;
+  fireflyDensityMul: number;
+  snow?: boolean;
+}
+
+export const FOREST_SEASON_MODIFIERS: Record<ForestSeason, SeasonModifier> = {
+  // 芽吹き。黄緑に寄せ、朝靄を濃くして「まだ冷たい空気」を残す
+  spring: {
+    layerTint: [124, 172, 104],
+    layerMix: 0.2,
+    skyTint: [186, 206, 186],
+    skyMix: 0.08,
+    leafTint: [176, 214, 132],
+    leafDensityMul: 1.1,
+    mistAlphaMul: 1.3,
+    rayAlphaMul: 1.1,
+    fireflyDensityMul: 0.7,
+  },
+  // 盛夏。葉が厚く濃くなり、木漏れ日が強く、夜は蛍が増える
+  summer: {
+    layerTint: [38, 84, 50],
+    layerMix: 0.18,
+    skyTint: [64, 118, 96],
+    skyMix: 0.08,
+    leafTint: [96, 152, 82],
+    leafDensityMul: 0.5,
+    mistAlphaMul: 0.8,
+    rayAlphaMul: 1.3,
+    fireflyDensityMul: 1.3,
+  },
+  // 紅葉。木立まで赤茶に寄せ、落ち葉をいちばん多くする
+  autumn: {
+    layerTint: [126, 88, 48],
+    layerMix: 0.28,
+    skyTint: [186, 126, 78],
+    skyMix: 0.1,
+    leafTint: [206, 124, 58],
+    leafDensityMul: 1.9,
+    mistAlphaMul: 1.0,
+    rayAlphaMul: 1.05,
+    fireflyDensityMul: 0.5,
+  },
+  // 落葉と雪。色味を抜いて青灰へ寄せ、舞うものを雪片に差し替える
+  winter: {
+    layerTint: [98, 112, 124],
+    layerMix: 0.26,
+    skyTint: [150, 170, 190],
+    skyMix: 0.14,
+    leafTint: [228, 240, 248],
+    leafDensityMul: 1.4,
+    mistAlphaMul: 1.35,
+    rayAlphaMul: 0.85,
+    fireflyDensityMul: 0.15,
+    snow: true,
+  },
+};
+
+const mixRGB = (a: RGB, b: RGB, amount: number): RGB => [
+  Math.round(a[0] + (b[0] - a[0]) * amount),
+  Math.round(a[1] + (b[1] - a[1]) * amount),
+  Math.round(a[2] + (b[2] - a[2]) * amount),
+];
+
+/** 時間帯のパレットに季節の補正を掛けた、実際に描画へ渡すパレット */
+export function resolveForestPalette(band: ForestTimeBand, season: ForestSeason): ForestPalette {
+  const base = FOREST_PALETTES[band];
+  const m = FOREST_SEASON_MODIFIERS[season];
+  const layers = base.layers.map((c) => mixRGB(c, m.layerTint, m.layerMix)) as ForestPalette["layers"];
+  return {
+    ...base,
+    skyTop: mixRGB(base.skyTop, m.skyTint, m.skyMix),
+    skyMid: mixRGB(base.skyMid, m.skyTint, m.skyMix),
+    skyBottom: mixRGB(base.skyBottom, m.skyTint, m.skyMix),
+    layers,
+    mistAlpha: base.mistAlpha * m.mistAlphaMul,
+    rayAlpha: base.rayAlpha * m.rayAlphaMul,
+    fireflyDensity: base.fireflyDensity * m.fireflyDensityMul,
+    leafDensity: base.leafDensity * m.leafDensityMul,
+    leafTint: m.leafTint,
+    snow: m.snow,
+  };
+}
+
 /** 蛍の発光色。テーマのアクセント(新緑)より一段明るい、生物発光らしい黄緑 */
 const FIREFLY_CORE: RGB = [214, 255, 176];
 const FIREFLY_GLOW: RGB = [150, 235, 120];
@@ -204,6 +313,9 @@ export interface ForestScene {
   h: number;
   dpr: number;
   band: ForestTimeBand;
+  season: ForestSeason;
+  /** 時間帯×季節を解決済みのパレット。毎フレーム作り直さずここから読む */
+  palette: ForestPalette;
   layers: BakedLayer[];
   fireflies: Firefly[];
   leaves: Leaf[];
@@ -327,8 +439,15 @@ function bakeLayer(
   };
 }
 
-export function buildForestScene(w: number, h: number, dpr: number, band: ForestTimeBand, seed = 20260919): ForestScene {
-  const palette = FOREST_PALETTES[band];
+export function buildForestScene(
+  w: number,
+  h: number,
+  dpr: number,
+  band: ForestTimeBand,
+  season: ForestSeason = "summer",
+  seed = 20260919
+): ForestScene {
+  const palette = resolveForestPalette(band, season);
   const rand = mulberry32(seed);
 
   const layers = LAYER_CONFIGS.map((cfg, i) => bakeLayer(w, h, dpr, cfg, palette.layers[i], rand, i));
@@ -373,7 +492,7 @@ export function buildForestScene(w: number, h: number, dpr: number, band: Forest
     r: h * (0.05 + rand() * 0.17),
   }));
 
-  return { w, h, dpr, band, layers, fireflies, leaves, stars, canopy };
+  return { w, h, dpr, band, season, palette, layers, fireflies, leaves, stars, canopy };
 }
 
 function drawSky(ctx: CanvasRenderingContext2D, w: number, h: number, p: ForestPalette) {
@@ -527,14 +646,32 @@ function drawFireflies(ctx: CanvasRenderingContext2D, flies: Firefly[], t: numbe
   ctx.restore();
 }
 
-function drawLeaves(ctx: CanvasRenderingContext2D, leaves: Leaf[], t: number, h: number, band: ForestTimeBand) {
-  const tint: RGB = band === "day" ? [120, 168, 96] : band === "night" ? [46, 74, 56] : [168, 124, 70];
+function drawLeaves(
+  ctx: CanvasRenderingContext2D,
+  leaves: Leaf[],
+  t: number,
+  h: number,
+  band: ForestTimeBand,
+  palette: ForestPalette
+) {
+  // 季節の色が決まっていればそれを使い、無ければ時間帯から決める(従来の挙動)
+  const tint: RGB =
+    palette.leafTint ?? (band === "day" ? [120, 168, 96] : band === "night" ? [46, 74, 56] : [168, 124, 70]);
   for (const l of leaves) {
     const y = (l.y + t * l.fall) % (h + 40);
     const x = l.x + Math.sin(t * 0.55 + l.swayPhase) * l.swayAmp;
     const rot = l.rot + t * l.rotSpeed;
     ctx.save();
     ctx.translate(x, y - 20);
+    if (palette.snow) {
+      // 雪片は向きを持たないので回さず、粒のまま落とす
+      ctx.fillStyle = rgba(tint, 0.5 + l.tone * 0.4);
+      ctx.beginPath();
+      ctx.arc(0, 0, l.size * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      continue;
+    }
     ctx.rotate(rot);
     // 見る角度で厚みが変わるよう、回転に合わせて横幅を潰す
     ctx.scale(0.45 + 0.55 * Math.abs(Math.cos(rot * 0.8)), 1);
@@ -597,7 +734,7 @@ export function drawForestScene(
   t: number,
   opts: DrawOptions
 ) {
-  const p = FOREST_PALETTES[scene.band];
+  const p = scene.palette;
   const { w, h } = scene;
   const ox = (opts.px - 0.5) * 2;
   const oy = (opts.py - 0.5) * 2;
@@ -625,7 +762,7 @@ export function drawForestScene(
   if (scene.fireflies.length > 0) drawFireflies(ctx, scene.fireflies, t, w, h);
   blit(3);
   drawMist(ctx, w, h, p, t, 1);
-  if (scene.leaves.length > 0) drawLeaves(ctx, scene.leaves, t, h, scene.band);
+  if (scene.leaves.length > 0) drawLeaves(ctx, scene.leaves, t, h, scene.band, p);
   blit(4);
   drawCanopy(ctx, scene, p, t);
   drawVignette(ctx, w, h);

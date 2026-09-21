@@ -18,7 +18,7 @@ export default function Modal({
 }) {
   const maxWidthClass = size === "xl" ? "max-w-6xl" : size === "lg" ? "max-w-2xl" : "max-w-md";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className={`panel flex max-h-[90vh] w-full ${maxWidthClass} flex-col p-5`}>
         <div className="mb-3 flex shrink-0 items-center justify-between">
           <h3 className="font-display text-lg font-bold text-cream">{title}</h3>

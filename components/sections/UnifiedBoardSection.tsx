@@ -2780,7 +2780,7 @@ export default function UnifiedBoardSection({
                       : `${formatMsClock(-landing.diffMs)} 余りそう`}
                   </p>
                   {/* 残り時間の帯の上に、必要な時間を重ねる。はみ出した分が超過 */}
-                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-cream/10">
+                  <div className="progress-track mt-1 h-2 w-full overflow-hidden rounded-full bg-cream/10">
                     <div
                       className={`h-full rounded-full ${landing.diffMs > 0 ? "bg-alert/70" : "bg-cream/50"}`}
                       style={{
@@ -2989,7 +2989,7 @@ export default function UnifiedBoardSection({
                   {!hubCollapsed.has("timeuse") && (
                     <div className="mt-1 space-y-1">
                       {/* 1本の帯をカテゴリで割る。割合がそのまま幅になる */}
-                      <div className="flex h-2 w-full overflow-hidden rounded-full bg-cream/10">
+                      <div className="progress-track flex h-2 w-full overflow-hidden rounded-full bg-cream/10">
                         {timeByCategory.map((r, i) => (
                           <span
                             key={r.name}
@@ -5058,7 +5058,7 @@ function ProjectCard({
         )}
       </div>
       {progress !== null && (
-        <div className="h-1 w-full shrink-0 overflow-hidden rounded-full bg-cream/10">
+        <div className="progress-track h-1 w-full shrink-0 overflow-hidden rounded-full bg-cream/10">
           <div className="h-full rounded-full bg-cream/50" style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
       )}

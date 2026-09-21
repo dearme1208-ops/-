@@ -125,7 +125,7 @@ export default function DailyChallengePanel() {
                   <span className={`font-bold ${c.done ? "text-alert" : "text-cream"}`}>{c.title}</span>
                 </div>
                 <p className="mt-0.5 text-xs text-cream/50">{c.description}</p>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-cream/10">
+                <div className="progress-track mt-1.5 h-1.5 overflow-hidden rounded-full bg-cream/10">
                   <div
                     className={`h-full rounded-full ${c.done ? "bg-alert" : "bg-cream/50"}`}
                     style={{ width: `${Math.min(100, (c.progress / c.target) * 100)}%` }}

@@ -2436,7 +2436,7 @@ function SubtaskRow({
       </div>
       {subImageExpanded && sub.imageDataUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
           onClick={() => setSubImageExpanded(false)}
         >
           <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
@@ -2874,7 +2874,7 @@ function TaskRow({
               className="flex shrink-0 items-center gap-1"
               title={`ザックの重さ ${(packGrams / 1000).toFixed(1)}kg（期日までの余裕と重要度から決まります）`}
             >
-              <span className="h-1.5 w-8 overflow-hidden rounded-full bg-cream/10">
+              <span className="progress-track h-1.5 w-8 overflow-hidden rounded-full bg-cream/10">
                 <span
                   className={`block h-full rounded-full ${overdue ? "bg-alert" : "bg-cream/45"}`}
                   style={{ width: `${Math.min(100, (packGrams / heaviest) * 100)}%` }}
@@ -2975,7 +2975,7 @@ function TaskImageField({ task }: { task: TodoTask }) {
         </button>
       )}
       {expanded && imageDataUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setExpanded(false)}>
+        <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setExpanded(false)}>
           <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
             <img src={imageDataUrl} alt="" className="max-h-[75vh] max-w-full rounded-lg object-contain" />
             <div className="mt-2 flex justify-center">

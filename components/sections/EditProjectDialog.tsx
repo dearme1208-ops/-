@@ -224,7 +224,7 @@ function StageRow({
       </div>
       {imageExpanded && stage.imageDataUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
           onClick={() => setImageExpanded(false)}
         >
           <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
