@@ -616,6 +616,13 @@ export default function TodoSection({
     tagOptions,
   ]);
 
+  // このビューにタスクが1件も無い間は表示切替(かんばん/ガント等)のボタン自体を畳むため、
+  // かんばん等を選んだままタスクが0件のビューへ来ると、切り替えの手段が無いまま
+  // 空のかんばん盤面等に取り残されてしまう。そうならないよう自動でリストへ戻す
+  useEffect(() => {
+    if (visibleTasks.length === 0 && displayMode !== "list") setDisplayMode("list");
+  }, [visibleTasks.length, displayMode]);
+
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
   const completedTasks = visibleTasks.filter((t) => t.completed);
   // ガント・カレンダーは既定で未完了のタスクだけを対象にする(一覧の「完了済み」欄と同様、
@@ -1433,60 +1440,67 @@ export default function TodoSection({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-bold">{panelTitle}</h2>
           <div className="flex flex-wrap items-center gap-2">
-            {(["list", "kanban", "gantt", "calendar", "tree"] as DisplayMode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => setDisplayMode(m)}
-                className={displayMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              >
-                {m === "list"
-                  ? "リスト"
-                  : m === "kanban"
-                    ? "かんばん"
-                    : m === "gantt"
-                      ? "ガント"
-                      : m === "calendar"
-                        ? "カレンダー"
-                        : "系統図"}
-              </button>
-            ))}
-            {(displayMode === "gantt" || displayMode === "calendar" || displayMode === "tree") && (
-              <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
-                <input
-                  type="checkbox"
-                  checked={showCompletedInTimeline}
-                  onChange={(e) => setShowCompletedInTimeline(e.target.checked)}
-                  className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
-                />
-                完了済みも表示
-              </label>
-            )}
-            {displayMode === "list" && currentListId && !searchActive && (
-              <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
-                並び替え:
-                <select
-                  value={sortMode}
-                  onChange={(e) => setSortModeStr(e.target.value)}
-                  className="rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
-                >
-                  {(Object.keys(TODO_SORT_MODE_LABELS) as TodoSortMode[]).map((m) => (
-                    <option key={m} value={m}>
-                      {TODO_SORT_MODE_LABELS[m]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {displayMode === "list" && view !== "overdue" && (
-              <button
-                onClick={() => {
-                  setBulkSelectionMode((v) => !v);
-                  setSelectedTaskIds(new Set());
-                }}
-                className={bulkSelectionMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              >
-                ☑ 選択モード
-              </button>
+            {/* 表示切替(リスト/かんばん/ガント等)や選択モードは、このビューに1件も
+                無い間は切り替える対象自体が無く、押しても空の盤面が出るだけになる。
+                「タスクを追加」だけが押せれば足りるので畳んでおく */}
+            {visibleTasks.length > 0 && (
+              <>
+                {(["list", "kanban", "gantt", "calendar", "tree"] as DisplayMode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setDisplayMode(m)}
+                    className={displayMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  >
+                    {m === "list"
+                      ? "リスト"
+                      : m === "kanban"
+                        ? "かんばん"
+                        : m === "gantt"
+                          ? "ガント"
+                          : m === "calendar"
+                            ? "カレンダー"
+                            : "系統図"}
+                  </button>
+                ))}
+                {(displayMode === "gantt" || displayMode === "calendar" || displayMode === "tree") && (
+                  <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
+                    <input
+                      type="checkbox"
+                      checked={showCompletedInTimeline}
+                      onChange={(e) => setShowCompletedInTimeline(e.target.checked)}
+                      className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+                    />
+                    完了済みも表示
+                  </label>
+                )}
+                {displayMode === "list" && currentListId && !searchActive && (
+                  <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
+                    並び替え:
+                    <select
+                      value={sortMode}
+                      onChange={(e) => setSortModeStr(e.target.value)}
+                      className="rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                    >
+                      {(Object.keys(TODO_SORT_MODE_LABELS) as TodoSortMode[]).map((m) => (
+                        <option key={m} value={m}>
+                          {TODO_SORT_MODE_LABELS[m]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {displayMode === "list" && view !== "overdue" && (
+                  <button
+                    onClick={() => {
+                      setBulkSelectionMode((v) => !v);
+                      setSelectedTaskIds(new Set());
+                    }}
+                    className={bulkSelectionMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  >
+                    ☑ 選択モード
+                  </button>
+                )}
+              </>
             )}
             {currentListId && !searchActive && (
               <button className="text-xs text-alert" onClick={() => deleteList(currentListId)}>
