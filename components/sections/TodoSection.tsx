@@ -60,6 +60,7 @@ import type { TreeNode, TreeNodeBadge } from "@/components/ui/TreeView";
 import PedigreeTable from "@/components/ui/PedigreeTable";
 import { showUndoToast } from "@/lib/toast";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
+import { useRunningTaskStrip } from "@/lib/runningStrip";
 
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
@@ -187,6 +188,9 @@ export default function TodoSection({
   onInitialFilterConsumed?: () => void;
 } = {}) {
   const [view, setView] = useState<ViewKey>("myday");
+  // 本日の作業を計測したままToDoを触ることが多いので、このタブでも
+  // 下部バーに「今なにを計測しているか」を出す
+  const runningStrip = useRunningTaskStrip();
   const [showCsvToolsStr] = useSetting("csvTools.todo", "true");
   const showCsvTools = showCsvToolsStr === "true";
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -2056,6 +2060,8 @@ export default function TodoSection({
           onSelect={(k) => setView(k as ViewKey)}
           style={tabBarStyle as TabBarStyle}
           adaptiveEmphasis={tabBarAdaptiveEmphasis}
+          // このタブからは本日の作業へ切り替える導線を持たないので、表示だけ行う
+          running={runningStrip}
         />
       )}
 

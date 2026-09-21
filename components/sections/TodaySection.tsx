@@ -38,6 +38,7 @@ import {
   mergeRecordSegments,
   segmentsAccumulatedMs,
 } from "@/lib/tasks";
+import { useRunningTaskStrip } from "@/lib/runningStrip";
 import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
 import { DEFAULT_IMPORT_DAYS, parseIcsToScheduleRows } from "@/lib/icsImport";
 import { downloadTextFile } from "@/lib/report";
@@ -299,6 +300,9 @@ export default function TodaySection({
   const conditionEnabled = conditionEnabledStr === "true";
   const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
   const simpleButtons = simpleButtonsStr === "true";
+  // 下部タブバーに出す「今なにを計測しているか」。件数だけでは中身が分からないため、
+  // 作業名と経過時間を帯で添える
+  const runningStrip = useRunningTaskStrip();
   // 実行中/予定/完了でタブ分けして表示するモード。選んだタブは端末に保存し、次回も同じ表示にする
   const [taskViewTabRaw, setTaskViewTab] = useSetting("today.taskViewTab", "running");
   const taskViewTab: "running" | "pending" | "done" | "board" =
@@ -3746,6 +3750,7 @@ export default function TodaySection({
         onSelect={(k) => setTaskViewTab(k as typeof taskViewTab)}
         style={tabBarStyle as TabBarStyle}
         adaptiveEmphasis={tabBarAdaptiveEmphasis}
+        running={runningStrip ? { ...runningStrip, onClick: () => setTaskViewTab("running") } : null}
         progress={
           tabBarProgressStrip
             ? [

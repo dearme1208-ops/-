@@ -23,6 +23,48 @@ export interface BottomTabBarProgressSegment {
   className: string;
 }
 
+// 計測中の作業を、件数ではなく中身と経過時間で出すための帯。
+// タブバーは画面下に貼り付いているので、どこまでスクロールしても
+// 「今なにを計っているか」が視界から消えない
+export interface BottomTabBarRunning {
+  name: string;
+  category: string;
+  elapsedLabel: string;
+  extraCount: number;
+  /** 押したときの動き(実行中タブへ移動する等)。無ければただの表示になる */
+  onClick?: () => void;
+}
+
+function RunningStrip({ running }: { running: BottomTabBarRunning }) {
+  const title = `計測中: ${running.category} / ${running.name}（${running.elapsedLabel}）`;
+  const inner = (
+    <>
+      <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-alert" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate text-left text-xs text-cream/85">
+        <span className="text-cream/45">{running.category} / </span>
+        {running.name}
+      </span>
+      {running.extraCount > 0 && (
+        <span className="shrink-0 text-[10px] text-cream/45">他{running.extraCount}件</span>
+      )}
+      <span className="shrink-0 font-display text-sm font-bold tabular-nums text-cream">{running.elapsedLabel}</span>
+    </>
+  );
+  const className = "panel mb-1 flex w-full items-center gap-2 px-3 py-1.5 shadow-lg backdrop-blur";
+  if (!running.onClick) {
+    return (
+      <div className={className} title={title} aria-label={title}>
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <button className={className} onClick={running.onClick} title={title} aria-label={title}>
+      {inner}
+    </button>
+  );
+}
+
 export default function BottomTabBar({
   items,
   activeKey,
@@ -30,6 +72,7 @@ export default function BottomTabBar({
   style,
   adaptiveEmphasis,
   progress,
+  running,
 }: {
   items: BottomTabBarItem[];
   activeKey: string;
@@ -37,6 +80,7 @@ export default function BottomTabBar({
   style: TabBarStyle;
   adaptiveEmphasis?: boolean;
   progress?: BottomTabBarProgressSegment[];
+  running?: BottomTabBarRunning | null;
 }) {
   const activeIndex = Math.max(
     0,
@@ -46,6 +90,10 @@ export default function BottomTabBar({
 
   return (
     <div className="sticky bottom-2 z-10 pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      {running && (
+        <RunningStrip running={running} />
+      )}
+
       {showProgress && (
         <div className="mb-1 flex h-1.5 overflow-hidden rounded-full bg-ink/50">
           {progress!.map(
