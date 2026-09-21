@@ -24,8 +24,10 @@ import { computeProductivityByWeather } from "@/lib/weather";
 import { computeProductivityByTimeOfDay, computeTimeOfDayInsight } from "@/lib/timeOfDay";
 import { computeInsights } from "@/lib/insights";
 import { computeBurnoutRisk } from "@/lib/burnoutRisk";
+import { computeBacklogBreakdown, computeBacklogTrend } from "@/lib/backlogLoad";
 import { useCollapsedPanels } from "@/lib/settings";
 import DiffLineChart from "@/components/charts/DiffLineChart";
+import LineChart from "@/components/charts/LineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 
@@ -47,6 +49,8 @@ export default function AttentionSection() {
   const records = useLiveQuery(() => db.records.toArray(), []);
   const conditionLogs = useLiveQuery(() => db.conditionLogs.toArray(), []);
   const weatherForecasts = useLiveQuery(() => db.weatherForecasts.toArray(), []);
+  const todoTasksForBacklog = useLiveQuery(() => db.todoTasks.toArray(), []);
+  const projectsForBacklog = useLiveQuery(() => db.projects.toArray(), []);
 
   const [avgPeriodType, setAvgPeriodType] = useState<AvgComparePeriodType>("h1");
   const [avgFiscalYear, setAvgFiscalYear] = useState(() => currentFiscalYear());
@@ -88,6 +92,20 @@ export default function AttentionSection() {
     () => (masterTasks && records && conditionLogs ? computeBurnoutRisk(records, masterTasks, conditionLogs) : null),
     [masterTasks, records, conditionLogs]
   );
+  // ToDo・案件を抱えすぎて期限切れが常態化していないかの俯瞰。直近30日、
+  // 未完了の積み上がり(バックログ)が増えているか減っているかを見る
+  const backlogTrend = useMemo(
+    () =>
+      todoTasksForBacklog && projectsForBacklog ? computeBacklogTrend(todoTasksForBacklog, projectsForBacklog, 30) : [],
+    [todoTasksForBacklog, projectsForBacklog]
+  );
+  const backlogBreakdown = useMemo(
+    () =>
+      todoTasksForBacklog && projectsForBacklog
+        ? computeBacklogBreakdown(todoTasksForBacklog, projectsForBacklog)
+        : { todoByCategory: [], projectByCategory: [] },
+    [todoTasksForBacklog, projectsForBacklog]
+  );
   const insights = useMemo(
     () => (masterTasks && records ? computeInsights(records, masterTasks) : []),
     [masterTasks, records]
@@ -128,6 +146,76 @@ export default function AttentionSection() {
           </p>
         </div>
       )}
+
+      <CollapsiblePanel
+        title="📦 ToDo・案件の積み上がり具合"
+        collapsed={!!collapsed.backlog}
+        onToggle={() => toggleSection("backlog")}
+      >
+        {backlogTrend.length === 0 ? (
+          <p className="text-sm text-cream/50">ToDo・案件のデータがまだありません。</p>
+        ) : (
+          (() => {
+            const first = backlogTrend[0];
+            const last = backlogTrend[backlogTrend.length - 1];
+            const delta = last.backlogSize - first.backlogSize;
+            const totalCreated = backlogTrend.reduce((s, p) => s + p.created, 0);
+            const totalCompleted = backlogTrend.reduce((s, p) => s + p.completed, 0);
+            return (
+              <div className="space-y-4">
+                <p className="text-sm text-cream/80">
+                  未完了の件数は{first.label}時点の<span className="mx-1 font-bold">{first.backlogSize}件</span>
+                  から、本日は
+                  <span className={`mx-1 font-bold ${delta > 0 ? "text-alert" : "text-cream"}`}>{last.backlogSize}件</span>
+                  {delta === 0 ? "で変わっていません" : delta > 0 ? `（+${delta}件、積み上がっています）` : `（${delta}件、減っています）`}
+                  。この30日で新規追加{totalCreated}件・完了{totalCompleted}件です。
+                </p>
+                <LineChart
+                  points={backlogTrend
+                    .filter((p, i) => i % 3 === 0 || i === backlogTrend.length - 1)
+                    .map((p) => ({ key: p.date, label: p.label, value: p.backlogSize }))}
+                  formatValue={(v) => `${Math.round(v)}件`}
+                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <div className="mb-1 text-xs font-bold text-cream/60">✅ ToDoの期限切れ内訳（分類別）</div>
+                    {backlogBreakdown.todoByCategory.length === 0 ? (
+                      <p className="text-xs text-cream/40">期限切れのToDoはありません。</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {backlogBreakdown.todoByCategory.slice(0, 6).map((row) => (
+                          <div key={row.label} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="truncate text-cream/70">{row.label}</span>
+                            <span className="shrink-0 font-bold tabular-nums text-alert">{row.count}件</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs font-bold text-cream/60">📁 案件の期限切れ内訳（分類別）</div>
+                    {backlogBreakdown.projectByCategory.length === 0 ? (
+                      <p className="text-xs text-cream/40">期限切れの案件はありません。</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {backlogBreakdown.projectByCategory.slice(0, 6).map((row) => (
+                          <div key={row.label} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="truncate text-cream/70">{row.label}</span>
+                            <span className="shrink-0 font-bold tabular-nums text-alert">{row.count}件</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()
+        )}
+        <p className="mt-3 text-xs text-cream/40">
+          未完了件数は、これまでの登録日時・完了日時から日ごとに逆算した推移です。新規追加のペースが完了のペースを上回っている状態が続くと、期限切れが常態化しやすくなります。
+        </p>
+      </CollapsiblePanel>
 
       <CollapsiblePanel
         title="🔍 自動で見つけた気づき"

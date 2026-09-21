@@ -53,6 +53,7 @@ import { RECURRENCE_TYPE_LABELS, WEEKDAY_JP, ORDINAL_LABELS } from "@/lib/types"
 import { DEFAULT_MEMO_NOTE_COLOR, estimateChecklistNoteHeight, estimateTextNoteHeight } from "@/lib/memo";
 import { placeTodoOnBoard, removeTodoFromBoard } from "@/lib/boardPlacement";
 import Modal from "@/components/ui/Modal";
+import DueDateLoadWarning from "@/components/ui/DueDateLoadWarning";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import GuideImportDialog from "@/components/sections/GuideImportDialog";
@@ -1554,6 +1555,7 @@ export default function TodoSection({
                   onChange={(e) => setNewTaskDueDate(e.target.value)}
                   className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
                 />
+                <DueDateLoadWarning dateStr={newTaskDueDate} />
               </label>
               {(lists ?? []).length > 1 && (
                 <label className="flex flex-col gap-1">
@@ -2220,6 +2222,7 @@ function OverdueBulkList({
             選択した{selectedIds.size}件をこの日付に変更
           </button>
         </div>
+        <DueDateLoadWarning dateStr={rescheduleDate} />
       </div>
 
       <div className="space-y-1.5">
@@ -3456,6 +3459,7 @@ function TaskDetailModal({
             </button>
           )}
         </div>
+        <DueDateLoadWarning dateStr={dueDate} excludeTodoId={task.id} />
         <p className="text-[10px] text-cream/40">
           開始日を設定した場合、リスト内の並び順は期日ではなく開始日が優先されます。
         </p>

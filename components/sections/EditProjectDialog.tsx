@@ -20,6 +20,7 @@ import type { ProjectItem, ProjectStage } from "@/lib/types";
 import { computeProjectProgress, effectiveProjectTag } from "@/lib/projectStage";
 import { formatHms, parseHmsToSeconds } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
+import DueDateLoadWarning from "@/components/ui/DueDateLoadWarning";
 
 // 段階1行分。件名・期日をその場で編集できる入力欄を持つ
 function StageRow({
@@ -473,6 +474,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
             className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
         </div>
+        <DueDateLoadWarning dateStr={dueDate} excludeProjectId={project.id} />
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">対応状況</label>
           {stages.length > 0 ? (
