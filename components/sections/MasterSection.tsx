@@ -86,6 +86,9 @@ export default function MasterSection() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [showNew, setShowNew] = useState(false);
+  // 本日の作業タブの「簡易表示（アイコンのみ）」設定を、一覧の「+ 追加」ボタンでも共有する
+  const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
+  const simpleButtons = simpleButtonsStr === "true";
   const [showArchived, setShowArchived] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [newCategory, setNewCategory] = useState("");
@@ -463,9 +466,20 @@ export default function MasterSection() {
           >
             ★ お気に入りのみ
           </button>
-          <button className="btn-pill text-sm" onClick={() => setShowNew((v) => !v)}>
-            + 新規作業を追加
-          </button>
+          {simpleButtons ? (
+            <button
+              className="btn-pill px-3 py-2 text-base"
+              onClick={() => setShowNew((v) => !v)}
+              title="新規作業を追加"
+              aria-label="新規作業を追加"
+            >
+              ➕
+            </button>
+          ) : (
+            <button className="btn-pill text-sm" onClick={() => setShowNew((v) => !v)}>
+              + 新規作業を追加
+            </button>
+          )}
         </div>
       </div>
 

@@ -72,6 +72,9 @@ function SortableRow({ item, onDelete }: { item: TemplateItem; onDelete: () => v
 export default function TemplateSection() {
   const [weekday, setWeekday] = useState<Weekday>(1);
   const [showPicker, setShowPicker] = useState(false);
+  // 本日の作業タブの「簡易表示（アイコンのみ）」設定を、「+ 作業を追加」ボタンでも共有する
+  const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
+  const simpleButtons = simpleButtonsStr === "true";
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
   const [showCsvToolsStr] = useSetting("csvTools.template", "true");
@@ -177,9 +180,20 @@ export default function TemplateSection() {
       <div className="panel p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="font-display text-base font-bold">{WEEKDAY_LABELS[weekday]}曜日のテンプレート</h3>
-          <button className="btn-pill-outline text-xs" onClick={() => setShowPicker(true)}>
-            + 作業を追加
-          </button>
+          {simpleButtons ? (
+            <button
+              className="btn-pill-outline px-3 py-2 text-base"
+              onClick={() => setShowPicker(true)}
+              title="作業を追加"
+              aria-label="作業を追加"
+            >
+              ➕
+            </button>
+          ) : (
+            <button className="btn-pill-outline text-xs" onClick={() => setShowPicker(true)}>
+              + 作業を追加
+            </button>
+          )}
         </div>
         {items && items.length > 0 ? (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

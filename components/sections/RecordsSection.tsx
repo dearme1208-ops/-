@@ -44,6 +44,9 @@ export default function RecordsSection() {
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
   const [showCsvToolsStr] = useSetting("csvTools.records", "true");
   const showCsvTools = showCsvToolsStr === "true";
+  // 本日の作業タブの「簡易表示（アイコンのみ）」設定を、「+ 実績を追加」ボタンでも共有する
+  const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
+  const simpleButtons = simpleButtonsStr === "true";
   // パソコンを閉じていた等で計測できず、後日まとめて過去の実績を手入力したい場合に使う
   const [showAddRecord, setShowAddRecord] = useState(false);
   // 選んだ1日をタイムラプス風に再生するモーダルの対象日(nullなら非表示)
@@ -282,9 +285,20 @@ export default function RecordsSection() {
           </label>
         </div>
         <div className="flex gap-2">
-          <button className="btn-pill-outline text-sm" onClick={() => setShowAddRecord(true)}>
-            + 実績を追加
-          </button>
+          {simpleButtons ? (
+            <button
+              className="btn-pill-outline px-3 py-2 text-base"
+              onClick={() => setShowAddRecord(true)}
+              title="実績を追加"
+              aria-label="実績を追加"
+            >
+              ➕
+            </button>
+          ) : (
+            <button className="btn-pill-outline text-sm" onClick={() => setShowAddRecord(true)}>
+              + 実績を追加
+            </button>
+          )}
           {showCsvTools && (
             <>
               <button className="btn-pill-outline text-sm" onClick={exportCsv}>

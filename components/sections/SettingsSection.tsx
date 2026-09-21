@@ -1556,7 +1556,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">本日タブのボタン表示</h3>
+        <h3 className="font-display text-sm font-bold text-cream/80">各タブのボタン表示</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={!simpleButtons ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1573,8 +1573,8 @@ export default function SettingsSection() {
         </div>
         <p className="text-xs text-cream/50">
           {simpleButtons
-            ? "「トラブル発生」「突発作業を追加」「音声で操作」ボタンをアイコンのみで表示します。"
-            : "「トラブル発生」「突発作業を追加」「音声で操作」ボタンを文字付きで表示します。"}
+            ? "本日の作業(トラブル発生・突発作業を追加・今日の一枚・明日の下書き・終業の振り返り・音声で操作)、ToDo・作業マスタ・曜日別テンプレート・マンダラチャート・実績編集の「+ 追加」系ボタンをアイコンのみで表示します。"
+            : "本日の作業(トラブル発生・突発作業を追加・今日の一枚・明日の下書き・終業の振り返り・音声で操作)、ToDo・作業マスタ・曜日別テンプレート・マンダラチャート・実績編集の「+ 追加」系ボタンを文字付きで表示します。"}
         </p>
       </div>
 

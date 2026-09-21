@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { buildMandalaGrid, emptyMandalaChart, mandalaChartFromSample, MANDALA_SAMPLES, type MandalaCell } from "@/lib/mandala";
 import { showUndoToast } from "@/lib/toast";
+import { useSetting } from "@/lib/settings";
 import Modal from "@/components/ui/Modal";
 import type { MandalaChart, TodoTask } from "@/lib/types";
 
@@ -43,6 +44,9 @@ export default function MandalaSection({
   const allTodoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const [activeChartId, setActiveChartId] = useState<string | null>(null);
   const [showNewChart, setShowNewChart] = useState(false);
+  // 本日の作業タブの「簡易表示（アイコンのみ）」設定を、「+ 新規作成」ボタンでも共有する
+  const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
+  const simpleButtons = simpleButtonsStr === "true";
   const [newChartTitle, setNewChartTitle] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -171,6 +175,15 @@ export default function MandalaSection({
                 ×
               </button>
             </div>
+          ) : simpleButtons ? (
+            <button
+              className="btn-pill-outline px-3 py-2 text-base"
+              onClick={() => setShowNewChart(true)}
+              title="新規作成"
+              aria-label="新規作成"
+            >
+              ➕
+            </button>
           ) : (
             <button className="btn-pill-outline text-sm" onClick={() => setShowNewChart(true)}>
               + 新規作成
@@ -323,6 +336,9 @@ function MandalaCellDialog({
 }) {
   const [text, setText] = useState(value);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  // 本日の作業タブの「簡易表示（アイコンのみ）」設定を、「+ ToDoとして追加」ボタンでも共有する
+  const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
+  const simpleButtons = simpleButtonsStr === "true";
 
   const title = cell.kind === "goal" ? "最終目標" : cell.kind === "theme" ? "テーマ" : "具体策";
 
@@ -376,16 +392,31 @@ function MandalaCellDialog({
             ) : (
               <div className="space-y-2">
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    className="btn-pill-outline text-xs disabled:opacity-40"
-                    disabled={!text.trim()}
-                    onClick={() => {
-                      onSave(text);
-                      onCreateAndLink(text);
-                    }}
-                  >
-                    + ToDoとして追加
-                  </button>
+                  {simpleButtons ? (
+                    <button
+                      className="btn-pill-outline px-3 py-2 text-base disabled:opacity-40"
+                      disabled={!text.trim()}
+                      onClick={() => {
+                        onSave(text);
+                        onCreateAndLink(text);
+                      }}
+                      title="ToDoとして追加"
+                      aria-label="ToDoとして追加"
+                    >
+                      ✅
+                    </button>
+                  ) : (
+                    <button
+                      className="btn-pill-outline text-xs disabled:opacity-40"
+                      disabled={!text.trim()}
+                      onClick={() => {
+                        onSave(text);
+                        onCreateAndLink(text);
+                      }}
+                    >
+                      + ToDoとして追加
+                    </button>
+                  )}
                   <button className="btn-pill-outline text-xs" onClick={() => setShowLinkPicker((v) => !v)}>
                     既存のToDoを紐付け
                   </button>
