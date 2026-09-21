@@ -64,7 +64,16 @@ import { computeGrowthStage } from "@/lib/growth";
 import { createSpeechRecognition, parseVoiceCommand, speak } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
-import { formatClock, formatDateJp, formatHms, formatMsClock, jsWeekdayToApp, parseHourStr, todayStr } from "@/lib/time";
+import {
+  daysBetweenDateStrs,
+  formatClock,
+  formatDateJp,
+  formatHms,
+  formatMsClock,
+  jsWeekdayToApp,
+  parseHourStr,
+  todayStr,
+} from "@/lib/time";
 import {
   getNotificationPermission,
   notify,
@@ -798,6 +807,24 @@ export default function TodaySection({
     }
     return { todoOverdue, todoDueToday, projectOverdue, projectDueToday };
   }, [linkedTodoTasks, projects, date]);
+
+  // 予定タブのバッジをタップした時の詳細表示用: 期限切れ・本日期限のToDo/案件そのものの一覧。
+  // pendingDueSummaryと同じ条件で絞り込み、期日が早い(＝超過が大きい)ものから並べる
+  const pendingDueTodoItems = useMemo(
+    () =>
+      (linkedTodoTasks ?? [])
+        .filter((t) => !t.completed && t.dueDate && t.dueDate <= date)
+        .sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : a.dueDate! > b.dueDate! ? 1 : 0)),
+    [linkedTodoTasks, date]
+  );
+  const pendingDueProjectItems = useMemo(
+    () =>
+      (projects ?? [])
+        .filter((p) => !p.completedAt && p.dueDate <= date)
+        .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0)),
+    [projects, date]
+  );
+  const [dueDetailKind, setDueDetailKind] = useState<"todo" | "project" | null>(null);
 
   // 朝、指定した時刻になったら、本日の予定件数とToDo・案件の期限状況をまとめて通知する(1日1回)。
   // 「1日の終わりの自動サマリー通知」と同じ「アプリを開いている間に、時刻を過ぎたタイミングで
@@ -3677,35 +3704,121 @@ export default function TodaySection({
 
       {taskViewTab === "pending" && (
         <div className="panel flex flex-wrap gap-x-6 gap-y-2 p-3 text-xs">
-          <div className="flex items-center gap-1.5">
-            <span className="text-cream/50">✅ ToDo</span>
-            {pendingDueSummary.todoOverdue > 0 && (
-              <span className="rounded-full bg-alert/15 px-2 py-0.5 font-bold text-alert">
-                期限切れ {pendingDueSummary.todoOverdue}件
-              </span>
-            )}
-            {pendingDueSummary.todoDueToday > 0 && (
-              <span className="rounded-full bg-cream/10 px-2 py-0.5 text-cream/80">本日期限 {pendingDueSummary.todoDueToday}件</span>
-            )}
-            {pendingDueSummary.todoOverdue === 0 && pendingDueSummary.todoDueToday === 0 && (
-              <span className="text-cream/40">期限切れ・本日期限なし</span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-cream/50">📁 案件</span>
-            {pendingDueSummary.projectOverdue > 0 && (
-              <span className="rounded-full bg-alert/15 px-2 py-0.5 font-bold text-alert">
-                期限切れ {pendingDueSummary.projectOverdue}件
-              </span>
-            )}
-            {pendingDueSummary.projectDueToday > 0 && (
-              <span className="rounded-full bg-cream/10 px-2 py-0.5 text-cream/80">本日期限 {pendingDueSummary.projectDueToday}件</span>
-            )}
-            {pendingDueSummary.projectOverdue === 0 && pendingDueSummary.projectDueToday === 0 && (
-              <span className="text-cream/40">期限切れ・本日期限なし</span>
-            )}
-          </div>
+          {(() => {
+            const hasTodo = pendingDueSummary.todoOverdue > 0 || pendingDueSummary.todoDueToday > 0;
+            const Wrapper = hasTodo ? "button" : "div";
+            return (
+              <Wrapper
+                className={`flex items-center gap-1.5 ${hasTodo ? "rounded-lg hover:bg-cream/5" : ""}`}
+                {...(hasTodo ? { onClick: () => setDueDetailKind("todo") } : {})}
+              >
+                <span className="text-cream/50">✅ ToDo</span>
+                {pendingDueSummary.todoOverdue > 0 && (
+                  <span className="rounded-full bg-alert/15 px-2 py-0.5 font-bold text-alert">
+                    期限切れ {pendingDueSummary.todoOverdue}件
+                  </span>
+                )}
+                {pendingDueSummary.todoDueToday > 0 && (
+                  <span className="rounded-full bg-cream/10 px-2 py-0.5 text-cream/80">
+                    本日期限 {pendingDueSummary.todoDueToday}件
+                  </span>
+                )}
+                {!hasTodo && <span className="text-cream/40">期限切れ・本日期限なし</span>}
+              </Wrapper>
+            );
+          })()}
+          {(() => {
+            const hasProject = pendingDueSummary.projectOverdue > 0 || pendingDueSummary.projectDueToday > 0;
+            const Wrapper = hasProject ? "button" : "div";
+            return (
+              <Wrapper
+                className={`flex items-center gap-1.5 ${hasProject ? "rounded-lg hover:bg-cream/5" : ""}`}
+                {...(hasProject ? { onClick: () => setDueDetailKind("project") } : {})}
+              >
+                <span className="text-cream/50">📁 案件</span>
+                {pendingDueSummary.projectOverdue > 0 && (
+                  <span className="rounded-full bg-alert/15 px-2 py-0.5 font-bold text-alert">
+                    期限切れ {pendingDueSummary.projectOverdue}件
+                  </span>
+                )}
+                {pendingDueSummary.projectDueToday > 0 && (
+                  <span className="rounded-full bg-cream/10 px-2 py-0.5 text-cream/80">
+                    本日期限 {pendingDueSummary.projectDueToday}件
+                  </span>
+                )}
+                {!hasProject && <span className="text-cream/40">期限切れ・本日期限なし</span>}
+              </Wrapper>
+            );
+          })()}
         </div>
+      )}
+
+      {dueDetailKind && (
+        <Modal
+          title={dueDetailKind === "todo" ? "⚠ 期限切れ・本日期限のToDo" : "⚠ 期限切れ・本日期限の案件"}
+          onClose={() => setDueDetailKind(null)}
+        >
+          <div className="space-y-1.5">
+            {dueDetailKind === "todo" &&
+              pendingDueTodoItems.map((t) => {
+                const daysOverdue = daysBetweenDateStrs(t.dueDate!, date);
+                return (
+                  <button
+                    key={t.id}
+                    className="flex w-full items-center gap-3 rounded-lg border border-alert/30 bg-alert/5 px-3 py-2 text-left"
+                    onClick={() => {
+                      setDueDetailKind(null);
+                      onOpenTodoDetail(t.id);
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-bold text-cream">{t.title}</div>
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-cream/50">
+                        {t.tag && <span>{t.tag}</span>}
+                        {t.category && <span>{t.category}</span>}
+                        {t.customer && <span>{t.customer}</span>}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right text-xs font-bold text-alert">
+                      {formatDateJp(t.dueDate!)}
+                      <div className="text-[10px]">{daysOverdue > 0 ? `${daysOverdue}日超過` : "本日期限"}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            {dueDetailKind === "project" &&
+              pendingDueProjectItems.map((p) => {
+                const daysOverdue = daysBetweenDateStrs(p.dueDate, date);
+                return (
+                  <button
+                    key={p.id}
+                    className="flex w-full items-center gap-3 rounded-lg border border-alert/30 bg-alert/5 px-3 py-2 text-left"
+                    onClick={() => {
+                      setDueDetailKind(null);
+                      onOpenProjectEdit(p.id);
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-bold text-cream">{p.title}</div>
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-cream/50">
+                        {p.tag && <span>{p.tag}</span>}
+                        <span>{p.category}</span>
+                        <span>{p.workName}</span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right text-xs font-bold text-alert">
+                      {formatDateJp(p.dueDate)}
+                      <div className="text-[10px]">{daysOverdue > 0 ? `${daysOverdue}日超過` : "本日期限"}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            {((dueDetailKind === "todo" && pendingDueTodoItems.length === 0) ||
+              (dueDetailKind === "project" && pendingDueProjectItems.length === 0)) && (
+              <p className="px-1 py-4 text-sm text-cream/50">対象はありません。</p>
+            )}
+          </div>
+        </Modal>
       )}
 
       {taskViewTab === "done" && (
