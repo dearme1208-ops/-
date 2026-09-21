@@ -24,8 +24,10 @@ import { computeProductivityByWeather } from "@/lib/weather";
 import { computeProductivityByTimeOfDay, computeTimeOfDayInsight } from "@/lib/timeOfDay";
 import { computeInsights } from "@/lib/insights";
 import { computeBurnoutRisk } from "@/lib/burnoutRisk";
+import { useCollapsedPanels } from "@/lib/settings";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
+import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -51,6 +53,13 @@ export default function AttentionSection() {
   const [avgCompareTarget, setAvgCompareTarget] = useState<AvgComparePeriod>(() =>
     defaultAvgComparePeriod({ type: "h1", fiscalYear: currentFiscalYear() })
   );
+  // 8つの分析パネルが常時全展開だと、興味のある1つを見るためだけに毎回全部を
+  // スクロールで通過することになるため、折りたたみ状態を次回も残す
+  const [collapsed, setCollapsed] = useCollapsedPanels("attention.collapsedPanels");
+
+  function toggleSection(key: string) {
+    setCollapsed((c) => ({ ...c, [key]: !c[key] }));
+  }
 
   // 表示期間の種別/年度を変えたら、比較先も自然な「前期」に追従させる
   useEffect(() => {
@@ -120,8 +129,11 @@ export default function AttentionSection() {
         </div>
       )}
 
-      <div className="panel p-4">
-        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">🔍 自動で見つけた気づき</h3>
+      <CollapsiblePanel
+        title="🔍 自動で見つけた気づき"
+        collapsed={!!collapsed.insights}
+        onToggle={() => toggleSection("insights")}
+      >
         {insights.length === 0 ? (
           <p className="text-sm text-cream/50">
             体調別・時間帯別など複数の軸を横断して、単独の集計だけでは気づきにくいパターンを自動で探します。まだ十分なサンプル数が無いため、該当する気づきはありません。
@@ -149,10 +161,13 @@ export default function AttentionSection() {
         <p className="mt-3 text-xs text-cream/40">
           体調・時間帯・曜日・作業の前後関係など複数の軸を組み合わせて、想定時間に対する達成度の差が一定以上あるパターンだけを表示します（サンプル数・差の大きさが小さいものは誤検出を避けるため表示しません）。
         </p>
-      </div>
+      </CollapsiblePanel>
 
-      <div className="panel p-4">
-        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">体調別の生産性（想定時間に対する達成度）</h3>
+      <CollapsiblePanel
+        title="体調別の生産性（想定時間に対する達成度）"
+        collapsed={!!collapsed.conditionProductivity}
+        onToggle={() => toggleSection("conditionProductivity")}
+      >
         {productivityRows.length === 0 ? (
           <p className="text-sm text-cream/50">
             体調を記録している間に行った作業に、想定時間と実績が両方揃っているデータがまだありません。
@@ -199,10 +214,13 @@ export default function AttentionSection() {
         <p className="mt-3 text-xs text-cream/40">
           体調は「記録した時点から、次に体調を変更するまで」有効なものとして扱い、その間に開始した作業を対象に想定時間÷実績時間を算出し、体調レベルごとに平均したものです。100%が想定通り、100%を超えるほど想定より速く終えられている傾向を表します（バーの縦線が100%の位置。▲=速い/▼=遅い）。
         </p>
-      </div>
+      </CollapsiblePanel>
 
-      <div className="panel p-4">
-        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">天気別の生産性（想定時間に対する達成度）</h3>
+      <CollapsiblePanel
+        title="天気別の生産性（想定時間に対する達成度）"
+        collapsed={!!collapsed.weatherProductivity}
+        onToggle={() => toggleSection("weatherProductivity")}
+      >
         {weatherProductivityRows.length === 0 ? (
           <p className="text-sm text-cream/50">
             天気変化の通知機能で取得した予報データと、想定時間・実績が両方揃っているデータがまだありません（設定タブで天気変化の通知をONにし、地点を登録すると日々データが蓄積されます）。
@@ -245,10 +263,13 @@ export default function AttentionSection() {
         <p className="mt-3 text-xs text-cream/40">
           天気変化の通知機能でキャッシュされた日ごとの降水確率予報(平均50%以上を「雨の日」)と、その日に行った作業の想定時間÷実績時間を突き合わせたものです。天気データが無い日の実績は対象外です。
         </p>
-      </div>
+      </CollapsiblePanel>
 
-      <div className="panel p-4">
-        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">時間帯別の生産性（想定時間に対する達成度）</h3>
+      <CollapsiblePanel
+        title="時間帯別の生産性（想定時間に対する達成度）"
+        collapsed={!!collapsed.timeOfDay}
+        onToggle={() => toggleSection("timeOfDay")}
+      >
         {timeOfDayRows.length === 0 ? (
           <p className="text-sm text-cream/50">
             想定時間と実績が両方揃っている作業が、まだ各時間帯で3件以上蓄積されていません。
@@ -311,10 +332,13 @@ export default function AttentionSection() {
         <p className="mt-3 text-xs text-cream/40">
           実績の開始時刻が属する時間帯ごとに、想定時間÷実績時間を平均したものです（3件未満の時間帯は表示しません）。100%が想定通り、100%を超えるほど想定より速く終えられている傾向を表します（バーの縦線が100%の位置。▲=速い/▼=遅い）。
         </p>
-      </div>
+      </CollapsiblePanel>
 
-      <div className="panel p-4">
-        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">体調による所要時間のブレが大きい作業</h3>
+      <CollapsiblePanel
+        title="体調による所要時間のブレが大きい作業"
+        collapsed={!!collapsed.variance}
+        onToggle={() => toggleSection("variance")}
+      >
         {varianceRows.length === 0 ? (
           <p className="text-sm text-cream/50">
             2つ以上の体調レベルでそれぞれ2件以上の実績がある作業がまだありません。
@@ -365,14 +389,17 @@ export default function AttentionSection() {
         <p className="mt-3 text-xs text-cream/40">
           体調レベルごとの平均達成度（想定÷実績）の最大差が大きい作業ほど、体調によって所要時間が大きく変わりやすいことを表します。
         </p>
-      </div>
+      </CollapsiblePanel>
 
-      <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">作業後の体調変化傾向</h3>
+      <CollapsiblePanel
+        title="作業後の体調変化傾向"
+        collapsed={!!collapsed.shift}
+        onToggle={() => toggleSection("shift")}
+      >
         <p className="text-xs text-cream/50">
           各実績の開始時点で有効だった体調と、終了後に次に記録された体調（日をまたいでも直近の記録を引き継ぎます）を比較し、作業ごとに体調レベルの変化（後－前）を平均したものです。プラスが大きいほどその作業をした後に好調になりやすく、マイナスが大きいほど不調になりやすい傾向を表します（こまめに記録していなくても、前後の体調が特定できる実績が3件以上ある作業が対象です）。
         </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <h4 className="mb-2 text-xs font-bold text-cream/70">📈 作業後に好調になりやすい</h4>
             {goodShiftRows.length === 0 ? (
@@ -436,10 +463,13 @@ export default function AttentionSection() {
             )}
           </div>
         </div>
-      </div>
+      </CollapsiblePanel>
 
-      <div className="panel p-4">
-        <h3 className="mb-3 font-display text-sm font-bold text-cream/80">見積り精度トレンド（想定比の月次推移）</h3>
+      <CollapsiblePanel
+        title="見積り精度トレンド（想定比の月次推移）"
+        collapsed={!!collapsed.accuracyTrend}
+        onToggle={() => toggleSection("accuracyTrend")}
+      >
         {accuracyTrend.length === 0 ? (
           <p className="text-sm text-cream/50">想定時間が設定された作業の実績がまだありません。</p>
         ) : (
@@ -448,10 +478,14 @@ export default function AttentionSection() {
         <p className="mt-3 text-xs text-cream/40">
           0%が想定通り。プラスは想定より時間がかかっている傾向、マイナスは想定より早く終わっている傾向を表します。
         </p>
-      </div>
+      </CollapsiblePanel>
 
-      <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">平均時間の増減ランキング（改善成功／要改善）</h3>
+      <CollapsiblePanel
+        title="平均時間の増減ランキング（改善成功／要改善）"
+        collapsed={!!collapsed.avgRanking}
+        onToggle={() => toggleSection("avgRanking")}
+      >
+        <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           {(Object.keys(AVG_COMPARE_TYPE_LABELS) as AvgComparePeriodType[]).map((t) => (
             <button
@@ -574,7 +608,8 @@ export default function AttentionSection() {
             )}
           </div>
         </div>
-      </div>
+        </div>
+      </CollapsiblePanel>
 
       <p className="text-sm text-cream/60">想定時間に対して実績平均が30%以上超過している作業です。</p>
       <div className="panel divide-y divide-cream/10">

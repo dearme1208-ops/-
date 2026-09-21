@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { formatHms } from "@/lib/time";
 import { computeHourDowMatrix } from "@/lib/heatmap";
 import { computeCalendarHeatmap, heatLevel } from "@/lib/calendarHeatmap";
+import ScrollFadeHint from "@/components/ui/ScrollFadeHint";
 
 const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const CALENDAR_LEVEL_OPACITY = [0.04, 0.22, 0.42, 0.64, 0.9];
@@ -19,44 +20,6 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "total", label: "合計時間順" },
   { key: "count", label: "実績件数順" },
 ];
-
-// 横スクロールできる表の右端が画面外に隠れていると、そこに続きがあると
-// 気づいてもらえないことがあるため、まだ右にスクロールできる間だけ右端を
-// 薄くフェードさせて「まだ続きがある」ことを示す(最後まで見たら自然に消える)
-function ScrollFadeHint({ children }: { children: React.ReactNode }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    function update() {
-      if (!el) return;
-      setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 4);
-    }
-    update();
-    el.addEventListener("scroll", update);
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    window.addEventListener("resize", update);
-    return () => {
-      el.removeEventListener("scroll", update);
-      ro.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, []);
-
-  return (
-    <div className="relative">
-      <div ref={scrollRef} className="panel overflow-x-auto p-4">
-        {children}
-      </div>
-      {canScrollRight && (
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-2xl bg-gradient-to-l from-panel to-transparent" />
-      )}
-    </div>
-  );
-}
 
 export default function HeatmapSection() {
   const [viewMode, setViewMode] = useState<ViewMode>("category");

@@ -869,7 +869,11 @@ export default function MemoSection() {
         )}
       </div>
 
-      <div className="panel flex flex-wrap items-center gap-2 p-3">
+      {/* ボタン列がモバイル幅では折り返して縦に何段も積み上がり、キャンバスに
+          辿り着く前に画面の大半を占領してしまうため、狭い画面だけ横スクロールの
+          1列にする(smブレークポイント以上では従来通り折り返す) */}
+      <div className="panel overflow-x-auto p-3">
+      <div className="flex w-max items-center gap-2 sm:w-full sm:flex-wrap">
         <button className="btn-pill-outline text-sm" onClick={() => addNote()}>
           + 付箋を追加
         </button>
@@ -998,6 +1002,7 @@ export default function MemoSection() {
             e.target.value = "";
           }}
         />
+      </div>
       </div>
       {mailImportError && <p className="px-1 text-xs text-alert">{mailImportError}</p>}
 

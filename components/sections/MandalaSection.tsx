@@ -7,6 +7,7 @@ import { buildMandalaGrid, emptyMandalaChart, mandalaChartFromSample, MANDALA_SA
 import { showUndoToast } from "@/lib/toast";
 import { useSetting } from "@/lib/settings";
 import Modal from "@/components/ui/Modal";
+import ScrollFadeHint from "@/components/ui/ScrollFadeHint";
 import type { MandalaChart, TodoTask } from "@/lib/types";
 
 const GRID = buildMandalaGrid();
@@ -254,7 +255,7 @@ export default function MandalaSection({
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          <ScrollFadeHint className="overflow-x-auto" fadeClassName="">
             <div
               className="grid gap-1"
               style={{ gridTemplateColumns: "repeat(9, minmax(64px, 1fr))", width: "max-content", minWidth: "100%" }}
@@ -285,7 +286,7 @@ export default function MandalaSection({
                 })
               )}
             </div>
-          </div>
+          </ScrollFadeHint>
         </div>
       )}
 
