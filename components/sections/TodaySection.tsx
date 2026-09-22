@@ -3908,6 +3908,7 @@ export default function TodaySection({
           provisionalRunning={provisionalActive}
           lastStopTime={effectiveLastStopTime}
           doneTasks={doneTodayUnique}
+          methodSuggestions={methodSuggestions}
           onRequestConflictStart={requestStartNew}
           onAdded={(status) => setTaskViewTab(status)}
           onSelectCompleted={(task) => {

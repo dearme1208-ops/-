@@ -55,6 +55,7 @@ export default function AddTaskDialog({
   provisionalRunning,
   lastStopTime,
   doneTasks,
+  methodSuggestions,
   onRequestConflictStart,
   onAdded,
   onSelectCompleted,
@@ -65,6 +66,8 @@ export default function AddTaskDialog({
   lastStopTime?: number | null;
   // 本日中に完了した業務（重複はまとめ済み）。「完了した業務から選ぶ」に使う
   doneTasks: DailyTask[];
+  // 過去に使われた手段の候補(頻度順)。入力欄のdatalistに使う
+  methodSuggestions?: string[];
   onRequestConflictStart: (category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) => void;
   // 実際に追加できた時に、その作業が実行中("running")・未着手("pending")のどちらとして
   // 追加されたかを渡す(未計測との競合で呼び出し元に処理を委ねた場合は呼ばれない。
@@ -85,6 +88,9 @@ export default function AddTaskDialog({
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
   const [estimate, setEstimate] = useState("00:10:00");
+  // どんな手段(Excel/マクロ/クエリ/Claude等)で行うか。任意で、マスタ選択・自由入力どちらの
+  // 追加方法でも共通して設定できる(insertTaskに渡すDailyTask.methodになる)
+  const [method, setMethod] = useState("");
   // 登録時点では実際の所要時間が読めないことが多いため、既定では「予定」を設定しない
   // （目安に近い「予測」はマスタの平均値から別途ガントチャートに自動表示される）。
   // チェックした場合のみ、この作業に「予定」を設定する
@@ -130,6 +136,7 @@ export default function AddTaskDialog({
       accumulatedMs: 0,
       startedAt: startAt,
       isSpontaneous: true,
+      method: method.trim() || undefined,
     };
     await db.dailyTasks.add(task);
     onAdded?.(startAt !== undefined ? "running" : "pending");
@@ -216,6 +223,26 @@ export default function AddTaskDialog({
     </div>
   );
 
+  const methodField = (
+    <div className="mb-3">
+      <label className="mb-1 block text-xs text-cream/60">手段（任意）</label>
+      <input
+        list="add-task-method-suggestions"
+        placeholder="例: Excel、マクロ、クエリ、Claude"
+        value={method}
+        onChange={(e) => setMethod(e.target.value)}
+        className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+      />
+      {methodSuggestions && methodSuggestions.length > 0 && (
+        <datalist id="add-task-method-suggestions">
+          {methodSuggestions.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+      )}
+    </div>
+  );
+
   const estimateField = setPlan && (
     <div>
       <label className="mb-1 block text-xs text-cream/60">想定時間（予定）</label>
@@ -251,6 +278,7 @@ export default function AddTaskDialog({
           <VoiceInputButton onResult={(text) => setName((v) => (v ? `${v} ${text}` : text))} />
         </div>
       </div>
+      {methodField}
       {estimateField}
     </div>
   );
@@ -287,6 +315,7 @@ export default function AddTaskDialog({
         {pane === "master" && (
           <div>
             {planCheckbox}
+            {methodField}
             <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
             <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
             <button className="btn-pill-outline mt-2 w-full text-sm" onClick={() => setPane("menu")}>
@@ -298,6 +327,7 @@ export default function AddTaskDialog({
         {pane === "favorite" && (
           <div>
             {planCheckbox}
+            {methodField}
             <div className="space-y-1.5">
               {favorites === undefined ? null : favorites.length === 0 ? (
                 <p className="text-xs text-cream/50">お気に入りに登録された作業はまだありません。</p>
@@ -360,6 +390,7 @@ export default function AddTaskDialog({
     return (
       <Modal title="突発作業を追加" onClose={onClose}>
         {planCheckbox}
+        {methodField}
         <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
         <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
         <div className="mt-4 space-y-2 border-t border-cream/10 pt-3">
@@ -430,6 +461,7 @@ export default function AddTaskDialog({
 
       {mode === "master" ? (
         <div className="space-y-2">
+          {methodField}
           <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
           <Actions submit={submitMaster} disabled={!selectedMaster} />
         </div>
