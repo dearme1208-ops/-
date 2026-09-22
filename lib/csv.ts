@@ -5,6 +5,7 @@ const HEADERS = [
   "date",
   "category",
   "name",
+  "method",
   "seconds",
   "startedAt",
   "endedAt",
@@ -28,6 +29,7 @@ export function recordsToCsv(records: WorkRecord[]): string {
         r.date,
         csvEscape(r.category),
         csvEscape(r.name),
+        csvEscape(r.method ?? ""),
         String(r.seconds),
         String(r.startedAt),
         String(r.endedAt),
@@ -99,6 +101,7 @@ export function parseRecordsCsv(text: string): ParsedCsvResult {
       continue;
     }
     const idCol = idx("id");
+    const methodCol = idx("method");
     const startedAtCol = idx("startedAt");
     const endedAtCol = idx("endedAt");
     const excludedCol = idx("excludedFromStats");
@@ -109,6 +112,7 @@ export function parseRecordsCsv(text: string): ParsedCsvResult {
       date,
       category,
       name,
+      method: methodCol !== -1 && cols[methodCol] ? cols[methodCol] : undefined,
       seconds,
       startedAt: startedAtCol !== -1 && cols[startedAtCol] ? Number(cols[startedAtCol]) : now,
       endedAt: endedAtCol !== -1 && cols[endedAtCol] ? Number(cols[endedAtCol]) : now,

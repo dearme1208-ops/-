@@ -13,6 +13,7 @@ import {
 import { setManualOverride, clearManualOverride } from "@/lib/outliers";
 import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
 import { JOURNAL_KEY_PREFIX, journalEntriesFromSettings, journalEntriesToCsv } from "@/lib/journal";
+import { collectMethodSuggestions } from "@/lib/method";
 import { REFLECTION_KEY_PREFIX, reflectionEntriesFromSettings } from "@/lib/reflection";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { downloadTextFile } from "@/lib/report";
@@ -55,6 +56,7 @@ export default function RecordsSection() {
 
   const recordsRaw = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
+  const methodSuggestions = useMemo(() => collectMethodSuggestions(records ?? []), [records]);
 
   // 「今日の記録」(本日タブの自由記述欄)を日付ごとに見返せる履歴パネル。
   // デフォルトは折りたたみ(件数が増えると場所を取るため)、開閉状態は設定に永続化する
@@ -468,6 +470,14 @@ export default function RecordsSection() {
         )}
       </div>
 
+      {methodSuggestions.length > 0 && (
+        <datalist id="method-suggestions">
+          {methodSuggestions.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+      )}
+
       <div className="panel divide-y divide-cream/10">
         {visibleRecords.map((r) => (
           <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
@@ -507,6 +517,15 @@ export default function RecordsSection() {
                 defaultValue={r.name}
                 onBlur={(e) => updateRecord(r, { name: e.target.value })}
                 className="w-32 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+              />
+              <input
+                key={`method-${r.method ?? ""}`}
+                defaultValue={r.method ?? ""}
+                onBlur={(e) => updateRecord(r, { method: e.target.value.trim() || undefined })}
+                placeholder="手段"
+                list="method-suggestions"
+                title="手段（例: Excel、マクロ、クエリ、Claude）"
+                className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
               <input
                 key={`seconds-${r.seconds}`}

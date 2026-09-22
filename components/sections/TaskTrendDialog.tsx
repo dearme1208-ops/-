@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { computeTaskTrend, type TrendGranularity } from "@/lib/aggregate";
+import { computeMethodBreakdown } from "@/lib/method";
 import { formatHms } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -91,6 +92,10 @@ export default function TaskTrendDialog({
   );
   const latest = points[points.length - 1];
   const previous = points[points.length - 2];
+  const methodStats = useMemo(() => computeMethodBreakdown(records, rowKey), [records, rowKey]);
+  // 手段が一度も入力されていない(全件が未設定1グループのみ)場合は比較にならないため出し分ける
+  const showMethodBreakdown = methodStats.length > 1 || (methodStats.length === 1 && methodStats[0].method !== "（未設定）");
+  const firstMethodStat = methodStats.find((m) => m.method !== "（未設定）");
 
   function renderChart(data: { key: string; label: string; value: number }[], formatValue: (v: number) => string) {
     return chartType === "bar" ? (
@@ -152,6 +157,60 @@ export default function TaskTrendDialog({
             currentValue={`${latest.count}件`}
             delta={previous ? periodDelta(latest.count, previous.count) : null}
             sense="neutral"
+          />
+        </div>
+      )}
+
+      {showMethodBreakdown && (
+        <div className="mb-4">
+          <h4 className="mb-2 text-xs font-bold text-cream/70">🛠 手段別の比較</h4>
+          <p className="mb-2 text-[11px] text-cream/40">
+            「作業内容を編集」の手段欄・実績編集タブで入力した内容をもとに、やり方を変えた前後の所要時間を比べます（初めて使った日の古い順）。
+          </p>
+          <div className="mb-3 overflow-x-auto">
+            <table className="w-full min-w-[420px] text-left text-xs">
+              <thead>
+                <tr className="text-cream/50">
+                  <th className="pb-1 pr-3 font-normal">手段</th>
+                  <th className="pb-1 pr-3 text-right font-normal">件数</th>
+                  <th className="pb-1 pr-3 text-right font-normal">合計時間</th>
+                  <th className="pb-1 pr-3 text-right font-normal">平均時間</th>
+                  <th className="pb-1 text-right font-normal">対最初の手段</th>
+                </tr>
+              </thead>
+              <tbody className="tabular-nums">
+                {methodStats.map((m) => {
+                  const delta =
+                    firstMethodStat && firstMethodStat.method !== m.method
+                      ? ((m.avgSeconds - firstMethodStat.avgSeconds) / firstMethodStat.avgSeconds) * 100
+                      : null;
+                  return (
+                    <tr key={m.method} className="border-t border-cream/10">
+                      <td className="py-1.5 pr-3 font-bold text-cream">
+                        {m.method}
+                        <div className="font-normal text-cream/40">
+                          {m.firstDate === m.lastDate ? m.firstDate : `${m.firstDate}〜${m.lastDate}`}
+                        </div>
+                      </td>
+                      <td className="py-1.5 pr-3 text-right text-cream/80">{m.count}件</td>
+                      <td className="py-1.5 pr-3 text-right text-cream/80">{formatHms(m.totalSeconds)}</td>
+                      <td className="py-1.5 pr-3 text-right text-cream/80">{formatHms(m.avgSeconds)}</td>
+                      <td
+                        className={`py-1.5 text-right font-bold ${
+                          delta === null ? "text-cream/30" : delta < 0 ? "text-emerald-400" : delta > 0 ? "text-alert" : "text-cream/50"
+                        }`}
+                      >
+                        {delta === null ? "―" : `${delta >= 0 ? "+" : ""}${delta.toFixed(0)}%`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <RankingBarChart
+            data={methodStats.map((m) => ({ key: m.method, label: m.method, value: m.avgSeconds }))}
+            formatValue={formatHms}
           />
         </div>
       )}

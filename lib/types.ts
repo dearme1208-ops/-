@@ -123,6 +123,9 @@ export interface DailyTask {
   boardY?: number; // 入れ替わるため、位置も自然にリセットされる(付箋のようにずっと保持はしない)
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグ・矢印キー移動ができない
   boardPinned?: boolean; // trueの場合、統合ボード上で他のカードより必ず手前に表示される
+  method?: string; // この作業をどんな手段で行ったか（例: Excel、マクロ、クエリ、Claude）。任意入力で、
+  // 「作業内容を編集」から設定・変更できる。完了時にWorkRecord.methodへ引き継がれ、同じ作業の
+  // 所要時間が手段によってどう変化したかを比較する材料になる
 }
 
 export interface WorkRecord {
@@ -134,6 +137,8 @@ export interface WorkRecord {
   seconds: number;
   startedAt: number;
   endedAt: number;
+  method?: string; // この実績をどんな手段で行ったか（例: Excel、マクロ、クエリ、Claude）。任意。
+  // 同じ作業(masterTaskId)の実績を手段ごとに集計・比較し、所要時間の変化から効果を見るのに使う
   excludedFromStats: boolean;
   excludeReason?: "auto-iqr" | "manual";
   manualOverride?: boolean; // true = ユーザーが除外/復活を手動指定済み。自動IQR判定の対象外

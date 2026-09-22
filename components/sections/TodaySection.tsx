@@ -6,6 +6,7 @@ import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
+import { collectMethodSuggestions } from "@/lib/method";
 import {
   adjustStopTimeForBreaks,
   breakRangeKey,
@@ -1704,6 +1705,7 @@ export default function TodaySection({
     name: string,
     actualSeconds?: number,
     note?: string,
+    method?: string,
     startedAtOverride?: number,
     endedAtOverride?: number
   ) {
@@ -1723,7 +1725,13 @@ export default function TodaySection({
         }
       }
       const segmentsChanged = segments !== task.segments;
-      const taskUpdates: Partial<DailyTask> = { category, name, note, ...(renamed ? { masterTaskId: undefined } : {}) };
+      const taskUpdates: Partial<DailyTask> = {
+        category,
+        name,
+        note,
+        method,
+        ...(renamed ? { masterTaskId: undefined } : {}),
+      };
       if (segmentsChanged) {
         taskUpdates.segments = segments;
         taskUpdates.startedAt = segments[0].start;
@@ -1738,6 +1746,7 @@ export default function TodaySection({
         category,
         name,
         note,
+        method,
         ...(renamed ? { masterTaskId: undefined } : {}),
       });
       return;
@@ -1762,7 +1771,7 @@ export default function TodaySection({
     const newSeconds = segmentsChanged ? Math.round(newAccumulatedMs / 1000) : (actualSeconds ?? oldSeconds);
     const delta = newSeconds - oldSeconds;
 
-    const taskUpdates: Partial<DailyTask> = { category, name, note };
+    const taskUpdates: Partial<DailyTask> = { category, name, note, method };
     if (segmentsChanged) {
       taskUpdates.segments = segments;
       taskUpdates.accumulatedMs = newAccumulatedMs;
@@ -1796,6 +1805,7 @@ export default function TodaySection({
         await db.records.update(existingOld.id, {
           ...(delta !== 0 ? { seconds: Math.max(0, existingOld.seconds + delta) } : {}),
           note,
+          method,
           ...(clearSegments ? { segments: undefined } : {}),
         });
       }
@@ -1815,6 +1825,7 @@ export default function TodaySection({
         await db.records.update(existingOld.id, {
           ...(delta !== 0 ? { seconds: Math.max(0, existingOld.seconds + delta) } : {}),
           note,
+          method,
           ...(clearSegments ? { segments: undefined } : {}),
         });
       }
@@ -1841,6 +1852,7 @@ export default function TodaySection({
         seconds: existingNew.seconds + newSeconds,
         endedAt: newEndedAt,
         note,
+        method,
         segments: undefined,
       });
     } else {
@@ -1858,6 +1870,7 @@ export default function TodaySection({
         stageId: task.stageId,
         isTrouble: task.isTrouble,
         note,
+        method,
       });
     }
     taskUpdates.masterTaskId = newMaster.id;
@@ -2074,6 +2087,7 @@ export default function TodaySection({
         seconds: existing.seconds + seconds,
         endedAt: nowMs,
         isTrouble: existing.isTrouble || task.isTrouble,
+        method: existing.method ?? task.method,
         ...(task.secondaryProjectIds ? { secondaryProjectIds: task.secondaryProjectIds } : {}),
         segments: mergeRecordSegments(existing, segments),
       });
@@ -2091,6 +2105,7 @@ export default function TodaySection({
         projectId: task.projectId,
         stageId: task.stageId,
         isTrouble: task.isTrouble,
+        method: task.method,
         secondaryProjectIds: task.secondaryProjectIds,
         segments,
       });
@@ -2458,6 +2473,8 @@ export default function TodaySection({
   }
 
   const streakDays = useMemo(() => computeStreakDays(projectRecords ?? [], date), [projectRecords, date]);
+
+  const methodSuggestions = useMemo(() => collectMethodSuggestions(projectRecords ?? []), [projectRecords]);
 
   // 同曜日比較: 本日の実績合計を、過去の同じ曜日の平均と比べる
   const todayTotalSeconds = useMemo(
@@ -3827,7 +3844,7 @@ export default function TodaySection({
           date={date}
           onOpenEdit={(task) => setEditingTask(task)}
           onCommitTimes={(task, startedAt, endedAt) =>
-            applyTaskEdit(task, task.category, task.name, undefined, task.note, startedAt, endedAt)
+            applyTaskEdit(task, task.category, task.name, undefined, task.note, task.method, startedAt, endedAt)
           }
         />
       )}
@@ -4054,8 +4071,9 @@ export default function TodaySection({
         <EditTaskDialog
           task={editingTask}
           previousTaskEndedAt={findPreviousTaskEndedAt(editingTask)}
-          onSave={(category, name, actualSeconds, note, startedAt, endedAt) =>
-            applyTaskEdit(editingTask, category, name, actualSeconds, note, startedAt, endedAt)
+          methodSuggestions={methodSuggestions}
+          onSave={(category, name, actualSeconds, note, method, startedAt, endedAt) =>
+            applyTaskEdit(editingTask, category, name, actualSeconds, note, method, startedAt, endedAt)
           }
           onClose={() => setEditingTask(null)}
         />

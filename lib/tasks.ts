@@ -157,6 +157,7 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
       seconds: existing.seconds + seconds,
       endedAt: Math.max(existing.endedAt, endedAt),
       isTrouble: existing.isTrouble || task.isTrouble,
+      method: existing.method ?? task.method,
       segments: mergeRecordSegments(existing, segments),
     });
   } else {
@@ -173,6 +174,7 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
       projectId: task.projectId,
       stageId: task.stageId,
       isTrouble: task.isTrouble,
+      method: task.method,
       segments,
     });
   }

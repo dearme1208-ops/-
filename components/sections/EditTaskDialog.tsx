@@ -21,16 +21,20 @@ function toEpoch(date: string, hm: string): number {
 export default function EditTaskDialog({
   task,
   previousTaskEndedAt,
+  methodSuggestions,
   onSave,
   onClose,
 }: {
   task: DailyTask;
   previousTaskEndedAt?: number | null;
+  // 過去に使われた手段の候補(頻度順)。入力欄のdatalistに使う
+  methodSuggestions?: string[];
   onSave: (
     category: string,
     name: string,
     actualSeconds?: number,
     note?: string,
+    method?: string,
     startedAt?: number,
     endedAt?: number
   ) => void;
@@ -57,6 +61,7 @@ export default function EditTaskDialog({
   // 入力欄をその後さらに手で触った場合はこの値を捨て、通常どおり入力欄の値(分単位)を使う
   const [preciseStart, setPreciseStart] = useState<number | null>(null);
   const [note, setNote] = useState(task.note ?? "");
+  const [method, setMethod] = useState(task.method ?? "");
   const [showMasterPicker, setShowMasterPicker] = useState(false);
   const [troubleDetailOptionsJson] = useSetting("trouble.detailOptions", JSON.stringify(DEFAULT_TROUBLE_DETAIL_OPTIONS));
   const troubleDetailOptions = useMemo(() => parsePresetList(troubleDetailOptionsJson), [troubleDetailOptionsJson]);
@@ -98,6 +103,7 @@ export default function EditTaskDialog({
         name.trim(),
         undefined,
         note.trim() || undefined,
+        method.trim() || undefined,
         startTouched ? resolvedStart : undefined,
         endTouched ? rawEnd : undefined
       );
@@ -105,11 +111,18 @@ export default function EditTaskDialog({
       return;
     }
     if (isInProgress) {
-      onSave(category.trim(), name.trim(), undefined, note.trim() || undefined, startTouched ? resolvedStart : undefined);
+      onSave(
+        category.trim(),
+        name.trim(),
+        undefined,
+        note.trim() || undefined,
+        method.trim() || undefined,
+        startTouched ? resolvedStart : undefined
+      );
       onClose();
       return;
     }
-    onSave(category.trim(), name.trim(), undefined, note.trim() || undefined);
+    onSave(category.trim(), name.trim(), undefined, note.trim() || undefined, method.trim() || undefined);
     onClose();
   }
 
@@ -264,6 +277,26 @@ export default function EditTaskDialog({
             </p>
           </div>
         )}
+        <div>
+          <label className="mb-1 block text-xs text-cream/60">手段</label>
+          <input
+            list="method-suggestions"
+            placeholder="例: Excel、マクロ、クエリ、Claude（任意）"
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+          {methodSuggestions && methodSuggestions.length > 0 && (
+            <datalist id="method-suggestions">
+              {methodSuggestions.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          )}
+          <p className="mt-1 text-[10px] text-cream/40">
+            どんなやり方で行ったかを記録すると、同じ作業の所要時間が手段によってどう変わったか後から比較できます。
+          </p>
+        </div>
         <div>
           <label className="mb-1 block text-xs text-cream/60">一言メモ</label>
           <textarea
