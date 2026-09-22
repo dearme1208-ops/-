@@ -3864,7 +3864,16 @@ export default function TodaySection({
         onSelect={(k) => setTaskViewTab(k as typeof taskViewTab)}
         style={tabBarStyle as TabBarStyle}
         adaptiveEmphasis={tabBarAdaptiveEmphasis}
-        running={runningStrip ? { ...runningStrip, onClick: () => setTaskViewTab("running") } : null}
+        running={
+          runningStrip
+            ? {
+                ...runningStrip,
+                onClick: () => setTaskViewTab("running"),
+                overrunLabel: overrunLabel(wordingThemedMode),
+                overrunAnimClass: themedMode ? cardOverrunClass(themedMode) : "card-overrun",
+              }
+            : null
+        }
         progress={
           tabBarProgressStrip
             ? [

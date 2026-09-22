@@ -33,24 +33,45 @@ export interface BottomTabBarRunning {
   extraCount: number;
   /** 押したときの動き(実行中タブへ移動する等)。無ければただの表示になる */
   onClick?: () => void;
+  /** 想定時間を超過しているか。trueなら放置に気づけるよう強めに強調表示する */
+  overrun?: boolean;
+  /** 超過時のテーマに応じた一言(例:「🌿 想定より長く森にいます」)。ツールチップに使う。省略時は既定文言 */
+  overrunLabel?: string;
+  /** 超過時のテーマに応じた光彩アニメーションのクラス名(例: card-overrun-forest)。省略時は既定の光彩 */
+  overrunAnimClass?: string;
 }
 
 function RunningStrip({ running }: { running: BottomTabBarRunning }) {
-  const title = `計測中: ${running.category} / ${running.name}（${running.elapsedLabel}）`;
+  const overrun = !!running.overrun;
+  const title = overrun
+    ? `${running.overrunLabel ?? "⚠ 想定時間を超過して計測中"}: ${running.category} / ${running.name}（${running.elapsedLabel}）`
+    : `計測中: ${running.category} / ${running.name}（${running.elapsedLabel}）`;
   const inner = (
     <>
-      <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-alert" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-left text-xs text-cream/85">
-        <span className="text-cream/45">{running.category} / </span>
+      {overrun ? (
+        <span className="shrink-0 animate-pulse font-bold text-alert" aria-hidden="true">
+          ⚠
+        </span>
+      ) : (
+        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-alert" aria-hidden="true" />
+      )}
+      <span className={`min-w-0 flex-1 truncate text-left text-xs ${overrun ? "font-bold text-alert" : "text-cream/85"}`}>
+        <span className={overrun ? "opacity-70" : "text-cream/45"}>{running.category} / </span>
         {running.name}
       </span>
       {running.extraCount > 0 && (
         <span className="shrink-0 text-[10px] text-cream/45">他{running.extraCount}件</span>
       )}
-      <span className="shrink-0 font-display text-sm font-bold tabular-nums text-cream">{running.elapsedLabel}</span>
+      <span
+        className={`shrink-0 font-display text-sm font-bold tabular-nums ${overrun ? "text-alert" : "text-cream"}`}
+      >
+        {running.elapsedLabel}
+      </span>
     </>
   );
-  const className = "panel mb-1 flex w-full items-center gap-2 px-3 py-1.5 shadow-lg backdrop-blur";
+  const className = `panel mb-1 flex w-full items-center gap-2 px-3 py-1.5 shadow-lg backdrop-blur ${
+    overrun ? `border-alert ring-2 ring-alert/70 bg-alert/[0.06] ${running.overrunAnimClass ?? "card-overrun"}` : ""
+  }`;
   if (!running.onClick) {
     return (
       <div className={className} title={title} aria-label={title}>

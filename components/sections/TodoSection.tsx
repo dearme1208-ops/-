@@ -28,7 +28,7 @@ import {
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { cardOverrunClass, emphasisTextClass, useVisualMode } from "@/lib/theme";
+import { cardOverrunClass, emphasisTextClass, overrunLabel, useVisualMode } from "@/lib/theme";
 import {
   daysBetweenDateStrs,
   todayStr,
@@ -336,7 +336,11 @@ export default function TodoSection({
   const today = todayStr();
 
   // ドラフトボード(育成選手モードの見出し)で使う。行側とは別に、一覧の親でも参照する
-  const { themedMode: sectionThemedMode, wordingEnabled: sectionWording } = useVisualMode();
+  const {
+    themedMode: sectionThemedMode,
+    wordingEnabled: sectionWording,
+    wordingThemedMode: sectionWordingThemedMode,
+  } = useVisualMode();
 
   const lists = useLiveQuery(() => db.todoLists.orderBy("order").toArray(), []);
   const allTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
@@ -2077,7 +2081,15 @@ export default function TodoSection({
           style={tabBarStyle as TabBarStyle}
           adaptiveEmphasis={tabBarAdaptiveEmphasis}
           // このタブからは本日の作業へ切り替える導線を持たないので、表示だけ行う
-          running={runningStrip}
+          running={
+            runningStrip
+              ? {
+                  ...runningStrip,
+                  overrunLabel: overrunLabel(sectionWordingThemedMode),
+                  overrunAnimClass: sectionThemedMode ? cardOverrunClass(sectionThemedMode) : "card-overrun",
+                }
+              : null
+          }
         />
       )}
 
