@@ -40,6 +40,7 @@ import WbsDialog from "@/components/sections/WbsDialog";
 import ProjectPPMChart from "@/components/sections/ProjectPPMChart";
 import ProjectProgressChart from "@/components/sections/ProjectProgressChart";
 import StageDueDensityModal from "@/components/sections/StageDueDensityModal";
+import WeeklyReviewModal from "@/components/WeeklyReviewModal";
 import Modal from "@/components/ui/Modal";
 import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
 import { showUndoToast } from "@/lib/toast";
@@ -147,6 +148,7 @@ export default function ProjectsSection({
   const [showCompleted, setShowCompleted] = useState(false);
   // 取引先の登録・編集も毎日は触らないため、フォームと同じく既定では畳んでおく
   const [showClients, setShowClients] = useState(false);
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -385,6 +387,15 @@ export default function ProjectsSection({
     await db.projects.update(item.id, { tag: value || undefined });
   }
 
+  // アーカイブ: 削除と違いデータは残したまま、通常の一覧・ガント・カレンダー等から外す
+  async function toggleArchiveProject(item: ProjectItem) {
+    const next = !item.archived;
+    await db.projects.update(item.id, { archived: next });
+    showUndoToast(next ? `「${item.title}」をアーカイブしました` : `「${item.title}」のアーカイブを解除しました`, async () => {
+      await db.projects.update(item.id, { archived: !next });
+    });
+  }
+
   async function toggleComplete(item: ProjectItem) {
     const nowCompleting = !item.completedAt;
     const completedAt = nowCompleting ? Date.now() : undefined;
@@ -479,8 +490,14 @@ export default function ProjectsSection({
     setStageAddTarget(null);
   }
 
+  // アーカイブ済みは既定では一覧・ガント・カレンダー等から外す。削除と違いデータは残るので、
+  // 「アーカイブ済みを表示」をONにすればいつでも通常の一覧に戻せる
+  const [showArchivedStr, setShowArchivedStr] = useSetting("projects.showArchived", "false");
+  const showArchived = showArchivedStr === "true";
+  const archivedProjectCount = useMemo(() => (projects ?? []).filter((p) => p.archived).length, [projects]);
+
   const rows = useMemo(() => {
-    const list = projects ?? [];
+    const list = (projects ?? []).filter((p) => showArchived || !p.archived);
     return list.map((p) => {
       const createdStr = todayStr(new Date(p.createdAt));
       const overdue = !p.completedAt && p.dueDate < today;
@@ -667,6 +684,15 @@ export default function ProjectsSection({
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap justify-end gap-2">
+        <button
+          className="btn-pill-outline text-sm"
+          onClick={() => setShowWeeklyReview(true)}
+          title="期日切れの案件・ToDoを1件ずつ見直します"
+        >
+          📋 週次レビュー
+        </button>
+      </div>
       {showCsvTools && (
         <div className="flex flex-wrap justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
@@ -878,17 +904,30 @@ export default function ProjectsSection({
         );
       })()}
 
-      {completedStageCount > 0 && (
-        <div className="mb-2 flex justify-end">
-          <button
-            type="button"
-            className={showCompletedStages ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowCompletedStagesStr(showCompletedStages ? "false" : "true")}
-            aria-pressed={showCompletedStages}
-            title="各案件の下に並ぶ完了済みの段階を、一覧に出すかどうかを切り替えます（設定タブの同じ項目と連動し、次に開いた時も保たれます）"
-          >
-            完了済みの段階（{completedStageCount}）: {showCompletedStages ? "表示中" : "非表示"}
-          </button>
+      {(completedStageCount > 0 || archivedProjectCount > 0 || showArchived) && (
+        <div className="mb-2 flex flex-wrap justify-end gap-2">
+          {archivedProjectCount > 0 || showArchived ? (
+            <button
+              type="button"
+              className={showArchived ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setShowArchivedStr(showArchived ? "false" : "true")}
+              aria-pressed={showArchived}
+              title="アーカイブした案件を、通常の一覧・ガント・カレンダー等に含めるかどうかを切り替えます"
+            >
+              🗄 アーカイブ済み（{archivedProjectCount}）: {showArchived ? "表示中" : "非表示"}
+            </button>
+          ) : null}
+          {completedStageCount > 0 && (
+            <button
+              type="button"
+              className={showCompletedStages ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setShowCompletedStagesStr(showCompletedStages ? "false" : "true")}
+              aria-pressed={showCompletedStages}
+              title="各案件の下に並ぶ完了済みの段階を、一覧に出すかどうかを切り替えます（設定タブの同じ項目と連動し、次に開いた時も保たれます）"
+            >
+              完了済みの段階（{completedStageCount}）: {showCompletedStages ? "表示中" : "非表示"}
+            </button>
+          )}
         </div>
       )}
 
@@ -914,6 +953,7 @@ export default function ProjectsSection({
             onAnalysis={() => setAnalysisProject(project)}
             onWbs={() => setWbsProject(project)}
             onDelete={() => deleteProject(project)}
+            onArchive={() => toggleArchiveProject(project)}
             onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
             onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
             onSetTag={(value) => setProjectTag(project, value)}
@@ -954,6 +994,7 @@ export default function ProjectsSection({
                   onAnalysis={() => setAnalysisProject(project)}
                   onWbs={() => setWbsProject(project)}
                   onDelete={() => deleteProject(project)}
+                  onArchive={() => toggleArchiveProject(project)}
                   onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
                   onAddStageToToday={(stage) => addStageToTodayWithConfirm(project, stage)}
                   onSetTag={(value) => setProjectTag(project, value)}
@@ -1188,6 +1229,7 @@ export default function ProjectsSection({
       )}
 
       {editingProject && <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
+      {showWeeklyReview && <WeeklyReviewModal onClose={() => setShowWeeklyReview(false)} />}
       {analysisProject && <ProjectAnalysisDialog project={analysisProject} onClose={() => setAnalysisProject(null)} />}
       {wbsProject && <WbsDialog project={wbsProject} onClose={() => setWbsProject(null)} />}
 
@@ -1354,6 +1396,7 @@ function ProjectRow({
   onAnalysis,
   onWbs,
   onDelete,
+  onArchive,
   onToggleStage,
   onAddStageToToday,
   onSetTag,
@@ -1377,6 +1420,7 @@ function ProjectRow({
   onAnalysis: () => void;
   onWbs: () => void;
   onDelete: () => void;
+  onArchive: () => void;
   onToggleStage: (stageId: string) => void;
   onAddStageToToday: (stage: ProjectStage) => void;
   onSetTag: (value: string) => void;
@@ -1833,6 +1877,13 @@ function ProjectRow({
           }}
         >
           {project.boardX !== undefined ? "ボードから外す" : "ボードに置く"}
+        </button>
+        <button
+          className="text-xs text-cream/60 hover:text-cream"
+          onClick={onArchive}
+          title={project.archived ? "通常の一覧・ガント・カレンダー等に戻します" : "削除せずに、通常の一覧・ガント・カレンダー等から外します"}
+        >
+          {project.archived ? "🗄 アーカイブ解除" : "🗄 アーカイブ"}
         </button>
         <button className="text-xs text-alert" onClick={onDelete}>
           削除

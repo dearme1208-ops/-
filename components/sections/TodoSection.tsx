@@ -54,6 +54,7 @@ import { DEFAULT_MEMO_NOTE_COLOR, estimateChecklistNoteHeight, estimateTextNoteH
 import { placeTodoOnBoard, removeTodoFromBoard } from "@/lib/boardPlacement";
 import Modal from "@/components/ui/Modal";
 import DueDateLoadWarning from "@/components/ui/DueDateLoadWarning";
+import WeeklyReviewModal from "@/components/WeeklyReviewModal";
 import TodoCalendarView from "@/components/sections/TodoCalendarView";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import GuideImportDialog from "@/components/sections/GuideImportDialog";
@@ -210,6 +211,7 @@ export default function TodoSection({
   // タスク追加フォームは既定で畳んでおき、「+ タスクを追加」ボタンで必要な入力欄を
   // まとめて開く(常時表示だと入力欄が多く、狭い画面では特に圧迫感があったため)
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   // 「追加して続ける」で件名欄へ戻すための参照
   const newTaskTitleRef = useRef<HTMLInputElement>(null);
@@ -428,7 +430,15 @@ export default function TodoSection({
     return map;
   }, [allTasks]);
 
-  const topLevelTasks = useMemo(() => (allTasks ?? []).filter((t) => !t.parentTaskId), [allTasks]);
+  // アーカイブ済みは既定では一覧・検索から外す。完了済みが積み上がって一覧が長くなりがちな
+  // 運用でも、ここをONにすればいつでも通常の一覧・検索でそのまま見返せる
+  const [showArchivedStr, setShowArchivedStr] = useSetting("todo.showArchived", "false");
+  const showArchived = showArchivedStr === "true";
+  const topLevelTasks = useMemo(
+    () => (allTasks ?? []).filter((t) => !t.parentTaskId && (showArchived || !t.archived)),
+    [allTasks, showArchived]
+  );
+  const archivedCount = useMemo(() => (allTasks ?? []).filter((t) => !t.parentTaskId && t.archived).length, [allTasks]);
 
   // 期限切れ: 未完了かつ自分自身の期日が本日より前のタスク・サブタスク。
   // 親タスク本体の期日だけでなく、サブタスク自身の期日が過ぎている場合はサブタスクを
@@ -932,6 +942,17 @@ export default function TodoSection({
     if (detailTaskId === task.id) setDetailTaskId(null);
     showUndoToast(`「${task.title}」を削除しました`, async () => {
       await db.todoTasks.bulkAdd([task, ...subs]);
+    });
+  }
+
+  // アーカイブ: 削除と違いデータは残したまま、通常の一覧・検索の既定表示から外す。
+  // 完了済みが積み上がって一覧が長くなりがちな運用向けの「消さずに退避する」操作
+  async function toggleArchiveTask(task: TodoTask) {
+    const next = !task.archived;
+    await db.todoTasks.update(task.id, { archived: next });
+    if (detailTaskId === task.id) setDetailTaskId(null);
+    showUndoToast(next ? `「${task.title}」をアーカイブしました` : `「${task.title}」のアーカイブを解除しました`, async () => {
+      await db.todoTasks.update(task.id, { archived: !next });
     });
   }
 
@@ -1445,6 +1466,13 @@ export default function TodoSection({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg font-bold">{panelTitle}</h2>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={() => setShowWeeklyReview(true)}
+              title="期日切れ・期日未設定のまま放置されたToDoを1件ずつ見直します"
+            >
+              📋 週次レビュー
+            </button>
             {/* 表示切替(リスト/かんばん/ガント等)や選択モードは、このビューに1件も
                 無い間は切り替える対象自体が無く、押しても空の盤面が出るだけになる。
                 「タスクを追加」だけが押せれば足りるので畳んでおく */}
@@ -1506,6 +1534,15 @@ export default function TodoSection({
                   </button>
                 )}
               </>
+            )}
+            {(archivedCount > 0 || showArchived) && (
+              <button
+                onClick={() => setShowArchivedStr(showArchived ? "false" : "true")}
+                className={showArchived ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                title="完了後にアーカイブしたタスクを、通常の一覧・検索に含めるかどうかを切り替えます"
+              >
+                🗄 アーカイブ済み（{archivedCount}）: {showArchived ? "表示中" : "非表示"}
+              </button>
             )}
             {currentListId && !searchActive && (
               <button className="text-xs text-alert" onClick={() => deleteList(currentListId)}>
@@ -2106,6 +2143,7 @@ export default function TodoSection({
           onClose={() => setDetailTaskId(null)}
           onToggleMyDay={() => toggleMyDay(detailTask)}
           onDelete={() => deleteTask(detailTask)}
+          onArchive={() => toggleArchiveTask(detailTask)}
           onCopy={() => copyTask(detailTask)}
           onReflectToProject={(category, workName) => reflectToProject(detailTask, category, workName)}
           onAddToToday={(category, workName) => addTaskToToday(detailTask, category, workName)}
@@ -2113,6 +2151,8 @@ export default function TodoSection({
           alreadyAddedToToday={addedTodoTaskIdsToday.has(detailTask.id)}
         />
       )}
+
+      {showWeeklyReview && <WeeklyReviewModal onClose={() => setShowWeeklyReview(false)} />}
 
       {showGuideImport && (
         <GuideImportDialog
@@ -3106,6 +3146,7 @@ function TaskDetailModal({
   today,
   linkedProjectTitle,
   onClose,
+  onArchive,
   onToggleMyDay,
   onDelete,
   onCopy,
@@ -3123,6 +3164,7 @@ function TaskDetailModal({
   today: string;
   linkedProjectTitle?: string;
   onClose: () => void;
+  onArchive: () => void;
   onToggleMyDay: () => void;
   onDelete: () => void;
   onCopy: () => void;
@@ -3786,9 +3828,22 @@ function TaskDetailModal({
       </div>
 
       <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-cream/10 pt-3">
-        <button className="text-xs text-alert" onClick={onDelete}>
-          タスクを削除
-        </button>
+        <div className="flex gap-2">
+          <button className="text-xs text-alert" onClick={onDelete}>
+            タスクを削除
+          </button>
+          <button
+            className="text-xs text-cream/50 hover:text-cream"
+            onClick={onArchive}
+            title={
+              task.archived
+                ? "通常の一覧・検索に戻します"
+                : "削除せずに、通常の一覧・検索の既定表示から外します"
+            }
+          >
+            {task.archived ? "🗄 アーカイブを解除" : "🗄 アーカイブする"}
+          </button>
+        </div>
         <div className="flex gap-2">
           <button className="btn-pill-outline text-sm" onClick={onCopy} title="内容をコピーして新しいタスクを追加します">
             コピーして追加

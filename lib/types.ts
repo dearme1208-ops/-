@@ -246,6 +246,9 @@ export interface ProjectItem {
   mailFileDataUrl?: string;
   mailFileName?: string;
   mailSubject?: string; // 開かなくても件名だけで分かるよう、添付時にファイルから抽出して保持する
+  // 完了はしたが削除はしたくない古い案件を、通常の一覧・検索の既定表示から外すためのフラグ。
+  // 削除と違いデータは残るので、「アーカイブ済みを表示」をONにすれば通常の一覧・検索で見返せる
+  archived?: boolean;
 }
 
 // ---- WBS(作業分解構成図) ----
@@ -349,6 +352,9 @@ export interface TodoTask {
   mailFileDataUrl?: string;
   mailFileName?: string;
   mailSubject?: string; // 開かなくても件名だけで分かるよう、添付時にファイルから抽出して保持する
+  // 完了はしたが削除はしたくない古いタスクを、通常の一覧・検索の既定表示から外すためのフラグ。
+  // 削除と違いデータは残るので、「アーカイブ済みを表示」をONにすれば通常の一覧・検索で見返せる
+  archived?: boolean;
 }
 
 // ---- マンダラチャート ----
