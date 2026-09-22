@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
+import { findOrCreateMasterTask } from "@/lib/master";
 import type { MasterTask } from "@/lib/types";
 
 export default function MasterTaskPicker({
@@ -15,6 +16,9 @@ export default function MasterTaskPicker({
 }) {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  // 検索しても一致するマスタが無い時、その場で新規マスタとして登録して選べるようにする欄
+  const [newCategory, setNewCategory] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const allTasksRaw = useLiveQuery(() => db.masterTasks.toArray(), []);
   const allTasks = useHomeFilteredMasterTasks(allTasksRaw);
@@ -44,6 +48,24 @@ export default function MasterTaskPicker({
         items: items.sort((a, b) => a.name.localeCompare(b.name, "ja")),
       }));
   }, [allTasks, search, categoryFilter]);
+
+  // カテゴリ絞り込み中なら、新規登録の業務区分もそれを初期値にして再入力を省く
+  const newCategoryValue = newCategory || categoryFilter || "";
+
+  async function createFromSearch() {
+    const name = search.trim();
+    const category = newCategoryValue.trim();
+    if (!name || !category || creating) return;
+    setCreating(true);
+    try {
+      const task = await findOrCreateMasterTask(category, name, 0);
+      onSelect(task);
+      setSearch("");
+      setNewCategory("");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   return (
     <div className="space-y-2">
@@ -92,7 +114,30 @@ export default function MasterTaskPicker({
             </div>
           </div>
         ))}
-        {grouped.length === 0 && <p className="text-xs text-cream/50">該当なし</p>}
+        {grouped.length === 0 && (
+          <div className="space-y-2 rounded-lg border border-dashed border-cream/20 p-3">
+            <p className="text-xs text-cream/50">
+              {search.trim() ? `「${search}」に一致する作業マスタがありません。` : "該当なし"}
+            </p>
+            {search.trim() && (
+              <div className="flex flex-col gap-1.5 sm:flex-row">
+                <input
+                  placeholder="業務区分（大項目）"
+                  value={newCategoryValue}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                />
+                <button
+                  className="btn-pill-outline shrink-0 whitespace-nowrap text-xs"
+                  disabled={!newCategoryValue.trim() || creating}
+                  onClick={createFromSearch}
+                >
+                  ＋「{search}」をマスタに登録
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
