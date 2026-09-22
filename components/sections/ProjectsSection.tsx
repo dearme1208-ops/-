@@ -10,6 +10,7 @@ import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/proj
 import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
 import { computeProjectForecast, type ProjectForecast } from "@/lib/projectForecast";
+import { computeStagePaceForecast, type StagePaceForecast } from "@/lib/stageProgress";
 import { placeProjectOnBoard, removeProjectFromBoard } from "@/lib/boardPlacement";
 import {
   buildStageCompletionOrder,
@@ -38,6 +39,7 @@ import ProjectAnalysisDialog from "@/components/sections/ProjectAnalysisDialog";
 import WbsDialog from "@/components/sections/WbsDialog";
 import ProjectPPMChart from "@/components/sections/ProjectPPMChart";
 import ProjectProgressChart from "@/components/sections/ProjectProgressChart";
+import StageDueDensityModal from "@/components/sections/StageDueDensityModal";
 import Modal from "@/components/ui/Modal";
 import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
 import { showUndoToast } from "@/lib/toast";
@@ -489,12 +491,18 @@ export default function ProjectsSection({
       const daysElapsed = Math.max(1, daysBetweenDateStrs(createdStr, today) + 1);
       const workDays = projectWorkDays.get(p.id)?.size ?? 0;
       const forecast = projectForecasts.get(p.id);
+      // 見積もり総所要時間が無く、段階(チェックリスト)だけで運用している案件向けに、
+      // 段階の完了ペースから同じ考え方で期日到達を予測する(forecastが使える場合はそちらを優先)
+      const stageForecast = !forecast && !p.completedAt ? computeStagePaceForecast(p, today) ?? undefined : undefined;
       // 見積もり総所要時間があれば、実際の消化ペースに基づく予測(forecast)を優先する。
-      // 未設定の案件は従来通り「経過日数のうち何割の日に着手できているか」の簡易判定で代用する
+      // 段階ベースの予測(stageForecast)が使えればそれを次に優先し、どちらも無い案件だけ
+      // 従来通り「経過日数のうち何割の日に着手できているか」の簡易判定で代用する
       const paceWarning = forecast
         ? forecast.status === "at-risk" || forecast.status === "overdue"
-        : !p.completedAt && daysLeft <= 3 && daysLeft >= 0 && workDays / daysElapsed < 0.3;
-      return { project: p, createdStr, overdue, dueToday, daysLeft, paceWarning, forecast };
+        : stageForecast
+          ? stageForecast.status === "at-risk" || stageForecast.status === "overdue"
+          : !p.completedAt && daysLeft <= 3 && daysLeft >= 0 && workDays / daysElapsed < 0.3;
+      return { project: p, createdStr, overdue, dueToday, daysLeft, paceWarning, forecast, stageForecast };
     });
   }, [projects, today, projectWorkDays, projectForecasts]);
 
@@ -885,7 +893,7 @@ export default function ProjectsSection({
       )}
 
       <div className="panel divide-y divide-cream/10">
-        {activeRows.map(({ project, overdue, dueToday, daysLeft, paceWarning, forecast }) => (
+        {activeRows.map(({ project, overdue, dueToday, daysLeft, paceWarning, forecast, stageForecast }) => (
           <ProjectRow
             key={project.id}
             project={project}
@@ -894,6 +902,7 @@ export default function ProjectsSection({
             daysLeft={daysLeft}
             paceWarning={paceWarning}
             forecast={forecast}
+            stageForecast={stageForecast}
             themedMode={themedMode}
             totalSeconds={projectTotalSeconds.get(project.id) ?? 0}
             hourlyRate={resolveProjectRate(project)}
@@ -1334,6 +1343,7 @@ function ProjectRow({
   daysLeft,
   paceWarning,
   forecast,
+  stageForecast,
   totalSeconds,
   hourlyRate,
   clientName,
@@ -1356,6 +1366,7 @@ function ProjectRow({
   daysLeft: number;
   paceWarning?: boolean;
   forecast?: ProjectForecast;
+  stageForecast?: StagePaceForecast;
   totalSeconds: number;
   hourlyRate: number | null;
   clientName?: string;
@@ -1376,6 +1387,7 @@ function ProjectRow({
   const [showCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
   const showCompletedStages = showCompletedStagesStr === "true";
   const [stagesCollapsed, setStagesCollapsed] = useState(false);
+  const [showStageDueDensity, setShowStageDueDensity] = useState(false);
   // 進捗率・段階数の表示は全段階を対象にする一方、ここでの一覧描画だけ設定に応じて完了済みを間引く
   const visibleStages = showCompletedStages ? project.stages ?? [] : (project.stages ?? []).filter((s) => !isStageDone(s));
   // 完了した順番。定義順のままでは「どれを先に片付けたか」が読み取れないため、
@@ -1412,6 +1424,7 @@ function ProjectRow({
       })
     : [];
   return (
+    <>
     <div
       className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""} ${
         overdue
@@ -1556,6 +1569,28 @@ function ProjectRow({
                   : ""
               }）`}
           </div>
+        ) : stageForecast ? (
+          <div
+            className={`text-xs ${
+              stageForecast.status === "at-risk" || stageForecast.status === "overdue" ? "font-bold text-alert" : "text-cream/60"
+            }`}
+            title="見積もり総所要時間が無いため、段階(項目)の完了ペース(直近14日間)から算出した納期到達予測です"
+          >
+            {stageForecast.status === "done" && "✅ 段階はすべて消化済みです"}
+            {stageForecast.status === "overdue" && `🔴 期日超過（残り${stageForecast.remainingStages}段階）`}
+            {stageForecast.status === "no-recent-pace" &&
+              `😴 直近14日間この案件は未着手（残り${stageForecast.remainingStages}段階）`}
+            {stageForecast.status === "on-track" &&
+              stageForecast.projectedDaysNeeded !== null &&
+              `🎯 順調（今のペースならあと約${Math.ceil(stageForecast.projectedDaysNeeded)}日で完了見込み・残り${stageForecast.remainingStages}段階）`}
+            {stageForecast.status === "at-risk" &&
+              stageForecast.projectedDaysNeeded !== null &&
+              `⚠ 遅延の恐れ（今のペースだと完了まで約${Math.ceil(stageForecast.projectedDaysNeeded)}日かかる見込み。残り${stageForecast.remainingStages}段階${
+                stageForecast.requiredPacePerDay
+                  ? `・間に合わせるには1日あたり約${Math.ceil(stageForecast.requiredPacePerDay * 10) / 10}段階必要`
+                  : ""
+              }）`}
+          </div>
         ) : (
           paceWarning && (
             <div className="text-xs font-bold text-alert" title="残り日数が少ないですが、これまであまり着手できていないようです">
@@ -1634,6 +1669,16 @@ function ProjectRow({
               </div>
             )}
             </div>
+            {project.stages.filter((s) => !!s.dueDate && !isStageDone(s)).length >= 2 && (
+              <button
+                type="button"
+                onClick={() => setShowStageDueDensity(true)}
+                className="mt-1 text-[10px] text-cream/40 hover:text-cream/70"
+                title="段階の期日が特定の日に偏っていないか、月カレンダーで確認します"
+              >
+                📅 期日の混み具合を見る
+              </button>
+            )}
             {!stagesCollapsed && (
               <div className="mt-1.5 space-y-1">
                 {!showCompletedStages && visibleStages.length < project.stages.length && (
@@ -1794,5 +1839,13 @@ function ProjectRow({
         </button>
       </div>
     </div>
+    {showStageDueDensity && (
+      <StageDueDensityModal
+        stages={project.stages ?? []}
+        today={today}
+        onClose={() => setShowStageDueDensity(false)}
+      />
+    )}
+    </>
   );
 }

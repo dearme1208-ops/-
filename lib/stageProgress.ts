@@ -1,6 +1,6 @@
 import type { ProjectItem, WorkRecord } from "./types";
 import { isStageDone } from "./projectStage";
-import { daysBetweenDateStrs, todayStr } from "./time";
+import { daysBetweenDateStrs, shiftDateStr, todayStr } from "./time";
 import { percentile, MIN_DISTRIBUTION_SAMPLES } from "./estimation";
 
 // 「案件の段階を本日の作業に反映して、実際にどれだけ完了しているか」を横断的に見る。
@@ -204,4 +204,82 @@ export function stagesCompletedOn(projects: ProjectItem[], dateStr: string): Com
     }
   }
   return out;
+}
+
+// --- ⑤ 段階数ベースのペース予測 --------------------------------------------
+
+export type StagePaceForecastStatus = "done" | "overdue" | "no-recent-pace" | "on-track" | "at-risk";
+
+export interface StagePaceForecast {
+  totalStages: number;
+  completedStages: number;
+  remainingStages: number;
+  daysRemaining: number; // 期日までの日数(超過している場合は負)
+  recentPacePerDay: number; // 直近PACE_WINDOW_DAYS日の1日あたり平均完了段階数
+  projectedDaysNeeded: number | null; // 直近ペースのまま進んだ場合、残りをこなすのに要する日数
+  requiredPacePerDay: number | null; // 期日に間に合わせるために今後必要な1日あたりの完了段階数
+  status: StagePaceForecastStatus;
+}
+
+const STAGE_PACE_WINDOW_DAYS = 14;
+
+// computeProjectForecast(見積もり総所要時間ベース)の、段階数版。パワプロのマイライフ準備の
+// 選手リストのように、時間を見積もらず「段階(項目)を1つずつ消化していく」運用の案件では
+// 所要時間の実績が無く時間ベースの予測が使えないため、代わりに段階の完了時刻(completedAt)
+// から直近の消化ペースを求め、期日に間に合いそうかを判定する。
+// 見積もり総所要時間が設定されている案件はcomputeProjectForecastを優先し、こちらは
+// それが使えない(段階はあるが見積もりが無い)場合のフォールバックとして使う
+export function computeStagePaceForecast(project: ProjectItem, today: string = todayStr()): StagePaceForecast | null {
+  const stages = project.stages ?? [];
+  if (stages.length === 0) return null;
+
+  const totalStages = stages.length;
+  const completedStages = stages.filter((s) => isStageDone(s)).length;
+  const remainingStages = totalStages - completedStages;
+  const daysRemaining = daysBetweenDateStrs(today, project.dueDate);
+
+  if (remainingStages <= 0) {
+    return {
+      totalStages,
+      completedStages,
+      remainingStages: 0,
+      daysRemaining,
+      recentPacePerDay: 0,
+      projectedDaysNeeded: 0,
+      requiredPacePerDay: null,
+      status: "done",
+    };
+  }
+
+  const windowStartDate = shiftDateStr(today, -(STAGE_PACE_WINDOW_DAYS - 1));
+  const recentCompletedCount = stages.filter((s) => {
+    if (!isStageDone(s) || s.completedAt == null) return false;
+    const d = todayStr(new Date(s.completedAt));
+    return d >= windowStartDate && d <= today;
+  }).length;
+  const recentPacePerDay = recentCompletedCount / STAGE_PACE_WINDOW_DAYS;
+  const requiredPacePerDay = daysRemaining > 0 ? remainingStages / daysRemaining : null;
+  const projectedDaysNeeded = recentPacePerDay > 0 ? remainingStages / recentPacePerDay : null;
+
+  let status: StagePaceForecastStatus;
+  if (daysRemaining < 0) {
+    status = "overdue";
+  } else if (recentPacePerDay <= 0) {
+    status = "no-recent-pace";
+  } else if (projectedDaysNeeded !== null && projectedDaysNeeded <= daysRemaining) {
+    status = "on-track";
+  } else {
+    status = "at-risk";
+  }
+
+  return {
+    totalStages,
+    completedStages,
+    remainingStages,
+    daysRemaining,
+    recentPacePerDay,
+    projectedDaysNeeded,
+    requiredPacePerDay,
+    status,
+  };
 }
