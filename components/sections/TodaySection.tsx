@@ -3824,6 +3824,7 @@ export default function TodaySection({
       {taskViewTab === "done" && (
         <CompletedTasksGantt
           tasks={nonProvisionalSortedTasks}
+          date={date}
           onOpenEdit={(task) => setEditingTask(task)}
           onCommitTimes={(task, startedAt, endedAt) =>
             applyTaskEdit(task, task.category, task.name, undefined, task.note, startedAt, endedAt)
@@ -3880,8 +3881,13 @@ export default function TodaySection({
           date={date}
           provisionalRunning={provisionalActive}
           lastStopTime={effectiveLastStopTime}
+          doneTasks={doneTodayUnique}
           onRequestConflictStart={requestStartNew}
           onAdded={(status) => setTaskViewTab(status)}
+          onSelectCompleted={(task) => {
+            setShowAddDialog(false);
+            setRestartChoice(task);
+          }}
           onClose={() => setShowAddDialog(false)}
         />
       )}

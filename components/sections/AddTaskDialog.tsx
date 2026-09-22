@@ -25,30 +25,62 @@ export function normalizeAddTaskStyle(value: string): AddTaskStyle {
   return value === "menu" || value === "single" ? value : "tabs";
 }
 
+// 本日中に完了した業務を選ぶ欄。1件を選ぶと「続きから/新しく」の選択が伴うため、
+// その判断は呼び出し元(本日タブ)のonSelectCompletedに委ねる
+function CompletedTaskList({ tasks, onSelect }: { tasks: DailyTask[]; onSelect: (task: DailyTask) => void }) {
+  if (tasks.length === 0) {
+    return <p className="text-xs text-cream/50">本日完了した業務はまだありません。</p>;
+  }
+  return (
+    <div className="space-y-1.5">
+      {tasks.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onSelect(t)}
+          className="flex w-full items-center gap-2 rounded-lg border border-cream/15 bg-ink px-2.5 py-2 text-left hover:bg-ink/60"
+        >
+          <span className="text-cream/60">✅</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[10px] text-cream/45">{t.category}</span>
+            <span className="block truncate text-xs font-bold text-cream/85">{t.name}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function AddTaskDialog({
   date,
   provisionalRunning,
   lastStopTime,
+  doneTasks,
   onRequestConflictStart,
   onAdded,
+  onSelectCompleted,
   onClose,
 }: {
   date: string;
   provisionalRunning: boolean;
   lastStopTime?: number | null;
+  // 本日中に完了した業務（重複はまとめ済み）。「完了した業務から選ぶ」に使う
+  doneTasks: DailyTask[];
   onRequestConflictStart: (category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) => void;
   // 実際に追加できた時に、その作業が実行中("running")・未着手("pending")のどちらとして
   // 追加されたかを渡す(未計測との競合で呼び出し元に処理を委ねた場合は呼ばれない。
   // その場合はrequestStartNew側で別途「実行中」への切り替えが行われる)
   onAdded?: (status: "running" | "pending") => void;
+  // 完了済みの業務を選んだ場合は「続きから/新しく」の選択が必要になるため、
+  // このダイアログでは完結させず呼び出し元に委ねる(呼び出し元がこのダイアログを閉じる)
+  onSelectCompleted: (task: DailyTask) => void;
   onClose: () => void;
 }) {
   const [styleStr] = useSetting("today.addTaskStyle", "tabs");
   const style = normalizeAddTaskStyle(styleStr);
 
-  const [mode, setMode] = useState<"master" | "free">("master");
+  const [mode, setMode] = useState<"master" | "free" | "done">("master");
   // メニュー型のときに今どの画面にいるか
-  const [pane, setPane] = useState<"menu" | "master" | "favorite" | "free">("menu");
+  const [pane, setPane] = useState<"menu" | "master" | "favorite" | "free" | "done">("menu");
   const [selectedMaster, setSelectedMaster] = useState<MasterTask | null>(null);
   const [category, setCategory] = useState("");
   const [name, setName] = useState("");
@@ -238,6 +270,11 @@ export default function AddTaskDialog({
             <button className="btn-pill w-full text-sm" onClick={() => setPane("favorite")}>
               お気に入りから選ぶ
             </button>
+            {doneTasks.length > 0 && (
+              <button className="btn-pill w-full text-sm" onClick={() => setPane("done")}>
+                ✅ 完了した業務から選ぶ
+              </button>
+            )}
             <button className="btn-pill w-full text-sm" onClick={() => setPane("free")}>
               自由入力する
             </button>
@@ -284,6 +321,18 @@ export default function AddTaskDialog({
               )}
             </div>
             <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
+            <button className="btn-pill-outline mt-2 w-full text-sm" onClick={() => setPane("menu")}>
+              戻る
+            </button>
+          </div>
+        )}
+
+        {pane === "done" && (
+          <div>
+            <p className="mb-2 text-xs text-cream/50">
+              選ぶと「続きから開始/新しく開始」を選べます。
+            </p>
+            <CompletedTaskList tasks={doneTasks} onSelect={onSelectCompleted} />
             <button className="btn-pill-outline mt-2 w-full text-sm" onClick={() => setPane("menu")}>
               戻る
             </button>
@@ -339,6 +388,12 @@ export default function AddTaskDialog({
           </div>
           {estimateField}
         </div>
+        {doneTasks.length > 0 && (
+          <div className="mt-4 space-y-2 border-t border-cream/10 pt-3">
+            <p className="text-xs text-cream/50">✅ 本日すでに完了した業務から選んで再開することもできます</p>
+            <CompletedTaskList tasks={doneTasks} onSelect={onSelectCompleted} />
+          </div>
+        )}
       </Modal>
     );
   }
@@ -361,19 +416,32 @@ export default function AddTaskDialog({
         >
           自由入力
         </button>
+        {doneTasks.length > 0 && (
+          <button
+            className={mode === "done" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setMode("done")}
+          >
+            ✅ 完了した業務から
+          </button>
+        )}
       </div>
 
-      {planCheckbox}
+      {mode !== "done" && planCheckbox}
 
       {mode === "master" ? (
         <div className="space-y-2">
           <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
           <Actions submit={submitMaster} disabled={!selectedMaster} />
         </div>
-      ) : (
+      ) : mode === "free" ? (
         <div className="space-y-2">
           {freeFields}
           <Actions submit={submitFreeform} disabled={!category.trim() || !name.trim()} />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-cream/50">選ぶと「続きから開始/新しく開始」を選べます。</p>
+          <CompletedTaskList tasks={doneTasks} onSelect={onSelectCompleted} />
         </div>
       )}
     </Modal>

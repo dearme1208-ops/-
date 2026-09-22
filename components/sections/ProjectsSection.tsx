@@ -37,6 +37,7 @@ import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog
 import ProjectAnalysisDialog from "@/components/sections/ProjectAnalysisDialog";
 import WbsDialog from "@/components/sections/WbsDialog";
 import ProjectPPMChart from "@/components/sections/ProjectPPMChart";
+import ProjectProgressChart from "@/components/sections/ProjectProgressChart";
 import Modal from "@/components/ui/Modal";
 import TreeView, { type TreeNode, type TreeNodeBadge } from "@/components/ui/TreeView";
 import { showUndoToast } from "@/lib/toast";
@@ -53,7 +54,7 @@ import { Profile as MountainProfile, Signboard } from "@/components/mountain/Mou
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { PennantBar, Standings } from "@/components/powerpro/PowerproCanvas";
 
-type ViewMode = "gantt" | "calendar" | "tree" | "ppm";
+type ViewMode = "gantt" | "calendar" | "tree" | "ppm" | "progress";
 const TREE_LEAF_LIMIT = 15;
 
 const DEFAULT_PX_PER_DAY = 28;
@@ -982,6 +983,13 @@ export default function ProjectsSection({
             >
               PPM分析
             </button>
+            <button
+              className={viewMode === "progress" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setViewMode("progress")}
+              title="新規追加と完了のペースを月別に見比べたり、未完了の積み上がり具合を見られます"
+            >
+              📈 進捗グラフ
+            </button>
             <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
               <input
                 type="checkbox"
@@ -993,7 +1001,9 @@ export default function ProjectsSection({
             </label>
           </div>
 
-          {timelineRows.length === 0 ? (
+          {viewMode === "progress" ? (
+            <ProjectProgressChart projects={projects ?? []} />
+          ) : timelineRows.length === 0 ? (
             <p className="px-1 py-4 text-sm text-cream/50">
               表示する案件がありません（完了済みのみのため。「完了済みも表示」をONにすると見られます）。
             </p>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { formatClock, formatHms } from "@/lib/time";
+import { formatClock, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
 
 const DEFAULT_PX_PER_MIN = 4;
@@ -18,15 +18,20 @@ const MIN_BAR_MIN = 1; // これより短くはできない(分)
 // 既存の編集ダイアログ(数値入力)を開く、という組み合わせにしている
 export default function CompletedTasksGantt({
   tasks,
+  date,
   onCommitTimes,
   onOpenEdit,
 }: {
   tasks: DailyTask[];
+  // 表示対象の日付。本日分を見ている時だけ「現在時刻」の線を描き、開いた瞬間に
+  // その位置が中央に来るようスクロールする(過去の日を見ている時は無意味なため出さない)
+  date: string;
   onCommitTimes: (task: DailyTask, startedAt: number, endedAt: number) => void;
   onOpenEdit: (task: DailyTask) => void;
 }) {
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isToday = date === todayStr();
 
   const doneTasks = useMemo(
     () =>
@@ -45,10 +50,28 @@ export default function CompletedTasksGantt({
   }, [doneTasks]);
 
   const totalMinutes = useMemo(() => {
-    if (doneTasks.length === 0) return 60;
-    const maxEnd = Math.max(...doneTasks.map((t) => t.endedAt!));
-    return Math.max(60, Math.ceil((maxEnd - timelineBase) / 60000) + 15);
-  }, [doneTasks, timelineBase]);
+    const base = (() => {
+      if (doneTasks.length === 0) return 60;
+      const maxEnd = Math.max(...doneTasks.map((t) => t.endedAt!));
+      return Math.max(60, Math.ceil((maxEnd - timelineBase) / 60000) + 15);
+    })();
+    // 現在時刻が完了済みの作業より後にある(まだ何も完了していない/直近の完了から
+    // 時間が経っている)場合でも、現在時刻の線が範囲外にならないよう含めておく
+    if (!isToday) return base;
+    const nowMinutes = Math.ceil((Date.now() - timelineBase) / 60000) + 15;
+    return Math.max(base, nowMinutes);
+  }, [doneTasks, timelineBase, isToday]);
+
+  const nowLeftPx = isToday ? ((Date.now() - timelineBase) / 60000) * pxPerMin : null;
+
+  // 開いた瞬間(および拡大縮小した時)、現在時刻の位置が画面の中央に来るようスクロールする
+  useEffect(() => {
+    if (nowLeftPx === null) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = Math.max(0, nowLeftPx - el.clientWidth / 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pxPerMin, isToday]);
 
   function zoomIn() {
     setPxPerMin((v) => Math.min(MAX_PX_PER_MIN, +(v * 1.4).toFixed(2)));
@@ -85,6 +108,7 @@ export default function CompletedTasksGantt({
       </div>
       <p className="text-[10px] text-cream/40">
         バーの端をドラッグで開始/終了を調整、バー本体のドラッグで全体を前後に移動できます。軽くタップすると詳細な時刻編集を開きます。
+        {isToday && "赤い縦線が現在時刻の位置です。開いた時点でこの位置が画面中央に来るようスクロールしています。"}
       </p>
       <div className="flex">
         <div className="w-24 shrink-0 pr-2 sm:w-36">
@@ -104,11 +128,22 @@ export default function CompletedTasksGantt({
                   {formatClock(timelineBase + h * 60 * 60000)}
                 </div>
               ))}
+              {nowLeftPx !== null && (
+                <div
+                  className="absolute top-0 z-10 whitespace-nowrap rounded bg-ink px-1 text-[10px] font-bold leading-5 text-alert"
+                  style={{ left: nowLeftPx }}
+                >
+                  現在 {formatClock(Date.now())}
+                </div>
+              )}
             </div>
             <div className="relative" style={{ height: doneTasks.length * ROW_H }}>
               {hourMarks.map((h) => (
                 <div key={h} className="absolute top-0 bottom-0 border-l border-cream/5" style={{ left: h * 60 * pxPerMin }} />
               ))}
+              {nowLeftPx !== null && (
+                <div className="absolute top-0 bottom-0 border-l-2 border-alert" style={{ left: nowLeftPx }} />
+              )}
               {doneTasks.map((task, idx) => {
                 const prev = doneTasks[idx - 1];
                 const next = doneTasks[idx + 1];

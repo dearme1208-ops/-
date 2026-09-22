@@ -1987,6 +1987,38 @@ export default function UnifiedBoardSection({
                 >
                   🗂 一覧から置く（ToDo {unplacedTodos.length} / 案件 {unplacedProjects.length}）
                 </button>
+                {/* 頻繁に使う操作なので「道具」に畳まず、常に押せる主列に置く */}
+                <div className="relative">
+                  <button
+                    className={showAlignMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setShowAlignMenu((v) => !v)}
+                    title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)"
+                  >
+                    🧹 整列 ▾
+                  </button>
+                  {showAlignMenu && (
+                    <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+                      <button
+                        className="btn-pill-outline whitespace-nowrap text-xs"
+                        onClick={() => {
+                          alignBoardItems("tag");
+                          setShowAlignMenu(false);
+                        }}
+                      >
+                        対応状況順
+                      </button>
+                      <button
+                        className="btn-pill-outline whitespace-nowrap text-xs"
+                        onClick={() => {
+                          alignBoardItems("due");
+                          setShowAlignMenu(false);
+                        }}
+                      >
+                        期日順
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   className={fullscreen ? "btn-pill px-2 py-1 text-xs" : "btn-pill-outline px-2 py-1 text-xs"}
                   onClick={() => setFullscreen((v) => !v)}
@@ -2090,37 +2122,6 @@ export default function UnifiedBoardSection({
                 </button>
               </>
             )}
-            <div className="relative">
-              <button
-                className={showAlignMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                onClick={() => setShowAlignMenu((v) => !v)}
-                title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)"
-              >
-                🧹 整列 ▾
-              </button>
-              {showAlignMenu && (
-                <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
-                  <button
-                    className="btn-pill-outline whitespace-nowrap text-xs"
-                    onClick={() => {
-                      alignBoardItems("tag");
-                      setShowAlignMenu(false);
-                    }}
-                  >
-                    対応状況順
-                  </button>
-                  <button
-                    className="btn-pill-outline whitespace-nowrap text-xs"
-                    onClick={() => {
-                      alignBoardItems("due");
-                      setShowAlignMenu(false);
-                    }}
-                  >
-                    期日順
-                  </button>
-                </div>
-              )}
-            </div>
             {boardTagOptions.length > 0 && (
               <div className="relative border-l border-cream/15 pl-2">
                 <button
