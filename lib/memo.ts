@@ -201,11 +201,16 @@ function clampNoteHeight(h: number): number {
   return Math.max(MEMO_NOTE_MIN_HEIGHT, Math.min(MEMO_NOTE_MAX_AUTO_HEIGHT, Math.round(h)));
 }
 
+// 本文が1行(または空)だと本文欄がヘッダー・操作行の陰でわずか1行分しか
+// 残らず、置いた直後に書き始める場所が見えづらい。空・短い付箋でも最低これだけの
+// 行数分の高さは確保しておく(書き進めればこれまで通りそこから伸びていく)
+const MEMO_NOTE_MIN_TEXT_LINES = 3;
+
 export function estimateTextNoteHeight(text: string): number {
   const lines = text
     .split("\n")
     .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / MEMO_NOTE_CHARS_PER_LINE)), 0);
-  return clampNoteHeight(MEMO_NOTE_CHROME_HEIGHT + Math.max(1, lines) * MEMO_NOTE_TEXT_LINE_HEIGHT);
+  return clampNoteHeight(MEMO_NOTE_CHROME_HEIGHT + Math.max(MEMO_NOTE_MIN_TEXT_LINES, lines) * MEMO_NOTE_TEXT_LINE_HEIGHT);
 }
 
 export function estimateChecklistNoteHeight(itemCount: number): number {
@@ -295,7 +300,7 @@ export function estimateAutoTextNoteSize(text: string, font: string): { width: n
   const maxTextWidth = width - MEMO_NOTE_TEXT_HORIZONTAL_CHROME;
   let rows = 0;
   for (const line of lines) rows += wrappedLineCount(ctx, line, maxTextWidth);
-  const height = clampNoteHeight(MEMO_NOTE_CHROME_HEIGHT + Math.max(1, rows) * MEMO_NOTE_TEXT_LINE_HEIGHT);
+  const height = clampNoteHeight(MEMO_NOTE_CHROME_HEIGHT + Math.max(MEMO_NOTE_MIN_TEXT_LINES, rows) * MEMO_NOTE_TEXT_LINE_HEIGHT);
   return { width, height };
 }
 

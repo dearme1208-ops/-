@@ -648,17 +648,19 @@ html[data-high-contrast="true"] :focus-visible {
     box-shadow: 0 0 14px -6px rgb(var(--forest-rust-rgb));
   }
 
-  /* 入力欄は、樹皮をくり抜いた窪み。触れている間だけ露が光るように縁が灯る */
-  html[data-visual-mode="home"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-  html[data-visual-mode="home"] textarea,
+  /* 入力欄は、樹皮をくり抜いた窪み。触れている間だけ露が光るように縁が灯る。
+     ただし付箋(メモ)本文・チェック項目欄は、付箋自体の色紙の上にそのまま乗る
+     透明入力なので対象から除外する(この背景色を当てると紙の色が黒く塗りつぶされて見えてしまう) */
+  html[data-visual-mode="home"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.memo-note-field),
+  html[data-visual-mode="home"] textarea:not(.memo-note-field),
   html[data-visual-mode="home"] select {
     border-radius: 0.8rem;
     background-color: rgb(var(--ink-rgb) / 0.55);
     border-color: rgb(var(--accent-rgb) / 0.22);
     transition: border-color 200ms ease, box-shadow 200ms ease;
   }
-  html[data-visual-mode="home"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):focus,
-  html[data-visual-mode="home"] textarea:focus,
+  html[data-visual-mode="home"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.memo-note-field):focus,
+  html[data-visual-mode="home"] textarea:not(.memo-note-field):focus,
   html[data-visual-mode="home"] select:focus {
     border-color: rgb(var(--forest-dew-rgb) / 0.6);
     box-shadow: 0 0 0 3px rgb(var(--forest-dew-rgb) / 0.14);

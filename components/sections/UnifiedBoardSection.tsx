@@ -4327,7 +4327,7 @@ function NoteCard({
         }}
         onBlur={() => onCommitText(note, text)}
         style={{ color: MEMO_NOTE_TEXT_COLORS[note.textColor ?? DEFAULT_MEMO_NOTE_TEXT_COLOR] }}
-        className="min-h-0 flex-1 resize-none bg-transparent px-2 pb-2 text-sm outline-none"
+        className="memo-note-field min-h-0 flex-1 resize-none bg-transparent px-2 pb-2 text-sm outline-none"
         placeholder="付箋のメモ..."
       />
       {note.mailFileDataUrl && (

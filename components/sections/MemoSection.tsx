@@ -1570,7 +1570,7 @@ function StickyNoteCard({
           placeholder="メモ..."
           readOnly={connectMode}
           style={{ color: MEMO_NOTE_TEXT_COLORS[note.textColor ?? DEFAULT_MEMO_NOTE_TEXT_COLOR] }}
-          className="min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none"
+          className="memo-note-field min-h-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none"
         />
       )}
       {note.mailFileDataUrl && (
@@ -1883,7 +1883,7 @@ function ChecklistItemRow({
         onBlur={() => onCommitText(text)}
         placeholder="項目..."
         readOnly={connectMode}
-        className={`min-w-0 flex-1 bg-transparent text-xs text-black/80 outline-none ${item.done ? "line-through opacity-50" : ""}`}
+        className={`memo-note-field min-w-0 flex-1 bg-transparent text-xs text-black/80 outline-none ${item.done ? "line-through opacity-50" : ""}`}
       />
       {!connectMode && (
         <button
