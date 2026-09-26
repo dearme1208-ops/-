@@ -100,7 +100,9 @@ export default function ProjectsSection({
   initialEditProjectId,
   onInitialEditConsumed,
 }: {
-  onAddedToToday?: () => void;
+  // startedNow: 「すぐに開始する」を選んで追加された場合はtrue。呼び出し元が
+  // 「本日の作業」タブへ切り替える際、実行中の一覧をすぐ見せるかどうかの判断に使う
+  onAddedToToday?: (startedNow: boolean) => void;
   initialEditProjectId?: string | null;
   onInitialEditConsumed?: () => void;
 }) {
@@ -455,7 +457,7 @@ export default function ProjectsSection({
       todoTaskId: todoTaskIdByProjectId.get(item.id),
     };
     await db.dailyTasks.add(task);
-    onAddedToToday?.();
+    onAddedToToday?.(startNow);
   }
 
   // チェック(未完了→完了)方向だけ確認モーダルを挟む。段階が多い案件では

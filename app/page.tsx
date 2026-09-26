@@ -316,7 +316,12 @@ export default function HomePage() {
       )}
       {active === "projects" && (
         <ProjectsSection
-          onAddedToToday={() => setActive("today")}
+          onAddedToToday={(startedNow) => {
+            // 「すぐに開始する」で追加した場合は、本日の作業タブを開いた時に
+            // 実行中の一覧がすぐ見えるよう、表示中のタブも合わせて切り替える
+            if (startedNow) db.settings.put({ key: "today.taskViewTab", value: "running" });
+            setActive("today");
+          }}
           initialEditProjectId={pendingProjectEditId}
           onInitialEditConsumed={() => setPendingProjectEditId(null)}
         />

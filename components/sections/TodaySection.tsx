@@ -152,7 +152,19 @@ export default function TodaySection({
   const scheduleFileInputRef = useRef<HTMLInputElement>(null);
   const [notifPermission, setNotifPermission] = useState<string>("default");
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
-  const [stageConfirmTask, setStageConfirmTask] = useState<DailyTask | null>(null);
+  // 案件の段階・案件(段階なし直付け)・ToDoのいずれかに紐づく作業を完了させた際、
+  // その紐づく先も完了とみなせるかまとめて確認するキュー。1件の作業完了で複数の
+  // 確認が該当する場合(例: 案件のToDoから反映された段階作業)も、一度に全部出さず
+  // 順番に1つずつ確認する
+  type LinkedCompletionConfirm =
+    | { kind: "stage"; task: DailyTask }
+    | { kind: "project"; task: DailyTask }
+    | { kind: "todo"; task: DailyTask };
+  const [confirmQueue, setConfirmQueue] = useState<LinkedCompletionConfirm[]>([]);
+  const activeConfirm = confirmQueue[0] ?? null;
+  function advanceConfirmQueue() {
+    setConfirmQueue((q) => q.slice(1));
+  }
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [deletingCompletedTask, setDeletingCompletedTask] = useState<DailyTask | null>(null);
   // 兼務・並行作業向けに、主案件(projectId)以外の追加の案件タグを付ける小さなモーダルの対象タスク
@@ -2119,13 +2131,25 @@ export default function TodaySection({
     if (overrunTask?.id === task.id) setOverrunTask(null);
   }
 
-  // 案件の段階から追加された作業を完了させた場合、その段階自体も完了とみなせるか確認する
-  // （まだ続く場合は確認せず、作業時間の記録だけ残す）
-  function maybePromptStageConfirm(task: DailyTask) {
-    if (!task.stageId || !task.projectId) return;
-    const project = projectMap.get(task.projectId);
-    const stage = project?.stages?.find((s) => s.id === task.stageId);
-    if (stage && !isStageDone(stage)) setStageConfirmTask(task);
+  // 案件の段階・案件(段階なし直付け)・ToDoのいずれかから追加された作業を完了させた場合、
+  // その紐づく先自体も完了とみなせるか確認する（まだ続く場合は確認せず、作業時間の記録だけ残す）。
+  // 1つの作業が複数(例: 段階作業がToDoからも反映されている)に該当する場合は、
+  // confirmQueueで1つずつ順番に確認する
+  function queueLinkedCompletionConfirms(task: DailyTask) {
+    const queue: LinkedCompletionConfirm[] = [];
+    if (task.stageId && task.projectId) {
+      const project = projectMap.get(task.projectId);
+      const stage = project?.stages?.find((s) => s.id === task.stageId);
+      if (stage && !isStageDone(stage)) queue.push({ kind: "stage", task });
+    } else if (task.projectId) {
+      const project = projectMap.get(task.projectId);
+      if (project && !project.completedAt) queue.push({ kind: "project", task });
+    }
+    if (task.todoTaskId) {
+      const todo = todoTaskMap.get(task.todoTaskId);
+      if (todo && !todo.completed) queue.push({ kind: "todo", task });
+    }
+    if (queue.length > 0) setConfirmQueue((q) => [...q, ...queue]);
   }
 
   async function finishTask(task: DailyTask) {
@@ -2138,7 +2162,7 @@ export default function TodaySection({
     const segmentsMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
     const accumulatedMs = segmentsMs + (task.manualAdjustmentMs ?? 0);
     await commitFinish(task, segments, accumulatedMs);
-    maybePromptStageConfirm(task);
+    queueLinkedCompletionConfirms(task);
     // トラブル対応・予定の自動差し込みなどで中断した作業（仮計測含む、複数ある場合も全て）を自動的に再開する
     if (task.resumeTaskIds && task.resumeTaskIds.length > 0) {
       for (const id of task.resumeTaskIds) {
@@ -2215,7 +2239,7 @@ export default function TodaySection({
     const startedAt = nowMs - manualSeconds * 1000;
     const segments: TimeSegment[] = [{ start: startedAt, end: nowMs }];
     await commitFinish(task, segments, manualSeconds * 1000, startedAt);
-    maybePromptStageConfirm(task);
+    queueLinkedCompletionConfirms(task);
   }
 
   // 体調を記録する。その時点で計測中の作業があれば一緒に紐付けて残す
@@ -2763,7 +2787,7 @@ export default function TodaySection({
                         ) : (
                           <button
                             className="btn-pill-outline px-2 py-0.5 text-[10px]"
-                            onClick={() => setStageConfirmTask(task)}
+                            onClick={() => setConfirmQueue((q) => [...q, { kind: "stage", task }])}
                           >
                             {stageCountBased ? "件数を進める" : "✓ 段階を完了にする"}
                           </button>
@@ -4238,15 +4262,16 @@ export default function TodaySection({
         </Modal>
       )}
 
-      {stageConfirmTask &&
+      {activeConfirm?.kind === "stage" &&
         (() => {
-          const project = stageConfirmTask.projectId ? projectMap.get(stageConfirmTask.projectId) : undefined;
-          const stage = project?.stages?.find((s) => s.id === stageConfirmTask.stageId);
+          const confirmTask = activeConfirm.task;
+          const project = confirmTask.projectId ? projectMap.get(confirmTask.projectId) : undefined;
+          const stage = project?.stages?.find((s) => s.id === confirmTask.stageId);
           if (!project || !stage) return null;
           const isCountBased = stage.targetCount != null;
           return (
-            <Modal title="段階の進捗確認" onClose={() => setStageConfirmTask(null)}>
-              <p className="mb-1 text-sm text-cream/80">「{stageConfirmTask.name}」の作業を完了しました。</p>
+            <Modal title="段階の進捗確認" onClose={advanceConfirmQueue}>
+              <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
               {isCountBased ? (
                 <p className="mb-4 text-sm text-cream/80">
                   案件「{project.title}」の段階「{stage.title}」は現在{" "}
@@ -4273,7 +4298,7 @@ export default function TodaySection({
                   );
                 })()}
               <div className="flex justify-end gap-2">
-                <button className="btn-pill-outline text-sm" onClick={() => setStageConfirmTask(null)}>
+                <button className="btn-pill-outline text-sm" onClick={advanceConfirmQueue}>
                   {isCountBased ? "件数はそのまま（時間だけ記録）" : "まだ続く（時間だけ記録）"}
                 </button>
                 <button
@@ -4289,10 +4314,65 @@ export default function TodaySection({
                       return { ...s, completed: true, completedAt: Date.now() };
                     });
                     await db.projects.update(project.id, { stages });
-                    setStageConfirmTask(null);
+                    advanceConfirmQueue();
                   }}
                 >
                   {isCountBased ? "1件進める" : "この段階を完了にする"}
+                </button>
+              </div>
+            </Modal>
+          );
+        })()}
+
+      {activeConfirm?.kind === "project" &&
+        (() => {
+          const confirmTask = activeConfirm.task;
+          const project = confirmTask.projectId ? projectMap.get(confirmTask.projectId) : undefined;
+          if (!project) return null;
+          return (
+            <Modal title="案件の進捗確認" onClose={advanceConfirmQueue}>
+              <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
+              <p className="mb-4 text-sm text-cream/80">案件「{project.title}」はこれで完了ですか?</p>
+              <div className="flex justify-end gap-2">
+                <button className="btn-pill-outline text-sm" onClick={advanceConfirmQueue}>
+                  まだ続く（時間だけ記録）
+                </button>
+                <button
+                  className="btn-pill text-sm"
+                  onClick={async () => {
+                    await db.projects.update(project.id, { completedAt: Date.now(), autoCompletedByImport: false });
+                    fireConfetti();
+                    advanceConfirmQueue();
+                  }}
+                >
+                  この案件を完了にする
+                </button>
+              </div>
+            </Modal>
+          );
+        })()}
+
+      {activeConfirm?.kind === "todo" &&
+        (() => {
+          const confirmTask = activeConfirm.task;
+          const todo = confirmTask.todoTaskId ? todoTaskMap.get(confirmTask.todoTaskId) : undefined;
+          if (!todo) return null;
+          return (
+            <Modal title="Todoの進捗確認" onClose={advanceConfirmQueue}>
+              <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
+              <p className="mb-4 text-sm text-cream/80">元のTodo「{todo.title}」はこれで完了ですか?</p>
+              <div className="flex justify-end gap-2">
+                <button className="btn-pill-outline text-sm" onClick={advanceConfirmQueue}>
+                  まだ続く（時間だけ記録）
+                </button>
+                <button
+                  className="btn-pill text-sm"
+                  onClick={async () => {
+                    await completeLinkedTodo(todo.id);
+                    advanceConfirmQueue();
+                  }}
+                >
+                  Todoを完了にする
                 </button>
               </div>
             </Modal>
