@@ -315,8 +315,8 @@ export default function AddTaskDialog({
         {pane === "master" && (
           <div>
             {planCheckbox}
-            {methodField}
             <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
+            {methodField}
             <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
             <button className="btn-pill-outline mt-2 w-full text-sm" onClick={() => setPane("menu")}>
               戻る
@@ -327,7 +327,6 @@ export default function AddTaskDialog({
         {pane === "favorite" && (
           <div>
             {planCheckbox}
-            {methodField}
             <div className="space-y-1.5">
               {favorites === undefined ? null : favorites.length === 0 ? (
                 <p className="text-xs text-cream/50">お気に入りに登録された作業はまだありません。</p>
@@ -350,6 +349,7 @@ export default function AddTaskDialog({
                 ))
               )}
             </div>
+            {methodField}
             <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
             <button className="btn-pill-outline mt-2 w-full text-sm" onClick={() => setPane("menu")}>
               戻る
@@ -390,8 +390,8 @@ export default function AddTaskDialog({
     return (
       <Modal title="突発作業を追加" onClose={onClose}>
         {planCheckbox}
-        {methodField}
         <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
+        {methodField}
         <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
         <div className="mt-4 space-y-2 border-t border-cream/10 pt-3">
           <p className="text-xs text-cream/50">マスタに無い作業は、ここに直接書いて追加できます</p>
@@ -461,8 +461,8 @@ export default function AddTaskDialog({
 
       {mode === "master" ? (
         <div className="space-y-2">
-          {methodField}
           <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
+          {methodField}
           <Actions submit={submitMaster} disabled={!selectedMaster} />
         </div>
       ) : mode === "free" ? (
