@@ -144,6 +144,8 @@ export interface WorkRecord {
   manualOverride?: boolean; // true = ユーザーが除外/復活を手動指定済み。自動IQR判定の対象外
   projectId?: string; // 案件から追加された作業の場合、その案件のID
   stageId?: string; // 案件の段階（マイルストーン）から追加された作業の場合、その段階のID
+  todoTaskId?: string; // ToDoタスク(サブタスクを含む)から追加された作業の場合、その元になったTodoTaskのID。
+  // 案件のprojectId/stageIdと同じ考え方で、ToDo・サブタスク単位の作業時間集計に使う
   isTrouble?: boolean; // トラブル対応の実績かどうか。詳細作業名が実績ごとに異なるため、
   // ランキング等の集計では詳細作業名を無視し、大項目でひとつにまとめて集計する
   note?: string; // 作業完了時の一言メモ（複数の実績が合算された場合は最後に編集したメモで上書きされる）

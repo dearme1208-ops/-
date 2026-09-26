@@ -1853,6 +1853,7 @@ export default function TodaySection({
         endedAt: newEndedAt,
         note,
         method,
+        todoTaskId: existingNew.todoTaskId ?? task.todoTaskId,
         segments: undefined,
       });
     } else {
@@ -1868,6 +1869,7 @@ export default function TodaySection({
         excludedFromStats: false,
         projectId: task.projectId,
         stageId: task.stageId,
+        todoTaskId: task.todoTaskId,
         isTrouble: task.isTrouble,
         note,
         method,
@@ -2088,6 +2090,7 @@ export default function TodaySection({
         endedAt: nowMs,
         isTrouble: existing.isTrouble || task.isTrouble,
         method: existing.method ?? task.method,
+        todoTaskId: existing.todoTaskId ?? task.todoTaskId,
         ...(task.secondaryProjectIds ? { secondaryProjectIds: task.secondaryProjectIds } : {}),
         segments: mergeRecordSegments(existing, segments),
       });
@@ -2104,6 +2107,7 @@ export default function TodaySection({
         excludedFromStats: false,
         projectId: task.projectId,
         stageId: task.stageId,
+        todoTaskId: task.todoTaskId,
         isTrouble: task.isTrouble,
         method: task.method,
         secondaryProjectIds: task.secondaryProjectIds,

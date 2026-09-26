@@ -15,6 +15,15 @@ import {
   type SortMetric,
   type TrendGranularity,
 } from "@/lib/aggregate";
+import {
+  aggregateByProject,
+  aggregateByTodo,
+  computeProjectStageBreakdown,
+  computeProjectTrend,
+  computeTodoSubtaskBreakdown,
+  computeTodoTrend,
+  type LinkedAggregateRow,
+} from "@/lib/linkedAggregate";
 import { currentFiscalYear, fiscalPeriodRange, isDateStrInRange, PERIOD_LABELS, type FiscalPeriodType, type PeriodType } from "@/lib/period";
 import { formatHms } from "@/lib/time";
 import { computeWeekdayAverages } from "@/lib/weekday";
@@ -36,6 +45,7 @@ import LifeArtModal from "@/components/LifeArtModal";
 import TaskTrendDialog from "@/components/sections/TaskTrendDialog";
 import WeekdayBreakdownDialog from "@/components/sections/WeekdayBreakdownDialog";
 import TotalTrendBreakdownDialog from "@/components/sections/TotalTrendBreakdownDialog";
+import LinkedTimeBreakdownDialog from "@/components/sections/LinkedTimeBreakdownDialog";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 const HALF_LABELS: Record<"h1" | "h2", string> = { h1: "上期", h2: "下期" };
@@ -59,6 +69,9 @@ export default function AggregationSection() {
   // 戻ってしまうと、興味のない集計まで毎回スクロールで通過することになるため)
   const [collapsed, setCollapsed] = useCollapsedPanels("aggregation.collapsedPanels");
   const [trendRow, setTrendRow] = useState<AggregateRow | null>(null);
+  // 案件・ToDoに絞った時間集計。「作業別」とは別の切り口として、どちらを見るかだけ切り替える
+  const [linkedGroupBy, setLinkedGroupBy] = useState<"project" | "todo">("project");
+  const [linkedTrendRow, setLinkedTrendRow] = useState<LinkedAggregateRow | null>(null);
   const [totalTrendGranularity, setTotalTrendGranularity] = useState<TrendGranularity>("half");
   const [totalTrendChartType, setTotalTrendChartType] = useState<"bar" | "line">("bar");
   const [weekdayPeriodType, setWeekdayPeriodType] = useState<FiscalPeriodType>("all");
@@ -88,7 +101,36 @@ export default function AggregationSection() {
   const records = useHomeFilteredRecords(recordsRaw);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
+  const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
+  const linkedRows = useMemo(() => {
+    if (!records) return [];
+    return linkedGroupBy === "project"
+      ? aggregateByProject(records, projects ?? [], { type: period, fiscalYear }, sortBy)
+      : aggregateByTodo(records, todoTasks ?? [], { type: period, fiscalYear }, sortBy);
+  }, [records, projects, todoTasks, linkedGroupBy, period, fiscalYear, sortBy]);
+  // 内訳ダイアログ用に、選択中の行の段階別/サブタスク別データと期間推移関数を組み立てる
+  const linkedTrendDialogData = useMemo(() => {
+    if (!linkedTrendRow || !records) return null;
+    if (linkedTrendRow.kind === "project") {
+      const project = (projects ?? []).find((p) => p.id === linkedTrendRow.key);
+      if (!project) return null;
+      return {
+        breakdownLabel: "段階別の内訳",
+        breakdownRows: computeProjectStageBreakdown(records, project),
+        trendFn: (g: TrendGranularity) => computeProjectTrend(records, project.id, g),
+      };
+    }
+    const todo = (todoTasks ?? []).find((t) => t.id === linkedTrendRow.key);
+    if (!todo) return null;
+    const childIds = (todoTasks ?? []).filter((t) => t.parentTaskId === todo.id).map((t) => t.id);
+    const todoIds = new Set([todo.id, ...childIds]);
+    return {
+      breakdownLabel: "サブタスク別の内訳",
+      breakdownRows: computeTodoSubtaskBreakdown(records, todo, todoTasks ?? []),
+      trendFn: (g: TrendGranularity) => computeTodoTrend(records, todoIds, g),
+    };
+  }, [linkedTrendRow, records, projects, todoTasks]);
   // 曜日別バーの内訳ダイアログでも同じ絞り込み後のレコードを使うため、平均の算出と分けて保持する
   const weekdayFilteredRecords = useMemo(() => {
     const range = fiscalPeriodRange(weekdayPeriodType, weekdayFiscalYear);
@@ -205,6 +247,66 @@ export default function AggregationSection() {
           </button>
         ))}
       </div>
+
+      <CollapsiblePanel
+        title="📁 案件・ToDoの時間集計"
+        collapsed={!!collapsed.linkedTime}
+        onToggle={() => toggleSection("linkedTime")}
+      >
+        <p className="mb-3 text-xs text-cream/40">
+          本日の作業から案件・ToDoに紐づけて完了した作業だけを絞り込み、案件別/ToDo別に合計・平均・件数を集計します。行をタップすると、段階別・サブタスク別の内訳と時系列推移を見られます。
+        </p>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button
+            className={linkedGroupBy === "project" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setLinkedGroupBy("project")}
+          >
+            📁 案件別
+          </button>
+          <button
+            className={linkedGroupBy === "todo" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setLinkedGroupBy("todo")}
+          >
+            ✅ ToDo別
+          </button>
+        </div>
+        <div className="-mx-4 -mb-3 divide-y divide-cream/10">
+          {linkedRows.map((row, idx) => (
+            <button
+              key={row.key}
+              onClick={() => setLinkedTrendRow(row)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-cream/5"
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-8 text-center text-lg">{idx < 3 ? MEDALS[idx] : idx + 1}</span>
+                <div>
+                  {row.subtitle && <div className="text-xs text-cream/50">{row.subtitle}</div>}
+                  <div className="text-sm text-cream">{row.title}</div>
+                </div>
+              </div>
+              <div className="flex gap-4 text-right text-sm tabular-nums">
+                <div>
+                  <div className="text-xs text-cream/50">合計</div>
+                  {formatHms(row.totalSeconds)}
+                </div>
+                <div>
+                  <div className="text-xs text-cream/50">平均</div>
+                  {formatHms(row.avgSeconds)}
+                </div>
+                <div>
+                  <div className="text-xs text-cream/50">件数</div>
+                  {row.count}
+                </div>
+              </div>
+            </button>
+          ))}
+          {linkedRows.length === 0 && (
+            <p className="px-4 py-6 text-sm text-cream/50">
+              {linkedGroupBy === "project" ? "案件に紐づく実績はまだありません。" : "ToDoに紐づく実績はまだありません。"}
+            </p>
+          )}
+        </div>
+      </CollapsiblePanel>
 
       <CollapsiblePanel
         title="🏆 自己ベスト記録"
@@ -616,6 +718,17 @@ export default function AggregationSection() {
 
       {showLifeArt && (
         <LifeArtModal data={{ appTitle: appTitle(wordingMode), records: records ?? [] }} onClose={() => setShowLifeArt(false)} />
+      )}
+
+      {linkedTrendRow && linkedTrendDialogData && (
+        <LinkedTimeBreakdownDialog
+          title={linkedTrendRow.title}
+          subtitle={linkedTrendRow.subtitle}
+          breakdownLabel={linkedTrendDialogData.breakdownLabel}
+          breakdownRows={linkedTrendDialogData.breakdownRows}
+          trendFn={linkedTrendDialogData.trendFn}
+          onClose={() => setLinkedTrendRow(null)}
+        />
       )}
     </div>
   );
