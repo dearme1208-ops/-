@@ -102,6 +102,7 @@ import EditTaskDialog from "@/components/sections/EditTaskDialog";
 import CompletedTasksGantt from "@/components/sections/CompletedTasksGantt";
 import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
+import FinishAtDialog from "@/components/sections/FinishAtDialog";
 import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
@@ -170,6 +171,7 @@ export default function TodaySection({
   // 兼務・並行作業向けに、主案件(projectId)以外の追加の案件タグを付ける小さなモーダルの対象タスク
   const [secondaryProjectsTask, setSecondaryProjectsTask] = useState<DailyTask | null>(null);
   const [manualFinishTask, setManualFinishTaskTarget] = useState<DailyTask | null>(null);
+  const [finishAtTask, setFinishAtTask] = useState<DailyTask | null>(null);
   const [addTimeTask, setAddTimeTask] = useState<DailyTask | null>(null);
   const [conditionEditTaskId, setConditionEditTaskId] = useState<string | null>(null);
   // 当日最初の作業を開始する直前に体調を選ばせるための保留アクション。
@@ -2056,11 +2058,16 @@ export default function TodaySection({
     task: DailyTask,
     segments: TimeSegment[],
     accumulatedMs: number,
-    startedAtOverride?: number
+    startedAtOverride?: number,
+    endAtOverride?: number
   ) {
     const seconds = Math.round(accumulatedMs / 1000);
     const nowMs = Date.now();
-    const startedAt = startedAtOverride ?? task.startedAt ?? nowMs;
+    // 止め忘れ等で終了時刻をさかのぼって指定した場合、記録上の終了時刻(endedAt)は
+    // その指定時刻を使う。ただし実際にこの完了操作を行った時刻(stoppedAt)は、
+    // 「直近に何かを止めた時刻」の判定に使われるため常に現在時刻のままにする
+    const completionMs = endAtOverride ?? nowMs;
+    const startedAt = startedAtOverride ?? task.startedAt ?? completionMs;
     await db.dailyTasks.update(task.id, {
       segments,
       status: "done",
@@ -2069,7 +2076,7 @@ export default function TodaySection({
       // （残したままだとbaseAccumulatedMs/segmentsAccumulatedMsで二重に加算されてしまう）
       manualAdjustmentMs: 0,
       startedAt,
-      endedAt: nowMs,
+      endedAt: completionMs,
       stoppedAt: nowMs,
       isProvisional: false,
     });
@@ -2099,7 +2106,9 @@ export default function TodaySection({
     if (existing) {
       await db.records.update(existing.id, {
         seconds: existing.seconds + seconds,
-        endedAt: nowMs,
+        // 終了時刻をさかのぼって指定した場合でも、既存の実績の終了時刻をそれより
+        // 後退させてしまわないようにする(lib/tasks.tsのfinishDailyTaskと同じ考え方)
+        endedAt: Math.max(existing.endedAt, completionMs),
         isTrouble: existing.isTrouble || task.isTrouble,
         method: existing.method ?? task.method,
         todoTaskId: existing.todoTaskId ?? task.todoTaskId,
@@ -2115,7 +2124,7 @@ export default function TodaySection({
         masterTaskId,
         seconds,
         startedAt,
-        endedAt: nowMs,
+        endedAt: completionMs,
         excludedFromStats: false,
         projectId: task.projectId,
         stageId: task.stageId,
@@ -2152,16 +2161,19 @@ export default function TodaySection({
     if (queue.length > 0) setConfirmQueue((q) => [...q, ...queue]);
   }
 
-  async function finishTask(task: DailyTask) {
+  // endAtOverride: 止め忘れていた場合に、計測中セグメントを閉じる実際の終了時刻を
+  // 現在時刻の代わりに指定する(FinishAtDialogから)
+  async function finishTask(task: DailyTask, endAtOverride?: number) {
+    const closeAt = endAtOverride ?? Date.now();
     let segments = task.segments;
     if (task.status === "running") {
       segments = task.segments.map((s, i) =>
-        i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Date.now() } : s
+        i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(s.start, closeAt) } : s
       );
     }
-    const segmentsMs = segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
+    const segmentsMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
     const accumulatedMs = segmentsMs + (task.manualAdjustmentMs ?? 0);
-    await commitFinish(task, segments, accumulatedMs);
+    await commitFinish(task, segments, accumulatedMs, undefined, endAtOverride);
     queueLinkedCompletionConfirms(task);
     // トラブル対応・予定の自動差し込みなどで中断した作業（仮計測含む、複数ある場合も全て）を自動的に再開する
     if (task.resumeTaskIds && task.resumeTaskIds.length > 0) {
@@ -2985,6 +2997,14 @@ export default function TodaySection({
                   </button>
                   <button className="btn-pill text-xs" disabled={controlsDisabled} onClick={() => finishTask(task)}>
                     終了
+                  </button>
+                  <button
+                    className="btn-pill-outline text-xs"
+                    disabled={controlsDisabled}
+                    onClick={() => setFinishAtTask(task)}
+                    title="止め忘れていた場合、実際に終わった時刻を指定して終了します"
+                  >
+                    🕐 時刻を指定して終了
                   </button>
                 </>
               )}
@@ -4135,6 +4155,18 @@ export default function TodaySection({
           onConfirm={async (seconds) => {
             await manualFinish(manualFinishTask, seconds);
             setManualFinishTaskTarget(null);
+          }}
+        />
+      )}
+
+      {finishAtTask && (
+        <FinishAtDialog
+          taskName={finishAtTask.name}
+          startedAt={finishAtTask.segments[finishAtTask.segments.length - 1]?.start ?? finishAtTask.startedAt ?? Date.now()}
+          onClose={() => setFinishAtTask(null)}
+          onConfirm={(endAtMs) => {
+            finishTask(finishAtTask, endAtMs);
+            setFinishAtTask(null);
           }}
         />
       )}
