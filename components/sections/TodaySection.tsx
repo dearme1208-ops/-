@@ -116,6 +116,7 @@ import TodayMemoPanel from "@/components/TodayMemoPanel";
 import TodayHandoffPanel from "@/components/TodayHandoffPanel";
 import type { DayCardData } from "@/lib/dayCard";
 import TomorrowDraftModal from "@/components/TomorrowDraftModal";
+import DayPlanModal from "@/components/DayPlanModal";
 import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
@@ -2429,6 +2430,7 @@ export default function TodaySection({
   // 「今日の一枚」: 本日の実績(除外分を除く)からカテゴリ別内訳とMVP作業(最長時間)を集計する
   const [showDayCard, setShowDayCard] = useState(false);
   const [showTomorrowDraft, setShowTomorrowDraft] = useState(false);
+  const [showDayPlan, setShowDayPlan] = useState(false);
   const [showReflection, setShowReflection] = useState(false);
   const reflectionAnsweredToday = useLiveQuery(
     async () => !!(await db.settings.get(`reflection.daily.${date}`)),
@@ -3550,6 +3552,20 @@ export default function TodaySection({
           {simpleButtons ? (
             <button
               className="btn-pill-outline px-3 py-2 text-base"
+              onClick={() => setShowDayPlan(true)}
+              title="今日の段取りを提案"
+              aria-label="今日の段取りを提案"
+            >
+              🧭
+            </button>
+          ) : (
+            <button className="btn-pill-outline text-sm" onClick={() => setShowDayPlan(true)}>
+              🧭 今日の段取り
+            </button>
+          )}
+          {simpleButtons ? (
+            <button
+              className="btn-pill-outline px-3 py-2 text-base"
               onClick={() => setShowTomorrowDraft(true)}
               title="明日の下書きを作る"
               aria-label="明日の下書きを作る"
@@ -3865,6 +3881,7 @@ export default function TodaySection({
       )}
 
       {showDayCard && <DayCardModal data={dayCardData} onClose={() => setShowDayCard(false)} />}
+      {showDayPlan && <DayPlanModal today={date} onClose={() => setShowDayPlan(false)} />}
       {showTomorrowDraft && (
         <TomorrowDraftModal today={date} todayTasks={tasks ?? []} onClose={() => setShowTomorrowDraft(false)} />
       )}
