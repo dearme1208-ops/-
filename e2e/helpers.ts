@@ -15,6 +15,7 @@ export const STORES = [
   "conditionLogs",
   "memoBoards",
   "memoNotes",
+  "geoPlaces",
 ] as const;
 
 export const BASE_SETTINGS: Record<string, string> = {
@@ -166,3 +167,28 @@ export function jstAt(hm: string, offsetDays = 0): number {
   return new Date(`${jstDate(offsetDays)}T${hm}:00+09:00`).getTime();
 }
 export const MIN = 60_000;
+
+// 同じ文言のボタンが複数の作業カードに並ぶ場合に、cardTextを含むカードの中のボタンを押す
+export async function clickInCard(page: Page, cardText: string, buttonText: string): Promise<void> {
+  const clicked = await page.evaluate(
+    ({ cardText, buttonText }) => {
+      const buttons = [...document.querySelectorAll("button")].filter((b) => b.textContent?.trim() === buttonText);
+      for (const b of buttons) {
+        let el: HTMLElement | null = b.parentElement;
+        while (el) {
+          const same = [...el.querySelectorAll("button")].filter((x) => x.textContent?.trim() === buttonText);
+          if (same.length > 1) break;
+          if (el.innerText.includes(cardText)) {
+            b.click();
+            return true;
+          }
+          el = el.parentElement;
+        }
+      }
+      return false;
+    },
+    { cardText, buttonText }
+  );
+  if (!clicked) throw new Error(`「${cardText}」のカードに「${buttonText}」ボタンが見つかりません`);
+  await page.waitForTimeout(300);
+}
