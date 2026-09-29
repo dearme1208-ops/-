@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
@@ -10,9 +10,7 @@ import { collectMethodSuggestions } from "@/lib/method";
 import {
   adjustStopTimeForBreaks,
   breakRangeKey,
-  computeEffectiveElapsedMs,
   findBreakRangeAt,
-  isWithinBreak,
   parseBreakRanges,
   timeToMsOfDay,
 } from "@/lib/breaks";
@@ -34,22 +32,15 @@ import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
 import { DEFAULT_IMPORT_DAYS, parseIcsToScheduleRows } from "@/lib/icsImport";
 import { downloadTextFile } from "@/lib/report";
 import { computeStreakDays } from "@/lib/streak";
-import { computeAfterHoursBreakdown } from "@/lib/overtime";
-import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import { computeSuggestedTask } from "@/lib/suggest";
 import { computeNextTaskPick } from "@/lib/nextTaskPick";
 import { CONDITION_LEVELS, dominantConditionLevel, computeProductivityByCondition } from "@/lib/condition";
 import { completeTodoTask } from "@/lib/todo";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
-import { haversineDistanceMeters } from "@/lib/geo";
-import {
-  refreshWeatherAndFindAlerts,
-  computeProductivityByWeather,
-  type CurrentWeatherReading,
-  type WeatherAlert,
-} from "@/lib/weather";
+import { computeProductivityByWeather } from "@/lib/weather";
 import { fireConfetti } from "@/lib/confetti";
+import { findDueScheduledTasks, findProvisionalStart, inactivityCutoff } from "@/lib/automation";
 
 import { computeGrowthStage } from "@/lib/growth";
 import { createSpeechRecognition, parseVoiceCommand, speak } from "@/lib/voice";
@@ -57,11 +48,8 @@ import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
 import {
   formatClock,
-  formatDateJp,
-  formatHms,
   formatMsClock,
   jsWeekdayToApp,
-  parseHourStr,
   todayStr,
 } from "@/lib/time";
 import { getNotificationPermission, notify, requestNotificationPermission } from "@/lib/notifications";
@@ -112,6 +100,9 @@ import LinkedCompletionDialog, { type LinkedCompletionConfirm } from "@/componen
 import SecondaryProjectsDialog from "@/components/sections/today/SecondaryProjectsDialog";
 import TaskCard, { type TaskCardContext } from "@/components/sections/today/TaskCard";
 import TodayToolbar from "@/components/sections/today/TodayToolbar";
+import { useGeoArrivalWatch, useGeoMovementWatch, useWakeLock } from "@/components/sections/today/useLocationWatch";
+import { useTodayNotifications } from "@/components/sections/today/useTodayNotifications";
+import { useWeatherWatch } from "@/components/sections/today/useWeatherWatch";
 import AutoAllocatePanel, { type AutoAllocateMode } from "@/components/sections/today/AutoAllocatePanel";
 import {
   formatCrossingDateTime,
@@ -203,7 +194,7 @@ export default function TodaySection({
   const showDailyChallenge = showDailyChallengeStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
-  const { lobotomyMode, va11hallaMode, themedMode, wordingThemedMode, wordingMode } = useVisualMode();
+  const { va11hallaMode, themedMode, wordingThemedMode, wordingMode } = useVisualMode();
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -265,47 +256,15 @@ export default function TodaySection({
   const [geoTaskNameSetting] = useSetting("today.geoTaskName", "移動");
   const [geoStillMinutesStr] = useSetting("today.geoStillMinutes", "10");
   const geoStillMs = Math.max(1, Number(geoStillMinutesStr) || 10) * 60000;
-  const [geoError, setGeoError] = useState<string | null>(null);
-  const [geoMovementTick, setGeoMovementTick] = useState(0);
-  // GPSでの移動検知に使う各種状態。位置情報コールバックは頻繁に発火するため、
-  // 再レンダーを避けてrefで保持し、しきい値超過を検知した時だけstateを更新してタスク生成をトリガーする
-  const geoWatchIdRef = useRef<number | null>(null);
-  const geoAnchorRef = useRef<{ lat: number; lon: number } | null>(null);
-  const geoLastMovedAtRef = useRef<number>(Date.now());
-  const geoTaskIdRef = useRef<string | null>(null);
   const geoFinishInFlightRef = useRef(false);
   // 位置情報: 登録地点への到着検知(自動開始)。移動検知(仮計測)とは別の独立した機能
   const [geoArrivalEnabledStr] = useSetting("today.geoArrivalEnabled", "false");
   const geoArrivalEnabled = geoArrivalEnabledStr === "true";
   const geoPlaces = useLiveQuery(() => db.geoPlaces.toArray(), []);
-  const [geoArrivalError, setGeoArrivalError] = useState<string | null>(null);
-  // 登録地点の天気変化通知(降水確率が閾値を超える見込みが近づいたら通知)。
-  // アプリを開いている間だけ定期的にチェックする(地点到着検知と同じ制約)
-  const [weatherNotifyEnabledStr] = useSetting("weather.notifyEnabled", "false");
-  const weatherNotifyEnabled = weatherNotifyEnabledStr === "true";
-  const [weatherLeadHoursStr] = useSetting("weather.notifyLeadHours", "3");
-  const [weatherThresholdStr] = useSetting("weather.precipThreshold", "50");
-  // 天気変化の通知用の登録地点。地点到着検知(geoPlaces)とは別の独立した一覧
-  const weatherPlaces = useLiveQuery(() => db.weatherPlaces.toArray(), []);
   // 未着手(pending)の作業カードのドラッグ&ドロップ並べ替え用。計測中・完了は常に上/下に
   // 固定されるため、並べ替え対象は未着手グループのみに限定する
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
-  const [weatherAlert, setWeatherAlert] = useState<WeatherAlert | null>(null);
-  const [weatherCurrent, setWeatherCurrent] = useState<CurrentWeatherReading[]>([]);
-  const [weatherNextCrossings, setWeatherNextCrossings] = useState<WeatherAlert[]>([]);
-  const [weatherCheckError, setWeatherCheckError] = useState<string | null>(null);
-  const [weatherChecking, setWeatherChecking] = useState(false);
-  const [weatherLastCheckedAt, setWeatherLastCheckedAt] = useState<number | null>(null);
-  const geoArrivalWatchIdRef = useRef<number | null>(null);
-  // 地点ごとに「現在圏内にいるか」を保持し、圏内に入った瞬間だけ自動開始をトリガーする。
-  // 退出判定にはヒステリシス(半径の1.5倍)を設け、境界付近でのGPS誤差による連続トリガーを防ぐ
-  const geoInsidePlaceIdsRef = useRef<Set<string>>(new Set());
   const [geoArrivalConflict, setGeoArrivalConflict] = useState<{ place: GeoPlace; runningTasks: DailyTask[] } | null>(null);
-  // 地点到着で自動開始がONの間だけ、画面消灯で位置監視が止まらないようWake Lockで画面を常時点灯させる。
-  // 対応ブラウザでのみ有効(非対応なら何もしない)。バッテリー消費が増えるため、ON時のみ限定で使う
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-  const [wakeLockActive, setWakeLockActive] = useState(false);
-  const [wakeLockError, setWakeLockError] = useState<string | null>(null);
   const [masterEditMode] = useSetting("records.masterEditMode", "relink");
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [conditionEnabledStr] = useSetting("condition.enabled", "true");
@@ -321,27 +280,6 @@ export default function TodaySection({
     taskViewTabRaw === "pending" || taskViewTabRaw === "done" || taskViewTabRaw === "board" ? taskViewTabRaw : "running";
   const [growthStageEnabledStr] = useSetting("today.growthStageEnabled", "true");
   const growthStageEnabled = growthStageEnabledStr === "true";
-  const [weeklyAfterHoursNotifyEnabledStr] = useSetting("notify.afterHoursWeeklyEnabled", "false");
-  const weeklyAfterHoursNotifyEnabled = weeklyAfterHoursNotifyEnabledStr === "true";
-  const [weeklyAfterHoursThresholdStr] = useSetting("notify.afterHoursWeeklyThresholdHours", "5");
-  const [weeklyAfterHoursNotifiedWeek, setWeeklyAfterHoursNotifiedWeek] = useSetting(
-    "notify.afterHoursWeeklyNotifiedWeek",
-    ""
-  );
-  const [dailySummaryEnabledStr] = useSetting("notify.dailySummaryEnabled", "false");
-  const dailySummaryEnabled = dailySummaryEnabledStr === "true";
-  const [dailySummaryTime] = useSetting("notify.dailySummaryTime", "18:00");
-  const [dailySummaryNotifiedDate, setDailySummaryNotifiedDate] = useSetting("notify.dailySummaryNotifiedDate", "");
-  const [morningDigestEnabledStr] = useSetting("notify.morningDigestEnabled", "false");
-  const morningDigestEnabled = morningDigestEnabledStr === "true";
-  const [morningDigestTime] = useSetting("notify.morningDigestTime", "08:00");
-  const [morningDigestNotifiedDate, setMorningDigestNotifiedDate] = useSetting("notify.morningDigestNotifiedDate", "");
-  const [monthlySummaryEnabledStr] = useSetting("notify.monthlySummaryEnabled", "false");
-  const monthlySummaryEnabled = monthlySummaryEnabledStr === "true";
-  const [monthlySummaryNotifiedMonth, setMonthlySummaryNotifiedMonth] = useSetting(
-    "notify.monthlySummaryNotifiedMonth",
-    ""
-  );
   const [shortcutsEnabledStr] = useSetting("today.shortcutsEnabled", "true");
   const shortcutsEnabled = shortcutsEnabledStr === "true";
   // 直近でマウス/キーボード操作があった時刻。放置検知で未計測を打ち切る起点に使う
@@ -448,27 +386,6 @@ export default function TodaySection({
     requestStartNew(nextTaskPick.category, nextTaskPick.name, nextTaskPick.estimatedSeconds, masterId);
   }
 
-  // パターン学習型の声かけ通知。「そろそろこの作業では?」の提案が出た最初のタイミングで、
-  // パネル表示に加えて通知も送る(同じ提案は1日1回まで、設定書き込みの非同期反映による
-  // 二重通知を防ぐため同期的なrefで先にラッチする)
-  const [patternSuggestNotifyEnabledStr] = useSetting("notify.patternSuggestEnabled", "false");
-  const patternSuggestNotifyEnabled = patternSuggestNotifyEnabledStr === "true";
-  const [patternSuggestNotifiedKey, setPatternSuggestNotifiedKey] = useSetting("notify.patternSuggestNotifiedKey", "");
-  const patternSuggestFiredRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!patternSuggestNotifyEnabled || !suggestedTask) return;
-    const key = `${date}::${suggestedTask.category}::${suggestedTask.name}`;
-    if (patternSuggestNotifiedKey === key) return;
-    if (patternSuggestFiredRef.current === key) return;
-    patternSuggestFiredRef.current = key;
-    notify(
-      "💡 そろそろこの作業では?",
-      `${suggestedTask.category} / ${suggestedTask.name}（同じ曜日のこの時間帯によく行っています）`,
-      `pattern-suggest-${key}`
-    );
-    setPatternSuggestNotifiedKey(key);
-  }, [patternSuggestNotifyEnabled, suggestedTask, date, patternSuggestNotifiedKey, setPatternSuggestNotifiedKey]);
-
   useEffect(() => {
     setNotifPermission(getNotificationPermission());
   }, []);
@@ -531,95 +448,6 @@ export default function TodaySection({
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
   }, [shortcutsEnabled, tasks]);
-
-  // 今週の「定時以降の業務」合計が週次基準を超えたら通知する（週ごとに1回だけ）
-  useEffect(() => {
-    if (!weeklyAfterHoursNotifyEnabled || !projectRecords) return;
-    const thresholdSeconds = Math.max(0, Number(weeklyAfterHoursThresholdStr) || 0) * 3600;
-    if (thresholdSeconds <= 0) return;
-    const range = getPeriodRange({ type: "week" });
-    if (!range) return;
-    const weekKey = range.start.toISOString().slice(0, 10);
-    if (weeklyAfterHoursNotifiedWeek === weekKey) return;
-    const periodRecords = projectRecords.filter((r) => isDateStrInRange(r.date, range));
-    const { totalSeconds } = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
-    if (totalSeconds >= thresholdSeconds) {
-      notify("定時以降の業務が週次基準を超えました", `今週の定時以降の業務が ${formatHms(totalSeconds)} になりました`);
-      setWeeklyAfterHoursNotifiedWeek(weekKey);
-    }
-  }, [
-    weeklyAfterHoursNotifyEnabled,
-    projectRecords,
-    afterHoursCutoff,
-    weeklyAfterHoursThresholdStr,
-    weeklyAfterHoursNotifiedWeek,
-    setWeeklyAfterHoursNotifiedWeek,
-  ]);
-
-  // 1日の終わりに、その日の合計作業時間（と体調記録があればその内容）を通知する（1日1回）
-  useEffect(() => {
-    if (!dailySummaryEnabled || !projectRecords) return;
-    if (dailySummaryNotifiedDate === date) return;
-    const summaryHour = parseHourStr(dailySummaryTime, 18);
-    const nowHourNum = new Date(now).getHours() + new Date(now).getMinutes() / 60;
-    if (nowHourNum < summaryHour) return;
-    const totalSeconds = projectRecords
-      .filter((r) => r.date === date && !r.excludedFromStats)
-      .reduce((s, r) => s + r.seconds, 0);
-    const conditionPart =
-      conditionLogs && conditionLogs.length > 0
-        ? `・体調 ${CONDITION_LEVELS.find((c) => c.level === conditionLogs[conditionLogs.length - 1].level)?.emoji ?? ""}`
-        : "";
-    notify("今日の作業サマリー", `合計 ${formatHms(totalSeconds)}${conditionPart}`, "daily-summary");
-    setDailySummaryNotifiedDate(date);
-  }, [
-    dailySummaryEnabled,
-    dailySummaryNotifiedDate,
-    dailySummaryTime,
-    projectRecords,
-    conditionLogs,
-    date,
-    now,
-    setDailySummaryNotifiedDate,
-  ]);
-
-  // 月が変わって初めてアプリを開いたタイミングで、先月の合計時間・最多区分を通知する(月1回)。
-  // 日次サマリーと同じ「アプリを開いている間に判定する」方式で、特定の時刻は問わない
-  const monthlySummaryFiredRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!monthlySummaryEnabled || !projectRecords) return;
-    const currentMonth = date.slice(0, 7);
-    if (monthlySummaryNotifiedMonth === currentMonth) return;
-    // 設定書き込みが非同期(IndexedDB経由)で反映に一拍かかるため、書き込み完了前に
-    // このeffectが再実行されて二重通知しないよう、同期的なrefで先にラッチする
-    if (monthlySummaryFiredRef.current === currentMonth) return;
-    monthlySummaryFiredRef.current = currentMonth;
-    const [y, m] = currentMonth.split("-").map(Number);
-    const prevMonthDate = new Date(y, m - 2, 1);
-    const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
-    const prevRecords = projectRecords.filter((r) => r.date.startsWith(prevMonth) && !r.excludedFromStats);
-    if (prevRecords.length === 0) {
-      setMonthlySummaryNotifiedMonth(currentMonth);
-      return;
-    }
-    const totalSeconds = prevRecords.reduce((s, r) => s + r.seconds, 0);
-    const byCategory = new Map<string, number>();
-    for (const r of prevRecords) byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.seconds);
-    let topCategory = "";
-    let topCategorySeconds = 0;
-    for (const [cat, sec] of byCategory) {
-      if (sec > topCategorySeconds) {
-        topCategory = cat;
-        topCategorySeconds = sec;
-      }
-    }
-    notify(
-      `${prevMonth}のサマリー`,
-      `合計 ${formatHms(totalSeconds)}${topCategory ? `・最多区分「${topCategory}」${formatHms(topCategorySeconds)}` : ""}`,
-      "monthly-summary"
-    );
-    setMonthlySummaryNotifiedMonth(currentMonth);
-  }, [monthlySummaryEnabled, monthlySummaryNotifiedMonth, projectRecords, date, setMonthlySummaryNotifiedMonth]);
 
   // 「予測」（マスタの平均想定時間）。ガントチャートと同じ考え方で、同日中に同じ作業を
   // 複数回登録している場合は、既に今日積み上がった実績分を差し引いた残り予測にする。
@@ -690,14 +518,7 @@ export default function TodaySection({
   // 予定インポートで登録した作業(scheduledTime)が指定時刻になったら自動的に差し込み開始する
   useEffect(() => {
     if (!tasks) return;
-    for (const task of tasks) {
-      if (task.status !== "pending" || !task.scheduledTime || task.autoStartNotified || task.autoStartDisabled) continue;
-      const [h, m] = task.scheduledTime.split(":").map(Number);
-      if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
-      const scheduledMs = new Date(date + "T00:00:00").getTime() + (h * 60 + m) * 60000;
-      if (now < scheduledMs) continue;
-      autoStartScheduledTask(task);
-    }
+    for (const task of findDueScheduledTasks(tasks, date, now)) autoStartScheduledTask(task);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now, tasks, date]);
 
@@ -829,40 +650,17 @@ export default function TodaySection({
   );
   const [dueDetailKind, setDueDetailKind] = useState<"todo" | "project" | null>(null);
 
-  // 朝、指定した時刻になったら、本日の予定件数とToDo・案件の期限状況をまとめて通知する(1日1回)。
-  // 「1日の終わりの自動サマリー通知」と同じ「アプリを開いている間に、時刻を過ぎたタイミングで
-  // 判定する」方式。外部のカレンダー連携ルーティン等に頼らず、アプリ単体で確実に動くようにする。
-  // 設定の書き込み(IndexedDB経由)は非同期で反映に一拍かかるため、書き込み完了前にtasks等の
-  // 別の変化でこのeffectが再実行されて二重通知しないよう、月次ダイジェストと同様に同期的な
-  // refで先にラッチしておく
-  const morningDigestFiredRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!morningDigestEnabled) return;
-    if (morningDigestNotifiedDate === date) return;
-    if (morningDigestFiredRef.current === date) return;
-    const digestHour = parseHourStr(morningDigestTime, 8);
-    const nowHourNum = new Date(now).getHours() + new Date(now).getMinutes() / 60;
-    if (nowHourNum < digestHour) return;
-    morningDigestFiredRef.current = date;
-    const parts = [`本日の予定 ${taskCountsByTab.pending}件`];
-    if (pendingDueSummary.todoOverdue > 0 || pendingDueSummary.todoDueToday > 0) {
-      parts.push(`ToDo 期限切れ${pendingDueSummary.todoOverdue}件・本日期限${pendingDueSummary.todoDueToday}件`);
-    }
-    if (pendingDueSummary.projectOverdue > 0 || pendingDueSummary.projectDueToday > 0) {
-      parts.push(`案件 期限切れ${pendingDueSummary.projectOverdue}件・本日期限${pendingDueSummary.projectDueToday}件`);
-    }
-    notify("おはようございます", parts.join(" / "), "morning-digest");
-    setMorningDigestNotifiedDate(date);
-  }, [
-    morningDigestEnabled,
-    morningDigestNotifiedDate,
-    morningDigestTime,
-    taskCountsByTab,
-    pendingDueSummary,
+  // 声かけ・週の定時以降・1日の終わり・月初・朝の通知
+  useTodayNotifications({
     date,
     now,
-    setMorningDigestNotifiedDate,
-  ]);
+    records: projectRecords,
+    conditionLogs,
+    afterHoursCutoff,
+    suggestedTask,
+    pendingCount: taskCountsByTab.pending,
+    dueSummary: pendingDueSummary,
+  });
 
   // 直近の「停止」時刻（完了した作業の終了時刻、または一時停止中の作業が
   // 一時停止した時刻のうち、リスト上で一番最後(orderが最大)の作業のもの）。
@@ -954,13 +752,16 @@ export default function TodaySection({
   useEffect(() => {
     if (!provisionalEnabled) return;
     if (!tasks) return;
-    if (tasks.some((t) => t.isProvisional)) return;
-    if (tasks.some((t) => t.status === "running")) return;
-    if (lastStopTime === null || effectiveLastStopTime === null) return;
-    if (isWithinBreak(now, date, breakRanges)) return;
-    const realElapsedMs = computeEffectiveElapsedMs(lastStopTime, now, date, breakRanges);
-    if (realElapsedMs < thresholdMinutes * 60000) return;
-    const gapStart = effectiveLastStopTime;
+    const gapStart = findProvisionalStart({
+      tasks,
+      lastStopTime,
+      effectiveLastStopTime,
+      now,
+      date,
+      breakRanges,
+      thresholdMinutes,
+    });
+    if (gapStart === null) return;
     (async () => {
       const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
       const task: DailyTask = {
@@ -1002,11 +803,10 @@ export default function TodaySection({
   // PCを開いたまま放置しても、際限なく計測され続けないようにするための保険
   useEffect(() => {
     if (!provisionalTask || provisionalTask.status !== "running") return;
-    const idleMs = now - lastActivityRef.current;
-    if (idleMs < provisionalIdleMs) return;
+    const cutoff = inactivityCutoff(provisionalTask, lastActivityRef.current, now, provisionalIdleMs);
+    if (cutoff === null) return;
     if (idleFinishInFlightRef.current) return;
     idleFinishInFlightRef.current = true;
-    const cutoff = Math.max(lastActivityRef.current, provisionalTask.segments[0]?.start ?? lastActivityRef.current);
     commitFinish(provisionalTask, { endAtMs: cutoff }).then(() => {
       idleFinishInFlightRef.current = false;
       const hoursLabel = Math.round((provisionalIdleMs / 3600000) * 10) / 10;
@@ -1036,96 +836,11 @@ export default function TodaySection({
     provisionalNotifiedAtRef.current = now;
   }, [provisionalNotifyEnabled, provisionalTask, provisionalActive, now]);
 
-  // 位置情報の監視。しきい値以上動いたことを検知したら geoMovementTick を進めて、
-  // 別のuseEffectに「移動を検知した」ことだけを伝える。タブが開いている間のみ動作し、
-  // バックグラウンド/アプリを閉じている間は動作しない(ブラウザの位置情報APIの制約による)
-  useEffect(() => {
-    if (!geoTrackingEnabled) {
-      if (geoWatchIdRef.current !== null && typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.clearWatch(geoWatchIdRef.current);
-      }
-      geoWatchIdRef.current = null;
-      geoAnchorRef.current = null;
-      geoTaskIdRef.current = null;
-      setGeoError(null);
-      return;
-    }
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setGeoError("この端末・ブラウザは位置情報の取得に対応していません");
-      return;
-    }
-    geoAnchorRef.current = null;
-    geoLastMovedAtRef.current = Date.now();
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setGeoError(null);
-        const { latitude, longitude } = pos.coords;
-        if (!geoAnchorRef.current) {
-          geoAnchorRef.current = { lat: latitude, lon: longitude };
-          return;
-        }
-        const dist = haversineDistanceMeters(geoAnchorRef.current.lat, geoAnchorRef.current.lon, latitude, longitude);
-        if (dist >= geoDistanceThresholdMeters) {
-          geoAnchorRef.current = { lat: latitude, lon: longitude };
-          geoLastMovedAtRef.current = Date.now();
-          setGeoMovementTick((n) => n + 1);
-        }
-      },
-      () => setGeoError("位置情報を取得できませんでした（権限をご確認ください）"),
-      { enableHighAccuracy: false, maximumAge: 30000, timeout: 20000 }
-    );
-    geoWatchIdRef.current = watchId;
-    return () => {
-      navigator.geolocation.clearWatch(watchId);
-      geoWatchIdRef.current = null;
-    };
-  }, [geoTrackingEnabled, geoDistanceThresholdMeters]);
-
-  // 位置情報: 登録地点への到着検知。GPSコールバックは頻繁に発火するため、ここでは
-  // 圏内に入ったことだけを検知してstateに記録し、実際の自動開始処理は別のuseEffectに委ねる
-  // (tasksなど最新のstateを使って判定する必要があるため、コールバック内で直接処理しない)
-  const [arrivedPlaceEvent, setArrivedPlaceEvent] = useState<{ placeId: string; at: number } | null>(null);
-  useEffect(() => {
-    if (!geoArrivalEnabled || !geoPlaces || geoPlaces.length === 0) {
-      if (geoArrivalWatchIdRef.current !== null && typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.clearWatch(geoArrivalWatchIdRef.current);
-      }
-      geoArrivalWatchIdRef.current = null;
-      geoInsidePlaceIdsRef.current = new Set();
-      setGeoArrivalError(null);
-      return;
-    }
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setGeoArrivalError("この端末・ブラウザは位置情報の取得に対応していません");
-      return;
-    }
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setGeoArrivalError(null);
-        const { latitude, longitude } = pos.coords;
-        for (const place of geoPlaces) {
-          const dist = haversineDistanceMeters(place.lat, place.lon, latitude, longitude);
-          const wasInside = geoInsidePlaceIdsRef.current.has(place.id);
-          if (dist <= place.radiusMeters) {
-            if (!wasInside) {
-              geoInsidePlaceIdsRef.current.add(place.id);
-              setArrivedPlaceEvent({ placeId: place.id, at: Date.now() });
-            }
-          } else if (dist > place.radiusMeters * 1.5) {
-            // 退出判定には半径の1.5倍のヒステリシスを設け、境界付近のGPS誤差による連続トリガーを防ぐ
-            geoInsidePlaceIdsRef.current.delete(place.id);
-          }
-        }
-      },
-      () => setGeoArrivalError("位置情報を取得できませんでした（権限をご確認ください）"),
-      { enableHighAccuracy: false, maximumAge: 30000, timeout: 20000 }
-    );
-    geoArrivalWatchIdRef.current = watchId;
-    return () => {
-      navigator.geolocation.clearWatch(watchId);
-      geoArrivalWatchIdRef.current = null;
-    };
-  }, [geoArrivalEnabled, geoPlaces]);
+  // 位置情報の監視(移動検知・登録地点への到着検知)。検知したことだけを受け取り、
+  // 実際の作業の開始・打ち切りは下のeffectで最新のtasksを見て行う
+  const geoMovement = useGeoMovementWatch(geoTrackingEnabled, geoDistanceThresholdMeters);
+  const geoArrival = useGeoArrivalWatch(geoArrivalEnabled, geoPlaces);
+  const arrivedPlaceEvent = geoArrival.arrivedEvent;
 
   // 到着イベント(arrivedPlaceEvent)を受けて、実際に作業を自動開始する。
   // ここは通常のレンダーサイクルで動くため、tasks等の最新stateを安全に参照できる
@@ -1137,113 +852,16 @@ export default function TodaySection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrivedPlaceEvent]);
 
-  // 地点到着で自動開始がONの間、Wake Lockで画面消灯を防ぐ。Wake Lockはタブが非表示になると
-  // ブラウザ側で自動解除されるため、再度表示された時にvisibilitychangeで再取得する
-  useEffect(() => {
-    if (!geoArrivalEnabled) {
-      wakeLockRef.current?.release().catch(() => {});
-      wakeLockRef.current = null;
-      setWakeLockActive(false);
-      setWakeLockError(null);
-      return;
-    }
-    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) {
-      setWakeLockError("この端末・ブラウザは画面常時点灯(Wake Lock)に対応していません");
-      return;
-    }
-    let cancelled = false;
-    async function acquire() {
-      try {
-        const sentinel = await navigator.wakeLock.request("screen");
-        if (cancelled) {
-          await sentinel.release();
-          return;
-        }
-        wakeLockRef.current = sentinel;
-        setWakeLockActive(true);
-        setWakeLockError(null);
-        sentinel.addEventListener("release", () => {
-          if (wakeLockRef.current === sentinel) {
-            wakeLockRef.current = null;
-            setWakeLockActive(false);
-          }
-        });
-      } catch {
-        if (!cancelled) setWakeLockError("画面常時点灯を有効にできませんでした");
-      }
-    }
-    acquire();
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible" && !wakeLockRef.current) {
-        acquire();
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      wakeLockRef.current?.release().catch(() => {});
-      wakeLockRef.current = null;
-      setWakeLockActive(false);
-    };
-  }, [geoArrivalEnabled]);
+  // 地点到着で自動開始がONの間、画面消灯で位置監視が止まらないようにする
+  const wakeLock = useWakeLock(geoArrivalEnabled);
+  // 登録地点の天気変化通知
+  const weather = useWeatherWatch();
 
-  // 登録地点の天気変化通知。アプリを開いている間だけ、定期的に降水確率予報を取得・保存し、
-  // 閾値を超える見込みの時刻が指定時間以内に近づいていれば通知する(地点到着検知と同じく
-  // ブラウザ/PWAの仕様上フォアグラウンドでのみ動作し、閉じている間は情報が更新されない)。
-  // force=trueなら「今すぐ取得」ボタンからの呼び出しで、30分キャッシュを無視して必ず再取得する
-  const checkWeather = useCallback(
-    async (force: boolean) => {
-      if (!weatherPlaces || weatherPlaces.length === 0) return;
-      const leadHours = Math.max(0.5, Number(weatherLeadHoursStr) || 3);
-      const thresholdPct = Math.min(100, Math.max(0, Number(weatherThresholdStr) || 50));
-      setWeatherChecking(true);
-      try {
-        const { alerts, current, nextCrossings } = await refreshWeatherAndFindAlerts(weatherPlaces, {
-          leadHours,
-          thresholdPct,
-          nowMs: Date.now(),
-          todayDateStr: todayStr(),
-          force,
-        });
-        setWeatherCheckError(null);
-        setWeatherLastCheckedAt(Date.now());
-        setWeatherCurrent(current);
-        setWeatherNextCrossings(nextCrossings);
-        for (const alert of alerts) {
-          const hourLabel = formatClock(new Date(alert.atIso).getTime());
-          notify(
-            "☔ 天気の変化が近づいています",
-            `${alert.placeLabel}: ${hourLabel}頃に降水確率${alert.precipProbability}%の見込みです`,
-            `weather-${alert.placeId}-${alert.atIso}`
-          );
-        }
-        if (alerts.length > 0) setWeatherAlert(alerts[0]);
-      } catch {
-        setWeatherCheckError("天気予報を取得できませんでした");
-      } finally {
-        setWeatherChecking(false);
-      }
-    },
-    [weatherPlaces, weatherLeadHoursStr, weatherThresholdStr]
-  );
-
-  useEffect(() => {
-    if (!weatherNotifyEnabled || !weatherPlaces || weatherPlaces.length === 0) {
-      setWeatherCheckError(null);
-      return;
-    }
-    checkWeather(false);
-    // 内部で30分キャッシュされるためAPI呼び出し自体はもっと少ない頻度になる
-    const id = setInterval(() => checkWeather(false), 15 * 60000);
-    return () => clearInterval(id);
-  }, [weatherNotifyEnabled, weatherPlaces, checkWeather]);
-
-  // 移動を検知した(geoMovementTickが進んだ)ら、他に計測中/仮計測中の作業がなければ
+  // 移動を検知した(movementTickが進んだ)ら、他に計測中/仮計測中の作業がなければ
   // 「移動」の仮計測タスクを自動的に開始する。仕組みは未計測の自動計測と同じ仮計測枠を使う
   useEffect(() => {
     if (!geoTrackingEnabled) return;
-    if (geoMovementTick === 0) return;
+    if (geoMovement.movementTick === 0) return;
     if (!tasks) return;
     if (tasks.some((t) => t.isProvisional)) return;
     if (tasks.some((t) => t.status === "running")) return;
@@ -1265,27 +883,26 @@ export default function TodaySection({
         isProvisional: true,
       };
       await db.dailyTasks.add(task);
-      geoTaskIdRef.current = task.id;
+      geoMovement.taskIdRef.current = task.id;
       setTaskViewTab("running");
       notify("移動を検知しました", `${task.category} / ${task.name} の自動計測を開始しました`, "geo-tracking-start");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [geoMovementTick]);
+  }, [geoMovement.movementTick]);
 
   // 移動検知で始めた仮計測は、一定時間位置情報の変化がなくなったら
   // (＝止まったら)最後に動いていた時刻で自動的に打ち切る
   useEffect(() => {
     if (!geoTrackingEnabled) return;
     if (!provisionalTask || provisionalTask.status !== "running") return;
-    if (geoTaskIdRef.current !== provisionalTask.id) return;
-    const stillMs = now - geoLastMovedAtRef.current;
-    if (stillMs < geoStillMs) return;
+    if (geoMovement.taskIdRef.current !== provisionalTask.id) return;
+    const cutoff = inactivityCutoff(provisionalTask, geoMovement.lastMovedAtRef.current, now, geoStillMs);
+    if (cutoff === null) return;
     if (geoFinishInFlightRef.current) return;
     geoFinishInFlightRef.current = true;
-    const cutoff = Math.max(geoLastMovedAtRef.current, provisionalTask.segments[0]?.start ?? geoLastMovedAtRef.current);
     commitFinish(provisionalTask, { endAtMs: cutoff }).then(() => {
       geoFinishInFlightRef.current = false;
-      geoTaskIdRef.current = null;
+      geoMovement.taskIdRef.current = null;
       const minutesLabel = Math.round((geoStillMs / 60000) * 10) / 10;
       notify(
         "移動の自動計測を終了しました",
@@ -2490,7 +2107,7 @@ export default function TodaySection({
         factors.push("体調");
       }
     }
-    const isRainyNow = (weatherCurrent ?? []).some((c) => c.precipProbability >= 50);
+    const isRainyNow = (weather.current ?? []).some((c) => c.precipProbability >= 50);
     if (isRainyNow) {
       const row = weatherProductivityForEstimate.find((r) => r.bucket === "rain");
       if (row && row.sampleCount >= MIN_SAMPLES && row.avgProductivityPct < 95) {
@@ -2501,7 +2118,7 @@ export default function TodaySection({
     }
     if (count === 0) return null;
     return { factors, avgShortfallPct: Math.round(totalShortfallPct / count) };
-  }, [latestConditionLevel, conditionProductivity, weatherCurrent, weatherProductivityForEstimate]);
+  }, [latestConditionLevel, conditionProductivity, weather.current, weatherProductivityForEstimate]);
 
   // 個々のタスクカードの描画をmapのコールバックから関数として切り出したもの
   // 作業カード(TaskCard)に渡す、タブ全体で共有している状態と操作
@@ -2554,19 +2171,6 @@ export default function TodaySection({
     onOpenProjectEdit,
   };
 
-  // 図書館モードのカードスタック用: クリック操作と全く同じ判定(仮計測中/計測中強調による
-  // ブロック、同名作業の二重計測防止)をスワイプ操作にも適用するためのヘルパー
-  function controlsDisabledFor(task: DailyTask): boolean {
-    const isBlockedByEmphasis = emphasizeRunning && runningTaskIds.size > 0 && !runningTaskIds.has(task.id);
-    return provisionalActive || isBlockedByEmphasis;
-  }
-  function isDuplicateRunningTask(task: DailyTask): boolean {
-    return task.status !== "running" && runningTaskKeys.has(`${task.category}::${task.name}`);
-  }
-  function sendPendingTaskToBack(task: DailyTask) {
-    const last = visibleTasks[visibleTasks.length - 1];
-    if (last && last.id !== task.id) reorderPendingTask(task.id, last.id);
-  }
   return (
     <div className="space-y-4">
       {themedMode && (
@@ -2619,13 +2223,13 @@ export default function TodaySection({
           </button>
         </div>
       )}
-      {weatherAlert && (
+      {weather.alert && (
         <div className="panel flex items-center justify-between gap-2 border border-alert/40 p-4">
           <p className="text-sm font-bold text-cream">
-            ☔ {weatherAlert.placeLabel}で{formatCrossingDateTime(weatherAlert.atIso)}頃、降水確率
-            {weatherAlert.precipProbability}%の見込みです（{Math.round(weatherAlert.hoursUntil * 10) / 10}時間後）
+            ☔ {weather.alert.placeLabel}で{formatCrossingDateTime(weather.alert.atIso)}頃、降水確率
+            {weather.alert.precipProbability}%の見込みです（{Math.round(weather.alert.hoursUntil * 10) / 10}時間後）
           </p>
-          <button className="text-xs text-cream/50" onClick={() => setWeatherAlert(null)}>
+          <button className="text-xs text-cream/50" onClick={weather.dismissAlert}>
             閉じる
           </button>
         </div>
@@ -2739,7 +2343,7 @@ export default function TodaySection({
 
       {geoTrackingEnabled && (
         <GeoTrackingStatus
-          error={geoError}
+          error={geoMovement.error}
           distanceThresholdMeters={geoDistanceThresholdMeters}
           category={geoCategorySetting}
           taskName={geoTaskNameSetting}
@@ -2749,24 +2353,24 @@ export default function TodaySection({
 
       {geoArrivalEnabled && (
         <GeoArrivalStatus
-          error={geoArrivalError}
+          error={geoArrival.error}
           placeCount={(geoPlaces ?? []).length}
-          wakeLockActive={wakeLockActive}
-          wakeLockError={wakeLockError}
+          wakeLockActive={wakeLock.active}
+          wakeLockError={wakeLock.error}
         />
       )}
 
-      {weatherNotifyEnabled && (weatherPlaces ?? []).length > 0 && (
+      {weather.notifyEnabled && (weather.places ?? []).length > 0 && (
         <WeatherStatus
-          placeCount={(weatherPlaces ?? []).length}
-          thresholdPercent={weatherThresholdStr}
-          leadHours={weatherLeadHoursStr}
-          error={weatherCheckError}
-          checking={weatherChecking}
-          lastCheckedAt={weatherLastCheckedAt}
-          current={weatherCurrent}
-          nextCrossings={weatherNextCrossings}
-          onCheckNow={() => checkWeather(true)}
+          placeCount={(weather.places ?? []).length}
+          thresholdPercent={weather.thresholdStr}
+          leadHours={weather.leadHoursStr}
+          error={weather.error}
+          checking={weather.checking}
+          lastCheckedAt={weather.lastCheckedAt}
+          current={weather.current}
+          nextCrossings={weather.nextCrossings}
+          onCheckNow={weather.checkNow}
         />
       )}
 
