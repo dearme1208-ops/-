@@ -32,7 +32,7 @@ test.beforeEach(async ({ page }) => {
   await recordNotifications(page);
 });
 
-test("朝の通知: 指定時刻を過ぎると通知し、通知済みの日付を残す", async ({ page }) => {
+test("朝の通知: 指定時刻を過ぎると本日の予定件数と期限状況を1日1回だけ通知する", async ({ page }) => {
   await page.clock.install({ time: jstAt("08:30") });
   await seed(page, {
     settings: { "notify.morningDigestEnabled": "true", "notify.morningDigestTime": "08:00" },
@@ -42,8 +42,17 @@ test("朝の通知: 指定時刻を過ぎると通知し、通知済みの日付
       todoTasks: [{ id: "t1", listId: "l1", title: "請求書", important: false, completed: false, order: 0, createdAt: 0, dueDate: jstDate(-1) }],
     },
   });
-  await expect.poll(async () => (await notes(page)).find((n) => n.tag === "morning-digest")?.title).toBe("おはようございます");
+  // 作業・ToDoを読み終わる前に数えて「0件」と通知しないこと
+  await expect.poll(async () => (await notes(page)).filter((n) => n.tag === "morning-digest")).toEqual([
+    { title: "おはようございます", body: "本日の予定 1件 / ToDo 期限切れ1件・本日期限0件", tag: "morning-digest" },
+  ]);
   await expect.poll(async () => (await readOne<{ value: string }>(page, "settings", "notify.morningDigestNotifiedDate"))?.value).toBe(jstDate());
+  // 開き直しても、「通知済み」の設定を読み終わる前に送り直さないこと
+  for (let i = 0; i < 3; i++) {
+    await page.reload();
+    await page.waitForTimeout(1200);
+    expect((await notes(page)).filter((n) => n.tag === "morning-digest")).toHaveLength(0);
+  }
 });
 
 test("朝の通知: 指定時刻より前は通知しない", async ({ page }) => {
@@ -62,7 +71,16 @@ test("1日の終わりの通知: 指定時刻を過ぎると本日の合計と�
       conditionLogs: [{ id: "c1", date: jstDate(), time: "09:00", loggedAt: jstAt("09:00"), level: "4" }],
     },
   });
-  await expect.poll(async () => (await notes(page)).find((n) => n.tag === "daily-summary")?.body).toMatch(/^合計 01:30:00/);
+  // 体調記録を読み終わる前に送って、体調が抜けないこと
+  await expect.poll(async () => (await notes(page)).filter((n) => n.tag === "daily-summary").map((n) => n.body)).toEqual([
+    "合計 01:30:00・体調 🙂",
+  ]);
+  await expect.poll(async () => (await readOne<{ value: string }>(page, "settings", "notify.dailySummaryNotifiedDate"))?.value).toBe(jstDate());
+  for (let i = 0; i < 3; i++) {
+    await page.reload();
+    await page.waitForTimeout(1200);
+    expect((await notes(page)).filter((n) => n.tag === "daily-summary")).toHaveLength(0);
+  }
 });
 
 test("月初の通知: 前月の合計と最多区分を通知する", async ({ page }) => {

@@ -492,6 +492,11 @@ export default function TodaySection({
     setManualAllocationAt(Date.now());
   }
 
+  // 「まだこの作業中ですか?」で「続けている」を選んだ時刻(作業ID→時刻)。DBへの書き込みが
+  // 作業一覧(useLiveQuery)に反映されるまでの一瞬に下のチェックが古い一覧で走ると、
+  // 閉じたばかりの確認がまた開いてしまうため、反映を待たずに覚えておく
+  const overrunDismissedAtRef = useRef(new Map<string, number>());
+
   // 予測超過チェック（通知 + 20分超過の画面確認）
   useEffect(() => {
     if (!tasks) return;
@@ -504,10 +509,12 @@ export default function TodaySection({
         notify("予測時間を超過しました", `${task.category} / ${task.name}`);
         db.dailyTasks.update(task.id, { notifiedOverrun: true });
       }
-      const sinceDismiss = task.overrunPromptDismissedAt ? now - task.overrunPromptDismissedAt : Infinity;
+      const dismissedAt = Math.max(task.overrunPromptDismissedAt ?? 0, overrunDismissedAtRef.current.get(task.id) ?? 0);
+      const sinceDismiss = dismissedAt ? now - dismissedAt : Infinity;
+      const shown = task.overrunPromptShown || overrunDismissedAtRef.current.has(task.id);
       if (
         elapsedMs > predMs + OVERRUN_REPROMPT_MS &&
-        (!task.overrunPromptShown || sinceDismiss > OVERRUN_REPROMPT_MS) &&
+        (!shown || sinceDismiss > OVERRUN_REPROMPT_MS) &&
         !overrunTask
       ) {
         setOverrunTask(task);
@@ -658,6 +665,7 @@ export default function TodaySection({
     conditionLogs,
     afterHoursCutoff,
     suggestedTask,
+    dueDataReady: tasks !== undefined && linkedTodoTasks !== undefined && projects !== undefined,
     pendingCount: taskCountsByTab.pending,
     dueSummary: pendingDueSummary,
   });
@@ -2855,9 +2863,11 @@ export default function TodaySection({
         <OverrunPromptDialog
           task={overrunTask}
           onKeepGoing={async () => {
+            const dismissedAt = Date.now();
+            overrunDismissedAtRef.current.set(overrunTask.id, dismissedAt);
             await db.dailyTasks.update(overrunTask.id, {
               overrunPromptShown: true,
-              overrunPromptDismissedAt: Date.now(),
+              overrunPromptDismissedAt: dismissedAt,
             });
             setOverrunTask(null);
           }}
