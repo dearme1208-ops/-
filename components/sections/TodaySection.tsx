@@ -21,6 +21,7 @@ import {
   computePredictedSecondsByTaskId,
   computeRemainingEstimatedSeconds,
   computeRunningOverrunTaskIds,
+  addProvisionalTaskIfIdle,
   findMergeTargetRecord,
   finishDailyTask,
   importScheduleRows,
@@ -771,11 +772,9 @@ export default function TodaySection({
     });
     if (gapStart === null) return;
     (async () => {
-      const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
-      const task: DailyTask = {
+      const added = await addProvisionalTaskIfIdle({
         id: uid(),
         date,
-        order: count,
         category: "未分類",
         name: "仮計測中",
         estimatedSeconds: 0,
@@ -785,8 +784,8 @@ export default function TodaySection({
         startedAt: gapStart,
         isSpontaneous: true,
         isProvisional: true,
-      };
-      await db.dailyTasks.add(task);
+      });
+      if (!added) return;
       setTaskViewTab("running");
     })();
   }, [provisionalEnabled, tasks, now, lastStopTime, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
@@ -874,23 +873,21 @@ export default function TodaySection({
     if (tasks.some((t) => t.isProvisional)) return;
     if (tasks.some((t) => t.status === "running")) return;
     (async () => {
-      const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
       const startAt = Date.now();
-      const task: DailyTask = {
+      const task = {
         id: uid(),
         date,
-        order: count,
         category: geoCategorySetting || "移動",
         name: geoTaskNameSetting || "移動",
         estimatedSeconds: 0,
-        status: "running",
+        status: "running" as const,
         segments: [{ start: startAt }],
         accumulatedMs: 0,
         startedAt: startAt,
         isSpontaneous: true,
         isProvisional: true,
       };
-      await db.dailyTasks.add(task);
+      if (!(await addProvisionalTaskIfIdle(task))) return;
       geoMovement.taskIdRef.current = task.id;
       setTaskViewTab("running");
       notify("移動を検知しました", `${task.category} / ${task.name} の自動計測を開始しました`, "geo-tracking-start");
@@ -1652,8 +1649,9 @@ export default function TodaySection({
   // 作業を完了として確定する。同日・同じマスタの実績が既にあれば合算する
   // 完了の確定と実績への反映はlib/tasks.tsのfinishDailyTaskに一本化している。
   // ここではこの画面固有の後処理(タブ切り替え・超過通知の解除)だけを行う
-  async function commitFinish(task: DailyTask, options?: FinishDailyTaskOptions) {
-    await finishDailyTask(task, options);
+  // 戻り値: 実際に完了させたか(連打などで既に完了済みだった場合はfalse)
+  async function commitFinish(task: DailyTask, options?: FinishDailyTaskOptions): Promise<boolean> {
+    if (!(await finishDailyTask(task, options))) return false;
     // 放置検知・位置情報による無人での自動打ち切りもここを通るが、それらは今まさに
     // 完了操作をしたわけではないので、タブ切り替えの対象から外す(仮計測は必ず該当する)
     if (!task.isProvisional) {
@@ -1661,6 +1659,7 @@ export default function TodaySection({
       setTaskViewTab("pending");
     }
     if (overrunTask?.id === task.id) setOverrunTask(null);
+    return true;
   }
 
   // 案件の段階・案件(段階なし直付け)・ToDoのいずれかから追加された作業を完了させた場合、
@@ -1687,7 +1686,8 @@ export default function TodaySection({
   // endAtOverride: 止め忘れていた場合に、計測中セグメントを閉じる実際の終了時刻を
   // 現在時刻の代わりに指定する(FinishAtDialogから)
   async function finishTask(task: DailyTask, endAtOverride?: number) {
-    await commitFinish(task, { endAtMs: endAtOverride });
+    // 2回目の「終了」(連打)では、紐づく先の確認や中断作業の再開を繰り返さない
+    if (!(await commitFinish(task, { endAtMs: endAtOverride }))) return;
     queueLinkedCompletionConfirms(task);
     // トラブル対応・予定の自動差し込みなどで中断した作業（仮計測含む、複数ある場合も全て）を自動的に再開する
     if (task.resumeTaskIds && task.resumeTaskIds.length > 0) {

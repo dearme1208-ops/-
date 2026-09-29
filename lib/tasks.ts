@@ -149,7 +149,8 @@ export interface FinishDailyTaskOptions {
 // (本日の作業タブ・各テーマ画面・統合ボード・放置作業の後処理)ここを通す。
 // 経路ごとに別実装だった頃は、「時間を加算」分や兼務タグが一部の経路で落ちる、
 // 終了時刻が実際の停止時刻でなく操作した時刻になる、といった食い違いがあった
-export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number | FinishDailyTaskOptions): Promise<void> {
+// 戻り値: 実際に完了させたか(既に別の操作で完了済みだった場合はfalse)
+export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number | FinishDailyTaskOptions): Promise<boolean> {
   const opts: FinishDailyTaskOptions =
     typeof endAtOrOptions === "number" ? { endAtMs: endAtOrOptions } : (endAtOrOptions ?? {});
   const nowMs = Date.now();
@@ -179,21 +180,31 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   // いない時間帯を参照しないように)
   const endedAt = segments.length > 0 ? (segments[segments.length - 1].end ?? closeAt) : closeAt;
 
-  await db.dailyTasks.update(task.id, {
-    segments,
-    status: "done",
-    accumulatedMs,
-    // 手動加算分はaccumulatedMsへ織り込み済み。残すとbaseAccumulatedMsで二重に数えてしまう
-    manualAdjustmentMs: 0,
-    recordedMs: accumulatedMs,
-    recordedSegmentCount: segments.length,
-    startedAt,
-    endedAt,
-    // 実際にこの完了操作を行った時刻。「直近に何かを止めた時刻」の判定に使うため、
-    // 終了時刻をさかのぼって指定した場合でも現在時刻のままにする
-    stoppedAt: nowMs,
-    isProvisional: false,
+  // 「終了」の連打や、同じアプリを複数のタブで開いている場合に、同じ作業の完了が
+  // 並行して2回走ると実績が二重に加算されていた。DB上の最新の状態を確かめてから
+  // 完了にする処理を1つのトランザクションで行い、先に完了済みになっていれば何もしない
+  // (呼び出し側が完了済みの作業を渡した場合は、意図した再確定として通常どおり処理する)
+  const claimed = await db.transaction("rw", db.dailyTasks, async () => {
+    const current = await db.dailyTasks.get(task.id);
+    if (current && current.status === "done" && task.status !== "done") return false;
+    await db.dailyTasks.update(task.id, {
+      segments,
+      status: "done",
+      accumulatedMs,
+      // 手動加算分はaccumulatedMsへ織り込み済み。残すとbaseAccumulatedMsで二重に数えてしまう
+      manualAdjustmentMs: 0,
+      recordedMs: accumulatedMs,
+      recordedSegmentCount: segments.length,
+      startedAt,
+      endedAt,
+      // 実際にこの完了操作を行った時刻。「直近に何かを止めた時刻」の判定に使うため、
+      // 終了時刻をさかのぼって指定した場合でも現在時刻のままにする
+      stoppedAt: nowMs,
+      isProvisional: false,
+    });
+    return true;
   });
+  if (!claimed) return false;
 
   // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
   // 可視化する対象ではないため、ポップアップは出さない
@@ -246,6 +257,20 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   }
 
   await recomputeEstimateFromRecords(masterTaskId);
+  return true;
+}
+
+// 仮計測(未計測時間の自動計測・移動検知)の作業を、誰も計測していない場合に限って追加する。
+// 同じアプリを複数のタブで開いていると、各タブが同時に「計測していない」と判定して
+// 仮計測が重複していたため、DB上の最新の状態の確認と追加を1つのトランザクションで行う。
+// orderはその日の作業の件数(末尾)にする。戻り値: 追加したか
+export async function addProvisionalTaskIfIdle(task: Omit<DailyTask, "order">): Promise<boolean> {
+  return db.transaction("rw", db.dailyTasks, async () => {
+    const sameDay = await db.dailyTasks.where("date").equals(task.date).toArray();
+    if (sameDay.some((t) => t.isProvisional || t.status === "running")) return false;
+    await db.dailyTasks.add({ ...task, order: sameDay.length } as DailyTask);
+    return true;
+  });
 }
 
 // 「実績編集」タブでの実績(WorkRecord)の開始/終了時刻の手動編集は、その実績の元になった

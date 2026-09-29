@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "./db";
-import { findMergeTargetRecord, finishDailyTask } from "./tasks";
+import { addProvisionalTaskIfIdle, findMergeTargetRecord, finishDailyTask } from "./tasks";
 import type { DailyTask, WorkRecord } from "./types";
 
 const DATE = "2026-09-29";
@@ -154,5 +154,36 @@ describe("完了後に「続きから」再開した作業", () => {
     expect(second.records[0].seconds).toBe(20 * 60);
     // 作業全体の合計は、前回の加算分(5分)も含めて10+5+5=20分
     expect(second.daily.accumulatedMs).toBe(20 * MIN);
+  });
+});
+
+describe("同時に操作された場合", () => {
+  it("同じ作業の完了が2回同時に走っても、実績は1回分だけ加算される", async () => {
+    const t = task({ id: "dup" });
+    await db.dailyTasks.put(t);
+    const results = await Promise.all([
+      finishDailyTask(t, { endAtMs: T0 + 30 * MIN }),
+      finishDailyTask(t, { endAtMs: T0 + 30 * MIN }),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const records = await db.records.toArray();
+    expect(records).toHaveLength(1);
+    expect(records[0].seconds).toBe(30 * 60);
+  });
+
+  it("仮計測の追加が同時に走っても、1件しか作られない", async () => {
+    const base = { date: DATE, category: "未分類", name: "仮計測中", estimatedSeconds: 0, status: "running" as const, segments: [{ start: T0 }], accumulatedMs: 0, isSpontaneous: true, isProvisional: true };
+    const results = await Promise.all([
+      addProvisionalTaskIfIdle({ ...base, id: "p1" }),
+      addProvisionalTaskIfIdle({ ...base, id: "p2" }),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await db.dailyTasks.toArray()).toHaveLength(1);
+  });
+
+  it("計測中の作業があれば仮計測は追加しない", async () => {
+    await db.dailyTasks.put(task({ id: "r" }));
+    const added = await addProvisionalTaskIfIdle({ id: "p", date: DATE, category: "未分類", name: "仮計測中", estimatedSeconds: 0, status: "running", segments: [{ start: T0 }], accumulatedMs: 0, isSpontaneous: true, isProvisional: true });
+    expect(added).toBe(false);
   });
 });
