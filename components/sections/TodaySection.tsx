@@ -117,6 +117,17 @@ import TodayHandoffPanel from "@/components/TodayHandoffPanel";
 import type { DayCardData } from "@/lib/dayCard";
 import TomorrowDraftModal from "@/components/TomorrowDraftModal";
 import DayPlanModal from "@/components/DayPlanModal";
+import {
+  ConditionStartDialog,
+  OverrunPromptDialog,
+  ProvisionalConflictDialog,
+  RestartChoiceDialog,
+  RunningConflictDialog,
+  TemplateConfirmDialog,
+} from "@/components/sections/today/ChoiceDialogs";
+import DueDetailDialog from "@/components/sections/today/DueDetailDialog";
+import LinkedCompletionDialog, { type LinkedCompletionConfirm } from "@/components/sections/today/LinkedCompletionDialog";
+import SecondaryProjectsDialog from "@/components/sections/today/SecondaryProjectsDialog";
 import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
@@ -160,10 +171,6 @@ export default function TodaySection({
   // その紐づく先も完了とみなせるかまとめて確認するキュー。1件の作業完了で複数の
   // 確認が該当する場合(例: 案件のToDoから反映された段階作業)も、一度に全部出さず
   // 順番に1つずつ確認する
-  type LinkedCompletionConfirm =
-    | { kind: "stage"; task: DailyTask }
-    | { kind: "project"; task: DailyTask }
-    | { kind: "todo"; task: DailyTask };
   const [confirmQueue, setConfirmQueue] = useState<LinkedCompletionConfirm[]>([]);
   const activeConfirm = confirmQueue[0] ?? null;
   function advanceConfirmQueue() {
@@ -3742,71 +3749,21 @@ export default function TodaySection({
       )}
 
       {dueDetailKind && (
-        <Modal
-          title={dueDetailKind === "todo" ? "⚠ 期限切れ・本日期限のToDo" : "⚠ 期限切れ・本日期限の案件"}
+        <DueDetailDialog
+          kind={dueDetailKind}
+          date={date}
+          todoItems={pendingDueTodoItems}
+          projectItems={pendingDueProjectItems}
+          onOpenTodo={(id) => {
+            setDueDetailKind(null);
+            onOpenTodoDetail(id);
+          }}
+          onOpenProject={(id) => {
+            setDueDetailKind(null);
+            onOpenProjectEdit(id);
+          }}
           onClose={() => setDueDetailKind(null)}
-        >
-          <div className="space-y-1.5">
-            {dueDetailKind === "todo" &&
-              pendingDueTodoItems.map((t) => {
-                const daysOverdue = daysBetweenDateStrs(t.dueDate!, date);
-                return (
-                  <button
-                    key={t.id}
-                    className="flex w-full items-center gap-3 rounded-lg border border-alert/30 bg-alert/5 px-3 py-2 text-left"
-                    onClick={() => {
-                      setDueDetailKind(null);
-                      onOpenTodoDetail(t.id);
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-bold text-cream">{t.title}</div>
-                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-cream/50">
-                        {t.tag && <span>{t.tag}</span>}
-                        {t.category && <span>{t.category}</span>}
-                        {t.customer && <span>{t.customer}</span>}
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right text-xs font-bold text-alert">
-                      {formatDateJp(t.dueDate!)}
-                      <div className="text-[10px]">{daysOverdue > 0 ? `${daysOverdue}日超過` : "本日期限"}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            {dueDetailKind === "project" &&
-              pendingDueProjectItems.map((p) => {
-                const daysOverdue = daysBetweenDateStrs(p.dueDate, date);
-                return (
-                  <button
-                    key={p.id}
-                    className="flex w-full items-center gap-3 rounded-lg border border-alert/30 bg-alert/5 px-3 py-2 text-left"
-                    onClick={() => {
-                      setDueDetailKind(null);
-                      onOpenProjectEdit(p.id);
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-bold text-cream">{p.title}</div>
-                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-cream/50">
-                        {p.tag && <span>{p.tag}</span>}
-                        <span>{p.category}</span>
-                        <span>{p.workName}</span>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right text-xs font-bold text-alert">
-                      {formatDateJp(p.dueDate)}
-                      <div className="text-[10px]">{daysOverdue > 0 ? `${daysOverdue}日超過` : "本日期限"}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            {((dueDetailKind === "todo" && pendingDueTodoItems.length === 0) ||
-              (dueDetailKind === "project" && pendingDueProjectItems.length === 0)) && (
-              <p className="px-1 py-4 text-sm text-cream/50">対象はありません。</p>
-            )}
-          </div>
-        </Modal>
+        />
       )}
 
       {taskViewTab === "done" && (
@@ -3905,139 +3862,62 @@ export default function TodaySection({
       )}
 
       {templateConfirm && (
-        <Modal title="本日の作業リストを生成" onClose={() => setTemplateConfirm(null)}>
-          <div className="space-y-3 text-sm text-cream/80">
-            <p>
-              {WEEKDAY_LABELS[weekday]}曜日のテンプレート（{templateConfirm.items.length}件）から、本日の作業リストを作成します。
-            </p>
-            {templateConfirm.existingCount > 0 && (
-              <p className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2 text-alert">
-                本日の作業リストには既に{templateConfirm.existingCount}件あります。生成すると、これらは削除され進行中の記録も失われます。
-              </p>
-            )}
-            <div className="flex justify-end gap-2">
-              <button className="btn-pill-outline text-sm" onClick={() => setTemplateConfirm(null)}>
-                キャンセル
-              </button>
-              <button className="btn-pill text-sm" onClick={confirmGenerateFromTemplate}>
-                生成する
-              </button>
-            </div>
-          </div>
-        </Modal>
+        <TemplateConfirmDialog
+          weekday={weekday}
+          itemCount={templateConfirm.items.length}
+          existingCount={templateConfirm.existingCount}
+          onConfirm={confirmGenerateFromTemplate}
+          onClose={() => setTemplateConfirm(null)}
+        />
       )}
 
       {pendingStart && provisionalTask && (
-        <Modal title="未計測(仮計測)が計測中です" onClose={() => setPendingStart(null)}>
-          <p className="mb-4 text-sm text-cream/80">
-            「{provisionalTask.category} / {provisionalTask.name}」として未計測の自動計測が現在進行中です。
-            このまま新しい作業を開始すると二重に計測されてしまいます。どうしますか？
-          </p>
-          <div className="flex flex-col gap-2">
-            <button className="btn-pill text-sm" onClick={resolvePendingStartMerge}>
-              今回の作業に合算する（未計測の開始時刻から続けて計測）
-            </button>
-            <button className="btn-pill-outline text-sm" onClick={resolvePendingStartDiscard}>
-              自動計測をやめる（未計測分は記録せず、今から計測開始）
-            </button>
-            <button className="text-xs text-cream/50" onClick={() => setPendingStart(null)}>
-              キャンセル
-            </button>
-          </div>
-        </Modal>
+        <ProvisionalConflictDialog
+          provisionalTask={provisionalTask}
+          variant="start"
+          onMerge={resolvePendingStartMerge}
+          onDiscard={resolvePendingStartDiscard}
+          onClose={() => setPendingStart(null)}
+        />
       )}
 
       {restartChoice && (
-        <Modal title="作業を再開" onClose={() => setRestartChoice(null)}>
-          <p className="mb-4 text-sm text-cream/80">
-            「{restartChoice.category} / {restartChoice.name}」を再開します。直前に完了した続きから計測しますか？
-            それとも新しい作業として開始しますか？
-          </p>
-          <div className="flex flex-col gap-2">
-            <button
-              className="btn-pill text-sm"
-              onClick={() => {
-                const d = restartChoice;
-                setRestartChoice(null);
-                continueCompletedTask(d);
-              }}
-            >
-              続きから開始する（直前の記録に続けて計測）
-            </button>
-            <button
-              className="btn-pill-outline text-sm"
-              onClick={() => {
-                const d = restartChoice;
-                setRestartChoice(null);
-                restartCompletedTask(d);
-              }}
-            >
-              新しく開始する（別の記録として開始）
-            </button>
-            <button className="text-xs text-cream/50" onClick={() => setRestartChoice(null)}>
-              キャンセル
-            </button>
-          </div>
-        </Modal>
+        <RestartChoiceDialog
+          task={restartChoice}
+          onContinue={() => {
+            const d = restartChoice;
+            setRestartChoice(null);
+            continueCompletedTask(d);
+          }}
+          onRestartNew={() => {
+            const d = restartChoice;
+            setRestartChoice(null);
+            restartCompletedTask(d);
+          }}
+          onClose={() => setRestartChoice(null)}
+        />
       )}
 
       {pendingContinue && provisionalTask && (
-        <Modal title="未計測(仮計測)が計測中です" onClose={() => setPendingContinue(null)}>
-          <p className="mb-4 text-sm text-cream/80">
-            「{provisionalTask.category} / {provisionalTask.name}」として未計測の自動計測が現在進行中です。
-            このまま作業を続けると二重に計測されてしまいます。どうしますか？
-          </p>
-          <div className="flex flex-col gap-2">
-            <button className="btn-pill text-sm" onClick={resolvePendingContinueMerge}>
-              今回の作業に合算する（未計測の開始時刻から続けて計測）
-            </button>
-            <button className="btn-pill-outline text-sm" onClick={resolvePendingContinueDiscard}>
-              自動計測をやめる（未計測分は記録せず、今から計測継続）
-            </button>
-            <button className="text-xs text-cream/50" onClick={() => setPendingContinue(null)}>
-              キャンセル
-            </button>
-          </div>
-        </Modal>
+        <ProvisionalConflictDialog
+          provisionalTask={provisionalTask}
+          variant="continue"
+          onMerge={resolvePendingContinueMerge}
+          onDiscard={resolvePendingContinueDiscard}
+          onClose={() => setPendingContinue(null)}
+        />
       )}
 
       {secondaryProjectsTask && (
-        <Modal title="追加の案件タグ" onClose={() => setSecondaryProjectsTask(null)}>
-          <p className="mb-3 text-xs text-cream/60">
-            兼務・並行作業などで、主案件(
-            {secondaryProjectsTask.projectId ? projectMap.get(secondaryProjectsTask.projectId)?.title ?? "未設定" : "未設定"}
-            )以外にもこの作業の時間を按分したい案件を選べます。集計・レポートの時間合算にのみ使われ、段階の進捗などには影響しません。
-          </p>
-          <div className="max-h-64 space-y-1.5 overflow-y-auto">
-            {(projects ?? [])
-              .filter((p) => p.id !== secondaryProjectsTask.projectId && !p.completedAt)
-              .map((p) => {
-                const checked = secondaryProjectsTask.secondaryProjectIds?.includes(p.id) ?? false;
-                return (
-                  <label
-                    key={p.id}
-                    className="flex items-center gap-2 rounded-lg bg-ink/50 px-3 py-2 text-sm text-cream/80"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={async (e) => {
-                        const current = secondaryProjectsTask.secondaryProjectIds ?? [];
-                        const next = e.target.checked ? [...current, p.id] : current.filter((id) => id !== p.id);
-                        await db.dailyTasks.update(secondaryProjectsTask.id, { secondaryProjectIds: next });
-                        setSecondaryProjectsTask({ ...secondaryProjectsTask, secondaryProjectIds: next });
-                      }}
-                      className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
-                    />
-                    {p.title}
-                  </label>
-                );
-              })}
-            {(projects ?? []).filter((p) => p.id !== secondaryProjectsTask.projectId && !p.completedAt).length === 0 && (
-              <p className="text-sm text-cream/50">選択できる他の案件がありません。</p>
-            )}
-          </div>
-        </Modal>
+        <SecondaryProjectsDialog
+          task={secondaryProjectsTask}
+          projects={projects ?? []}
+          primaryProjectTitle={
+            secondaryProjectsTask.projectId ? projectMap.get(secondaryProjectsTask.projectId)?.title ?? "未設定" : "未設定"
+          }
+          onChange={setSecondaryProjectsTask}
+          onClose={() => setSecondaryProjectsTask(null)}
+        />
       )}
 
       {editingTask && (
@@ -4110,230 +3990,62 @@ export default function TodaySection({
       )}
 
       {overrunTask && (
-        <Modal title="まだこの作業中ですか?">
-          <p className="mb-4 text-sm text-cream/80">
-            「{overrunTask.name}」が予測時間を大幅に超過しています。
-          </p>
-          <div className="flex justify-end gap-2">
-            <button
-              className="btn-pill-outline text-sm"
-              onClick={async () => {
-                await db.dailyTasks.update(overrunTask.id, {
-                  overrunPromptShown: true,
-                  overrunPromptDismissedAt: Date.now(),
-                });
-                setOverrunTask(null);
-              }}
-            >
-              続けている
-            </button>
-            <button
-              className="btn-pill text-sm"
-              onClick={async () => {
-                await finishTask(overrunTask);
-              }}
-            >
-              終了する
-            </button>
-          </div>
-        </Modal>
+        <OverrunPromptDialog
+          task={overrunTask}
+          onKeepGoing={async () => {
+            await db.dailyTasks.update(overrunTask.id, {
+              overrunPromptShown: true,
+              overrunPromptDismissedAt: Date.now(),
+            });
+            setOverrunTask(null);
+          }}
+          onFinish={async () => {
+            await finishTask(overrunTask);
+          }}
+        />
       )}
 
       {pendingConditionStart && (
-        <Modal
-          title="体調を記録してから始めますか?"
-          onClose={async () => {
+        <ConditionStartDialog
+          onPick={async (level) => {
+            const action = pendingConditionStart;
+            setPendingConditionStart(null);
+            await logCondition(level);
+            await action?.();
+          }}
+          onSkip={async () => {
             const action = pendingConditionStart;
             setPendingConditionStart(null);
             await action?.();
           }}
-        >
-          <p className="mb-3 text-sm text-cream/80">今日最初の作業を開始します。今の体調を記録しておきますか?</p>
-          <div className="flex flex-wrap gap-2">
-            {CONDITION_LEVELS.map((c) => (
-              <button
-                key={c.level}
-                className="btn-pill-outline p-1.5"
-                aria-label={c.label}
-                title={c.label}
-                onClick={async () => {
-                  const action = pendingConditionStart;
-                  setPendingConditionStart(null);
-                  await logCondition(c.level);
-                  await action?.();
-                }}
-              >
-                <ConditionGlyph level={c.level} size={28} />
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 flex justify-end">
-            <button
-              className="text-xs text-cream/50 hover:text-cream"
-              onClick={async () => {
-                const action = pendingConditionStart;
-                setPendingConditionStart(null);
-                await action?.();
-              }}
-            >
-              スキップして開始
-            </button>
-          </div>
-        </Modal>
+        />
       )}
 
       {scheduleConflict && (
-        <Modal title="予定の時刻になりました" onClose={() => resolveScheduleConflict(false)}>
-          <p className="mb-3 text-sm text-cream/80">
-            予定「{scheduleConflict.task.category} / {scheduleConflict.task.name}」の時刻になりましたが、
-            現在「{scheduleConflict.runningTasks.map((t) => t.name).join("、")}」を計測中です。
-            一時停止してこちらを開始しますか?
-          </p>
-          <div className="flex justify-end gap-2">
-            <button className="btn-pill-outline text-sm" onClick={() => resolveScheduleConflict(false)}>
-              今の作業を続ける
-            </button>
-            <button className="btn-pill text-sm" onClick={() => resolveScheduleConflict(true)}>
-              一時停止して開始する
-            </button>
-          </div>
-        </Modal>
+        <RunningConflictDialog title="予定の時刻になりました" onResolve={resolveScheduleConflict}>
+          予定「{scheduleConflict.task.category} / {scheduleConflict.task.name}」の時刻になりましたが、
+          現在「{scheduleConflict.runningTasks.map((t) => t.name).join("、")}」を計測中です。
+          一時停止してこちらを開始しますか?
+        </RunningConflictDialog>
       )}
 
       {geoArrivalConflict && (
-        <Modal title="位置情報: 到着を検知しました" onClose={() => resolveGeoArrivalConflict(false)}>
-          <p className="mb-3 text-sm text-cream/80">
-            「{geoArrivalConflict.place.label}」（{geoArrivalConflict.place.category} / {geoArrivalConflict.place.name}）
-            への到着を検知しましたが、現在「{geoArrivalConflict.runningTasks.map((t) => t.name).join("、")}」を計測中です。
-            一時停止してこちらを開始しますか?
-          </p>
-          <div className="flex justify-end gap-2">
-            <button className="btn-pill-outline text-sm" onClick={() => resolveGeoArrivalConflict(false)}>
-              今の作業を続ける
-            </button>
-            <button className="btn-pill text-sm" onClick={() => resolveGeoArrivalConflict(true)}>
-              一時停止して開始する
-            </button>
-          </div>
-        </Modal>
+        <RunningConflictDialog title="位置情報: 到着を検知しました" onResolve={resolveGeoArrivalConflict}>
+          「{geoArrivalConflict.place.label}」（{geoArrivalConflict.place.category} / {geoArrivalConflict.place.name}）
+          への到着を検知しましたが、現在「{geoArrivalConflict.runningTasks.map((t) => t.name).join("、")}」を計測中です。
+          一時停止してこちらを開始しますか?
+        </RunningConflictDialog>
       )}
 
-      {activeConfirm?.kind === "stage" &&
-        (() => {
-          const confirmTask = activeConfirm.task;
-          const project = confirmTask.projectId ? projectMap.get(confirmTask.projectId) : undefined;
-          const stage = project?.stages?.find((s) => s.id === confirmTask.stageId);
-          if (!project || !stage) return null;
-          const isCountBased = stage.targetCount != null;
-          return (
-            <Modal title="段階の進捗確認" onClose={advanceConfirmQueue}>
-              <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
-              {isCountBased ? (
-                <p className="mb-4 text-sm text-cream/80">
-                  案件「{project.title}」の段階「{stage.title}」は現在{" "}
-                  <span className="font-bold">
-                    {stage.completedCount ?? 0}/{stage.targetCount}件
-                  </span>
-                  です。この作業で1件進めますか?
-                </p>
-              ) : (
-                <p className="mb-4 text-sm text-cream/80">
-                  案件「{project.title}」の段階「{stage.title}」はこれで完了ですか?
-                </p>
-              )}
-              {!isCountBased &&
-                (() => {
-                  const stages = project.stages ?? [];
-                  const idx = stages.findIndex((s) => s.id === stage.id);
-                  const incompletePrevious = stages.slice(0, idx).filter((s) => !s.completed);
-                  if (incompletePrevious.length === 0) return null;
-                  return (
-                    <p className="mb-4 rounded-lg border border-alert/40 bg-alert/5 p-2 text-xs text-alert">
-                      ⚠ 前の段階「{incompletePrevious.map((s) => s.title).join("」「")}」がまだ完了していません。
-                    </p>
-                  );
-                })()}
-              <div className="flex justify-end gap-2">
-                <button className="btn-pill-outline text-sm" onClick={advanceConfirmQueue}>
-                  {isCountBased ? "件数はそのまま（時間だけ記録）" : "まだ続く（時間だけ記録）"}
-                </button>
-                <button
-                  className="btn-pill text-sm"
-                  onClick={async () => {
-                    const stages = (project.stages ?? []).map((s) => {
-                      if (s.id !== stage.id) return s;
-                      if (isCountBased) {
-                        const next = Math.min(s.targetCount ?? 0, (s.completedCount ?? 0) + 1);
-                        const justReachedTarget = next >= (s.targetCount ?? 0) && (s.completedCount ?? 0) < (s.targetCount ?? 0);
-                        return { ...s, completedCount: next, completedAt: justReachedTarget ? Date.now() : s.completedAt };
-                      }
-                      return { ...s, completed: true, completedAt: Date.now() };
-                    });
-                    await db.projects.update(project.id, { stages });
-                    advanceConfirmQueue();
-                  }}
-                >
-                  {isCountBased ? "1件進める" : "この段階を完了にする"}
-                </button>
-              </div>
-            </Modal>
-          );
-        })()}
-
-      {activeConfirm?.kind === "project" &&
-        (() => {
-          const confirmTask = activeConfirm.task;
-          const project = confirmTask.projectId ? projectMap.get(confirmTask.projectId) : undefined;
-          if (!project) return null;
-          return (
-            <Modal title="案件の進捗確認" onClose={advanceConfirmQueue}>
-              <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
-              <p className="mb-4 text-sm text-cream/80">案件「{project.title}」はこれで完了ですか?</p>
-              <div className="flex justify-end gap-2">
-                <button className="btn-pill-outline text-sm" onClick={advanceConfirmQueue}>
-                  まだ続く（時間だけ記録）
-                </button>
-                <button
-                  className="btn-pill text-sm"
-                  onClick={async () => {
-                    await db.projects.update(project.id, { completedAt: Date.now(), autoCompletedByImport: false });
-                    fireConfetti();
-                    advanceConfirmQueue();
-                  }}
-                >
-                  この案件を完了にする
-                </button>
-              </div>
-            </Modal>
-          );
-        })()}
-
-      {activeConfirm?.kind === "todo" &&
-        (() => {
-          const confirmTask = activeConfirm.task;
-          const todo = confirmTask.todoTaskId ? todoTaskMap.get(confirmTask.todoTaskId) : undefined;
-          if (!todo) return null;
-          return (
-            <Modal title="Todoの進捗確認" onClose={advanceConfirmQueue}>
-              <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
-              <p className="mb-4 text-sm text-cream/80">元のTodo「{todo.title}」はこれで完了ですか?</p>
-              <div className="flex justify-end gap-2">
-                <button className="btn-pill-outline text-sm" onClick={advanceConfirmQueue}>
-                  まだ続く（時間だけ記録）
-                </button>
-                <button
-                  className="btn-pill text-sm"
-                  onClick={async () => {
-                    await completeLinkedTodo(todo.id);
-                    advanceConfirmQueue();
-                  }}
-                >
-                  Todoを完了にする
-                </button>
-              </div>
-            </Modal>
-          );
-        })()}
+      {activeConfirm && (
+        <LinkedCompletionDialog
+          confirm={activeConfirm}
+          projectMap={projectMap}
+          todoTaskMap={todoTaskMap}
+          onCompleteTodo={completeLinkedTodo}
+          onDone={advanceConfirmQueue}
+        />
+      )}
     </div>
   );
 }
