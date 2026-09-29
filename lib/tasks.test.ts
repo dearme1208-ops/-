@@ -135,3 +135,24 @@ describe("findMergeTargetRecord", () => {
     expect(await findMergeTargetRecord(DATE, "m1", { method: "Claude" })).toBeUndefined();
   });
 });
+
+describe("完了後に「続きから」再開した作業", () => {
+  it("2回目の完了では新しく増えた区間と加算分だけを実績に足す", async () => {
+    const first = await finish(task({ id: "c1", manualAdjustmentMs: 5 * MIN }), { endAtMs: T0 + 10 * MIN });
+    expect(first.records[0].seconds).toBe(15 * 60);
+    expect(first.daily.accumulatedMs).toBe(15 * MIN);
+
+    // 「続きから」再開(区間を追加して計測中に戻す)
+    const reopened: DailyTask = {
+      ...first.daily,
+      status: "running",
+      segments: [...first.daily.segments, { start: T0 + 30 * MIN }],
+      endedAt: undefined,
+    };
+    const second = await finish(reopened, { endAtMs: T0 + 35 * MIN });
+    expect(second.records).toHaveLength(1);
+    expect(second.records[0].seconds).toBe(20 * 60);
+    // 作業全体の合計は、前回の加算分(5分)も含めて10+5+5=20分
+    expect(second.daily.accumulatedMs).toBe(20 * MIN);
+  });
+});

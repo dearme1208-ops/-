@@ -92,6 +92,9 @@ export interface DailyTask {
   manualAdjustmentMs?: number; // 「時間を加算」で手動追加した分。segmentsとは独立して保持し、
   // pause/finish時にsegments合計で上書きされないようにする（実際の区間ではないためGanttの
   // セグメント表示には出さず、合計時間の算出時にのみ加算する）
+  recordedMs?: number; // 実績(WorkRecord)へ反映済みの合計時間。完了後に「続きから」再開して
+  // もう一度完了した際、前回までに反映済みの分を実績へ二重に足さないために使う
+  recordedSegmentCount?: number; // 上記の反映時点で既にあった区間の数。これ以降に追加された区間が新しい実働分
   startedAt?: number;
   endedAt?: number;
   isSpontaneous: boolean;

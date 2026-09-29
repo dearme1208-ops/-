@@ -33,3 +33,7 @@ public/sw.js.map
 public/workbox-*.js
 public/workbox-*.js.map
 public/swe-worker-*.js
+
+# playwright
+/test-results/
+/playwright-report/

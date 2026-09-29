@@ -160,11 +160,19 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
       i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(s.start, closeAt) } : s
     );
   }
-  const segmentsMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
+  // 一度完了した作業を「続きから」再開した場合、前回完了時までの分は既に実績へ反映済み。
+  // 今回新たに増えた区間と「時間を加算」分だけを実績に足し、作業全体の合計は
+  // 反映済み分に今回分を積み上げて求める(前回の加算分が区間の再集計で消えないように)
+  const prevRecordedMs = opts.segments ? 0 : (task.recordedMs ?? 0);
+  const prevSegmentCount = opts.segments ? 0 : (task.recordedSegmentCount ?? 0);
+  const newSegmentsMs = segments
+    .slice(prevSegmentCount)
+    .reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
   // 「時間を加算」で足した分は区間には現れないため、ここで合計に織り込む
   // (区間を呼び出し側が直接組み立てた場合は、その区間の長さが所要時間そのもの)
-  const accumulatedMs = segmentsMs + (opts.segments ? 0 : (task.manualAdjustmentMs ?? 0));
-  const seconds = Math.round(accumulatedMs / 1000);
+  const workedMs = newSegmentsMs + (opts.segments ? 0 : (task.manualAdjustmentMs ?? 0));
+  const accumulatedMs = prevRecordedMs + workedMs;
+  const seconds = Math.round(workedMs / 1000);
   const startedAt = opts.startedAt ?? task.startedAt ?? segments[0]?.start ?? closeAt;
   // 一時停止済み(=区間がすべて閉じている)の作業では、完了操作をした時刻ではなく
   // 実際の最後の区間の終了時刻をendedAtにする(定時以降の集計などが、実際には作業して
@@ -177,6 +185,8 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
     accumulatedMs,
     // 手動加算分はaccumulatedMsへ織り込み済み。残すとbaseAccumulatedMsで二重に数えてしまう
     manualAdjustmentMs: 0,
+    recordedMs: accumulatedMs,
+    recordedSegmentCount: segments.length,
     startedAt,
     endedAt,
     // 実際にこの完了操作を行った時刻。「直近に何かを止めた時刻」の判定に使うため、
@@ -188,7 +198,12 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
   // 可視化する対象ではないため、ポップアップは出さない
   if (!task.isProvisional) {
-    fireCompletionPopup({ category: task.category, name: task.name, seconds, estimatedSeconds: task.estimatedSeconds });
+    fireCompletionPopup({
+      category: task.category,
+      name: task.name,
+      seconds: Math.round(accumulatedMs / 1000),
+      estimatedSeconds: task.estimatedSeconds,
+    });
   }
 
   let masterTaskId = task.masterTaskId;
@@ -265,10 +280,14 @@ export async function syncDailyTaskBoundaryFromRecord(
       : [edge === "start" ? { start: newTime, end: target.endedAt ?? newTime } : { start: target.startedAt ?? newTime, end: newTime }];
   if (segments.some((s) => s.end !== undefined && s.end <= s.start)) return;
 
+  const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? newTime) - s.start), 0);
   await db.dailyTasks.update(target.id, {
     ...(edge === "start" ? { startedAt: newTime } : { endedAt: newTime }),
     segments,
-    accumulatedMs: segments.reduce((sum, s) => sum + ((s.end ?? newTime) - s.start), 0),
+    accumulatedMs,
+    // 実績側を直接編集した結果に合わせたので、この時点の値を「反映済み」とする
+    recordedMs: accumulatedMs,
+    recordedSegmentCount: segments.length,
   });
 }
 

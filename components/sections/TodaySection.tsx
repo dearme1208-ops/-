@@ -1794,6 +1794,12 @@ export default function TodaySection({
       );
       taskUpdates.endedAt = lastEnd;
     }
+    if (taskUpdates.accumulatedMs !== undefined) {
+      // 実績側もこの差分だけ直すので、編集後の合計を「実績へ反映済み」とする
+      // (この後「続きから」再開して完了した際、二重に足したり差し引いたりしないように)
+      taskUpdates.recordedMs = taskUpdates.accumulatedMs;
+      taskUpdates.recordedSegmentCount = (taskUpdates.segments ?? task.segments).length;
+    }
 
     const oldMasterId = task.masterTaskId;
     // 編集前の帰属先(案件・段階・ToDo・手段)で、この作業分が合算されている実績を探す
@@ -2244,6 +2250,10 @@ export default function TodaySection({
       status: "running",
       endedAt: undefined,
       stoppedAt: undefined,
+      // 反映済みの印が無い(この仕組みより前に完了した)作業は、完了時点の合計と区間を
+      // 反映済みとみなす。これが無いと次の完了で前回分が実績に二重に足されてしまう
+      recordedMs: daily.recordedMs ?? daily.accumulatedMs,
+      recordedSegmentCount: daily.recordedSegmentCount ?? daily.segments.length,
     });
     setTaskViewTab("running");
   }
