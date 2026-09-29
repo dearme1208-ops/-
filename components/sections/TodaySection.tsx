@@ -111,21 +111,20 @@ import DueDetailDialog from "@/components/sections/today/DueDetailDialog";
 import LinkedCompletionDialog, { type LinkedCompletionConfirm } from "@/components/sections/today/LinkedCompletionDialog";
 import SecondaryProjectsDialog from "@/components/sections/today/SecondaryProjectsDialog";
 import TaskCard, { type TaskCardContext } from "@/components/sections/today/TaskCard";
+import TodayToolbar from "@/components/sections/today/TodayToolbar";
+import AutoAllocatePanel, { type AutoAllocateMode } from "@/components/sections/today/AutoAllocatePanel";
+import {
+  formatCrossingDateTime,
+  GeoArrivalStatus,
+  GeoTrackingStatus,
+  WeatherStatus,
+} from "@/components/sections/today/AutomationStatus";
 import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
-
-// 天気変化通知の「次に閾値を超える時刻」表示用。予報は当日〜翌日早朝まで含むため、
-// 日付が今日と異なる場合(=翌日の予報)は時刻だけでなく日付も明示し、日をまたいだ
-// 見込みを取り違えないようにする
-function formatCrossingDateTime(atIso: string): string {
-  const d = new Date(atIso);
-  const dateLabel = todayStr(d) !== todayStr() ? `${formatDateJp(todayStr(d))} ` : "";
-  return `${dateLabel}${formatClock(d.getTime())}`;
-}
 
 export default function TodaySection({
   onOpenTodoDetail,
@@ -146,7 +145,6 @@ export default function TodaySection({
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [scheduleImportErrors, setScheduleImportErrors] = useState<string[]>([]);
   const [scheduleImportResult, setScheduleImportResult] = useState("");
-  const scheduleFileInputRef = useRef<HTMLInputElement>(null);
   const [notifPermission, setNotifPermission] = useState<string>("default");
   const [overrunTask, setOverrunTask] = useState<DailyTask | null>(null);
   // 案件の段階・案件(段階なし直付け)・ToDoのいずれかに紐づく作業を完了させた際、
@@ -193,7 +191,6 @@ export default function TodaySection({
   // 自動配分: 残業務時間内に未完了作業(予測)を収めるための目標ペースを自動計算する機能。
   // 「オフ」「ライブ（常に再計算）」「手動（ボタンを押した時だけ計算）」を切り替えられる
   const [autoAllocateMode, setAutoAllocateMode] = useSetting("today.autoAllocateMode", "off");
-  const [autoAllocateCollapsedStr, setAutoAllocateCollapsedStr] = useSetting("today.collapseAutoAllocate", "false");
   const [showStatusPanelStr] = useSetting("today.showStatusPanel", "true");
   const showStatusPanel = showStatusPanelStr === "true";
   const [showAutoAllocateStr] = useSetting("today.showAutoAllocate", "true");
@@ -204,7 +201,6 @@ export default function TodaySection({
   const showNextMovePick = showNextMovePickStr === "true";
   const [showDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
   const showDailyChallenge = showDailyChallengeStr === "true";
-  const autoAllocateCollapsed = autoAllocateCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
   const { lobotomyMode, va11hallaMode, themedMode, wordingThemedMode, wordingMode } = useVisualMode();
@@ -2677,64 +2673,15 @@ export default function TodaySection({
         </div>
       )}
       {showAutoAllocate && (
-        <div className="panel p-4">
-          <button
-            className="flex w-full items-center justify-between gap-2 text-left"
-            onClick={() => setAutoAllocateCollapsedStr(autoAllocateCollapsed ? "false" : "true")}
-          >
-            <h3 className="font-display text-sm font-bold text-cream/80">
-              自動配分
-              {autoAllocateCollapsed && autoAllocateMode !== "off" && (
-                <span className="ml-1 font-normal text-cream/40">（{autoAllocateMode === "live" ? "ライブ" : "手動"}）</span>
-              )}
-            </h3>
-            <span className="text-xs text-cream/40">{autoAllocateCollapsed ? "▶" : "▼"}</span>
-          </button>
-          {!autoAllocateCollapsed && (
-            <>
-              <div className="mb-2 mt-2 flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-normal text-cream/40">
-                  {standardWorkEnd}までの残り時間に、未完了作業の予測を収めるための目標ペース
-                </span>
-                <div className="flex items-center gap-1">
-                  {(["off", "live", "manual"] as const).map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setAutoAllocateMode(m)}
-                      className={autoAllocateMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                    >
-                      {m === "off" ? "オフ" : m === "live" ? "ライブ" : "手動"}
-                    </button>
-                  ))}
-                  {autoAllocateMode === "manual" && (
-                    <button className="btn-pill-outline text-xs" onClick={runManualAllocation}>
-                      配分を計算
-                    </button>
-                  )}
-                </div>
-              </div>
-              {autoAllocateMode === "manual" && !manualAllocation && (
-                <p className="text-xs text-cream/50">「配分を計算」を押すと、その時点の残業務時間から配分を計算します。</p>
-              )}
-              {effectiveAllocation && (
-                <div className="text-xs text-cream/60">
-                  {autoAllocateMode === "manual" && manualAllocationAt && (
-                    <div className="mb-1 text-cream/40">{formatClock(manualAllocationAt)} 時点で計算</div>
-                  )}
-                  <div>
-                    {standardWorkEnd}までの残り {formatMsClock(effectiveAllocation.remainingWorkMs)} / 未完了作業の予測合計{" "}
-                    {formatMsClock(effectiveAllocation.totalRemainingPredictedMs)}
-                  </div>
-                  <div className={effectiveAllocation.scale < 1 ? "text-alert" : "text-cream/60"}>
-                    {effectiveAllocation.scale < 1
-                      ? `ペース ${Math.round(effectiveAllocation.scale * 100)}%（業務時間に収めるには、この比率まで各作業を圧縮する必要があります）`
-                      : "業務時間内に収まる見込みです（圧縮なし）"}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        <AutoAllocatePanel
+          mode={autoAllocateMode as AutoAllocateMode}
+          onModeChange={setAutoAllocateMode}
+          standardWorkEnd={standardWorkEnd}
+          allocation={effectiveAllocation}
+          manualComputed={!!manualAllocation}
+          manualComputedAt={manualAllocationAt}
+          onRunManual={runManualAllocation}
+        />
       )}
       {conditionEnabled && (
         <div className="panel p-4">
@@ -2791,75 +2738,36 @@ export default function TodaySection({
       )}
 
       {geoTrackingEnabled && (
-        <div className="panel flex items-center gap-2 p-3 text-xs">
-          {geoError ? (
-            <span className="text-alert">📍 {geoError}</span>
-          ) : (
-            <span className="text-cream/50">
-              📍 移動検知中（{geoDistanceThresholdMeters}m以上の移動で「{geoCategorySetting || "移動"} / {geoTaskNameSetting || "移動"}」を自動計測・
-              {Math.round((geoStillMs / 60000) * 10) / 10}分以上停止で自動終了）
-            </span>
-          )}
-        </div>
+        <GeoTrackingStatus
+          error={geoError}
+          distanceThresholdMeters={geoDistanceThresholdMeters}
+          category={geoCategorySetting}
+          taskName={geoTaskNameSetting}
+          stillMs={geoStillMs}
+        />
       )}
 
       {geoArrivalEnabled && (
-        <div className="panel flex flex-wrap items-center gap-x-4 gap-y-1 p-3 text-xs">
-          {geoArrivalError ? (
-            <span className="text-alert">📍 {geoArrivalError}</span>
-          ) : (
-            <span className="text-cream/50">
-              📍 地点到着検知中（登録地点{(geoPlaces ?? []).length}件。到着すると紐づく作業を自動開始）
-            </span>
-          )}
-          {wakeLockActive ? (
-            <span className="text-cream/50">💡 画面常時点灯 ON（バッテリー消費が増えます）</span>
-          ) : wakeLockError ? (
-            <span className="text-cream/40">💡 {wakeLockError}</span>
-          ) : null}
-        </div>
+        <GeoArrivalStatus
+          error={geoArrivalError}
+          placeCount={(geoPlaces ?? []).length}
+          wakeLockActive={wakeLockActive}
+          wakeLockError={wakeLockError}
+        />
       )}
 
       {weatherNotifyEnabled && (weatherPlaces ?? []).length > 0 && (
-        <div className="panel flex flex-col gap-1.5 p-3 text-xs">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {weatherCheckError ? (
-              <span className="text-alert">🌤 {weatherCheckError}</span>
-            ) : (
-              <span className="text-cream/50">
-                🌤 天気変化の通知 ON（登録地点{(weatherPlaces ?? []).length}件。降水確率{weatherThresholdStr}%以上が{weatherLeadHoursStr}時間以内に近づくと通知
-                {weatherLastCheckedAt ? `・最終取得 ${formatClock(weatherLastCheckedAt)}` : ""}）
-              </span>
-            )}
-            <button
-              className="btn-pill-outline text-xs"
-              onClick={() => checkWeather(true)}
-              disabled={weatherChecking}
-            >
-              {weatherChecking ? "取得中..." : "🔄 今すぐ取得"}
-            </button>
-          </div>
-          {weatherCurrent.length === 0 && !weatherCheckError && (
-            <p className="text-cream/40">取得中...（初回は数秒かかることがあります）</p>
-          )}
-          {weatherCurrent.length > 0 && (
-            <div className="flex flex-col gap-1 text-cream/70">
-              {weatherCurrent.map((c) => {
-                const next = weatherNextCrossings.find((n) => n.placeId === c.placeId);
-                return (
-                  <span key={c.placeId}>
-                    {c.placeLabel}: 現在 降水確率{c.precipProbability}%（{formatClock(new Date(c.atIso).getTime())}時点）
-                    {next
-                      ? next.hoursUntil <= 0.01
-                        ? `・すでに${weatherThresholdStr}%以上です`
-                        : `・次に${weatherThresholdStr}%以上: ${formatCrossingDateTime(next.atIso)}頃（${next.precipProbability}%）`
-                      : `・当面${weatherThresholdStr}%以上の予報なし`}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <WeatherStatus
+          placeCount={(weatherPlaces ?? []).length}
+          thresholdPercent={weatherThresholdStr}
+          leadHours={weatherLeadHoursStr}
+          error={weatherCheckError}
+          checking={weatherChecking}
+          lastCheckedAt={weatherLastCheckedAt}
+          current={weatherCurrent}
+          nextCrossings={weatherNextCrossings}
+          onCheckNow={() => checkWeather(true)}
+        />
       )}
 
       {estimateAdjustment && (
@@ -2991,192 +2899,33 @@ export default function TodaySection({
         </div>
       )}
 
-      {/* 右のボタン群が多いので、狭い画面では折り返して段を分ける。折り返しがないと
-          見出し側が押し潰されて「2026-」「09-06」「の作業」「リスト」の4行になっていた */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="font-display text-lg font-bold whitespace-nowrap">{date} の作業リスト</h2>
-          {streakDays > 0 && (
-            <span
-              className="rounded-full bg-alert/15 px-2 py-0.5 text-xs font-bold text-alert"
-              title="実績が記録されている連続日数"
-            >
-              🔥 連続{streakDays}日
-            </span>
-          )}
-          {growthStageEnabled &&
-            todayTotalSeconds > 0 &&
-            (() => {
-              const { stage } = computeGrowthStage(themedMode, todayTotalSeconds);
-              return (
-                <span
-                  className="rounded-full bg-cream/10 px-2 py-0.5 text-xs text-cream/70"
-                  title={`本日の作業時間(${formatHms(todayTotalSeconds)})に応じた育成度`}
-                >
-                  {stage.icon} {stage.label}
-                </span>
-              );
-            })()}
-          {todayTotalSeconds > 0 && sameWeekdayAvg && sameWeekdayAvg.dayCount >= 2 && (
-            <span
-              className="rounded-full bg-cream/10 px-2 py-0.5 text-xs text-cream/70"
-              title={`過去の${sameWeekdayAvg.label}曜日${sameWeekdayAvg.dayCount}日分の平均との比較`}
-            >
-              {sameWeekdayAvg.label}曜平均比{" "}
-              {todayTotalSeconds >= sameWeekdayAvg.avgSeconds ? "+" : "-"}
-              {Math.round((Math.abs(todayTotalSeconds - sameWeekdayAvg.avgSeconds) / sameWeekdayAvg.avgSeconds) * 100)}%
-            </span>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {simpleButtons ? (
-            <>
-              <button
-                className="btn-pill-danger px-3 py-2 text-base"
-                onClick={() => startTrouble()}
-                title="トラブル発生"
-                aria-label="トラブル発生"
-              >
-                ⚡
-              </button>
-              <button
-                className="btn-pill-outline px-3 py-2 text-base"
-                onClick={() => setShowAddDialog(true)}
-                title="突発作業を追加"
-                aria-label="突発作業を追加"
-              >
-                ➕
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="btn-pill-danger text-sm" onClick={() => startTrouble()}>
-                ⚡ トラブル発生
-              </button>
-              <button className="btn-pill-outline text-sm" onClick={() => setShowAddDialog(true)}>
-                + 突発作業を追加
-              </button>
-            </>
-          )}
-          {todayTotalSeconds > 0 &&
-            (simpleButtons ? (
-              <button
-                className="btn-pill-outline px-3 py-2 text-base"
-                onClick={() => setShowDayCard(true)}
-                title="今日の一枚(画像で保存)"
-                aria-label="今日の一枚"
-              >
-                🖼
-              </button>
-            ) : (
-              <button className="btn-pill-outline text-sm" onClick={() => setShowDayCard(true)}>
-                🖼 今日の一枚
-              </button>
-            ))}
-          {simpleButtons ? (
-            <button
-              className="btn-pill-outline px-3 py-2 text-base"
-              onClick={() => setShowDayPlan(true)}
-              title="今日の段取りを提案"
-              aria-label="今日の段取りを提案"
-            >
-              🧭
-            </button>
-          ) : (
-            <button className="btn-pill-outline text-sm" onClick={() => setShowDayPlan(true)}>
-              🧭 今日の段取り
-            </button>
-          )}
-          {simpleButtons ? (
-            <button
-              className="btn-pill-outline px-3 py-2 text-base"
-              onClick={() => setShowTomorrowDraft(true)}
-              title="明日の下書きを作る"
-              aria-label="明日の下書きを作る"
-            >
-              🗓
-            </button>
-          ) : (
-            <button className="btn-pill-outline text-sm" onClick={() => setShowTomorrowDraft(true)}>
-              🗓 明日の下書き
-            </button>
-          )}
-          {simpleButtons ? (
-            <button
-              className="btn-pill-outline px-3 py-2 text-base"
-              onClick={() => setShowReflection(true)}
-              title={reflectionAnsweredToday ? "終業の振り返り(回答済み)" : "終業の振り返り"}
-              aria-label="終業の振り返り"
-            >
-              {reflectionAnsweredToday ? "🌙✓" : "🌙"}
-            </button>
-          ) : (
-            <button className="btn-pill-outline text-sm" onClick={() => setShowReflection(true)}>
-              🌙 {reflectionAnsweredToday ? "振り返り済み" : "終業の振り返り"}
-            </button>
-          )}
-          {voiceEnabled && !voiceUnsupported && (simpleButtons ? (
-            <button
-              className={voiceListening ? "btn-pill-danger px-3 py-2 text-base" : "btn-pill-outline px-3 py-2 text-base"}
-              onClick={voiceListening ? stopVoiceListening : startVoiceListening}
-              title={
-                voiceListening
-                  ? handsFreeMode
-                    ? "ハンズフリーで聞き取り中..."
-                    : "聞き取り中..."
-                  : `音声で操作(「〇〇を開始」「終了」のように話しかけて操作できます)${handsFreeMode ? " / ハンズフリーモードON" : ""}`
-              }
-              aria-label={voiceListening ? "聞き取り中" : "音声で操作"}
-            >
-              {handsFreeMode ? "🎧" : "🎤"}
-            </button>
-          ) : (
-            <button
-              className={voiceListening ? "btn-pill-danger text-sm" : "btn-pill-outline text-sm"}
-              onClick={voiceListening ? stopVoiceListening : startVoiceListening}
-              title={`「〇〇を開始」「終了」のように話しかけて操作できます${handsFreeMode ? " / ハンズフリーモードON(連続で聞き取り、結果を読み上げます)" : ""}`}
-            >
-              {voiceListening
-                ? handsFreeMode
-                  ? "🎧 ハンズフリー中..."
-                  : "🎤 聞き取り中..."
-                : handsFreeMode
-                  ? "🎧 音声で操作(ハンズフリー)"
-                  : "🎤 音声で操作"}
-            </button>
-          ))}
-          {showScheduleCsvTools && (
-            <>
-              <button className="btn-pill-outline text-sm" onClick={downloadScheduleTemplate}>
-                予定CSVテンプレート
-              </button>
-              <button
-                className="btn-pill-outline text-sm"
-                onClick={() => scheduleFileInputRef.current?.click()}
-                title={`予定CSV、またはカレンダーの.icsファイル（今日から${DEFAULT_IMPORT_DAYS}日以内の予定）を取り込みます`}
-              >
-                予定インポート（CSV/.ics）
-              </button>
-              <input
-                ref={scheduleFileInputRef}
-                type="file"
-                accept=".csv,.ics,text/csv,text/calendar"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) importScheduleFile(file);
-                  e.target.value = "";
-                }}
-              />
-            </>
-          )}
-          {tasks && tasks.length > 0 && (
-            <button className="btn-pill-outline text-sm" onClick={requestGenerateFromTemplate}>
-              再生成
-            </button>
-          )}
-        </div>
-      </div>
+      <TodayToolbar
+        date={date}
+        simpleButtons={simpleButtons}
+        themedMode={themedMode}
+        streakDays={streakDays}
+        growthStageEnabled={growthStageEnabled}
+        todayTotalSeconds={todayTotalSeconds}
+        sameWeekdayAvg={sameWeekdayAvg}
+        reflectionAnsweredToday={!!reflectionAnsweredToday}
+        hasTasks={!!tasks && tasks.length > 0}
+        voice={{
+          available: voiceEnabled && !voiceUnsupported,
+          listening: voiceListening,
+          handsFree: handsFreeMode,
+          onToggle: voiceListening ? stopVoiceListening : startVoiceListening,
+        }}
+        showScheduleCsvTools={showScheduleCsvTools}
+        onTrouble={() => startTrouble()}
+        onAddTask={() => setShowAddDialog(true)}
+        onDayCard={() => setShowDayCard(true)}
+        onDayPlan={() => setShowDayPlan(true)}
+        onTomorrowDraft={() => setShowTomorrowDraft(true)}
+        onReflection={() => setShowReflection(true)}
+        onDownloadScheduleTemplate={downloadScheduleTemplate}
+        onImportScheduleFile={importScheduleFile}
+        onRegenerate={requestGenerateFromTemplate}
+      />
 
       {scheduleImportResult && <p className="text-xs text-cream/70">{scheduleImportResult}</p>}
       {scheduleImportErrors.length > 0 && (
