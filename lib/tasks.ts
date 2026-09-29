@@ -260,6 +260,44 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   return true;
 }
 
+// 完了済みの作業の開始・終了時刻を編集したとき、合算先の実績(WorkRecord)の開始・終了時刻を
+// 追従させる。実績は同日・同じ帰属先の複数の完了分を合算しているため、編集した作業が
+// 実績の端(最も早い開始/最も遅い終了)を決めていた場合は、他の完了分と新しい時刻から
+// 端を求め直す。端でなかった場合は、新しい時刻の方が外側に出た時だけ広げる
+// (dailyTasks由来でない分が合算されていても、その端を勝手に縮めないように)。
+// 実績の区間(segments)は編集時に破棄され、定時以降の集計はこの開始〜終了で近似されるため、
+// 追従させないと時刻を直しても残業分析などが古い時刻のままになっていた
+export async function updateRecordBoundsAfterEdit(
+  recordId: string,
+  before: DailyTask,
+  newStartedAt: number | undefined,
+  newEndedAt: number | undefined
+): Promise<void> {
+  const record = await db.records.get(recordId);
+  if (!record) return;
+  const others = (await db.dailyTasks.where("date").equals(record.date).toArray()).filter(
+    (t) => t.id !== before.id && t.status === "done" && t.masterTaskId === record.masterTaskId && sameAttribution(t, record)
+  );
+  const otherStarts = others.map((t) => t.startedAt ?? t.segments[0]?.start).filter((v): v is number => v !== undefined);
+  const otherEnds = others
+    .map((t) => t.endedAt ?? t.segments[t.segments.length - 1]?.end)
+    .filter((v): v is number => v !== undefined);
+  const updates: Partial<WorkRecord> = {};
+  if (newStartedAt !== undefined && newStartedAt !== before.startedAt) {
+    updates.startedAt =
+      before.startedAt !== undefined && record.startedAt === before.startedAt
+        ? Math.min(newStartedAt, ...otherStarts)
+        : Math.min(record.startedAt, newStartedAt);
+  }
+  if (newEndedAt !== undefined && newEndedAt !== before.endedAt) {
+    updates.endedAt =
+      before.endedAt !== undefined && record.endedAt === before.endedAt
+        ? Math.max(newEndedAt, ...otherEnds)
+        : Math.max(record.endedAt, newEndedAt);
+  }
+  if (Object.keys(updates).length > 0) await db.records.update(recordId, updates);
+}
+
 // 仮計測(未計測時間の自動計測・移動検知)の作業を、誰も計測していない場合に限って追加する。
 // 同じアプリを複数のタブで開いていると、各タブが同時に「計測していない」と判定して
 // 仮計測が重複していたため、DB上の最新の状態の確認と追加を1つのトランザクションで行う。

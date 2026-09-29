@@ -26,6 +26,7 @@ import {
   finishDailyTask,
   importScheduleRows,
   segmentsAccumulatedMs,
+  updateRecordBoundsAfterEdit,
   type FinishDailyTaskOptions,
 } from "@/lib/tasks";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
@@ -1425,6 +1426,7 @@ export default function TodaySection({
           method,
           ...(clearSegments ? { segments: undefined } : {}),
         });
+        await updateRecordBoundsAfterEdit(existingOld.id, task, taskUpdates.startedAt, taskUpdates.endedAt);
       }
       await db.dailyTasks.update(task.id, taskUpdates);
       if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
@@ -1445,6 +1447,7 @@ export default function TodaySection({
           method,
           ...(clearSegments ? { segments: undefined } : {}),
         });
+        await updateRecordBoundsAfterEdit(existingOld.id, task, taskUpdates.startedAt, taskUpdates.endedAt);
       }
       await db.dailyTasks.update(task.id, taskUpdates);
       if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
@@ -1454,6 +1457,7 @@ export default function TodaySection({
     // relink: 実績ごと別マスタ(既存 or 新規)へ繋ぎ変える
     const newMaster = await findOrCreateMasterTask(category, name, task.estimatedSeconds);
     const newEndedAt = taskUpdates.endedAt ?? task.endedAt ?? Date.now();
+    const newStartedAt = taskUpdates.startedAt ?? task.startedAt ?? Date.now();
     if (existingOld) {
       const remaining = existingOld.seconds - oldSeconds;
       if (remaining <= 0) await db.records.delete(existingOld.id);
@@ -1463,7 +1467,8 @@ export default function TodaySection({
     if (existingNew) {
       await db.records.update(existingNew.id, {
         seconds: existingNew.seconds + newSeconds,
-        endedAt: newEndedAt,
+        startedAt: Math.min(existingNew.startedAt, newStartedAt),
+        endedAt: Math.max(existingNew.endedAt, newEndedAt),
         note,
         method,
         todoTaskId: existingNew.todoTaskId ?? task.todoTaskId,
@@ -1477,7 +1482,7 @@ export default function TodaySection({
         name,
         masterTaskId: newMaster.id,
         seconds: newSeconds,
-        startedAt: task.startedAt ?? Date.now(),
+        startedAt: newStartedAt,
         endedAt: newEndedAt,
         excludedFromStats: false,
         projectId: task.projectId,
