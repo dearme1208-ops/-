@@ -97,37 +97,90 @@ export async function computeRemainingEstimatedSeconds(
   return Math.max(0, last.estimatedSeconds - spentSeconds);
 }
 
-// 実行中/一時停止中の作業をその場で完了として確定する（アプリを閉じる際の一括完了などに使用）。
-// TodaySection内のcommitFinishと同じ内容だが、UI状態を持たない箇所からも呼べるよう独立させたもの。
-// endAtMsを指定すると、計測中セグメントをその時刻で打ち切る（例: 日をまたいで放置された
-// 作業を、実際の停止時刻が分からないため元の日の24:00で打ち切って確定する場合など）。
-// 省略時は現在時刻で打ち切る（通常の完了操作と同じ挙動）
-export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promise<void> {
+// 実績(WorkRecord)の帰属先。同じ日・同じ作業マスタでも、案件・段階・ToDo・手段のどれかが
+// 違えば別の実績として持つ(合算してしまうと、案件/ToDo別・手段別の集計が先に記録された側へ
+// 丸ごと寄ってしまうため)。undefined/null/空文字は「未設定」として同一視する
+export interface RecordAttribution {
+  projectId?: string;
+  stageId?: string;
+  todoTaskId?: string;
+  method?: string;
+}
+
+function sameAttr(a: string | undefined | null, b: string | undefined | null): boolean {
+  return (a || undefined) === (b || undefined);
+}
+
+export function sameAttribution(a: RecordAttribution, b: RecordAttribution): boolean {
+  return (
+    sameAttr(a.projectId, b.projectId) &&
+    sameAttr(a.stageId, b.stageId) &&
+    sameAttr(a.todoTaskId, b.todoTaskId) &&
+    sameAttr(a.method?.trim(), b.method?.trim())
+  );
+}
+
+export function recordMatches(r: WorkRecord, masterTaskId: string, attr: RecordAttribution): boolean {
+  return r.masterTaskId === masterTaskId && sameAttribution(r, attr);
+}
+
+// 作業インスタンスの完了分を合算すべき、同日・同じ帰属先の既存実績を探す
+export async function findMergeTargetRecord(
+  date: string,
+  masterTaskId: string,
+  attr: RecordAttribution
+): Promise<WorkRecord | undefined> {
+  return db.records
+    .where("date")
+    .equals(date)
+    .filter((r) => recordMatches(r, masterTaskId, attr))
+    .first();
+}
+
+export interface FinishDailyTaskOptions {
+  /** 計測中の区間を閉じる時刻。省略時は現在時刻(止め忘れ・放置の打ち切り時に指定する) */
+  endAtMs?: number;
+  /** 区間を呼び出し側で組み立て済みの場合(所要時間を直接入力する「手動で記録」など) */
+  segments?: TimeSegment[];
+  startedAt?: number;
+}
+
+// 作業インスタンスを完了として確定し、実績(WorkRecord)へ反映する。完了操作はすべて
+// (本日の作業タブ・各テーマ画面・統合ボード・放置作業の後処理)ここを通す。
+// 経路ごとに別実装だった頃は、「時間を加算」分や兼務タグが一部の経路で落ちる、
+// 終了時刻が実際の停止時刻でなく操作した時刻になる、といった食い違いがあった
+export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number | FinishDailyTaskOptions): Promise<void> {
+  const opts: FinishDailyTaskOptions =
+    typeof endAtOrOptions === "number" ? { endAtMs: endAtOrOptions } : (endAtOrOptions ?? {});
   const nowMs = Date.now();
-  const closeAt = endAtMs ?? nowMs;
-  let segments = task.segments;
-  if (task.status === "running") {
+  const closeAt = opts.endAtMs ?? nowMs;
+  let segments = opts.segments ?? task.segments;
+  if (!opts.segments && task.status === "running") {
     segments = task.segments.map((s, i) =>
       i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(s.start, closeAt) } : s
     );
   }
-  const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
+  const segmentsMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
+  // 「時間を加算」で足した分は区間には現れないため、ここで合計に織り込む
+  // (区間を呼び出し側が直接組み立てた場合は、その区間の長さが所要時間そのもの)
+  const accumulatedMs = segmentsMs + (opts.segments ? 0 : (task.manualAdjustmentMs ?? 0));
   const seconds = Math.round(accumulatedMs / 1000);
-  const startedAt = task.startedAt ?? closeAt;
-  // 既に一時停止済み(=区間がすべて閉じている)の作業を完了する場合は、endedAtも
-  // closeAtではなく実際の最後の区間の終了時刻を使う。closeAtをそのまま使うと、
-  // 日をまたいで放置された一時停止中の作業を後から完了させた際に、実際には前日のうちに
-  // 止まっていたのにendedAtだけ完了操作をした時刻になってしまい、定時以降の業務集計などが
-  // 本来関係のない時間帯を参照してしまう不具合があった(closeAtが必要なのは、区間を
-  // 閉じる必要がある「計測中」だった作業のみ)
+  const startedAt = opts.startedAt ?? task.startedAt ?? segments[0]?.start ?? closeAt;
+  // 一時停止済み(=区間がすべて閉じている)の作業では、完了操作をした時刻ではなく
+  // 実際の最後の区間の終了時刻をendedAtにする(定時以降の集計などが、実際には作業して
+  // いない時間帯を参照しないように)
   const endedAt = segments.length > 0 ? (segments[segments.length - 1].end ?? closeAt) : closeAt;
 
   await db.dailyTasks.update(task.id, {
     segments,
     status: "done",
     accumulatedMs,
+    // 手動加算分はaccumulatedMsへ織り込み済み。残すとbaseAccumulatedMsで二重に数えてしまう
+    manualAdjustmentMs: 0,
     startedAt,
     endedAt,
+    // 実際にこの完了操作を行った時刻。「直近に何かを止めた時刻」の判定に使うため、
+    // 終了時刻をさかのぼって指定した場合でも現在時刻のままにする
     stoppedAt: nowMs,
     isProvisional: false,
   });
@@ -144,21 +197,16 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
     masterTaskId = master.id;
   }
 
-  const existing = await db.records
-    .where("date")
-    .equals(task.date)
-    .filter((r) => r.masterTaskId === masterTaskId && r.projectId === task.projectId && r.stageId === task.stageId)
-    .first();
+  const existing = await findMergeTargetRecord(task.date, masterTaskId, task);
 
   if (existing) {
-    // endAtMsで打ち切り時刻を過去方向に指定した場合(放置作業の復旧時など)でも、
-    // 既存の実績の終了時刻をそれより後退させてしまわないようにする
     await db.records.update(existing.id, {
       seconds: existing.seconds + seconds,
+      startedAt: Math.min(existing.startedAt, startedAt),
+      // 終了時刻をさかのぼって指定した場合でも、既存の実績の終了時刻を後退させない
       endedAt: Math.max(existing.endedAt, endedAt),
       isTrouble: existing.isTrouble || task.isTrouble,
-      method: existing.method ?? task.method,
-      todoTaskId: existing.todoTaskId ?? task.todoTaskId,
+      ...(task.secondaryProjectIds ? { secondaryProjectIds: task.secondaryProjectIds } : {}),
       segments: mergeRecordSegments(existing, segments),
     });
   } else {
@@ -176,7 +224,8 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
       stageId: task.stageId,
       todoTaskId: task.todoTaskId,
       isTrouble: task.isTrouble,
-      method: task.method,
+      method: task.method?.trim() || undefined,
+      secondaryProjectIds: task.secondaryProjectIds,
       segments,
     });
   }
@@ -192,7 +241,7 @@ export async function finishDailyTask(task: DailyTask, endAtMs?: number): Promis
 // を探し、そちらのstartedAt/endedAtも合わせて更新する。対応するインスタンスが見つからない
 // (CSVインポート等、dailyTasks由来ではない実績)場合は何もしない
 export async function syncDailyTaskBoundaryFromRecord(
-  record: Pick<WorkRecord, "date" | "masterTaskId" | "projectId" | "stageId">,
+  record: Pick<WorkRecord, "date" | "masterTaskId" | "projectId" | "stageId" | "todoTaskId" | "method">,
   edge: "start" | "end",
   newTime: number
 ): Promise<void> {
@@ -202,8 +251,7 @@ export async function syncDailyTaskBoundaryFromRecord(
       (t) =>
         t.status === "done" &&
         t.masterTaskId === record.masterTaskId &&
-        (t.projectId ?? null) === (record.projectId ?? null) &&
-        (t.stageId ?? null) === (record.stageId ?? null)
+        sameAttribution(t, record)
     )
     .sort((a, b) => a.order - b.order);
   if (candidates.length === 0) return;

@@ -35,9 +35,11 @@ import {
   computePredictedSecondsByTaskId,
   computeRemainingEstimatedSeconds,
   computeRunningOverrunTaskIds,
+  findMergeTargetRecord,
+  finishDailyTask,
   importScheduleRows,
-  mergeRecordSegments,
   segmentsAccumulatedMs,
+  type FinishDailyTaskOptions,
 } from "@/lib/tasks";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
 import { parseScheduleCsv, scheduleCsvTemplate } from "@/lib/scheduleCsv";
@@ -1019,11 +1021,7 @@ export default function TodaySection({
     if (idleFinishInFlightRef.current) return;
     idleFinishInFlightRef.current = true;
     const cutoff = Math.max(lastActivityRef.current, provisionalTask.segments[0]?.start ?? lastActivityRef.current);
-    const segments = provisionalTask.segments.map((s, i) =>
-      i === provisionalTask.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(cutoff, s.start) } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? cutoff) - s.start), 0);
-    commitFinish(provisionalTask, segments, accumulatedMs).then(() => {
+    commitFinish(provisionalTask, { endAtMs: cutoff }).then(() => {
       idleFinishInFlightRef.current = false;
       const hoursLabel = Math.round((provisionalIdleMs / 3600000) * 10) / 10;
       notify(
@@ -1299,11 +1297,7 @@ export default function TodaySection({
     if (geoFinishInFlightRef.current) return;
     geoFinishInFlightRef.current = true;
     const cutoff = Math.max(geoLastMovedAtRef.current, provisionalTask.segments[0]?.start ?? geoLastMovedAtRef.current);
-    const segments = provisionalTask.segments.map((s, i) =>
-      i === provisionalTask.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(cutoff, s.start) } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? cutoff) - s.start), 0);
-    commitFinish(provisionalTask, segments, accumulatedMs).then(() => {
+    commitFinish(provisionalTask, { endAtMs: cutoff }).then(() => {
       geoFinishInFlightRef.current = false;
       geoTaskIdRef.current = null;
       const minutesLabel = Math.round((geoStillMs / 60000) * 10) / 10;
@@ -1801,13 +1795,8 @@ export default function TodaySection({
     }
 
     const oldMasterId = task.masterTaskId;
-    const existingOld = oldMasterId
-      ? await db.records
-          .where("date")
-          .equals(task.date)
-          .filter((r) => r.masterTaskId === oldMasterId && r.projectId === task.projectId)
-          .first()
-      : undefined;
+    // 編集前の帰属先(案件・段階・ToDo・手段)で、この作業分が合算されている実績を探す
+    const existingOld = oldMasterId ? await findMergeTargetRecord(task.date, oldMasterId, task) : undefined;
 
     // 開始/終了時刻の直接編集や実績時間の手動変更は、合算元の他インスタンス分まで
     // 正確な区間を再構成できないため、既存のsegmentsは破棄して(定時以降の判定は
@@ -1856,11 +1845,7 @@ export default function TodaySection({
       if (remaining <= 0) await db.records.delete(existingOld.id);
       else await db.records.update(existingOld.id, { seconds: remaining, segments: undefined });
     }
-    const existingNew = await db.records
-      .where("date")
-      .equals(task.date)
-      .filter((r) => r.masterTaskId === newMaster.id && r.projectId === task.projectId && r.stageId === task.stageId)
-      .first();
+    const existingNew = await findMergeTargetRecord(task.date, newMaster.id, { ...task, method });
     if (existingNew) {
       await db.records.update(existingNew.id, {
         seconds: existingNew.seconds + newSeconds,
@@ -1943,13 +1928,7 @@ export default function TodaySection({
     let recordSnapshot: WorkRecord | undefined;
     let masterSnapshot: MasterTask | undefined;
 
-    const existing = task.masterTaskId
-      ? await db.records
-          .where("date")
-          .equals(task.date)
-          .filter((r) => r.masterTaskId === task.masterTaskId && r.projectId === task.projectId && r.stageId === task.stageId)
-          .first()
-      : undefined;
+    const existing = task.masterTaskId ? await findMergeTargetRecord(task.date, task.masterTaskId, task) : undefined;
 
     await db.dailyTasks.delete(task.id);
 
@@ -2054,89 +2033,16 @@ export default function TodaySection({
   }
 
   // 作業を完了として確定する。同日・同じマスタの実績が既にあれば合算する
-  async function commitFinish(
-    task: DailyTask,
-    segments: TimeSegment[],
-    accumulatedMs: number,
-    startedAtOverride?: number,
-    endAtOverride?: number
-  ) {
-    const seconds = Math.round(accumulatedMs / 1000);
-    const nowMs = Date.now();
-    // 止め忘れ等で終了時刻をさかのぼって指定した場合、記録上の終了時刻(endedAt)は
-    // その指定時刻を使う。ただし実際にこの完了操作を行った時刻(stoppedAt)は、
-    // 「直近に何かを止めた時刻」の判定に使われるため常に現在時刻のままにする
-    const completionMs = endAtOverride ?? nowMs;
-    const startedAt = startedAtOverride ?? task.startedAt ?? completionMs;
-    await db.dailyTasks.update(task.id, {
-      segments,
-      status: "done",
-      accumulatedMs,
-      // 手動加算分は既にaccumulatedMsへ織り込み済みのため、完了時にクリアしておく
-      // （残したままだとbaseAccumulatedMs/segmentsAccumulatedMsで二重に加算されてしまう）
-      manualAdjustmentMs: 0,
-      startedAt,
-      endedAt: completionMs,
-      stoppedAt: nowMs,
-      isProvisional: false,
-    });
-
-    // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
-    // 可視化する対象ではないため、ポップアップは出さない(lib/tasks.tsのfinishDailyTaskと同じ判断)。
-    // 放置検知・位置情報による無人での自動打ち切りもここを通るが、それらはユーザーが
-    // 今まさに完了操作をしたわけではないので、ポップアップと同様タブ切り替えの対象からも外す
+  // 完了の確定と実績への反映はlib/tasks.tsのfinishDailyTaskに一本化している。
+  // ここではこの画面固有の後処理(タブ切り替え・超過通知の解除)だけを行う
+  async function commitFinish(task: DailyTask, options?: FinishDailyTaskOptions) {
+    await finishDailyTask(task, options);
+    // 放置検知・位置情報による無人での自動打ち切りもここを通るが、それらは今まさに
+    // 完了操作をしたわけではないので、タブ切り替えの対象から外す(仮計測は必ず該当する)
     if (!task.isProvisional) {
-      fireCompletionPopup({ category: task.category, name: task.name, seconds, estimatedSeconds: task.estimatedSeconds });
       // 完了させたら、次に何をするか選びやすいよう「予定」タブに切り替える
       setTaskViewTab("pending");
     }
-
-    let masterTaskId = task.masterTaskId;
-    if (!masterTaskId) {
-      const master = await findOrCreateMasterTask(task.category, task.name, task.estimatedSeconds);
-      masterTaskId = master.id;
-    }
-
-    const existing = await db.records
-      .where("date")
-      .equals(date)
-      .filter((r) => r.masterTaskId === masterTaskId && r.projectId === task.projectId && r.stageId === task.stageId)
-      .first();
-
-    if (existing) {
-      await db.records.update(existing.id, {
-        seconds: existing.seconds + seconds,
-        // 終了時刻をさかのぼって指定した場合でも、既存の実績の終了時刻をそれより
-        // 後退させてしまわないようにする(lib/tasks.tsのfinishDailyTaskと同じ考え方)
-        endedAt: Math.max(existing.endedAt, completionMs),
-        isTrouble: existing.isTrouble || task.isTrouble,
-        method: existing.method ?? task.method,
-        todoTaskId: existing.todoTaskId ?? task.todoTaskId,
-        ...(task.secondaryProjectIds ? { secondaryProjectIds: task.secondaryProjectIds } : {}),
-        segments: mergeRecordSegments(existing, segments),
-      });
-    } else {
-      await db.records.add({
-        id: uid(),
-        date,
-        category: task.category,
-        name: task.name,
-        masterTaskId,
-        seconds,
-        startedAt,
-        endedAt: completionMs,
-        excludedFromStats: false,
-        projectId: task.projectId,
-        stageId: task.stageId,
-        todoTaskId: task.todoTaskId,
-        isTrouble: task.isTrouble,
-        method: task.method,
-        secondaryProjectIds: task.secondaryProjectIds,
-        segments,
-      });
-    }
-
-    await recomputeEstimateFromRecords(masterTaskId);
     if (overrunTask?.id === task.id) setOverrunTask(null);
   }
 
@@ -2164,16 +2070,7 @@ export default function TodaySection({
   // endAtOverride: 止め忘れていた場合に、計測中セグメントを閉じる実際の終了時刻を
   // 現在時刻の代わりに指定する(FinishAtDialogから)
   async function finishTask(task: DailyTask, endAtOverride?: number) {
-    const closeAt = endAtOverride ?? Date.now();
-    let segments = task.segments;
-    if (task.status === "running") {
-      segments = task.segments.map((s, i) =>
-        i === task.segments.length - 1 && s.end === undefined ? { ...s, end: Math.max(s.start, closeAt) } : s
-      );
-    }
-    const segmentsMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    const accumulatedMs = segmentsMs + (task.manualAdjustmentMs ?? 0);
-    await commitFinish(task, segments, accumulatedMs, undefined, endAtOverride);
+    await commitFinish(task, { endAtMs: endAtOverride });
     queueLinkedCompletionConfirms(task);
     // トラブル対応・予定の自動差し込みなどで中断した作業（仮計測含む、複数ある場合も全て）を自動的に再開する
     if (task.resumeTaskIds && task.resumeTaskIds.length > 0) {
@@ -2250,7 +2147,7 @@ export default function TodaySection({
     const nowMs = Date.now();
     const startedAt = nowMs - manualSeconds * 1000;
     const segments: TimeSegment[] = [{ start: startedAt, end: nowMs }];
-    await commitFinish(task, segments, manualSeconds * 1000, startedAt);
+    await commitFinish(task, { segments, startedAt });
     queueLinkedCompletionConfirms(task);
   }
 

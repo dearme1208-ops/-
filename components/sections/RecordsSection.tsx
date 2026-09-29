@@ -18,7 +18,7 @@ import { REFLECTION_KEY_PREFIX, reflectionEntriesFromSettings } from "@/lib/refl
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
+import { findMergeTargetRecord, mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
 import { formatClock, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -235,11 +235,8 @@ export default function RecordsSection() {
     const seconds = Math.round((endedAt - startedAt) / 1000);
     const segments = [{ start: startedAt, end: endedAt }];
 
-    const existing = await db.records
-      .where("date")
-      .equals(date)
-      .filter((r) => r.masterTaskId === master.id && !r.projectId && !r.stageId)
-      .first();
+    // 案件・ToDo・手段の付いていない同日の実績にだけ合算する(本日の作業の完了時と同じ規則)
+    const existing = await findMergeTargetRecord(date, master.id, {});
 
     if (existing) {
       await db.records.update(existing.id, {
