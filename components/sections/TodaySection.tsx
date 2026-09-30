@@ -704,12 +704,33 @@ export default function TodaySection({
     return last.status === "done" ? last.endedAt! : last.segments[last.segments.length - 1].end!;
   }, [tasks]);
 
+  // 未計測(仮計測)の起点。lastStopTimeは「最後に停止の操作をした作業」の実際の終了時刻なので、
+  // 止め忘れた作業Aを12:00に「10:00に終了」で終えると10:00になる。ただ、複数の作業は同時に
+  // 計測できるため、その間(例: 10:30〜11:30)に別の作業Bを計測していた場合、10:00から数えると
+  // Bの1時間まで未計測として仮計測に含めてしまい、仮計測が異常に長くなっていた。
+  // 未計測は「本日いずれかの作業で計測されていた最後の時刻」より後だけなので、それより前には戻さない
+  const provisionalAnchorTime = useMemo(() => {
+    if (lastStopTime === null || !tasks) return lastStopTime;
+    let latestMeasuredEnd = lastStopTime;
+    for (const t of tasks) {
+      if (t.isProvisional) continue;
+      for (const s of t.segments) {
+        if (s.end !== undefined && s.end > latestMeasuredEnd) latestMeasuredEnd = s.end;
+      }
+    }
+    return latestMeasuredEnd;
+  }, [lastStopTime, tasks]);
+
   // 休憩などの除外時間帯を差し引いた「実質的な」直近停止時刻。未計測の自動開始や
   // 「さかのぼって開始/再開」で使う起点はこちらを使い、休憩時間を計測対象から除く
   const effectiveLastStopTime = useMemo(() => {
     if (lastStopTime === null) return null;
     return adjustStopTimeForBreaks(lastStopTime, now, date, breakRanges);
   }, [lastStopTime, now, date, breakRanges]);
+  const effectiveProvisionalAnchorTime = useMemo(() => {
+    if (provisionalAnchorTime === null) return null;
+    return adjustStopTimeForBreaks(provisionalAnchorTime, now, date, breakRanges);
+  }, [provisionalAnchorTime, now, date, breakRanges]);
 
   // 未割り当ての仮計測タスク（未計測時間が閾値を超えた際に自動生成される）
   const provisionalTask = useMemo(() => tasks?.find((t) => t.isProvisional) ?? null, [tasks]);
@@ -764,8 +785,8 @@ export default function TodaySection({
     if (!tasks) return;
     const gapStart = findProvisionalStart({
       tasks,
-      lastStopTime,
-      effectiveLastStopTime,
+      lastStopTime: provisionalAnchorTime,
+      effectiveLastStopTime: effectiveProvisionalAnchorTime,
       now,
       date,
       breakRanges,
@@ -789,7 +810,7 @@ export default function TodaySection({
       if (!added) return;
       setTaskViewTab("running");
     })();
-  }, [provisionalEnabled, tasks, now, lastStopTime, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
+  }, [provisionalEnabled, tasks, now, provisionalAnchorTime, effectiveProvisionalAnchorTime, thresholdMinutes, date, breakRanges]);
 
   // 強制ストップ付きの休憩帯に入ったら、計測中の作業(仮計測含む)を一時停止し、
   // チェックリストを表示する。1つの休憩帯につき1回だけ行い(breakStopHandledで判定)、
