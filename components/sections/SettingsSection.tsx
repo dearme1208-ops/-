@@ -2089,9 +2089,9 @@ function TagPriorityEditor({
           onChange={(e) => setNewValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="対応状況名"
-          className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+          className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
         />
-        <button className="btn-pill-outline text-xs" onClick={add}>
+        <button className="btn-pill-outline shrink-0 text-xs" onClick={add}>
           追加（最後尾＝最も優先度低）
         </button>
       </div>

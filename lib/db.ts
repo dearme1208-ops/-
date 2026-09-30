@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import { trackItemCreate, trackItemUpdate, trackStages } from "./changeTracking";
+import { isFreshlyCreated, trackItemCreate, trackItemUpdate, trackStages } from "./changeTracking";
 import type {
   MasterTask,
   TemplateItem,
@@ -280,7 +280,9 @@ db.todoTasks.hook("updating", (mods, _key, obj) => {
 db.projects.hook("creating", (_key, obj) => {
   const now = Date.now();
   trackItemCreate(obj, now);
-  if (obj.stages) obj.stages = trackStages(undefined, obj.stages, obj.createdAt ?? now) ?? obj.stages;
+  if (obj.stages && isFreshlyCreated(obj.createdAt, now)) {
+    obj.stages = trackStages(undefined, obj.stages, obj.createdAt ?? now) ?? obj.stages;
+  }
 });
 db.projects.hook("updating", (mods, _key, obj) => {
   const now = Date.now();

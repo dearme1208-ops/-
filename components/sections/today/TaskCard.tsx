@@ -473,7 +473,8 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                 >
                   開始
                 </button>
-                {effectiveLastStopTime && (
+                {/* 前の作業を止めた時刻が今とほぼ同じなら、ふつうの開始/再開と区別がつかないので出さない */}
+                {effectiveLastStopTime && now - effectiveLastStopTime >= 60_000 && (
                   <button
                     className="btn-pill-outline text-xs"
                     disabled={controlsDisabled || duplicateRunning}
@@ -526,7 +527,8 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                 >
                   再開
                 </button>
-                {effectiveLastStopTime && (
+                {/* 前の作業を止めた時刻が今とほぼ同じなら、ふつうの開始/再開と区別がつかないので出さない */}
+                {effectiveLastStopTime && now - effectiveLastStopTime >= 60_000 && (
                   <button
                     className="btn-pill-outline text-xs"
                     disabled={controlsDisabled || duplicateRunning}

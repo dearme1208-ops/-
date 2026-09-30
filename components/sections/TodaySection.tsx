@@ -347,6 +347,9 @@ export default function TodaySection({
   const topRankedKeys = useMemo(() => {
     if (!projectRecords || projectRecords.length === 0) return new Map<string, number>();
     const ranked = aggregateRecords(projectRecords, { type: "all" }, "total");
+    // 作業の種類が少ないうちは「上位3位」に意味がない(使い始めて1件記録しただけで
+    // 「集計ランキング1位」と出ていた)ので、4種類以上たまってから出す
+    if (ranked.length < 4) return new Map<string, number>();
     return new Map(ranked.slice(0, 3).map((r, idx) => [r.key, idx]));
   }, [projectRecords]);
 

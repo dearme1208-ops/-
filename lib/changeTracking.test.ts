@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { completeTodoTask } from "@/lib/todo";
 import type { ProjectItem, TodoTask } from "@/lib/types";
 
+// 「今まさに作った」項目として扱われるよう、作成時刻は現在時刻にする
+const CREATED = Date.now();
 const todo = (t: Partial<TodoTask> = {}): TodoTask => ({
   id: "t1",
   listId: "l1",
@@ -11,7 +13,7 @@ const todo = (t: Partial<TodoTask> = {}): TodoTask => ({
   important: false,
   completed: false,
   order: 0,
-  createdAt: 1000,
+  createdAt: CREATED,
   ...t,
 });
 const project = (p: Partial<ProjectItem> = {}): ProjectItem => ({
@@ -20,7 +22,7 @@ const project = (p: Partial<ProjectItem> = {}): ProjectItem => ({
   category: "開発",
   workName: "実装",
   dueDate: "2026-10-10",
-  createdAt: 1000,
+  createdAt: CREATED,
   ...p,
 });
 
@@ -31,9 +33,9 @@ beforeEach(async () => {
 describe("DBへの書き込みから、対応状況の変更日時と期日の変更履歴を記録する", () => {
   it("作成時に対応状況があれば作成時刻を、変えたときはその時刻を記録する。変えなければ動かさない", async () => {
     await db.todoTasks.add(todo({ tag: "客先確認中" }));
-    expect((await db.todoTasks.get("t1"))!.tagChangedAt).toBe(1000);
+    expect((await db.todoTasks.get("t1"))!.tagChangedAt).toBe(CREATED);
     await db.todoTasks.update("t1", { title: "見積(改)" });
-    expect((await db.todoTasks.get("t1"))!.tagChangedAt).toBe(1000);
+    expect((await db.todoTasks.get("t1"))!.tagChangedAt).toBe(CREATED);
     const before = Date.now();
     await db.todoTasks.update("t1", { tag: "社内確認中" });
     expect((await db.todoTasks.get("t1"))!.tagChangedAt).toBeGreaterThanOrEqual(before);
@@ -61,7 +63,7 @@ describe("DBへの書き込みから、対応状況の変更日時と期日の�
     await db.todoTasks.update("t1", { dueDate: "2026-10-03" });
     await db.todoTasks.put(todo({ tag: "客先確認中", dueDate: "2026-10-03", title: "見積(取り込み)" }));
     const t = (await db.todoTasks.get("t1"))!;
-    expect(t.tagChangedAt).toBe(1000);
+    expect(t.tagChangedAt).toBe(CREATED);
     expect(t.dueHistory).toHaveLength(1);
   });
 
@@ -85,8 +87,8 @@ describe("DBへの書き込みから、対応状況の変更日時と期日の�
       })
     );
     const created = (await db.projects.get("p1"))!;
-    expect(created.tagChangedAt).toBe(1000);
-    expect(created.stages![0].tagChangedAt).toBe(1000);
+    expect(created.tagChangedAt).toBe(CREATED);
+    expect(created.stages![0].tagChangedAt).toBe(CREATED);
     const before = Date.now();
     await db.projects.update("p1", {
       stages: [
@@ -96,7 +98,7 @@ describe("DBへの書き込みから、対応状況の変更日時と期日の�
       dueDate: "2026-10-15",
     });
     const p = (await db.projects.get("p1"))!;
-    expect(p.stages![0].tagChangedAt).toBe(1000);
+    expect(p.stages![0].tagChangedAt).toBe(CREATED);
     expect(p.stages![1].tagChangedAt).toBeGreaterThanOrEqual(before);
     expect(summarizePostpones(p.dueHistory)).toEqual({ count: 1, totalDays: 5 });
   });

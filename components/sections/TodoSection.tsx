@@ -858,7 +858,9 @@ export default function TodoSection({
       myDayDate: view === "myday" ? today : undefined,
     };
     await db.todoTasks.add(task);
-    // 下書きしておいたサブタスクを、親と同じリストに、打った順のまま付ける
+    // 下書きしておいたサブタスクを、親と同じリストに、打った順のまま付ける。
+    // サブタスクを持つタスクの対応状況はサブタスクから自動で決まる(親に付けた値は使われない)ため、
+    // 追加時に選んだ対応状況はサブタスクにも付ける。付けないと、選んだ状況が消えたように見えていた
     const drafts = [...newTaskSubtasks, newTaskSubtaskDraft.trim()].filter((t) => t !== "");
     if (drafts.length > 0) {
       await db.todoTasks.bulkAdd(
@@ -867,6 +869,7 @@ export default function TodoSection({
           listId: targetListId,
           parentTaskId: id,
           title,
+          ...(tag ? { tag } : {}),
           important: false,
           completed: false,
           order: i,

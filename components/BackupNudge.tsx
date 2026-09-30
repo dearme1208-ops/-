@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db";
 import { daysSinceLastBackup } from "@/lib/autoBackup";
 import { canShareBackupFile, downloadBackupFile, shareBackupFile } from "@/lib/backupFile";
 import { useSetting } from "@/lib/settings";
@@ -18,6 +20,9 @@ export default function BackupNudge() {
   const [days, setDays] = useState<number | null | undefined>(undefined);
   const [canShare, setCanShare] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 使い始めたばかりで守るべき記録がまだ無いうちは催促しない(初回起動からいきなり
+  // 「バックアップを取っておきませんか」と出ていた)
+  const hasData = useLiveQuery(async () => (await db.records.count()) + (await db.todoTasks.count()) + (await db.projects.count()) > 0, []);
 
   useEffect(() => {
     setDays(daysSinceLastBackup());
@@ -25,7 +30,7 @@ export default function BackupNudge() {
   }, []);
 
   if (!showNudge) return null;
-  if (days === undefined) return null;
+  if (days === undefined || !hasData) return null;
   if (days !== null && days < NUDGE_AFTER_DAYS) return null;
 
   async function run(action: () => Promise<string>) {

@@ -59,9 +59,26 @@ export function trackItemUpdate(old: Tracked, mods: Record<string, unknown>, now
   return out;
 }
 
-/** 作成フック用: 最初から対応状況が付いている場合は、作成時刻をその状況になった時刻とする */
+// 作成フックで「今まさに作られたもの」とみなす、作成時刻と現在時刻のずれの上限
+const FRESH_CREATE_MS = 10 * 60 * 1000;
+
+/**
+ * 作成フックで、その項目が今まさに作られたものか。バックアップの復元や、別の端末から
+ * 持ってきたデータの取り込みでも作成フックは動くが、それらは作成日時が過去のため区別できる
+ */
+export function isFreshlyCreated(createdAt: number | undefined, now: number): boolean {
+  return createdAt === undefined || Math.abs(now - createdAt) <= FRESH_CREATE_MS;
+}
+
+/**
+ * 作成フック用: 最初から対応状況が付いている新しい項目は、作成時刻をその状況になった時刻とする。
+ * 記録を始める前のバックアップを復元した場合などは、いつからその状況なのか分からないため
+ * 何も記録しない(作成日を使うと「客先確認中 480日目」のような過大な日数になってしまう)
+ */
 export function trackItemCreate<T extends Tracked & { createdAt?: number }>(obj: T, now: number): void {
-  if (norm(obj.tag) !== undefined && obj.tagChangedAt === undefined) obj.tagChangedAt = obj.createdAt ?? now;
+  if (norm(obj.tag) !== undefined && obj.tagChangedAt === undefined && isFreshlyCreated(obj.createdAt, now)) {
+    obj.tagChangedAt = obj.createdAt ?? now;
+  }
 }
 
 interface TrackedStage {

@@ -1931,7 +1931,8 @@ function ProjectRow({
         )}
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      {/* スマホ幅でも1行に詰め込まず折り返す(詰め込むと文字が縦1列に潰れて読めなくなっていた) */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 [&>button]:whitespace-nowrap">
         <button className="btn-pill-outline text-xs" onClick={onAddToToday}>
           本日の作業に追加
         </button>

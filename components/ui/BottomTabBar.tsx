@@ -206,7 +206,7 @@ export default function BottomTabBar({
               <button
                 key={it.key}
                 onClick={() => onSelect(it.key)}
-                className={`relative flex-1 rounded-md border px-2 py-2 text-xs transition-transform sm:text-sm ${
+                className={`relative flex-1 whitespace-nowrap rounded-md border px-1.5 py-2 text-xs transition-transform sm:px-2 sm:text-sm ${
                   active ? "border-alert bg-alert/15 text-cream" : "border-dashed border-cream/25 text-cream/55"
                 } ${emphasized ? "scale-[1.05]" : ""}`}
               >
@@ -242,7 +242,7 @@ export default function BottomTabBar({
               <button
                 key={it.key}
                 onClick={() => onSelect(it.key)}
-                className={`relative flex-1 transition-transform ${active ? "btn-pill" : "btn-pill-outline"} px-2 py-2 text-xs sm:text-sm ${
+                className={`relative flex-1 whitespace-nowrap transition-transform ${active ? "btn-pill" : "btn-pill-outline"} px-1.5 py-2 text-xs sm:px-2 sm:text-sm ${
                   emphasized ? "scale-[1.05]" : ""
                 }`}
               >

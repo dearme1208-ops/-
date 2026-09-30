@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
@@ -82,6 +82,15 @@ export default function AddTaskDialog({
   const style = normalizeAddTaskStyle(styleStr);
 
   const [mode, setMode] = useState<"master" | "free" | "done">("master");
+  // 作業マスタがまだ1件も無い(使い始めたばかり)なら、選ぶものが無い「マスタから選択」ではなく
+  // 「自由入力」で開く。マスタの件数を読み終えた最初の1回だけ切り替え、以降は手動の選択を尊重する
+  const masterCount = useLiveQuery(() => db.masterTasks.count(), []);
+  const initialModeResolved = useRef(false);
+  useEffect(() => {
+    if (initialModeResolved.current || masterCount === undefined) return;
+    initialModeResolved.current = true;
+    if (masterCount === 0) setMode("free");
+  }, [masterCount]);
   // メニュー型のときに今どの画面にいるか
   const [pane, setPane] = useState<"menu" | "master" | "favorite" | "free" | "done">("menu");
   const [selectedMaster, setSelectedMaster] = useState<MasterTask | null>(null);
@@ -181,7 +190,9 @@ export default function AddTaskDialog({
         追加してすぐ開始
       </button>
     );
-    const fromLastStop = lastStopTime != null && (
+    // 前の作業を止めた時刻が今とほとんど同じ(使い始めでまだ何も止めていない等)なら、
+    // 「すぐ開始」と区別がつかず紛らわしいので出さない
+    const fromLastStop = lastStopTime != null && Date.now() - lastStopTime >= 60_000 && (
       <button
         key="from"
         className={`btn-pill-outline text-sm${wide}`}
