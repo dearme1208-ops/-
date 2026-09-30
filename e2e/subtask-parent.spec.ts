@@ -41,8 +41,8 @@ test("本日の作業: サブタスクから追加した作業のカード・期
 
 test("週報: 作業時間ランキングと完了したことに、サブタスクの親タスク名が出る", async ({ page }) => {
   await page.clock.install({ time: jstAt("18:00") });
-  const t: Record<string, unknown>[] = todos();
-  t[1] = { ...t[1], completed: true, completedAt: jstAt("11:00") };
+  const t = todos();
+  t[1] = { ...t[1], completed: true, completedAt: jstAt("11:00") } as (typeof t)[number];
   await seed(page, {
     stores: {
       masterTasks: [master],

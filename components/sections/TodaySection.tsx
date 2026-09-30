@@ -704,32 +704,12 @@ export default function TodaySection({
     return last.status === "done" ? last.endedAt! : last.segments[last.segments.length - 1].end!;
   }, [tasks]);
 
-  // 未計測(仮計測)の判定の起点。lastStopTimeは「前の作業が実際に何時に終わったか」なので、
-  // 止め忘れを「時刻を指定して終了」で10:00にさかのぼって終えると10:00になる。これをそのまま
-  // 未計測の起点にすると、12:00に終了操作をした瞬間に「10:00から2時間計測していない」と
-  // みなされ、10:00からの長時間の仮計測が立ち上がっていた(完了タブで終了時刻を早めた場合も同様)。
-  // 終了時刻の指定は「その作業は10:00に終わっていた」という訂正であって、その後が未計測だった
-  // という意味ではないため、未計測は実際に停止の操作をした時刻(stoppedAt)から数える
-  const provisionalAnchorTime = useMemo(() => {
-    if (lastStopTime === null || !tasks) return lastStopTime;
-    const withStoppedAt = tasks.filter(
-      (t) => (t.status === "done" || t.status === "paused") && t.stoppedAt !== undefined
-    );
-    if (withStoppedAt.length === 0) return lastStopTime;
-    const lastStoppedAt = Math.max(...withStoppedAt.map((t) => t.stoppedAt!));
-    return Math.max(lastStopTime, lastStoppedAt);
-  }, [lastStopTime, tasks]);
-
   // 休憩などの除外時間帯を差し引いた「実質的な」直近停止時刻。未計測の自動開始や
   // 「さかのぼって開始/再開」で使う起点はこちらを使い、休憩時間を計測対象から除く
   const effectiveLastStopTime = useMemo(() => {
     if (lastStopTime === null) return null;
     return adjustStopTimeForBreaks(lastStopTime, now, date, breakRanges);
   }, [lastStopTime, now, date, breakRanges]);
-  const effectiveProvisionalAnchorTime = useMemo(() => {
-    if (provisionalAnchorTime === null) return null;
-    return adjustStopTimeForBreaks(provisionalAnchorTime, now, date, breakRanges);
-  }, [provisionalAnchorTime, now, date, breakRanges]);
 
   // 未割り当ての仮計測タスク（未計測時間が閾値を超えた際に自動生成される）
   const provisionalTask = useMemo(() => tasks?.find((t) => t.isProvisional) ?? null, [tasks]);
@@ -784,8 +764,8 @@ export default function TodaySection({
     if (!tasks) return;
     const gapStart = findProvisionalStart({
       tasks,
-      lastStopTime: provisionalAnchorTime,
-      effectiveLastStopTime: effectiveProvisionalAnchorTime,
+      lastStopTime,
+      effectiveLastStopTime,
       now,
       date,
       breakRanges,
@@ -809,7 +789,7 @@ export default function TodaySection({
       if (!added) return;
       setTaskViewTab("running");
     })();
-  }, [provisionalEnabled, tasks, now, provisionalAnchorTime, effectiveProvisionalAnchorTime, thresholdMinutes, date, breakRanges]);
+  }, [provisionalEnabled, tasks, now, lastStopTime, effectiveLastStopTime, thresholdMinutes, date, breakRanges]);
 
   // 強制ストップ付きの休憩帯に入ったら、計測中の作業(仮計測含む)を一時停止し、
   // チェックリストを表示する。1つの休憩帯につき1回だけ行い(breakStopHandledで判定)、
