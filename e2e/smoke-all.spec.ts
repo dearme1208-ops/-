@@ -88,16 +88,34 @@ for (const mode of MODES) {
       settings: { "theme.visualMode": mode, "powerpro.mainMenu": "false" },
       stores: sampleData(),
     });
-    const labels = await tabLabels(page);
-    expect(labels.length).toBeGreaterThan(0);
     if (errors.length) errors.push("  ↑ 最初の表示");
-    for (let i = 0; i < labels.length; i++) {
+    const open = async (locator: import("@playwright/test").Locator, label: string) => {
       const before = errors.length;
-      await page.locator(".tab-chip").nth(i).click();
+      await locator.click();
       await page.waitForTimeout(400);
       // 画面全体が落ちると(Next.jsのエラー画面)タブ列が消える
-      await expect(page.locator(".tab-chip").first(), `タブ「${labels[i]}」を開いたら画面が落ちた`).toBeVisible();
-      if (errors.length > before) errors.push(`  ↑ タブ「${labels[i]}」`);
+      await expect(page.locator(".tab-chip").first(), `タブ「${label}」を開いたら画面が落ちた`).toBeVisible();
+      if (errors.length > before) errors.push(`  ↑ タブ「${label}」`);
+    };
+    if ((await page.locator("[data-grouped-tabs]").count()) > 0) {
+      // タブを分類ごとの2段にまとめている場合(森モード): 分類を順に開き、その中のタブを全部開く
+      const groups = page.locator(".tab-nav-groups .tab-chip");
+      const groupLabels = await groups.evaluateAll((els) => els.map((e) => (e.textContent ?? "").trim()));
+      expect(groupLabels.length).toBeGreaterThan(0);
+      let opened = 0;
+      for (let g = 0; g < groupLabels.length; g++) {
+        await open(groups.nth(g), groupLabels[g]);
+        const subs = page.locator(".tab-nav-sub .tab-chip");
+        const subLabels = await subs.evaluateAll((els) => els.map((e) => (e.textContent ?? "").trim()));
+        opened += Math.max(1, subLabels.length);
+        for (let i = 0; i < subLabels.length; i++) await open(subs.nth(i), `${groupLabels[g]} › ${subLabels[i]}`);
+      }
+      // 1列表示のときと同じ数のタブを、2段表示でも取りこぼさず開けていること
+      expect(opened).toBe(21);
+    } else {
+      const labels = await tabLabels(page);
+      expect(labels.length).toBeGreaterThan(0);
+      for (let i = 0; i < labels.length; i++) await open(page.locator(".tab-chip").nth(i), labels[i]);
     }
     expect(errors).toEqual([]);
   });

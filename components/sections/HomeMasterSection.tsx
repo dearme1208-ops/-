@@ -39,6 +39,10 @@ export default function HomeMasterSection() {
   const [hiddenTabsJson, setHiddenTabsJson] = useSetting("home.hiddenTabKeys", "[]");
   const hiddenTabs = useMemo(() => parseHiddenTabKeys(hiddenTabsJson), [hiddenTabsJson]);
 
+  // タブを分類ごとの2段にまとめて出すか(試験的に森モードだけ)。OFFで従来の1列に戻る
+  const [groupTabsStr, setGroupTabsStr] = useSetting("home.groupTabs", "true");
+  const groupTabs = groupTabsStr === "true";
+
   async function toggleTabHidden(key: TabKey) {
     const next = hiddenTabs.includes(key) ? hiddenTabs.filter((k) => k !== key) : [...hiddenTabs, key];
     await setHiddenTabsJson(serializeHiddenTabKeys(next));
@@ -76,6 +80,22 @@ export default function HomeMasterSection() {
 
   return (
     <div className="space-y-4">
+      <div className="panel space-y-2 p-4">
+        <h3 className="font-display text-base font-bold">🗂 タブを分類ごとにまとめる</h3>
+        <p className="text-xs text-cream/60">
+          ONにすると、上の段に「今日・計画・振り返り・記録・マスタ・設定」の分類だけを並べ、選んだ分類のタブを下の段に出します。タブが多くて探しにくいときに。OFFにすると従来どおり全部のタブを1列に並べます。
+        </p>
+        <label className="flex items-center gap-2 text-sm text-cream/85">
+          <input
+            type="checkbox"
+            checked={groupTabs}
+            onChange={() => setGroupTabsStr(groupTabs ? "false" : "true")}
+            className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+          />
+          タブを分類ごとにまとめる
+        </label>
+      </div>
+
       <div className="panel space-y-2 p-4">
         <h3 className="font-display text-base font-bold">🍃 見せる木を選ぶ</h3>
         <p className="text-xs text-cream/60">

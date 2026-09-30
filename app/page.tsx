@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useLiveQuery } from "dexie-react-hooks";
 import TabNav, { TabDef } from "@/components/TabNav";
+import GroupedTabNav from "@/components/GroupedTabNav";
 import { db } from "@/lib/db";
 import { useSetting, useSettingLoaded } from "@/lib/settings";
 import { finishDailyTask } from "@/lib/tasks";
@@ -142,6 +143,9 @@ export default function HomePage() {
 
   // 森モード中、家庭モード管理タブでユーザー自身が個別に隠したタブ
   const [homeHiddenTabsJson] = useSetting("home.hiddenTabKeys", "[]");
+  // 森モード中、タブを「分類(上段)+中のタブ(下段)」の2段にまとめて出すか(試験的に森モードだけ)
+  const [homeGroupTabsStr] = useSetting("home.groupTabs", "true");
+  const groupTabs = mode === "home" && homeGroupTabsStr === "true";
   const homeHiddenTabs = useMemo(() => parseHiddenTabKeys(homeHiddenTabsJson), [homeHiddenTabsJson]);
 
   const tabs = useMemo(() => {
@@ -251,7 +255,11 @@ export default function HomePage() {
               ◀ メニュー
             </button>
           )}
-          <TabNav tabs={tabs} active={active} onChange={setActive} />
+          {groupTabs ? (
+            <GroupedTabNav tabs={tabs} active={active} onChange={setActive} />
+          ) : (
+            <TabNav tabs={tabs} active={active} onChange={setActive} />
+          )}
         </>
       )}
       {!showMenu && (

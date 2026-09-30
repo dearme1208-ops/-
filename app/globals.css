@@ -612,6 +612,17 @@ html[data-high-contrast="true"] :focus-visible {
     box-shadow: 0 0 10px rgb(var(--accent-rgb) / 0.85);
   }
 
+  /* タブを分類ごとの2段にまとめた場合(GroupedTabNav)。上段の分類は太い札のまま、
+     下段の中のタブは一回り小さな札にして、どちらが親か一目で分かるようにする */
+  html[data-visual-mode="home"] .tab-nav-groups {
+    border-bottom-style: dashed;
+  }
+  html[data-visual-mode="home"] .tab-nav-sub .tab-chip {
+    font-size: 0.75rem;
+    padding-top: 0.3rem;
+    padding-bottom: 0.3rem;
+  }
+
   /* ボタンもタブと同じ木札のシルエットに揃える(タブ自身は上の規則が持つので除く) */
   /* p-1/p-1.5 はアイコン1つだけの正方形ボタン。木札の非対称な角丸を当てると
      歪んだ丸に見えてしまうので、そこだけは真円のまま残す */
