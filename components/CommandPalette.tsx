@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { todoLabel } from "@/lib/todoLabel";
 import type { TabDef } from "@/components/TabNav";
 
 interface CommandItem {
@@ -59,12 +60,14 @@ export default function CommandPalette({
         setOpen(false);
       },
     }));
+    // サブタスクは「親 › 子」で出す(名前だけでは何のことか分からないため。親の名前でも引ける)
+    const todoById = new Map((todoTasks ?? []).map((t) => [t.id, t]));
     const todoItems: CommandItem[] = (todoTasks ?? [])
       .filter((t) => !t.completed)
       .map((t) => ({
         id: `todo-${t.id}`,
-        label: t.title,
-        sub: "ToDo",
+        label: todoLabel(t, todoById),
+        sub: t.parentTaskId ? "サブタスク" : "ToDo",
         onSelect: () => {
           onOpenTodoDetail(t.id);
           setOpen(false);

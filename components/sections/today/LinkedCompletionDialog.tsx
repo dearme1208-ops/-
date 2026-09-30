@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { fireConfetti } from "@/lib/confetti";
+import { todoLabel } from "@/lib/todoLabel";
 import type { DailyTask, ProjectItem, TodoTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
@@ -112,7 +113,7 @@ export default function LinkedCompletionDialog({
   return (
     <Modal title="Todoの進捗確認" onClose={onDone}>
       <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
-      <p className="mb-4 text-sm text-cream/80">元のTodo「{todo.title}」はこれで完了ですか?</p>
+      <p className="mb-4 text-sm text-cream/80">元のTodo「{todoLabel(todo, todoTaskMap)}」はこれで完了ですか?</p>
       <div className="flex justify-end gap-2">
         <button className="btn-pill-outline text-sm" onClick={onDone}>
           まだ続く（時間だけ記録）

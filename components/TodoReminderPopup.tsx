@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { notify } from "@/lib/notifications";
+import { todoLabel, todoParentTitle } from "@/lib/todoLabel";
 import type { TodoTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
@@ -17,6 +18,8 @@ export default function TodoReminderPopup({ onViewDetail }: { onViewDetail: (tas
   const allTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const [now, setNow] = useState(() => Date.now());
   const [dueQueue, setDueQueue] = useState<TodoTask[]>([]);
+  // サブタスクの通知では、何のサブタスクか分かるよう親タスク名を添える
+  const byId = new Map((allTasks ?? []).map((t) => [t.id, t]));
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function TodoReminderPopup({ onViewDetail }: { onViewDetail: (tas
     (async () => {
       for (const t of due) {
         await db.todoTasks.update(t.id, { reminderFiredAt: Date.now() });
-        notify("🔔 ToDoの通知時刻です", t.title, `todo-reminder-${t.id}`);
+        notify("🔔 ToDoの通知時刻です", todoLabel(t, byId), `todo-reminder-${t.id}`);
       }
     })();
     setDueQueue((prev) => [...prev, ...due]);
@@ -57,7 +60,12 @@ export default function TodoReminderPopup({ onViewDetail }: { onViewDetail: (tas
       <div className="space-y-2">
         {dueQueue.map((task) => (
           <div key={task.id} className="rounded-lg border border-alert/30 bg-ink/50 p-3">
-            <div className="text-sm font-bold text-cream">{task.title}</div>
+            <div className="text-sm font-bold text-cream">
+              {todoParentTitle(task, byId) && (
+                <span className="font-normal text-cream/50">{todoParentTitle(task, byId)} › </span>
+              )}
+              {task.title}
+            </div>
             {task.action && <div className="text-xs text-cream/60">{task.action}</div>}
             <div className="mt-2 flex flex-wrap justify-end gap-2">
               <button className="btn-pill-outline text-xs" onClick={() => dismissOne(task.id)}>

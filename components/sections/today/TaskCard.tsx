@@ -6,8 +6,10 @@ import { baseAccumulatedMs, segmentsAccumulatedMs } from "@/lib/tasks";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { isStageDone } from "@/lib/projectStage";
 import { formatClock, formatHms, formatMsClock } from "@/lib/time";
+import { todoParentTitle } from "@/lib/todoLabel";
 import RadialTimer from "@/components/ui/RadialTimer";
-import ConditionGlyph from "@/components/ui/ConditionGlyph";import type { AutoAllocationResult } from "@/lib/allocate";
+import ConditionGlyph from "@/components/ui/ConditionGlyph";
+import type { AutoAllocationResult } from "@/lib/allocate";
 import type { ThemedMode } from "@/lib/theme";
 import type { ConditionLog, DailyTask, ProjectItem, TodoTask } from "@/lib/types";
 
@@ -342,6 +344,10 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                       linkedTodo.completed ? "text-cream/40 line-through" : "text-cream"
                     }`}
                   >
+                    {/* サブタスクは単体の名前では分からないため、親タスク名を添える */}
+                    {todoParentTitle(linkedTodo, todoTaskMap) && (
+                      <span className="font-normal text-cream/50">{todoParentTitle(linkedTodo, todoTaskMap)} › </span>
+                    )}
                     {linkedTodo.title}
                   </button>
                   {linkedTodo.completed ? (

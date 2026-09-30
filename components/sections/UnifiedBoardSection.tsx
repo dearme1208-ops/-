@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+import { todoLabel } from "@/lib/todoLabel";
 import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib/time";
 import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
@@ -1738,9 +1739,10 @@ export default function UnifiedBoardSection({
       const at = t.segments[t.segments.length - 1]?.end ?? t.endedAt;
       if (at) rows.push({ id: t.id, label: `${t.category} / ${t.name}`, sub: "作業", at });
     }
+    const todoById = new Map((todoTasks ?? []).map((t) => [t.id, t]));
     for (const t of todoTasks ?? []) {
       if (!t.completed || !t.completedAt) continue;
-      rows.push({ id: t.parentTaskId ?? t.id, label: t.title, sub: t.parentTaskId ? "サブタスク" : "ToDo", at: t.completedAt });
+      rows.push({ id: t.parentTaskId ?? t.id, label: todoLabel(t, todoById), sub: t.parentTaskId ? "サブタスク" : "ToDo", at: t.completedAt });
     }
     for (const p of projects) {
       for (const st of p.stages ?? []) {

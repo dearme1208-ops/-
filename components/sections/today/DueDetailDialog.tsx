@@ -1,6 +1,7 @@
 "use client";
 
 import { daysBetweenDateStrs, formatDateJp } from "@/lib/time";
+import { todoParentTitle } from "@/lib/todoLabel";
 import type { ProjectItem, TodoTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
@@ -9,6 +10,7 @@ export default function DueDetailDialog({
   kind,
   date,
   todoItems,
+  todoTaskMap,
   projectItems,
   onOpenTodo,
   onOpenProject,
@@ -17,6 +19,8 @@ export default function DueDetailDialog({
   kind: "todo" | "project";
   date: string;
   todoItems: TodoTask[];
+  /** サブタスクの親タスク名を引くための全ToDo */
+  todoTaskMap: Map<string, TodoTask>;
   projectItems: ProjectItem[];
   onOpenTodo: (id: string) => void;
   onOpenProject: (id: string) => void;
@@ -28,6 +32,7 @@ export default function DueDetailDialog({
         {kind === "todo" &&
           todoItems.map((t) => {
             const daysOverdue = daysBetweenDateStrs(t.dueDate!, date);
+            const parentTitle = todoParentTitle(t, todoTaskMap);
             return (
               <button
                 key={t.id}
@@ -35,7 +40,10 @@ export default function DueDetailDialog({
                 onClick={() => onOpenTodo(t.id)}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-bold text-cream">{t.title}</div>
+                  <div className="truncate text-sm font-bold text-cream">
+                    {parentTitle && <span className="font-normal text-cream/50">{parentTitle} › </span>}
+                    {t.title}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2 text-[10px] text-cream/50">
                     {t.tag && <span>{t.tag}</span>}
                     {t.category && <span>{t.category}</span>}

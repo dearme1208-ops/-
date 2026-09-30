@@ -15,6 +15,7 @@ import {
   type SortMetric,
   type TrendGranularity,
 } from "@/lib/aggregate";
+import { withSubtaskParentNames } from "@/lib/todoLabel";
 import {
   aggregateByProject,
   aggregateByTodo,
@@ -102,7 +103,10 @@ export default function AggregationSection() {
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
-  const rows = records ? aggregateRecords(records, { type: period, fiscalYear }, sortBy) : [];
+  // サブタスクから本日の作業に追加した作業は、作業名に親タスク名を添える
+  const rows = records
+    ? withSubtaskParentNames(aggregateRecords(records, { type: period, fiscalYear }, sortBy), records, todoTasks ?? [])
+    : [];
   const linkedRows = useMemo(() => {
     if (!records) return [];
     return linkedGroupBy === "project"

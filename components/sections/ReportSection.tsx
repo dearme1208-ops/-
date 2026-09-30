@@ -6,6 +6,7 @@ import { subDays, subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { aggregateRecords, aggregateKey } from "@/lib/aggregate";
+import { withSubtaskParentNames } from "@/lib/todoLabel";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
@@ -86,8 +87,9 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
     const rangeLabel = range
       ? `${range.start.toISOString().slice(0, 10)} 〜 ${range.end.toISOString().slice(0, 10)}`
       : "累計";
-    const ranking = aggregateRecords(records, filter, "total");
     const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));
+    // サブタスクから本日の作業に追加した作業は、作業名に親タスク名を添える
+    const ranking = withSubtaskParentNames(aggregateRecords(records, filter, "total"), periodRecords, todoTasks ?? []);
     const attention = computeAttentionList(masterTasks, periodRecords);
     const afterHours = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
     const totalSeconds = ranking.reduce((s, r) => s + r.totalSeconds, 0);

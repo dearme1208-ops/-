@@ -2626,6 +2626,7 @@ export default function TodaySection({
           kind={dueDetailKind}
           date={date}
           todoItems={pendingDueTodoItems}
+          todoTaskMap={todoTaskMap}
           projectItems={pendingDueProjectItems}
           onOpenTodo={(id) => {
             setDueDetailKind(null);

@@ -1,6 +1,7 @@
 import { subDays, subMonths, subWeeks } from "date-fns";
 import type { MasterTask, ProjectItem, TodoTask, WorkRecord } from "./types";
 import { aggregateRecords } from "./aggregate";
+import { withSubtaskParentNames } from "./todoLabel";
 import { computeAttentionList } from "./attention";
 import { computeAfterHoursBreakdown } from "./overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "./period";
@@ -74,8 +75,9 @@ export function generateReportText(
     ? `${range.start.toISOString().slice(0, 10)} 〜 ${range.end.toISOString().slice(0, 10)}`
     : "累計";
 
-  const ranking = aggregateRecords(records, filter, "total");
   const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));
+  // サブタスクから本日の作業に追加した作業は、作業名に親タスク名を添える
+  const ranking = withSubtaskParentNames(aggregateRecords(records, filter, "total"), periodRecords, todoTasks);
   const attention = computeAttentionList(masterTasks, periodRecords);
   const afterHours = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
 

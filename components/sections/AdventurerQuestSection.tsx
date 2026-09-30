@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatHms, formatMsClock, todayStr } from "@/lib/time";
@@ -251,7 +252,8 @@ export default function AdventurerQuestSection() {
 
   function questTradeDetail(): string {
     if (activeTodos.length === 0) return "受注中のクエストはありません。「ToDo」タブから新しいクエストを受けましょう。";
-    const lines = activeTodos.slice(0, 20).map((t) => `・${t.title}${t.dueDate ? `（期日 ${t.dueDate}）` : ""}`);
+    const todoById = new Map((todoTasks ?? []).map((t) => [t.id, t]));
+    const lines = activeTodos.slice(0, 20).map((t) => `・${todoLabel(t, todoById)}${t.dueDate ? `（期日 ${t.dueDate}）` : ""}`);
     return [`受注中のクエスト ${activeTodos.length}件`, ...lines].join("\n");
   }
 

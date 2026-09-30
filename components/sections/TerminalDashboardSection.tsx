@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatHms, formatMsClock, todayStr } from "@/lib/time";
@@ -333,9 +334,10 @@ export default function TerminalDashboardSection() {
 
   function queueDetail(): string {
     if (activeTodos.length === 0) return "QUEUE (TODO) 0件\n未完了のToDoはありません。";
+    const todoById = new Map((todoTasks ?? []).map((t) => [t.id, t]));
     const lines = activeTodos
       .slice(0, 20)
-      .map((t) => `・${t.title}${t.dueDate ? ` (期日 ${t.dueDate})` : ""}`);
+      .map((t) => `・${todoLabel(t, todoById)}${t.dueDate ? ` (期日 ${t.dueDate})` : ""}`);
     return [`QUEUE (TODO) ${activeTodos.length}件`, ...lines].join("\n");
   }
 
