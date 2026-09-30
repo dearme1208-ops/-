@@ -25,6 +25,8 @@ import {
   parsePresetList,
   upsertTodoFromCsv,
 } from "@/lib/todo";
+import { todoPostpones, todoWaitingInfo } from "@/lib/waiting";
+import { useWaitingSettings } from "@/lib/waitingSettings";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
@@ -79,7 +81,7 @@ const MAX_PX_PER_DAY = 80;
 const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
-type ViewKey = "myday" | "important" | "planned" | "overdue" | `list:${string}`;
+type ViewKey = "myday" | "important" | "planned" | "overdue" | "waiting" | `list:${string}`;
 type DisplayMode = "list" | "gantt" | "calendar" | "kanban" | "tree";
 
 // リスト内の並び替え。「手動」はドラッグ&ドロップで決めたorder順、それ以外は
@@ -455,6 +457,21 @@ export default function TodoSection({
     return items;
   }, [topLevelTasks, subtasksByParent, today]);
 
+  // 相手の返事待ち(設定で選んだ対応状況)の未完了ToDo。長く待たされているものほど上に出す
+  // (その状況になった日時の記録が無い、機能追加前から付いていた印のものは末尾)
+  const { waitingTags, nudgeDays } = useWaitingSettings();
+  const waitingTasks = useMemo(() => {
+    const now = Date.now();
+    return topLevelTasks
+      .filter((t) => !t.completed)
+      .map((t) => ({ t, w: todoWaitingInfo(t, subtasksByParent.get(t.id) ?? [], tagOptions, waitingTags, nudgeDays, now) }))
+      .filter((x) => x.w !== null)
+      .sort((a, b) => (b.w!.days ?? -1) - (a.w!.days ?? -1))
+      .map((x) => x.t);
+    // todayを含めるのは、日付が変わったら日数を数え直すため
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topLevelTasks, subtasksByParent, tagOptions, waitingTags, nudgeDays, today]);
+
   // マイデイ・重要・期限日も、本日の作業タブの実行中/予定/完了と同じく、開かなくても
   // 中身の量が分かるよう件数を出す(未完了のみを数える。完了済みは注意を要さないため)。
   // 現在の絞り込みview(visibleTasks)とは無関係に、常にその区分の件数を出したいので、
@@ -570,6 +587,9 @@ export default function TodoSection({
       filtered = topLevelTasks.filter((t) => !!effectiveDueDate(t, subtasksByParent.get(t.id) ?? []));
     } else if (view === "overdue") {
       filtered = overdueTasks;
+    } else if (view === "waiting") {
+      // 並びは待たされている日数の長い順(waitingTasksの順)をそのまま使う
+      return waitingTasks;
     } else if (currentListId) {
       filtered = topLevelTasks.filter((t) => t.listId === currentListId);
     } else {
@@ -619,6 +639,7 @@ export default function TodoSection({
     currentListId,
     topLevelTasks,
     overdueTasks,
+    waitingTasks,
     today,
     searchActive,
     searchQuery,
@@ -1191,6 +1212,7 @@ export default function TodoSection({
     if (key === "important") return "重要";
     if (key === "planned") return "期限日";
     if (key === "overdue") return "期限切れ";
+    if (key === "waiting") return "返事待ち";
     return lists?.find((l) => l.id === key.slice(5))?.title ?? "";
   };
 
@@ -1272,6 +1294,15 @@ export default function TodoSection({
             className={view === "overdue" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
           >
             ⚠ 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
+          </button>
+        )}
+        {!bottomViewBar && (
+          <button
+            onClick={() => setView("waiting")}
+            className={view === "waiting" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+            title={`対応状況が「${waitingTags.join("・")}」のToDo(相手の返事待ち)を、待っている日数の長い順に並べます`}
+          >
+            ⏳ 返事待ち{waitingTasks.length > 0 && `（${waitingTasks.length}）`}
           </button>
         )}
         {(lists ?? []).map((l) => (
@@ -2112,6 +2143,7 @@ export default function TodoSection({
             { key: "important", icon: "★", label: "重要", count: importantCount },
             { key: "planned", icon: "📅", label: "期限日", count: plannedCount },
             { key: "overdue", icon: "⚠", label: "期限切れ", count: overdueTasks.length },
+            { key: "waiting", icon: "⏳", label: "返事待ち", count: waitingTasks.length },
           ]}
           activeKey={view}
           onSelect={(k) => setView(k as ViewKey)}
@@ -2779,6 +2811,10 @@ function TaskRow({
   const { themedMode, wordingEnabled } = useVisualMode();
   const dueDate = effectiveDueDate(task, subtasks);
   const tag = effectiveTag(task, subtasks, tagOptions);
+  // 相手の返事待ちなら「何日目か」と催促の目安、期日を後ろへずらしてきた回数(lib/waiting.ts)
+  const { waitingTags, nudgeDays } = useWaitingSettings();
+  const waiting = task.completed ? null : todoWaitingInfo(task, subtasks, tagOptions, waitingTags, nudgeDays, Date.now());
+  const postpones = task.completed ? null : todoPostpones(task, subtasks);
   const overdue = !task.completed && !!dueDate && dueDate < today;
   const dueToday = !task.completed && !!dueDate && dueDate === today;
   const doneCount = subtasks.filter((s) => s.completed).length;
@@ -2897,6 +2933,25 @@ function TaskRow({
               }`}
             >
               {tag}
+              {waiting?.days != null && <span className="ml-1 font-normal tabular-nums">{waiting.days}日目</span>}
+            </span>
+          )}
+          {waiting?.overdue && (
+            <span
+              className="rounded-full border border-alert/50 bg-alert/15 px-2 py-0.5 text-[10px] font-bold text-alert"
+              title={`「${waiting.tag}」になってから${waiting.days}日目です。催促や状況確認の目安(${nudgeDays}日目)を過ぎています`}
+            >
+              ⏰ 催促の目安
+            </span>
+          )}
+          {postpones && postpones.count > 0 && (
+            <span
+              className={`rounded-full border px-1.5 py-0.5 text-[10px] tabular-nums ${
+                postpones.count >= 3 ? "border-alert/50 bg-alert/10 text-alert" : "border-cream/20 bg-cream/5 text-cream/60"
+              }`}
+              title="期日を後ろへずらした回数と、ずらした日数の合計(サブタスクの期日も含む)"
+            >
+              ↪ 延期{postpones.count}回・計{postpones.totalDays}日
             </span>
           )}
           {task.category && (

@@ -20,6 +20,9 @@ import {
   isStageDone,
   toggleProjectStage as toggleProjectStageShared,
 } from "@/lib/projectStage";
+import { summarizePostpones, waitingInfo } from "@/lib/changeTracking";
+import { projectWaitingInfo } from "@/lib/waiting";
+import { useWaitingSettings } from "@/lib/waitingSettings";
 import { useSetting } from "@/lib/settings";
 import { DEFAULT_TAG_PRESETS, normalizeUrl, parsePresetList } from "@/lib/todo";
 import { cardOverrunClass, useVisualMode, type ThemedMode } from "@/lib/theme";
@@ -37,6 +40,8 @@ import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import ProjectAnalysisDialog from "@/components/sections/ProjectAnalysisDialog";
 import WbsDialog from "@/components/sections/WbsDialog";
+import ProjectTemplateDialog from "@/components/sections/ProjectTemplateDialog";
+import RetrospectiveInput from "@/components/sections/RetrospectiveInput";
 import ProjectPPMChart from "@/components/sections/ProjectPPMChart";
 import ProjectProgressChart from "@/components/sections/ProjectProgressChart";
 import StageDueDensityModal from "@/components/sections/StageDueDensityModal";
@@ -131,6 +136,8 @@ export default function ProjectsSection({
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [analysisProject, setAnalysisProject] = useState<ProjectItem | null>(null);
   const [wbsProject, setWbsProject] = useState<ProjectItem | null>(null);
+  // 「型にして新しく作る」の元にする案件
+  const [templateSource, setTemplateSource] = useState<ProjectItem | null>(null);
   const [stageCompleteConfirm, setStageCompleteConfirm] = useState<{ project: ProjectItem; stageId: string } | null>(
     null
   );
@@ -954,6 +961,7 @@ export default function ProjectsSection({
             onEdit={() => setEditingProject(project)}
             onAnalysis={() => setAnalysisProject(project)}
             onWbs={() => setWbsProject(project)}
+            onTemplate={() => setTemplateSource(project)}
             onDelete={() => deleteProject(project)}
             onArchive={() => toggleArchiveProject(project)}
             onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
@@ -995,6 +1003,7 @@ export default function ProjectsSection({
                   onEdit={() => setEditingProject(project)}
                   onAnalysis={() => setAnalysisProject(project)}
                   onWbs={() => setWbsProject(project)}
+                  onTemplate={() => setTemplateSource(project)}
                   onDelete={() => deleteProject(project)}
                   onArchive={() => toggleArchiveProject(project)}
                   onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
@@ -1233,6 +1242,14 @@ export default function ProjectsSection({
       {editingProject && <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
       {showWeeklyReview && <WeeklyReviewModal onClose={() => setShowWeeklyReview(false)} />}
       {analysisProject && <ProjectAnalysisDialog project={analysisProject} onClose={() => setAnalysisProject(null)} />}
+      {templateSource && (
+        <ProjectTemplateDialog
+          source={templateSource}
+          projects={projects ?? []}
+          records={records ?? []}
+          onClose={() => setTemplateSource(null)}
+        />
+      )}
       {wbsProject && <WbsDialog project={wbsProject} onClose={() => setWbsProject(null)} />}
 
       {stageCompleteConfirm &&
@@ -1355,6 +1372,9 @@ export default function ProjectsSection({
                 </div>
               </div>
             </div>
+            <div className="border-t border-cream/10 pt-3">
+              <RetrospectiveInput project={completionReport.project} />
+            </div>
             {hasAnalysisContent(completionReport.project) && (
               <div className="border-t border-cream/10 pt-3">
                 <h4 className="mb-2 text-xs font-bold text-cream/70">📝 当初の分析(SWOT等)の振り返り</h4>
@@ -1397,6 +1417,7 @@ function ProjectRow({
   onEdit,
   onAnalysis,
   onWbs,
+  onTemplate,
   onDelete,
   onArchive,
   onToggleStage,
@@ -1421,6 +1442,7 @@ function ProjectRow({
   onEdit: () => void;
   onAnalysis: () => void;
   onWbs: () => void;
+  onTemplate: () => void;
   onDelete: () => void;
   onArchive: () => void;
   onToggleStage: (stageId: string) => void;
@@ -1430,6 +1452,10 @@ function ProjectRow({
   themedMode?: ThemedMode | null;
 }) {
   const today = todayStr();
+  // 相手の返事待ちが何日目か・期日を後ろへずらしてきた回数(lib/waiting.ts, lib/changeTracking.ts)
+  const { waitingTags, nudgeDays } = useWaitingSettings();
+  const waiting = project.completedAt ? null : projectWaitingInfo(project, waitingTags, nudgeDays, Date.now());
+  const postpones = project.completedAt ? null : summarizePostpones(project.dueHistory);
   const [showCompletedStagesStr] = useSetting("projects.showCompletedStages", "true");
   const showCompletedStages = showCompletedStagesStr === "true";
   const [stagesCollapsed, setStagesCollapsed] = useState(false);
@@ -1547,6 +1573,32 @@ function ProjectRow({
               ))}
               {project.tag && !tagOptions.includes(project.tag) && <option value={project.tag}>{project.tag}</option>}
             </select>
+          )}
+          {waiting && waiting.days != null && (
+            <span
+              className={`ml-1 rounded-full border px-1.5 py-0.5 align-middle text-[10px] font-bold tabular-nums ${
+                waiting.overdue ? "border-alert/50 bg-alert/15 text-alert" : "border-cream/25 bg-cream/5 text-cream/70"
+              }`}
+              title={
+                waiting.overdue
+                  ? `「${waiting.tag}」になってから${waiting.days}日目です。催促や状況確認の目安(${nudgeDays}日目)を過ぎています`
+                  : `「${waiting.tag}」になってから${waiting.days}日目`
+              }
+            >
+              {waiting.overdue && "⏰ "}
+              {waiting.stageTitle ? `${waiting.stageTitle}: ` : ""}
+              {waiting.tag} {waiting.days}日目
+            </span>
+          )}
+          {postpones && postpones.count > 0 && (
+            <span
+              className={`ml-1 rounded-full border px-1.5 py-0.5 align-middle text-[10px] tabular-nums ${
+                postpones.count >= 3 ? "border-alert/50 bg-alert/10 text-alert" : "border-cream/20 bg-cream/5 text-cream/60"
+              }`}
+              title="案件の期日を後ろへずらした回数と、ずらした日数の合計"
+            >
+              ↪ 延期{postpones.count}回・計{postpones.totalDays}日
+            </span>
           )}
           {project.url && (
             <button
@@ -1796,6 +1848,20 @@ function ProjectRow({
                     <span className={`flex-1 truncate text-[11px] ${done ? "text-cream/40 line-through" : "text-cream/80"}`}>
                       {stage.title}
                     </span>
+                    {!done &&
+                      (() => {
+                        const w = waitingInfo(stage, waitingTags, nudgeDays, Date.now());
+                        if (!w || w.days == null) return null;
+                        return (
+                          <span
+                            className={`shrink-0 text-[10px] tabular-nums ${w.overdue ? "font-bold text-alert" : "text-cream/50"}`}
+                            title={`「${w.tag}」になってから${w.days}日目`}
+                          >
+                            {w.overdue && "⏰ "}
+                            {w.tag} {w.days}日目
+                          </span>
+                        );
+                      })()}
                     {order && (
                       <span className="shrink-0 text-[10px] tabular-nums text-cream/35" title={markTitle}>
                         {formatDateShortJp(order.at)}
@@ -1812,6 +1878,16 @@ function ProjectRow({
                         title={done ? "この段階に費やした累計作業時間" : "この段階にこれまで費やした作業時間（未完了）"}
                       >
                         {formatHms(seconds)}
+                      </span>
+                    )}
+                    {stage.referenceSeconds != null && (
+                      <span
+                        className={`shrink-0 text-[10px] tabular-nums ${
+                          !done && seconds > stage.referenceSeconds ? "text-alert" : "text-cream/35"
+                        }`}
+                        title="型にした案件と同じ種類の過去の案件で、この段階にかかった時間の平均"
+                      >
+                        目安 {formatHms(stage.referenceSeconds)}
                       </span>
                     )}
                     {stage.dueDate && (
@@ -1870,6 +1946,13 @@ function ProjectRow({
         </button>
         <button className="text-xs text-cream/60 hover:text-cream" onClick={onWbs} title="WBS(作業分解構成図)">
           WBS
+        </button>
+        <button
+          className="text-xs text-cream/60 hover:text-cream"
+          onClick={onTemplate}
+          title="この案件の段階の構成を引き継いで、同じ種類の新しい案件を作ります(過去の実績から段階ごとの目安時間も出します)"
+        >
+          📐 型にして作る
         </button>
         <button
           className="text-xs text-cream/60 hover:text-cream"

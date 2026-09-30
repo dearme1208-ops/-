@@ -6,6 +6,9 @@ import { subDays, subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { aggregateRecords, aggregateKey } from "@/lib/aggregate";
+import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
+import { collectWaitingItems, waitingItemLine } from "@/lib/waiting";
+import { useWaitingSettings } from "@/lib/waitingSettings";
 import { withSubtaskParentNames } from "@/lib/todoLabel";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
@@ -74,6 +77,14 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
     return kind === "month" ? range.start.toISOString().slice(0, 7) : range.start.toISOString().slice(0, 10);
   }, [kind]);
   const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, "");
+  // 相手の返事待ち(報告の時点で待っているもの)。何日待っているかまで出して、催促・相談の材料にする
+  const { waitingTags, nudgeDays } = useWaitingSettings();
+  const [tagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const tagPriority = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
+  const waitingItems = useMemo(
+    () => collectWaitingItems(todoTasks ?? [], projects ?? [], tagPriority, waitingTags, nudgeDays, Date.now()),
+    [todoTasks, projects, tagPriority, waitingTags, nudgeDays]
+  );
   const [goalCelebratedKey, setGoalCelebratedKey] = useSetting(`report.goalCelebrated.${kind}.${periodKey}`, "");
   // 負担にならない「1問だけ」の振り返り。自由記述の一言メモとは別に、
   // 期間ごとに固定の1問だけ答える軽い振り返りの儀式として設ける
@@ -281,7 +292,8 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
       afterHoursCutoff,
       note,
       todoTasks ?? [],
-      projects ?? []
+      projects ?? [],
+      { priorityOrder: tagPriority, tags: waitingTags, nudgeDays }
     );
     const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
     downloadTextFile(`report_${label}_${todayStr()}.txt`, text);
@@ -390,6 +402,7 @@ ${
     : ""
 }
 ${data.completions && hasAnyCompletion(data.completions) ? `<h2>完了したこと</h2>${completionsHtml}` : ""}
+${waitingItems.length > 0 ? `<h2>返事待ち</h2><ul>${waitingItems.map((w) => `<li>${esc(waitingItemLine(w))}</li>`).join("")}</ul>` : ""}
 ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 </body></html>`;
     const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
@@ -861,6 +874,29 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {waitingItems.length > 0 && (
+            <div className="panel p-4">
+              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">⏳ 返事待ち（{waitingItems.length}）</h3>
+              <ul className="space-y-1">
+                {waitingItems.map((w) => (
+                  <li key={`${w.kind}-${w.id}`} className="flex flex-wrap items-center gap-2 text-sm text-cream/85">
+                    <span
+                      className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                        w.overdue ? "border-alert/50 bg-alert/15 text-alert" : "border-cream/25 bg-cream/5 text-cream/70"
+                      }`}
+                    >
+                      {w.overdue && "⏰ "}
+                      {w.tag}
+                      {w.days != null && ` ${w.days}日目`}
+                    </span>
+                    {w.kind === "project" && <span className="text-[10px] text-cream/50">案件</span>}
+                    {w.label}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

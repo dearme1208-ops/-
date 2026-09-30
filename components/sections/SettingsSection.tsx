@@ -6,6 +6,8 @@ import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib/todo";
+import { DEFAULT_WAITING_NUDGE_DAYS, DEFAULT_WAITING_TAGS } from "@/lib/changeTracking";
+import { parseWaitingTags } from "@/lib/waiting";
 import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
 import { importBackup, type BackupFile } from "@/lib/backup";
 import { downloadBackupFile, shareBackupFile } from "@/lib/backupFile";
@@ -140,6 +142,10 @@ export default function SettingsSection() {
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [tagPresetsJson, setTagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  // 相手の返事待ちとみなす対応状況と、何日目から催促の目安を出すか(lib/changeTracking.ts)
+  const [waitingTagsJson, setWaitingTagsJson] = useSetting("todo.waitingTags", JSON.stringify(DEFAULT_WAITING_TAGS));
+  const waitingTags = useMemo(() => parseWaitingTags(waitingTagsJson, DEFAULT_WAITING_TAGS), [waitingTagsJson]);
+  const [waitingNudgeDaysStr, setWaitingNudgeDaysStr] = useSetting("todo.waitingNudgeDays", String(DEFAULT_WAITING_NUDGE_DAYS));
   const tagPresets = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
   const [categoryPresetsJson, setCategoryPresetsJson] = useSetting("todo.categoryPresets", "[]");
   const categoryPresets = useMemo(() => parsePresetList(categoryPresetsJson), [categoryPresetsJson]);
@@ -1711,6 +1717,40 @@ export default function SettingsSection() {
             {autoImportantTag
               ? `ToDoのタスク登録・編集時に対応状況「${autoImportantTag}」を選ぶと、自動的に★重要にします（対応状況を外しても重要フラグは自動では解除しません）。`
               : "自動重要化は無効です。対応状況を選んでも★重要は自動では変わりません。"}
+          </p>
+        </div>
+
+        <div className="border-t border-cream/10 pt-3">
+          <h4 className="mb-2 text-xs font-bold text-cream/70">相手の返事待ちとみなす対応状況</h4>
+          <div className="flex flex-wrap gap-2">
+            {tagPresets.map((t) => {
+              const on = waitingTags.includes(t);
+              return (
+                <button
+                  key={t}
+                  className={on ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  onClick={() => setWaitingTagsJson(JSON.stringify(on ? waitingTags.filter((w) => w !== t) : [...waitingTags, t]))}
+                >
+                  {on ? "⏳ " : ""}
+                  {t}
+                </button>
+              );
+            })}
+          </div>
+          <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-cream/70">
+            催促の目安:
+            <input
+              type="number"
+              min={1}
+              value={waitingNudgeDaysStr}
+              onChange={(e) => setWaitingNudgeDaysStr(e.target.value)}
+              className="w-16 rounded-lg border border-cream/20 bg-ink px-2 py-1 text-sm text-cream"
+              aria-label="催促の目安の日数"
+            />
+            日目から
+          </label>
+          <p className="mt-2 text-xs text-cream/50">
+            選んだ対応状況のToDo・案件・段階には「客先確認中 5日目」のように、その状況になってから何日目かを出し、目安の日数を過ぎたら催促の目安として強調します。ToDoの「⏳ 返事待ち」で一覧にでき、日報・週報にも載ります。
           </p>
         </div>
       </div>

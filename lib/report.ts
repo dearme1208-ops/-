@@ -2,6 +2,7 @@ import { subDays, subMonths, subWeeks } from "date-fns";
 import type { MasterTask, ProjectItem, TodoTask, WorkRecord } from "./types";
 import { aggregateRecords } from "./aggregate";
 import { withSubtaskParentNames } from "./todoLabel";
+import { collectWaitingItems, waitingItemLine } from "./waiting";
 import { computeAttentionList } from "./attention";
 import { computeAfterHoursBreakdown } from "./overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "./period";
@@ -68,7 +69,9 @@ export function generateReportText(
   afterHoursCutoff = "18:00",
   note = "",
   todoTasks: TodoTask[] = [],
-  projects: ProjectItem[] = []
+  projects: ProjectItem[] = [],
+  /** 相手の返事待ちの一覧を載せる場合の設定(対応状況の優先順・待ちとみなす対応状況・催促の目安) */
+  waiting?: { priorityOrder: string[]; tags: string[]; nudgeDays: number; now?: number }
 ): string {
   const range = getPeriodRange(filter);
   const rangeLabel = range
@@ -149,6 +152,14 @@ export function generateReportText(
         completions.subtasks.forEach((t) => lines.push(`- ${completionLabel(t)}`));
       }
     }
+  }
+  if (waiting) {
+    // 報告の時点で相手の返事を待っているもの。何日待っているかまで出して、催促・相談の材料にする
+    const items = collectWaitingItems(todoTasks, projects, waiting.priorityOrder, waiting.tags, waiting.nudgeDays, waiting.now ?? Date.now());
+    lines.push("");
+    lines.push("【返事待ち】");
+    if (items.length === 0) lines.push("（該当なし）");
+    else items.forEach((item) => lines.push(`- ${waitingItemLine(item)}`));
   }
   if (note.trim()) {
     lines.push("");

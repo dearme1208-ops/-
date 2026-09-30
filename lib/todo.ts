@@ -59,7 +59,8 @@ export function effectiveTag(task: TodoTask, subtasks: TodoTask[], priorityOrder
 export async function completeTodoTask(task: TodoTask, today: string): Promise<void> {
   if (task.recurrence) {
     const nextDue = computeNextDueDate(task.recurrence, task.dueDate ?? today);
-    const updates: Partial<TodoTask> = { dueDate: nextDue };
+    // lastRecurrenceAtは、この期日の変更が「延期」ではなく次の回へ進んだものだと記録側に伝える印
+    const updates: Partial<TodoTask> = { dueDate: nextDue, lastRecurrenceAt: Date.now() };
     if (task.myDayDate === today) updates.myDayDate = undefined;
     await db.transaction("rw", db.todoTasks, async () => {
       await db.todoTasks.update(task.id, updates);

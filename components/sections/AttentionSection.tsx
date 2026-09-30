@@ -25,11 +25,15 @@ import { computeProductivityByTimeOfDay, computeTimeOfDayInsight } from "@/lib/t
 import { computeInsights } from "@/lib/insights";
 import { computeBurnoutRisk } from "@/lib/burnoutRisk";
 import { computeBacklogBreakdown, computeBacklogTrend } from "@/lib/backlogLoad";
+import { collectFrequentlyPostponed } from "@/lib/waiting";
 import { useCollapsedPanels } from "@/lib/settings";
 import DiffLineChart from "@/components/charts/DiffLineChart";
 import LineChart from "@/components/charts/LineChart";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import CollapsiblePanel from "@/components/ui/CollapsiblePanel";
+
+// 要注意リストに出す延期の回数の下限
+const POSTPONE_ATTENTION_MIN = 2;
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -104,6 +108,14 @@ export default function AttentionSection() {
       todoTasksForBacklog && projectsForBacklog
         ? computeBacklogBreakdown(todoTasksForBacklog, projectsForBacklog)
         : { todoByCategory: [], projectByCategory: [] },
+    [todoTasksForBacklog, projectsForBacklog]
+  );
+  // 期日を何度も後ろへずらしている未完了のToDo・案件(lib/changeTracking.tsの記録から)
+  const frequentlyPostponed = useMemo(
+    () =>
+      todoTasksForBacklog && projectsForBacklog
+        ? collectFrequentlyPostponed(todoTasksForBacklog, projectsForBacklog, POSTPONE_ATTENTION_MIN)
+        : [],
     [todoTasksForBacklog, projectsForBacklog]
   );
   const insights = useMemo(
@@ -214,6 +226,35 @@ export default function AttentionSection() {
         )}
         <p className="mt-3 text-xs text-cream/40">
           未完了件数は、これまでの登録日時・完了日時から日ごとに逆算した推移です。新規追加のペースが完了のペースを上回っている状態が続くと、期限切れが常態化しやすくなります。
+        </p>
+      </CollapsiblePanel>
+
+      <CollapsiblePanel
+        title="↪ 何度も延期しているもの"
+        collapsed={!!collapsed.postponed}
+        onToggle={() => toggleSection("postponed")}
+      >
+        {frequentlyPostponed.length === 0 ? (
+          <p className="text-sm text-cream/50">期日を{POSTPONE_ATTENTION_MIN}回以上後ろへずらしている未完了のToDo・案件はありません。</p>
+        ) : (
+          <div className="space-y-1.5">
+            {frequentlyPostponed.slice(0, 15).map((item) => (
+              <div key={`${item.kind}-${item.id}`} className="flex items-center justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate text-cream/85">
+                  <span className="mr-1 text-[10px] text-cream/50">{item.kind === "project" ? "案件" : "ToDo"}</span>
+                  {item.label}
+                </span>
+                <span
+                  className={`shrink-0 text-xs font-bold tabular-nums ${item.count >= 3 ? "text-alert" : "text-cream/70"}`}
+                >
+                  延期{item.count}回・計{item.totalDays}日
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-cream/40">
+          期日を後ろへずらした回数です(前倒しや、期日を初めて付けた・外した変更は数えません)。何度も延びているものは、小さく分ける・やめる・誰かに頼む、を検討するきっかけにしてください。この記録は、この機能を追加した後の変更から数えます。
         </p>
       </CollapsiblePanel>
 

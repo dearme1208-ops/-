@@ -1,3 +1,4 @@
+import type { DueChange } from "./changeTracking";
 export type Weekday = 1 | 2 | 3 | 4 | 5; // 1=月 ... 5=金
 
 export const WEEKDAY_LABELS: Record<Weekday, string> = {
@@ -198,6 +199,9 @@ export interface ProjectStage {
   mailFileDataUrl?: string;
   mailFileName?: string;
   mailSubject?: string; // 開かなくても件名だけで分かるよう、添付時にファイルから抽出して保持する
+  tagChangedAt?: number; // 対応状況(tag)を最後に変えた時刻。「客先確認中 5日目」の表示に使う(lib/changeTracking.ts)
+  // 同じ種類の過去の案件でこの段階にかかった時間(秒)。「型から作る」で引き継いだ参考値
+  referenceSeconds?: number;
 }
 
 // 取引先（顧客企業）。案件・ToDoに紐付けて、取引先ごとの案件・作業を横断的に見られるようにする
@@ -234,6 +238,10 @@ export interface ProjectItem {
   // レポート等で「完了」として讃える対象からは区別して扱う。ユーザーが手動で完了操作をした場合は
   // trueにせず、既にtrueだった場合はfalseへ戻す
   hourlyRate?: number; // この案件専用の時給/単価（円）。無ければカテゴリ別/デフォルト単価を使う
+  tagChangedAt?: number; // 対応状況(tag)を最後に変えた時刻(lib/changeTracking.ts)
+  dueHistory?: DueChange[]; // 期日の変更履歴。延期の回数・日数の表示に使う(lib/changeTracking.ts)
+  retrospective?: string; // 完了時の振り返り(次に同じ種類の案件をやるとき気をつけること)
+  templateFromId?: string; // 「型にして新しく作る」で作った場合の、元にした案件のID
   stages?: ProjectStage[]; // 案件を段階（マイルストーン）に分けて進捗管理する場合に使う
   estimatedTotalSeconds?: number; // 見積もり総所要時間（任意）。設定すると、直近の消化ペースから
   // 期日に間に合うかを予測する「納期到達予測」の対象になる
@@ -362,6 +370,10 @@ export interface TodoTask {
   mailFileDataUrl?: string;
   mailFileName?: string;
   mailSubject?: string; // 開かなくても件名だけで分かるよう、添付時にファイルから抽出して保持する
+  tagChangedAt?: number; // 対応状況(tag)を最後に変えた時刻(lib/changeTracking.ts)
+  dueHistory?: DueChange[]; // 期日の変更履歴。延期の回数・日数の表示に使う(lib/changeTracking.ts)
+  // 繰り返しタスクを完了して次回の期日へ進めた時刻。期日の変更を延期と区別するための印
+  lastRecurrenceAt?: number;
   // 完了はしたが削除はしたくない古いタスクを、通常の一覧・検索の既定表示から外すためのフラグ。
   // 削除と違いデータは残るので、「アーカイブ済みを表示」をONにすれば通常の一覧・検索で見返せる
   archived?: boolean;

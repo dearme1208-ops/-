@@ -107,8 +107,15 @@ export default function WeeklyReviewModal({ onClose }: { onClose: () => void }) 
           <div className="mt-2 text-sm font-bold text-alert">
             {current.reason === "overdue"
               ? `⚠ 期日 ${current.dueDate ? formatDateJp(current.dueDate) : ""}（${current.daysOverdue}日超過）`
-              : `😴 期日未設定のまま${current.daysSinceCreated}日放置`}
+              : current.reason === "postponed"
+                ? `↪ 期日 ${current.dueDate ? formatDateJp(current.dueDate) : ""}（延期を重ねています）`
+                : `😴 期日未設定のまま${current.daysSinceCreated}日放置`}
           </div>
+          {current.postponeCount && current.postponeCount >= 2 ? (
+            <div className="mt-1 text-xs text-cream/70">
+              これまでに延期{current.postponeCount}回・計{current.postponeDays}日。期日を延ばすだけでなく、小さく分ける・やめる・誰かに頼む、も検討してみてください。
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-2">

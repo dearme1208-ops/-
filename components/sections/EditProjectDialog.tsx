@@ -20,6 +20,8 @@ import type { ProjectItem, ProjectStage } from "@/lib/types";
 import { computeProjectProgress, effectiveProjectTag } from "@/lib/projectStage";
 import { formatHms, parseHmsToSeconds } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
+import RetrospectiveInput from "@/components/sections/RetrospectiveInput";
+import { collectRetrospectives, similarCompletedProjects } from "@/lib/projectTemplate";
 import DueDateLoadWarning from "@/components/ui/DueDateLoadWarning";
 
 // 段階1行分。件名・期日をその場で編集できる入力欄を持つ
@@ -275,6 +277,11 @@ function SortableStageRow(props: {
 
 export default function EditProjectDialog({ project, onClose }: { project: ProjectItem; onClose: () => void }) {
   const [title, setTitle] = useState(project.title);
+  // 「型にして作る」で作った案件では、同じ種類の過去の案件に残した振り返りを上に出す
+  const allProjects = useLiveQuery(() => db.projects.toArray(), []);
+  const templateRetrospectives = project.templateFromId
+    ? collectRetrospectives(similarCompletedProjects(project, allProjects ?? []).filter((p) => p.id !== project.id))
+    : [];
   const [groupName, setGroupName] = useState(project.groupName ?? "");
   const [category, setCategory] = useState(project.category);
   const [workName, setWorkName] = useState(project.workName);
@@ -434,6 +441,20 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   return (
     <Modal title="案件を編集" onClose={onClose} size="lg">
       <div className="space-y-2">
+        {templateRetrospectives.length > 0 && (
+          <div className="rounded-lg border border-cream/20 bg-cream/5 px-3 py-2">
+            <div className="mb-1 text-xs font-bold text-cream/70">📝 同じ種類の案件で残した振り返り</div>
+            <ul className="space-y-1">
+              {templateRetrospectives.slice(0, 3).map((r) => (
+                <li key={r.projectId} className="text-xs text-cream/85">
+                  <span className="text-cream/40">{r.projectTitle}: </span>
+                  <span className="whitespace-pre-wrap">{r.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {project.completedAt && <RetrospectiveInput project={project} />}
         <input
           placeholder="件名"
           value={title}

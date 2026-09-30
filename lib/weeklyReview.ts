@@ -1,3 +1,4 @@
+import { summarizePostpones } from "./changeTracking";
 import type { ProjectItem, TodoTask } from "./types";
 import { daysBetweenDateStrs, todayStr } from "./time";
 
@@ -6,7 +7,7 @@ import { daysBetweenDateStrs, todayStr } from "./time";
 // 一括選択ではなく中身を見ながら1件ずつ判断する棚卸しの入口になる
 
 export type ReviewItemKind = "todo" | "project";
-export type ReviewReason = "overdue" | "stale";
+export type ReviewReason = "overdue" | "stale" | "postponed";
 
 export interface ReviewItem {
   kind: ReviewItemKind;
@@ -17,10 +18,20 @@ export interface ReviewItem {
   reason: ReviewReason;
   daysOverdue?: number; // reason==="overdue"の時のみ
   daysSinceCreated?: number; // reason==="stale"の時のみ
+  // これまでに期日を後ろへずらした回数・日数の合計(lib/changeTracking.ts)。0回なら未設定
+  postponeCount?: number;
+  postponeDays?: number;
 }
 
 // 期日が無いまま何日以上放置されていれば「停滞」とみなすか
 export const STALE_DAYS_THRESHOLD = 14;
+// 期日はまだ先でも、何回以上延期していればレビューの対象にするか
+export const POSTPONED_REVIEW_THRESHOLD = 3;
+
+function postponeFields(history: TodoTask["dueHistory"]): Pick<ReviewItem, "postponeCount" | "postponeDays"> {
+  const { count, totalDays } = summarizePostpones(history);
+  return count > 0 ? { postponeCount: count, postponeDays: totalDays } : {};
+}
 
 export function buildWeeklyReviewQueue(
   todoTasks: TodoTask[],
@@ -42,6 +53,18 @@ export function buildWeeklyReviewQueue(
           dueDate: t.dueDate,
           reason: "overdue",
           daysOverdue: daysBetweenDateStrs(t.dueDate, today),
+          ...postponeFields(t.dueHistory),
+        });
+      } else if (summarizePostpones(t.dueHistory).count >= POSTPONED_REVIEW_THRESHOLD) {
+        // 期日は守れているように見えても、延ばし続けているだけのものは棚卸しの対象にする
+        items.push({
+          kind: "todo",
+          id: t.id,
+          title: t.title,
+          subtitle: [t.category, t.customer].filter(Boolean).join(" / ") || undefined,
+          dueDate: t.dueDate,
+          reason: "postponed",
+          ...postponeFields(t.dueHistory),
         });
       }
       continue;
@@ -70,10 +93,22 @@ export function buildWeeklyReviewQueue(
         dueDate: p.dueDate,
         reason: "overdue",
         daysOverdue: daysBetweenDateStrs(p.dueDate, today),
+        ...postponeFields(p.dueHistory),
+      });
+    } else if (summarizePostpones(p.dueHistory).count >= POSTPONED_REVIEW_THRESHOLD) {
+      items.push({
+        kind: "project",
+        id: p.id,
+        title: p.title,
+        subtitle: [p.category, p.workName].filter(Boolean).join(" / ") || undefined,
+        dueDate: p.dueDate,
+        reason: "postponed",
+        ...postponeFields(p.dueHistory),
       });
     }
   }
 
-  // 超過が大きい/放置が長いものほど先に見せる
-  return items.sort((a, b) => (b.daysOverdue ?? b.daysSinceCreated ?? 0) - (a.daysOverdue ?? a.daysSinceCreated ?? 0));
+  // 超過が大きい/放置が長いものほど先に見せる。延期だけが理由のものは、その後にまとめる
+  const weight = (i: ReviewItem) => (i.reason === "postponed" ? -1000 + (i.postponeCount ?? 0) : (i.daysOverdue ?? i.daysSinceCreated ?? 0));
+  return items.sort((a, b) => weight(b) - weight(a));
 }
