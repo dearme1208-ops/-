@@ -26,6 +26,21 @@ test.describe("スマホ幅の表示崩れ", () => {
     }
   });
 
+  test("統合ボード: 整列は横スクロールしなくても見えて押せ、整列と追加のメニューも切り取られずに出る", async ({ page }) => {
+    await seed(page);
+    await openTab(page, "統合ボード");
+    const align = page.getByRole("button", { name: /整列/ });
+    await expect(align).toBeInViewport({ ratio: 1 });
+    await align.click();
+    await expect(page.getByRole("button", { name: "期日順" })).toBeInViewport({ ratio: 1 });
+    await page.getByRole("button", { name: "期日順" }).click();
+
+    await page.getByRole("button", { name: /＋ 追加/ }).click();
+    await expect(page.getByRole("button", { name: "＋ 付箋" })).toBeInViewport({ ratio: 1 });
+    await page.getByRole("button", { name: "＋ 付箋" }).click();
+    await expect.poll(async () => (await readAll(page, "memoNotes")).length).toBe(1);
+  });
+
   test("本日の作業の下部の切り替え(実行中・予定・完了)の文字が途中で改行されない", async ({ page }) => {
     await seed(page);
     for (const label of ["実行中", "予定", "完了"]) {

@@ -1587,7 +1587,7 @@ export default function UnifiedBoardSection({
     for (const t of todos) {
       for (const s of subtasksByParent.get(t.id) ?? []) {
         if (s.completed) continue;
-        items.push({ id: t.id, label: s.title, sub: t.title });
+        items.push({ id: t.id, label: `${t.title} › ${s.title}`, sub: "サブタスク" });
       }
     }
     setHubList({ title: "残っているサブタスク", items });
@@ -1599,8 +1599,8 @@ export default function UnifiedBoardSection({
         if (isStageDone(st)) continue;
         items.push({
           id: p.id,
-          label: st.title,
-          sub: `${p.title}${st.dueDate ? ` / 期日 ${st.dueDate}` : ""}`,
+          label: `${p.title} › ${st.title}`,
+          sub: `案件の段階${st.dueDate ? ` / 期日 ${st.dueDate}` : ""}`,
           alert: !!st.dueDate && st.dueDate < today,
         });
       }
@@ -1648,7 +1648,7 @@ export default function UnifiedBoardSection({
       } else {
         for (const s of subs) {
           if (s.tag !== tag || s.completed) continue;
-          items.push({ id: t.id, label: s.title, sub: `ToDo ${t.title}` });
+          items.push({ id: t.id, label: `${t.title} › ${s.title}`, sub: "サブタスク" });
         }
       }
     }
@@ -1659,7 +1659,7 @@ export default function UnifiedBoardSection({
       } else {
         for (const st of stages) {
           if (st.tag !== tag || isStageDone(st)) continue;
-          items.push({ id: p.id, label: st.title, sub: `案件 ${p.title}` });
+          items.push({ id: p.id, label: `${p.title} › ${st.title}`, sub: "案件の段階" });
         }
       }
     }
@@ -1750,7 +1750,7 @@ export default function UnifiedBoardSection({
     for (const p of projects) {
       for (const st of p.stages ?? []) {
         if (!st.completedAt) continue;
-        rows.push({ id: p.id, label: st.title, sub: `案件 ${p.title}`, at: st.completedAt });
+        rows.push({ id: p.id, label: `${p.title} › ${st.title}`, sub: "案件の段階", at: st.completedAt });
       }
     }
     return rows.sort((a, b) => b.at - a.at);
@@ -1769,7 +1769,7 @@ export default function UnifiedBoardSection({
     for (const p of projects) {
       for (const st of p.stages ?? []) {
         if (isStageDone(st) || !st.dueDate) continue;
-        entries.push({ id: p.id, label: st.title, sub: `案件 ${p.title}`, date: st.dueDate });
+        entries.push({ id: p.id, label: `${p.title} › ${st.title}`, sub: "案件の段階", date: st.dueDate });
       }
     }
     entries.sort((a, b) => a.date.localeCompare(b.date));
@@ -1869,89 +1869,13 @@ export default function UnifiedBoardSection({
             </div>
             {viewMode === "board" && (
               <>
-                <div className="relative">
-                  <button
-                    className={showAddMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                    onClick={() => setShowAddMenu((v) => !v)}
-                  >
-                    ＋ 追加 ▾
-                  </button>
-                  {showAddMenu && (
-                    <div className="absolute left-0 top-full z-10 mt-1 w-64 space-y-2 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
-                      <button
-                        className="btn-pill-outline w-full whitespace-nowrap text-xs"
-                        onClick={() => {
-                          addNote();
-                          setShowAddMenu(false);
-                        }}
-                      >
-                        ＋ 付箋
-                      </button>
-                      <div>
-                        <p className="mb-1 text-[10px] text-cream/40">図形</p>
-                        <div className="flex flex-wrap gap-1">
-                          <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("rect")}>
-                            ▭ 四角
-                          </button>
-                          <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("circle")}>
-                            ○ 円
-                          </button>
-                          <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("line")}>
-                            ─ 線
-                          </button>
-                          <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("arrow")}>
-                            → 矢印
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="mb-1 text-[10px] text-cream/40" title="対応状況などの一言スタンプを、付箋やToDo・案件などに重ねてくっ付けられます">
-                          スタンプ
-                        </p>
-                        {stampPresets.length > 0 && (
-                          <div className="mb-1 flex flex-wrap gap-1">
-                            {/* 並び順=優先度(先頭ほど高い)なので、上位1/3は強調・下位1/3は控えめにして、
-                                文字を読まなくても優先度の高さが一目で分かるようにする */}
-                            {stampPresets.map((preset, i) => {
-                              const total = stampPresets.length;
-                              const highPriority = i < total / 3;
-                              const lowPriority = i >= total - total / 3 && total > 2;
-                              return (
-                                <button
-                                  key={preset}
-                                  className={`whitespace-nowrap text-xs ${
-                                    highPriority
-                                      ? "btn-pill-outline border-alert/60 font-bold text-cream"
-                                      : lowPriority
-                                        ? "btn-pill-outline text-cream/40"
-                                        : "btn-pill-outline"
-                                  }`}
-                                  onClick={() => addStamp(preset)}
-                                >
-                                  {preset}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                        <div className="flex gap-1">
-                          <input
-                            value={customStampText}
-                            onChange={(e) => setCustomStampText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") addStamp(customStampText);
-                            }}
-                            placeholder="一言を入力"
-                            className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
-                          />
-                          <button className="btn-pill-outline shrink-0 text-xs" onClick={() => addStamp(customStampText)}>
-                            追加
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <button
+                  className={showAddMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  onClick={() => setShowAddMenu((v) => !v)}
+                  aria-expanded={showAddMenu}
+                >
+                  ＋ 追加 ▾
+                </button>
                 <button className={penMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={togglePen}>
                   ✏️ 手書き: {penMode ? "ON" : "OFF"}
                 </button>
@@ -1992,45 +1916,6 @@ export default function UnifiedBoardSection({
                 >
                   🗂 一覧から置く（ToDo {unplacedTodos.length} / 案件 {unplacedProjects.length}）
                 </button>
-                {/* 頻繁に使う操作なので「道具」に畳まず、常に押せる主列に置く */}
-                <div className="relative">
-                  <button
-                    className={showAlignMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                    onClick={() => setShowAlignMenu((v) => !v)}
-                    title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)"
-                  >
-                    🧹 整列 ▾
-                  </button>
-                  {showAlignMenu && (
-                    <div className="absolute left-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
-                      <button
-                        className="btn-pill-outline whitespace-nowrap text-xs"
-                        onClick={() => {
-                          alignBoardItems("tag");
-                          setShowAlignMenu(false);
-                        }}
-                      >
-                        対応状況順
-                      </button>
-                      <button
-                        className="btn-pill-outline whitespace-nowrap text-xs"
-                        onClick={() => {
-                          alignBoardItems("due");
-                          setShowAlignMenu(false);
-                        }}
-                      >
-                        期日順
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <button
-                  className={fullscreen ? "btn-pill px-2 py-1 text-xs" : "btn-pill-outline px-2 py-1 text-xs"}
-                  onClick={() => setFullscreen((v) => !v)}
-                  title={fullscreen ? "全画面表示を終了します(Escでも終了できます)" : "タブ列などを隠し、盤面を画面いっぱいに表示します"}
-                >
-                  {fullscreen ? "✕ 全画面終了" : "⛶ 全画面"}
-                </button>
                 {selectedIds.size > 0 && (
                   <span className="ml-auto flex items-center gap-2 text-xs text-cream/60">
                     {selectedIds.size}件選択中(矢印キーで移動・Deleteで下げる/消す)
@@ -2045,6 +1930,53 @@ export default function UnifiedBoardSection({
         </div>
         {/* 「道具」だけは横スクロールの外に置く。主列の右端に入れてしまうと、
             畳んだ道具を開くのに毎回横スクロールが必要になって本末転倒になるため */}
+        {/* 整列・全画面はよく使うので、「道具」と並べて横スクロールの外に置く。
+            主列の中だと狭い画面では横にスクロールしないと見えず、整列のメニューも
+            横スクロールの枠に切り取られてしまうため */}
+        {viewMode === "board" && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div className="relative">
+              <button
+                className={showAlignMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setShowAlignMenu((v) => !v)}
+                title="散らかった配置をグリッド状に並べ直します(ロック中は動きません)"
+              >
+                🧹 整列 ▾
+              </button>
+              {showAlignMenu && (
+                <div className="absolute right-0 top-full z-10 mt-1 flex min-w-max flex-col gap-1 rounded-lg border border-cream/20 bg-ink p-1.5 shadow-lg">
+                  <button
+                    className="btn-pill-outline whitespace-nowrap text-xs"
+                    onClick={() => {
+                      alignBoardItems("tag");
+                      setShowAlignMenu(false);
+                    }}
+                  >
+                    対応状況順
+                  </button>
+                  <button
+                    className="btn-pill-outline whitespace-nowrap text-xs"
+                    onClick={() => {
+                      alignBoardItems("due");
+                      setShowAlignMenu(false);
+                    }}
+                  >
+                    期日順
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              className={`${fullscreen ? "btn-pill" : "btn-pill-outline"} shrink-0 whitespace-nowrap px-2 py-1 text-xs`}
+              aria-label={fullscreen ? "全画面表示を終了" : "全画面表示"}
+              onClick={() => setFullscreen((v) => !v)}
+              title={fullscreen ? "全画面表示を終了します(Escでも終了できます)" : "タブ列などを隠し、盤面を画面いっぱいに表示します"}
+            >
+              {fullscreen ? "✕" : "⛶"}
+              <span className="hidden sm:inline">{fullscreen ? " 全画面終了" : " 全画面"}</span>
+            </button>
+          </div>
+        )}
         {viewMode === "board" && (
           <button
             className={`${toolsOpen ? "btn-pill" : "btn-pill-outline"} shrink-0 whitespace-nowrap text-xs`}
@@ -2056,6 +1988,83 @@ export default function UnifiedBoardSection({
           </button>
         )}
         </div>
+        {/* 追加メニューは横スクロールの枠の中に出すと切り取られて見えなくなるため、
+            ツールバーの下に出す */}
+        {viewMode === "board" && showAddMenu && (
+          <div className="mt-2 max-w-sm space-y-2 rounded-lg border border-cream/20 bg-ink p-2 shadow-lg">
+            <button
+              className="btn-pill-outline w-full whitespace-nowrap text-xs"
+              onClick={() => {
+                addNote();
+                setShowAddMenu(false);
+              }}
+            >
+              ＋ 付箋
+            </button>
+            <div>
+              <p className="mb-1 text-[10px] text-cream/40">図形</p>
+              <div className="flex flex-wrap gap-1">
+                <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("rect")}>
+                  ▭ 四角
+                </button>
+                <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("circle")}>
+                  ○ 円
+                </button>
+                <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("line")}>
+                  ─ 線
+                </button>
+                <button className="btn-pill-outline whitespace-nowrap text-xs" onClick={() => addShape("arrow")}>
+                  → 矢印
+                </button>
+              </div>
+            </div>
+            <div>
+              <p className="mb-1 text-[10px] text-cream/40" title="対応状況などの一言スタンプを、付箋やToDo・案件などに重ねてくっ付けられます">
+                スタンプ
+              </p>
+              {stampPresets.length > 0 && (
+                <div className="mb-1 flex flex-wrap gap-1">
+                  {/* 並び順=優先度(先頭ほど高い)なので、上位1/3は強調・下位1/3は控えめにして、
+                      文字を読まなくても優先度の高さが一目で分かるようにする */}
+                  {stampPresets.map((preset, i) => {
+                    const total = stampPresets.length;
+                    const highPriority = i < total / 3;
+                    const lowPriority = i >= total - total / 3 && total > 2;
+                    return (
+                      <button
+                        key={preset}
+                        className={`whitespace-nowrap text-xs ${
+                          highPriority
+                            ? "btn-pill-outline border-alert/60 font-bold text-cream"
+                            : lowPriority
+                              ? "btn-pill-outline text-cream/40"
+                              : "btn-pill-outline"
+                        }`}
+                        onClick={() => addStamp(preset)}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex gap-1">
+                <input
+                  value={customStampText}
+                  onChange={(e) => setCustomStampText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addStamp(customStampText);
+                  }}
+                  placeholder="一言を入力"
+                  className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                />
+                <button className="btn-pill-outline shrink-0 text-xs" onClick={() => addStamp(customStampText)}>
+                  追加
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* 検索や絞り込みが効いている間は、その操作欄が隠れていると
             「なぜ一部しか出ていないのか」が分からなくなるので必ず開いておく */}
         {viewMode === "board" && toolsOpen && (
@@ -2935,7 +2944,7 @@ export default function UnifiedBoardSection({
                               ...projects.flatMap((p) =>
                                 (p.stages ?? [])
                                   .filter((st) => !isStageDone(st) && st.dueDate === d.date)
-                                  .map((st) => ({ id: p.id, label: st.title, sub: `案件 ${p.title}` }))
+                                  .map((st) => ({ id: p.id, label: `${p.title} › ${st.title}`, sub: "案件の段階" }))
                               ),
                             ],
                           })
