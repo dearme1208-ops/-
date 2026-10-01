@@ -9,6 +9,7 @@ import { buildPersonalBestDetail, computePersonalBests, computeNewBestsToday, ty
 import { fireConfetti } from "@/lib/confetti";
 import { showUndoToast } from "@/lib/toast";
 import Modal from "@/components/ui/Modal";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 平均との比較(要注意リスト等)とは逆に、これまでの実績の中で最も良かった記録を見せる。
 // 過去に更新したベストはそのまま残り続け、今日それを更新した場合だけ祝う
@@ -18,10 +19,11 @@ export default function PersonalBestPanel() {
   const records = useHomeFilteredRecords(recordsRaw);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
+  const workCtx = useWorkContext();
 
   const bests = useMemo(
-    () => (records && masterTasks ? computePersonalBests(records, masterTasks, projects ?? []) : []),
-    [records, masterTasks, projects]
+    () => (records && masterTasks ? computePersonalBests(records, masterTasks, projects ?? [], workCtx.src) : []),
+    [records, masterTasks, projects, workCtx.src]
   );
   const newTodayIds = useMemo(
     () => (records && masterTasks ? computeNewBestsToday(records, masterTasks, date, projects ?? []) : new Set<string>()),
@@ -48,8 +50,8 @@ export default function PersonalBestPanel() {
 
   const [selected, setSelected] = useState<PersonalBest | null>(null);
   const detail = useMemo(
-    () => (selected ? buildPersonalBestDetail(selected, records ?? [], projects ?? []) : null),
-    [selected, records, projects]
+    () => (selected ? buildPersonalBestDetail(selected, records ?? [], projects ?? [], workCtx.src) : null),
+    [selected, records, projects, workCtx.src]
   );
 
   if (bests.length === 0) {

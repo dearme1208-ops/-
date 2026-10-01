@@ -12,6 +12,8 @@ import { computeGrowthStage, TERMINAL_STAGES } from "@/lib/growth";
 import { useVisualMode, getRiskTier, riskBadgeClasses, riskBadgeLabel, RISK_TIERS_TERMINAL } from "@/lib/theme";
 import { fetchCurrentWeatherCode, weatherCodeToCategory, type WeatherCategory } from "@/lib/weather";
 import type { DailyTask, MasterTask } from "@/lib/types";
+import { dailyTaskLinksOf, type DailyTaskLinks } from "@/lib/workContext";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // computeGrowthStageの分岐(0h/1h/2h/4h/6h/8h以上)と対応させた表示用ラベル
 const GROWTH_HOUR_LABELS = ["0h", "1h", "2h", "4h", "6h", "8h+"];
@@ -58,6 +60,7 @@ function CategoryBar({
 }
 
 export default function TerminalDashboardSection() {
+  const workCtx = useWorkContext();
   const { themedMode } = useVisualMode();
   const mode = themedMode ?? "terminal";
   const today = todayStr();
@@ -179,7 +182,13 @@ export default function TerminalDashboardSection() {
 
   // お気に入り・完了した業務の再開、いずれも「同じマスタ作業が既に実行中/一時停止中なら
   // そちらを優先し、無ければ新しいインスタンスとして開始する」という同じ挙動なので共通化する
-  async function startTaskLike(source: { masterTaskId?: string; category: string; name: string; estimatedSeconds: number }) {
+  async function startTaskLike(source: {
+    masterTaskId?: string;
+    category: string;
+    name: string;
+    estimatedSeconds: number;
+    links?: DailyTaskLinks;
+  }) {
     if (runningDaily && runningDaily.masterTaskId !== source.masterTaskId) await pauseDaily(runningDaily);
     if (source.masterTaskId) {
       const existing = (dailyTasks ?? []).find(
@@ -207,6 +216,7 @@ export default function TerminalDashboardSection() {
       accumulatedMs: 0,
       startedAt: Date.now(),
       isSpontaneous: true,
+      ...(source.links ?? {}),
     };
     await db.dailyTasks.add(task);
   }
@@ -222,6 +232,7 @@ export default function TerminalDashboardSection() {
       category: source.category,
       name: source.name,
       estimatedSeconds: source.estimatedSeconds,
+      links: dailyTaskLinksOf(source),
     });
   }
 
@@ -257,7 +268,7 @@ export default function TerminalDashboardSection() {
     const items = (dailyTasks ?? []).filter((d) => d.category === category);
     const total = items.reduce((sum, d) => sum + segmentsAccumulatedMs(d, now), 0);
     const lines = items.map(
-      (d) => `${d.status === "running" ? "● LIVE " : ""}${d.name} ${formatMsClock(segmentsAccumulatedMs(d, now))}`
+      (d) => `${d.status === "running" ? "● LIVE " : ""}${workCtx.label(d)} ${formatMsClock(segmentsAccumulatedMs(d, now))}`
     );
     return [`[${category || "未分類"}] 合計 ${formatMsClock(total)}`, ...lines].join("\n");
   }
@@ -274,7 +285,7 @@ export default function TerminalDashboardSection() {
         const clipEnd = Math.min(segEnd, hEnd);
         if (clipEnd > clipStart) {
           lines.push(
-            `[${d.category}] ${d.name} ${formatClock(clipStart)}〜${seg.end === undefined && clipEnd === segEnd ? "計測中" : formatClock(clipEnd)}`
+            `[${d.category}] ${workCtx.label(d)} ${formatClock(clipStart)}〜${seg.end === undefined && clipEnd === segEnd ? "計測中" : formatClock(clipEnd)}`
           );
         }
       }
@@ -289,7 +300,7 @@ export default function TerminalDashboardSection() {
     const estimateLine = d.estimatedSeconds > 0 ? `予測 ${formatHms(d.estimatedSeconds)}${over ? "(超過)" : ""}` : "予測なし";
     const startLabel = d.startedAt ? formatClock(d.startedAt) : "-";
     const endLabel = d.endedAt ? formatClock(d.endedAt) : "-";
-    return [`[${d.category}] ${d.name}`, `${startLabel} 〜 ${endLabel}`, `実績 ${formatHms(seconds)} / ${estimateLine}`].join("\n");
+    return [`[${d.category}] ${workCtx.label(d)}`, `${startLabel} 〜 ${endLabel}`, `実績 ${formatHms(seconds)} / ${estimateLine}`].join("\n");
   }
 
   function clockDetail(): string {
@@ -328,7 +339,7 @@ export default function TerminalDashboardSection() {
 
   function completedDetail(): string {
     if (doneToday.length === 0) return "COMPLETED 0件\n本日完了した作業はまだありません。";
-    const lines = doneToday.map((d) => `・[${d.category}] ${d.name} ${formatMsClock(d.accumulatedMs)}`);
+    const lines = doneToday.map((d) => `・[${d.category}] ${workCtx.label(d)} ${formatMsClock(d.accumulatedMs)}`);
     return [`COMPLETED ${doneToday.length}件`, ...lines].join("\n");
   }
 
@@ -366,7 +377,7 @@ export default function TerminalDashboardSection() {
   function runningDetail(daily: DailyTask): string {
     const elapsedSeconds = segmentsAccumulatedMs(daily, now) / 1000;
     const startLabel = daily.startedAt ? formatClock(daily.startedAt) : "-";
-    const lines = [`[${daily.category}] ${daily.name}`, `開始 ${startLabel}`, `実績 ${formatHms(elapsedSeconds)}`];
+    const lines = [`[${daily.category}] ${workCtx.label(daily)}`, `開始 ${startLabel}`, `実績 ${formatHms(elapsedSeconds)}`];
     if (daily.estimatedSeconds > 0) {
       const remaining = daily.estimatedSeconds - elapsedSeconds;
       lines.push(
@@ -424,7 +435,7 @@ export default function TerminalDashboardSection() {
             onClick={() => setSelectedDetail(runningDetail(runningDaily))}
           >
             <p className="text-base font-bold text-cream">
-              [{runningDaily.category}] {runningDaily.name}
+              [{runningDaily.category}] {workCtx.label(runningDaily)}
             </p>
             <span className="tabular-nums text-xl font-bold text-alert">
               {formatMsClock(segmentsAccumulatedMs(runningDaily, now))}
@@ -605,7 +616,7 @@ export default function TerminalDashboardSection() {
                           : "border-cream/15 bg-ink/40 text-cream/70 hover:border-[rgb(var(--term-up-rgb))] hover:text-cream"
                       }`}
                     >
-                      <div className="truncate font-bold">{d.name}</div>
+                      <div className="truncate font-bold">{workCtx.label(d)}</div>
                       <div className="truncate text-[10px] opacity-60">[{d.category}]{activeInstance ? " ● LIVE" : ""}</div>
                     </button>
                   );
@@ -629,7 +640,7 @@ export default function TerminalDashboardSection() {
                   onClick={() => setSelectedDetail(tickerDetail(d))}
                   className={`mx-4 shrink-0 text-xs tabular-nums hover:underline ${over ? "text-alert" : "text-[rgb(var(--term-up-rgb))]"}`}
                 >
-                  {over ? "▼" : "▲"} [{d.category}] {d.name} {formatMsClock(d.accumulatedMs)}
+                  {over ? "▼" : "▲"} [{d.category}] {workCtx.label(d)} {formatMsClock(d.accumulatedMs)}
                 </button>
               );
             })}

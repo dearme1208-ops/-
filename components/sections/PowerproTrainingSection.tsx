@@ -41,6 +41,7 @@ import {
 } from "@/components/powerpro/PowerproCanvas";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // パワプロ風モード(育成選手モード)の「本日の作業」タブ。
 //
@@ -80,6 +81,7 @@ type Panel = "training" | "growth" | "player" | "scout";
 type PickerTab = "menu" | "master" | "favorite" | "free";
 
 export default function PowerproTrainingSection() {
+  const workCtx = useWorkContext();
   const { wordingEnabled } = useVisualMode();
   const W = powerproWordsFor(wordingEnabled);
   const today = todayStr();
@@ -428,7 +430,7 @@ export default function PowerproTrainingSection() {
             <PracticeIcon kind={runningCommand.kind} expKind={runningCommand.expKind} size={46} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-[11px] text-cream/50">{running.category}</p>
-              <p className="truncate font-display text-sm font-black text-cream/90">{running.name}</p>
+              <p className="truncate font-display text-sm font-black text-cream/90">{workCtx.label(running)}</p>
             </div>
             <p
               className="shrink-0 font-display font-black tabular-nums leading-none text-cream"

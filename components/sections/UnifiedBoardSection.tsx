@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useWorkContext } from "@/lib/useWorkContext";
 import { db, uid } from "@/lib/db";
 import { todoLabel } from "@/lib/todoLabel";
 import { useSetting } from "@/lib/settings";
@@ -169,6 +170,8 @@ export default function UnifiedBoardSection({
   // ハブモード専用の進化版機能(進捗リング・負荷ヒートマップ・自動連結線・時間軸モード)は
   // このフラグでのみ出し分ける。統合ボードタブ自体は他のテーマでも共通の見た目のまま
   const { hubMode } = useVisualMode();
+  // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」で出す(lib/workContext.ts)
+  const workLabel = useWorkContext().label;
   const boards = useLiveQuery(() => db.memoBoards.orderBy("order").toArray(), []);
   const [selectedBoardId, setSelectedBoardId] = useSetting("memo.selectedBoardId", "");
   useEffect(() => {
@@ -719,7 +722,7 @@ export default function UnifiedBoardSection({
     await db.dailyTasks.update(task.id, { segments, status: "running" });
   }
   async function completeTask(task: DailyTask, skipConfirm = false) {
-    if (!skipConfirm && !confirm(`「${task.category} / ${task.name}」を完了にしますか?`)) return;
+    if (!skipConfirm && !confirm(`「${task.category} / ${workLabel(task)}」を完了にしますか?`)) return;
     await finishDailyTask(task);
   }
 
@@ -1022,7 +1025,7 @@ export default function UnifiedBoardSection({
         y: t.boardY,
         width: CARD_WIDTH,
         height: TASK_CARD_HEIGHT,
-        label: `${t.category} ${t.name}`,
+        label: `${t.category} ${workLabel(t)}`,
         locked: !!t.boardLocked,
       });
     }
@@ -1042,7 +1045,7 @@ export default function UnifiedBoardSection({
       items.push({ kind: "shape", id: s.id, x: s.x, y: s.y, width: s.width, height: s.height, label: s.label ?? "", locked: !!s.boardLocked });
     }
     return items;
-  }, [boardTasks, todos, projects, notes, shapes]);
+  }, [boardTasks, todos, projects, notes, shapes, workLabel]);
 
   // ハブモード専用。案件→ToDo→作業のうち、両端が盤面に置かれているものどうしを
   // 自動で線でつなぐための中心点ペア。作業がToDo経由で案件ともつながっている場合、
@@ -1573,7 +1576,7 @@ export default function UnifiedBoardSection({
   function taskListItems(filter: (t: DailyTask) => boolean): HubListItem[] {
     return tasks.filter(filter).map((t) => ({
       id: t.id,
-      label: `${t.category} / ${t.name}`,
+      label: `${t.category} / ${workLabel(t)}`,
       sub: formatMsClock(segmentsAccumulatedMs(t, now)),
       alert: riskLevelByTaskId.has(t.id),
     }));
@@ -1613,7 +1616,7 @@ export default function UnifiedBoardSection({
         const spent = t.status === "running" ? segmentsAccumulatedMs(t, now) : baseAccumulatedMs(t);
         const remaining = Math.max(0, predictedMs - spent);
         if (remaining <= 0) return null;
-        return { id: t.id, label: `${t.category} / ${t.name}`, sub: `残り見込み ${formatMsClock(remaining)}`, ms: remaining };
+        return { id: t.id, label: `${t.category} / ${workLabel(t)}`, sub: `残り見込み ${formatMsClock(remaining)}`, ms: remaining };
       })
       .filter((r): r is { id: string; label: string; sub: string; ms: number } => r !== null)
       .sort((a, b) => b.ms - a.ms);
@@ -1624,7 +1627,7 @@ export default function UnifiedBoardSection({
   function openCategoryList(category: string) {
     const rows = (dailyTasks ?? [])
       .filter((t) => !t.isProvisional && t.category === category && segmentsAccumulatedMs(t, now) > 0)
-      .map((t) => ({ id: t.id, label: t.name, ms: segmentsAccumulatedMs(t, now), status: t.status }))
+      .map((t) => ({ id: t.id, label: workLabel(t), ms: segmentsAccumulatedMs(t, now), status: t.status }))
       .sort((a, b) => b.ms - a.ms);
     setHubList({
       title: `${category} に使った時間`,
@@ -1737,7 +1740,7 @@ export default function UnifiedBoardSection({
     for (const t of dailyTasks ?? []) {
       if (t.isProvisional || t.status !== "done") continue;
       const at = t.segments[t.segments.length - 1]?.end ?? t.endedAt;
-      if (at) rows.push({ id: t.id, label: `${t.category} / ${t.name}`, sub: "作業", at });
+      if (at) rows.push({ id: t.id, label: `${t.category} / ${workLabel(t)}`, sub: "作業", at });
     }
     const todoById = new Map((todoTasks ?? []).map((t) => [t.id, t]));
     for (const t of todoTasks ?? []) {
@@ -1751,7 +1754,7 @@ export default function UnifiedBoardSection({
       }
     }
     return rows.sort((a, b) => b.at - a.at);
-  }, [hubMode, dailyTasks, todoTasks, projects]);
+  }, [hubMode, dailyTasks, todoTasks, projects, workLabel]);
   // 段の中には新しい5件だけ出し、「すべて」からは全件を見せる
   const recentDoneTop = useMemo(() => recentDoneAll.slice(0, 5), [recentDoneAll]);
 
@@ -2333,6 +2336,7 @@ export default function UnifiedBoardSection({
                 <TaskCard
                   key={task.id}
                   task={task}
+                  displayName={workLabel(task)}
                   now={now}
                   zoom={1}
                   riskLevel={riskLevelByTaskId.get(task.id) ?? null}
@@ -2538,6 +2542,7 @@ export default function UnifiedBoardSection({
               <TaskCard
                 key={task.id}
                 task={task}
+                displayName={workLabel(task)}
                 now={now}
                 zoom={zoom}
                 riskLevel={riskLevelByTaskId.get(task.id) ?? null}
@@ -3087,7 +3092,7 @@ export default function UnifiedBoardSection({
               return (
                 <div className="space-y-2">
                   <p className="text-sm text-cream/80">
-                    <span className="text-cream/50">{t.category}</span> <b className="text-cream">{t.name}</b> を完了にします。
+                    <span className="text-cream/50">{t.category}</span> <b className="text-cream">{workLabel(t)}</b> を完了にします。
                   </p>
                   <p className="text-xs tabular-nums text-cream/50">計測時間 {formatMsClock(segmentsAccumulatedMs(t, now))}</p>
                 </div>
@@ -4352,6 +4357,7 @@ function NoteCard({
 
 function TaskCard({
   task,
+  displayName,
   now,
   zoom,
   riskLevel,
@@ -4370,6 +4376,8 @@ function TaskCard({
   strip = false,
 }: {
   task: DailyTask;
+  /** 表示名(案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」) */
+  displayName: string;
   now: number;
   zoom: number;
   /** ハブモードの負荷ヒートマップ用。超過度合いの階級(0=順調〜4=要再編成)。対象外はnull */
@@ -4471,8 +4479,8 @@ function TaskCard({
           📌
         </button>
       </div>
-      <p className="min-w-0 flex-1 truncate text-sm text-cream" title={`${task.category} / ${task.name}`}>
-        <span className="text-cream/50">{task.category}</span> {task.name}
+      <p className="min-w-0 flex-1 truncate text-sm text-cream" title={`${task.category} / ${displayName}`}>
+        <span className="text-cream/50">{task.category}</span> {displayName}
       </p>
       <div className="flex shrink-0 gap-1">
         {running ? (

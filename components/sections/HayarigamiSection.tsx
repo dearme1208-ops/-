@@ -29,6 +29,7 @@ import {
   type KeywordDef,
 } from "@/lib/hayarigamiLogic";
 import type { DailyTask, MasterTask, TodoTask } from "@/lib/types";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 流行り神風モード(怪異調査モード)専用の「本日の作業」タブ。
 // ホラーサウンドノベルの画面構成(暗闇の背景 + 下部のメッセージウィンドウ + 選択肢)を
@@ -55,6 +56,7 @@ function nowClock(): string {
 const DANGER_TEXT = ["text-cream/50", "text-cream/70", "text-alert/70", "text-alert", "text-alert"];
 
 export default function HayarigamiSection() {
+  const workCtx = useWorkContext();
   const { themedMode, wordingEnabled, wordingThemedMode } = useVisualMode();
   const mode = themedMode ?? "hayarigami";
   // 設定の「テーマに合わせた文言を使う」がオフなら、色・絵はこのモードのまま
@@ -272,7 +274,7 @@ export default function HayarigamiSection() {
     if (running) {
       if (running.estimatedSeconds <= 0) {
         return {
-          narration: W.narration.runningNoEstimate(clock, running.category, running.name),
+          narration: W.narration.runningNoEstimate(clock, running.category, workCtx.label(running)),
           narrationKey: `run-noest:${running.id}`,
         };
       }
@@ -281,7 +283,7 @@ export default function HayarigamiSection() {
         narration: W.narration.running(
           clock,
           running.category,
-          running.name,
+          workCtx.label(running),
           formatHms(running.estimatedSeconds),
           W.commentary(runningRatio),
           tail
@@ -294,7 +296,7 @@ export default function HayarigamiSection() {
     }
     if (paused.length > 0) {
       return {
-        narration: W.narration.paused(paused[0].category, paused[0].name),
+        narration: W.narration.paused(paused[0].category, workCtx.label(paused[0])),
         narrationKey: `paused:${paused[0].id}`,
       };
     }
@@ -318,6 +320,7 @@ export default function HayarigamiSection() {
     lastJudgement,
     screen,
     running,
+    workCtx,
     runningRatio,
     runningTier.level,
     tasks.length,
@@ -392,7 +395,7 @@ export default function HayarigamiSection() {
   }
   async function completeTask(task: DailyTask) {
     await finishDailyTask(task);
-    setLastJudgement(W.narration.completed(task.name));
+    setLastJudgement(W.narration.completed(workCtx.label(task)));
   }
   // 名鑑(作業マスタ)から本日のファイルを起こす。startImmediately=falseなら未着手のまま積むだけ。
   // 想定時間は他タブと同じ計算(同じ作業を既にこなした分を差し引いた残り)に揃える。
@@ -498,14 +501,14 @@ export default function HayarigamiSection() {
       for (const t of paused) {
         choices.push(
           <button key={`resume-${t.id}`} className={choicePlate} onClick={() => startTask(t)}>
-            {W.resumeChoice(t.name)}
+            {W.resumeChoice(workCtx.label(t))}
           </button>
         );
       }
       for (const t of pending.slice(0, 4)) {
         choices.push(
           <button key={`open-${t.id}`} className={choicePlate} onClick={() => startTask(t)}>
-            {W.openChoice(t.name)}
+            {W.openChoice(workCtx.label(t))}
           </button>
         );
       }
@@ -604,7 +607,7 @@ export default function HayarigamiSection() {
                 textShadow: "0 1px 4px rgba(0,0,0,0.95)",
               }}
             >
-              {running.name}
+              {workCtx.label(running)}
             </p>
           )}
         </div>
@@ -707,7 +710,7 @@ export default function HayarigamiSection() {
                         {W.fileNoPrefix}
                         {i + 1}
                       </span>
-                      {t.name}
+                      {workCtx.label(t)}
                       {t.isTrouble && <span className="ml-1 text-alert">［{W.troubleBadge}］</span>}
                     </span>
                     <span className="shrink-0 tabular-nums text-cream/55">{formatMsClock(elapsed)}</span>
@@ -940,7 +943,7 @@ export default function HayarigamiSection() {
                   {sqCandidates.length === 0 && <p className="text-center text-xs text-cream/50">{W.sqNone}</p>}
                   {sqCandidates.map((t) => (
                     <button key={t.id} className={choicePlate} onClick={() => sqPick(t)}>
-                      ▶ {t.name}
+                      ▶ {workCtx.label(t)}
                     </button>
                   ))}
                 </div>
@@ -948,7 +951,7 @@ export default function HayarigamiSection() {
             )}
             {sqStep === 1 && sqTask && (
               <>
-                <p className="text-center text-sm text-cream/85">{W.sqStep2(sqTask.name)}</p>
+                <p className="text-center text-sm text-cream/85">{W.sqStep2(workCtx.label(sqTask))}</p>
                 <div className="w-full max-w-sm space-y-1.5">
                   <button className={choicePlate} onClick={() => sqEstimate(1)}>
                     ▶ {W.sqAsIs}

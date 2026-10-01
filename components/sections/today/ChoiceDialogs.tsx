@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { WEEKDAY_LABELS, type DailyTask, type Weekday } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import { useWorkContext } from "@/lib/useWorkContext";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
 // 本日の作業タブで、ある操作の途中にユーザーの判断を仰ぐための小さな確認ダイアログ群。
@@ -96,10 +97,11 @@ export function RestartChoiceDialog({
   onRestartNew: () => void;
   onClose: () => void;
 }) {
+  const workCtx = useWorkContext();
   return (
     <Modal title="作業を再開" onClose={onClose}>
       <p className="mb-4 text-sm text-cream/80">
-        「{task.category} / {task.name}」を再開します。直前に完了した続きから計測しますか？
+        「{task.category} / {workCtx.label(task)}」を再開します。直前に完了した続きから計測しますか？
         それとも新しい作業として開始しますか？
       </p>
       <div className="flex flex-col gap-2">
@@ -126,9 +128,10 @@ export function OverrunPromptDialog({
   onKeepGoing: () => void;
   onFinish: () => void;
 }) {
+  const workCtx = useWorkContext();
   return (
     <Modal title="まだこの作業中ですか?">
-      <p className="mb-4 text-sm text-cream/80">「{task.name}」が予測時間を大幅に超過しています。</p>
+      <p className="mb-4 text-sm text-cream/80">「{workCtx.label(task)}」が予測時間を大幅に超過しています。</p>
       <div className="flex justify-end gap-2">
         <button className="btn-pill-outline text-sm" onClick={onKeepGoing}>
           続けている

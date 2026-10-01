@@ -14,6 +14,8 @@ import { useVisualMode } from "@/lib/theme";
 import { useSetting } from "@/lib/settings";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
 import type { DailyTask, MasterTask } from "@/lib/types";
+import { dailyTaskLinksOf, type DailyTaskLinks } from "@/lib/workContext";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // computeGrowthStageの分岐(0h/1h/2h/4h/6h/8h以上)と対応させた、各ランクの開始時間(h)
 const RANK_HOUR_THRESHOLDS = [0, 1, 2, 4, 6, 8];
@@ -28,6 +30,7 @@ type NodeVariant = "guild" | "current" | "next" | "later" | "goal";
 // 共通のUI文法そのものを捨て、ダンジョンの道すじを辿って進む地図(map)と、
 // 1件と向き合うバトル画面(battle)を行き来する2画面構成に総入れ替えする
 export default function AdventurerQuestSection() {
+  const workCtx = useWorkContext();
   const { themedMode } = useVisualMode();
   const mode = themedMode ?? "adventurer";
   const [showDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
@@ -155,7 +158,13 @@ export default function AdventurerQuestSection() {
   // お気に入り・討伐済みモンスターへの再挑戦、いずれも「同じマスタ作業が既に
   // エンカウント中/休戦中ならそちらに合流し、無ければ新しいクエストとして遭遇する」という
   // 同じ挙動なので共通化する
-  async function startTaskLike(source: { masterTaskId?: string; category: string; name: string; estimatedSeconds: number }) {
+  async function startTaskLike(source: {
+    masterTaskId?: string;
+    category: string;
+    name: string;
+    estimatedSeconds: number;
+    links?: DailyTaskLinks;
+  }) {
     if (runningTask && runningTask.masterTaskId !== source.masterTaskId) await pauseDaily(runningTask);
     if (source.masterTaskId) {
       const existing = (dailyTasks ?? []).find(
@@ -181,6 +190,7 @@ export default function AdventurerQuestSection() {
       accumulatedMs: 0,
       startedAt: Date.now(),
       isSpontaneous: true,
+      ...(source.links ?? {}),
     };
     await db.dailyTasks.add(task);
     setBattleTaskId(task.id);
@@ -199,6 +209,7 @@ export default function AdventurerQuestSection() {
       category: source.category,
       name: source.name,
       estimatedSeconds: source.estimatedSeconds,
+      links: dailyTaskLinksOf(source),
     });
   }
 
@@ -337,7 +348,7 @@ export default function AdventurerQuestSection() {
                             onClick={() => rechallenge(t)}
                             className="adv-quest-card p-2.5 text-left text-xs transition-transform hover:-translate-y-0.5"
                           >
-                            <div className="truncate font-bold text-cream">👻 {t.name}</div>
+                            <div className="truncate font-bold text-cream">👻 {workCtx.label(t)}</div>
                             <div className="truncate text-[10px] text-cream/50">[{t.category}]</div>
                           </button>
                         ))}
@@ -375,7 +386,7 @@ export default function AdventurerQuestSection() {
                 <div className="flex w-full justify-center">
                   <PathNode
                     icon={runningTask.id === bossTaskId ? "🐉" : "⚔️"}
-                    label={runningTask.name}
+                    label={workCtx.label(runningTask)}
                     sub="エンカウント中"
                     variant="current"
                     boss={runningTask.id === bossTaskId}
@@ -388,7 +399,7 @@ export default function AdventurerQuestSection() {
                 <div key={t.id} className={`flex w-full ${i % 2 === 0 ? "justify-start pl-[8%] sm:pl-[18%]" : "justify-end pr-[8%] sm:pr-[18%]"}`}>
                   <PathNode
                     icon={t.id === bossTaskId ? "🐉" : t.status === "paused" ? "⏸️" : "🗡️"}
-                    label={t.name}
+                    label={workCtx.label(t)}
                     sub={t.status === "paused" ? "休戦中" : t.estimatedSeconds > 0 ? `討伐目安 ${formatHms(t.estimatedSeconds)}` : undefined}
                     variant={i === 0 && !runningTask ? "next" : "later"}
                     boss={t.id === bossTaskId}
@@ -415,7 +426,7 @@ export default function AdventurerQuestSection() {
                 {doneToday.map((t) => (
                   <div key={t.id} className="flex items-center justify-between gap-2 text-xs">
                     <span className="min-w-0 truncate text-cream/80">
-                      ⚔ [{t.category}] {t.name}
+                      ⚔ [{t.category}] {workCtx.label(t)}
                     </span>
                     <span className="tabular-nums shrink-0 text-cream/50">{formatHms(t.accumulatedMs / 1000)}</span>
                   </div>
@@ -500,6 +511,7 @@ function BattleScreen({
   onPause: () => void;
   onDefeat: () => void;
 }) {
+  const workCtx = useWorkContext();
   const elapsedSec = segmentsAccumulatedMs(task, now) / 1000;
   const hasEstimate = task.estimatedSeconds > 0;
   const hpPct = hasEstimate ? Math.max(0, Math.min(100, 100 - (elapsedSec / task.estimatedSeconds) * 100)) : null;
@@ -518,7 +530,7 @@ function BattleScreen({
           <div className="text-[10px] uppercase tracking-widest text-cream/50">
             {isOverrun ? "げきとう中・想定を超過" : "エンカウント中"}
           </div>
-          <div className="truncate font-display text-2xl font-bold text-cream">{task.name}</div>
+          <div className="truncate font-display text-2xl font-bold text-cream">{workCtx.label(task)}</div>
           <div className="truncate text-xs text-cream/50">[{task.category}]</div>
         </div>
         <div className="shrink-0 text-right">

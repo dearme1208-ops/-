@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 完了済みの作業を本日の作業リストから削除する際、あわせて実績(この日の記録)・
 // 作業マスタも削除するかどうかを選べる確認ダイアログ
@@ -17,6 +18,7 @@ export default function DeleteCompletedTaskDialog({
   onDelete: (deleteRecord: boolean, deleteMaster: boolean) => void;
   onClose: () => void;
 }) {
+  const workCtx = useWorkContext();
   const [deleteRecord, setDeleteRecord] = useState(true);
   const [deleteMaster, setDeleteMaster] = useState(true);
 
@@ -39,7 +41,7 @@ export default function DeleteCompletedTaskDialog({
     <Modal title="完了した作業を削除" onClose={onClose}>
       <div className="space-y-3">
         <p className="text-sm text-cream">
-          「{task.category} / {task.name}」を本日の作業リストから削除します。
+          「{task.category} / {workCtx.label(task)}」を本日の作業リストから削除します。
         </p>
         <label className="flex items-start gap-2 text-sm text-cream/80">
           <input

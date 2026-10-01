@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useWorkContext } from "@/lib/useWorkContext";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { formatClock, formatHms, todayStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
@@ -30,6 +31,8 @@ export default function CompletedTasksGantt({
   onOpenEdit: (task: DailyTask) => void;
 }) {
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
+  // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」で出す(lib/workContext.ts)
+  const workLabel = useWorkContext().label;
   const scrollRef = useRef<HTMLDivElement>(null);
   const isToday = date === todayStr();
 
@@ -116,7 +119,7 @@ export default function CompletedTasksGantt({
           {doneTasks.map((task) => (
             <div key={task.id} className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70" style={{ height: ROW_H }}>
               <span className="truncate text-cream/50">{task.category}</span>
-              <span className="truncate">{task.name}</span>
+              <span className="truncate">{workLabel(task)}</span>
             </div>
           ))}
         </div>
@@ -150,6 +153,7 @@ export default function CompletedTasksGantt({
                 return (
                   <CompletedBar
                     key={task.id}
+                    label={workLabel(task)}
                     task={task}
                     top={idx * ROW_H}
                     pxPerMin={pxPerMin}
@@ -171,6 +175,7 @@ export default function CompletedTasksGantt({
 
 function CompletedBar({
   task,
+  label,
   top,
   pxPerMin,
   timelineBase,
@@ -180,6 +185,8 @@ function CompletedBar({
   onOpenEdit,
 }: {
   task: DailyTask;
+  /** 表示名(案件・サブタスクから追加した作業は「案件名 › 作業名」) */
+  label: string;
   top: number;
   pxPerMin: number;
   timelineBase: number;
@@ -240,7 +247,7 @@ function CompletedBar({
     // ドラッグでの変更は誤操作の可能性もあるため、確定前に一度確認する。
     // キャンセルした場合はdragがnullに戻っているのでプレビューも自動的に元の位置に戻る
     const confirmed = confirm(
-      `「${task.name}」の時刻を変更します。\n${formatClock(origStart)}〜${formatClock(origEnd)} → ${formatClock(newStart)}〜${formatClock(newEnd)}\n\nよろしいですか?`
+      `「${label}」の時刻を変更します。\n${formatClock(origStart)}〜${formatClock(origEnd)} → ${formatClock(newStart)}〜${formatClock(newEnd)}\n\nよろしいですか?`
     );
     if (!confirmed) return;
     onCommit(task, newStart, newEnd);

@@ -1,6 +1,7 @@
 import { timeToMsOfDay } from "./breaks";
 import { isStageDone } from "./projectStage";
 import { daysBetweenDateStrs, shiftDateStr } from "./time";
+import { buildWorkContextSources, workNameWithContext } from "./workContext";
 import type { BreakRange, DailyTask, MasterTask, ProjectItem, TodoTask, WorkRecord } from "./types";
 
 // 「今日の段取り」の自動提案。期日・段階の残り・過去の実績から見た所要時間(手段の違いも
@@ -221,6 +222,8 @@ export function collectPlanCandidates(input: DayPlanInput): PlanCandidate[] {
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const todoById = new Map(todoTasks.map((t) => [t.id, t]));
+  // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」にする
+  const workCtx = buildWorkContextSources(projects, todoTasks);
 
   for (const t of todays) {
     if (t.status !== "pending" && t.status !== "paused") continue;
@@ -235,7 +238,7 @@ export function collectPlanCandidates(input: DayPlanInput): PlanCandidate[] {
     candidates.push({
       key: `daily:${t.id}`,
       kind: "daily",
-      title: t.name,
+      title: workNameWithContext(t, workCtx),
       subtitle: t.category,
       category: t.category,
       name: t.name,

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { formatClock, formatHms, shiftDateStr, todayStr } from "@/lib/time";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 鉄道の運行図表(ダイヤグラム)と同じ描き方で1日を見る観測法。
 // 縦軸が「駅」= 業務区分、横軸が時刻。作業している間は駅に停まっている水平線、
@@ -21,6 +22,7 @@ function hueFor(text: string): number {
 }
 
 export default function TrainDiagramView() {
+  const workCtx = useWorkContext();
   const [date, setDate] = useState(() => todayStr());
   const [pxPerHour, setPxPerHour] = useState(64);
   const records = useLiveQuery(() => db.records.where("date").equals(date).toArray(), [date]);
@@ -167,7 +169,7 @@ export default function TrainDiagramView() {
                         strokeWidth={5}
                         strokeLinecap="round"
                       >
-                        <title>{`${r.category} / ${r.name}　${formatClock(r.startedAt)}〜${formatClock(r.endedAt)}（${formatHms(r.seconds)}）`}</title>
+                        <title>{`${r.category} / ${workCtx.label(r)}　${formatClock(r.startedAt)}〜${formatClock(r.endedAt)}（${formatHms(r.seconds)}）`}</title>
                       </line>
                       {/* 停車時間が長い作業だけ、スジの上に作業名を出す */}
                       {x2 - x1 > 42 && (

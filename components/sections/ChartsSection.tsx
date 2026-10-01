@@ -5,7 +5,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { aggregateRecords, type SortMetric } from "@/lib/aggregate";
-import { withSubtaskParentNames } from "@/lib/todoLabel";
+import { useWorkContext } from "@/lib/useWorkContext";
+import { withWorkContextNames } from "@/lib/workContext";
 import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
 import { buildTrend, TREND_GRANULARITY_LABELS, type TrendGranularity } from "@/lib/trend";
 import { buildTodoTrend, TODO_TAG_SEGMENT_CLASSES, TODO_TREND_MAX_TAGS } from "@/lib/todoTrend";
@@ -26,9 +27,11 @@ export default function ChartsSection() {
   const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
+  // 作業名に案件名・親タスク名を添える(lib/workContext.ts)
+  const workCtx = useWorkContext();
 
   const rankingRows = records
-    ? withSubtaskParentNames(aggregateRecords(records, { type: period, fiscalYear }, sortBy).slice(0, TOP_N), records, todoTasks ?? [])
+    ? withWorkContextNames(aggregateRecords(records, { type: period, fiscalYear }, sortBy).slice(0, TOP_N), records, workCtx.src)
     : [];
   const trendPoints = records ? buildTrend(records, granularity) : [];
   const todoTrendPoints = todoTasks ? buildTodoTrend(todoTasks, todoGranularity) : [];

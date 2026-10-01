@@ -24,6 +24,7 @@ import { natsuWordsFor } from "@/lib/natsuyasumiWords";
 import { DiaryPicture, Insect, RuledPaper, Scenery, StampCard } from "@/components/natsuyasumi/NatsuCanvas";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // ぼくのなつやすみ風モードの「本日の作業」タブ。
 //
@@ -45,6 +46,7 @@ type Panel = "today" | "cage" | "calendar";
 type PickerTab = "menu" | "master" | "favorite" | "free";
 
 export default function NatsuyasumiSection() {
+  const workCtx = useWorkContext();
   const { wordingEnabled } = useVisualMode();
   const W = natsuWordsFor(wordingEnabled);
   const today = todayStr();
@@ -268,7 +270,7 @@ export default function NatsuyasumiSection() {
               <div className="flex items-baseline justify-between gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[11px] text-cream/45">{running.category}</p>
-                  <p className="truncate font-display text-base font-bold text-cream">{running.name}</p>
+                  <p className="truncate font-display text-base font-bold text-cream">{workCtx.label(running)}</p>
                 </div>
                 <p className="shrink-0 font-display text-2xl font-bold tabular-nums text-cream">
                   {formatHms(Math.floor(elapsedSecondsOf(running)))}
@@ -318,7 +320,7 @@ export default function NatsuyasumiSection() {
                         />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[10px] text-cream/40">{t.category}</p>
-                          <p className={`truncate text-sm text-cream/85 ${done ? "line-through" : ""}`}>{t.name}</p>
+                          <p className={`truncate text-sm text-cream/85 ${done ? "line-through" : ""}`}>{workCtx.label(t)}</p>
                           {(elapsed > 0 || done) && (
                             <p className="text-[10px] tabular-nums text-cream/40">
                               {formatHms(Math.floor(elapsed))} / {formatHms(t.estimatedSeconds)}

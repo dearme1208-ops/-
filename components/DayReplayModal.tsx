@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { formatClock, formatHms, formatDateJp } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 1日の実績をヒートマップやガントのような静止した集計としてではなく、朝から順に
 // タスクが立ち上がって消えていく様子をタイムラプス風に「再生」して見せる。
@@ -20,6 +21,7 @@ function hueForCategory(category: string): number {
 }
 
 export default function DayReplayModal({ date, onClose }: { date: string; onClose: () => void }) {
+  const workCtx = useWorkContext();
   const records = useLiveQuery(() => db.records.where("date").equals(date).toArray(), [date]);
 
   const sorted = useMemo(
@@ -92,7 +94,7 @@ export default function DayReplayModal({ date, onClose }: { date: string; onClos
             <div className="flex h-14 items-center justify-center rounded-lg border border-cream/15 bg-ink/50 px-3 text-center">
               {activeRecord ? (
                 <p className="truncate text-sm font-bold text-cream">
-                  {activeRecord.category} / {activeRecord.name}
+                  {activeRecord.category} / {workCtx.label(activeRecord)}
                 </p>
               ) : (
                 <p className="text-xs text-cream/30">
@@ -121,10 +123,10 @@ export default function DayReplayModal({ date, onClose }: { date: string; onClos
                       transform: revealed ? "scaleY(1)" : "scaleY(0.7)",
                       opacity: revealed ? 1 : 0.5,
                     }}
-                    title={`${r.category} / ${r.name}（${formatClock(r.startedAt)}〜${formatClock(r.endedAt)}・${formatHms(r.seconds)}）`}
+                    title={`${r.category} / ${workCtx.label(r)}（${formatClock(r.startedAt)}〜${formatClock(r.endedAt)}・${formatHms(r.seconds)}）`}
                   >
                     {revealed && width > 6 && (
-                      <span className="truncate text-[10px] font-bold text-ink drop-shadow-sm">{r.name}</span>
+                      <span className="truncate text-[10px] font-bold text-ink drop-shadow-sm">{workCtx.label(r)}</span>
                     )}
                   </div>
                 );

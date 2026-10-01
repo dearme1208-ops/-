@@ -28,6 +28,8 @@ import {
 } from "@/lib/origin";
 import type { DailyTask, MasterTask, TodoTask, WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import { useWorkContext } from "@/lib/useWorkContext";
+import { formatContexts, workContextsByKey } from "@/lib/workContext";
 
 // ===== 原点モード: 工程表.xlsm の画面 =====
 //
@@ -69,6 +71,7 @@ export default function OriginSheetSection({
 }: {
   onOpenTodo?: () => void;
 }) {
+  const workCtx = useWorkContext();
   const [date, setDate] = useState(todayStr());
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -125,8 +128,11 @@ export default function OriginSheetSection({
   const topWorks = useMemo(() => {
     if (!showTop) return [];
     const from = shiftDateStr(date, -30);
-    return computeOriginTopWorks((records ?? []).filter((r) => r.date > from && r.date <= date), 10);
-  }, [records, date, showTop]);
+    const recent = (records ?? []).filter((r) => r.date > from && r.date <= date);
+    // 案件の段階・ToDoのサブタスク由来の作業は、案件名・親タスク名を添える
+    const contexts = workContextsByKey(recent, workCtx.src, (r) => originKey(r.category, r.name));
+    return computeOriginTopWorks(recent, 10).map((w) => ({ ...w, context: formatContexts(contexts.get(w.key), w.name) }));
+  }, [records, date, showTop, workCtx.src]);
 
   // 時間軸の右端。元ブックは 20:30 固定だが、そこを越えて働いた日は自動で延ばす
   const axisEndHm = useMemo(() => {
@@ -540,9 +546,12 @@ export default function OriginSheetSection({
                   {topWorks.map((w, i) => (
                     <li key={w.key}>
                       <span className="origin-rank-no">{i + 1}</span>
-                      <span className="origin-rank-name" title={`${w.category} / ${w.name}`}>
+                      <span className="origin-rank-name" title={`${w.category} / ${w.context ? `${w.context} › ` : ""}${w.name}`}>
                         {w.category}
-                        <b>{w.name}</b>
+                        <b>
+                          {w.context ? `${w.context} › ` : ""}
+                          {w.name}
+                        </b>
                       </span>
                       <span className="origin-rank-val tabular-nums">{formatOriginDuration(w.seconds * 1000)}</span>
                     </li>
@@ -571,7 +580,7 @@ export default function OriginSheetSection({
       {insertOpen && (
         <InsertUnplannedDialog
           masterTasks={masterTasks ?? []}
-          runningName={runningRow ? `${runningRow.task.category} / ${runningRow.task.name}` : null}
+          runningName={runningRow ? `${runningRow.task.category} / ${workCtx.label(runningRow.task)}` : null}
           stampHm={msToHm(stampNow())}
           onSubmit={async (category, name, startNow) => {
             await insertUnplanned(category, name, startNow);
@@ -690,6 +699,7 @@ function SheetRowPair({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const workCtx = useWorkContext();
   const planLeft = axisRatio(row.planStartMs, axis.startMs, axis.endMs) * axisWidth;
   const planRight = axisRatio(row.planEndMs, axis.startMs, axis.endMs) * axisWidth;
   const actualStart = row.actualStartMs;
@@ -716,9 +726,9 @@ function SheetRowPair({
           <div className="origin-cell origin-c-b" title={row.task.category}>
             {row.task.category}
           </div>
-          <div className="origin-cell origin-c-c" title={row.task.name}>
+          <div className="origin-cell origin-c-c" title={workCtx.label(row.task)}>
             {row.unplanned && <span className="origin-flag">外</span>}
-            {row.task.name}
+            {workCtx.label(row.task)}
           </div>
           {/* 予定外の行には予定そのものが無いので、E・F列は空にする(元ブックでも
               差し込んだ行は予定の時刻を持たず、実績だけが入っていた) */}
@@ -736,7 +746,7 @@ function SheetRowPair({
               style={{ left: planLeft, width: Math.max(2, planRight - planLeft) }}
               title={`予定 ${msToHm(row.planStartMs)}〜${msToHm(row.planEndMs)}`}
             >
-              <span>{row.task.name}</span>
+              <span>{workCtx.label(row.task)}</span>
             </div>
           )}
         </div>
@@ -766,7 +776,7 @@ function SheetRowPair({
               title={`実績 ${msToHm(actualStart)}〜${row.actualEndMs ? msToHm(row.actualEndMs) : "計測中"} / ${formatOriginDuration(row.actualMs)}`}
             >
               <span>
-                {row.task.name}
+                {workCtx.label(row.task)}
                 {overMs > 0 && <b className="origin-bar-over"> +{formatOriginDuration(overMs)}</b>}
               </span>
             </div>
@@ -793,6 +803,7 @@ function FinishDialog({
   onUnplanned: () => void;
   onClose: () => void;
 }) {
+  const workCtx = useWorkContext();
   // 元ブックは MsgBox なので、はい/いいえ がキーボードだけで押せた。そこも引き継ぐ
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -810,7 +821,7 @@ function FinishDialog({
         <div className="origin-dialog-card">
           <p className="text-xs text-cream/50">完了にする行</p>
           <p className="font-bold text-cream">
-            {row.task.category} / {row.task.name}
+            {row.task.category} / {workCtx.label(row.task)}
           </p>
           <p className="mt-1 tabular-nums text-xs text-cream/60">
             {row.actualStartMs !== undefined ? msToHm(row.actualStartMs) : "—"} 〜 <b className="text-cream">{msToHm(stampMs)}</b>
@@ -933,6 +944,7 @@ function PushDownDialog({
   onSubmit: (deltaMs: number) => void;
   onClose: () => void;
 }) {
+  const workCtx = useWorkContext();
   const step = ORIGIN_AXIS_STEP_MIN * 60_000;
   const [deltaMin, setDeltaMin] = useState(Math.round(defaultDeltaMs / 60_000 / ORIGIN_AXIS_STEP_MIN) * ORIGIN_AXIS_STEP_MIN);
   const deltaMs = deltaMin * 60_000;
@@ -964,7 +976,7 @@ function PushDownDialog({
               {affected.map((r) => (
                 <tr key={r.task.id} className="border-b border-cream/5 last:border-0">
                   <td className="px-2 py-1 text-cream/70">
-                    {r.task.category} / {r.task.name}
+                    {r.task.category} / {workCtx.label(r.task)}
                   </td>
                   <td className="px-2 py-1 text-right tabular-nums text-cream/40 line-through">{msToHm(r.planStartMs)}</td>
                   <td className="px-2 py-1 text-right tabular-nums font-bold text-cream">{msToHm(r.planStartMs + deltaMs)}</td>
@@ -1196,6 +1208,7 @@ function RowDetailDialog({
   onFinish: () => void;
   onClose: () => void;
 }) {
+  const workCtx = useWorkContext();
   const suggested = estimate ? Math.round(((useTrimmed ? estimate.trimmedSeconds : estimate.meanSeconds) ?? 0)) : 0;
   const past = useMemo(
     () =>
@@ -1212,7 +1225,7 @@ function RowDetailDialog({
         <div className="origin-dialog-card">
           <p className="font-bold text-cream">
             {row.unplanned && <span className="origin-flag">外</span>}
-            {row.task.category} / {row.task.name}
+            {row.task.category} / {workCtx.label(row.task)}
           </p>
           <p className="mt-1 font-mono text-[10px] text-cream/30">CL列キー: {originKey(row.task.category, row.task.name)}</p>
         </div>

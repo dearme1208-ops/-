@@ -14,6 +14,7 @@ import { buildThinking, confidenceLabel } from "@/lib/claudeThinking";
 import { claudeWordsFor } from "@/lib/claudeWords";
 import { ConfidenceScale, Paper } from "@/components/claude/ClaudeCanvas";
 import type { DailyTask, ProjectItem, ProjectStage, TodoTask } from "@/lib/types";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // Claudeモード専用の統合ワークスペース。
 //
@@ -25,6 +26,7 @@ import type { DailyTask, ProjectItem, ProjectStage, TodoTask } from "@/lib/types
 // 手順そのものを無くす)。データは他モードと同じdailyTasks/todoTasks/projectsテーブルを
 // そのまま使うため、モードを切り替えても記録は失われない
 export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsights?: () => void }) {
+  const workCtx = useWorkContext();
   const today = todayStr();
   const { wordingEnabled } = useVisualMode();
   const W = claudeWordsFor(wordingEnabled);
@@ -453,7 +455,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
             {W.focusTitle}
           </div>
           <div className="mt-1.5 flex items-baseline justify-between gap-3">
-            <p className="min-w-0 flex-1 truncate font-display text-base font-bold text-cream">{runningDaily.name}</p>
+            <p className="min-w-0 flex-1 truncate font-display text-base font-bold text-cream">{workCtx.label(runningDaily)}</p>
             <span className="shrink-0 font-display text-2xl font-bold tabular-nums tracking-tight text-alert">
               {formatMsClock(segmentsAccumulatedMs(runningDaily, now))}
             </span>

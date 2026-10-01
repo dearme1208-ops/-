@@ -1,7 +1,8 @@
 import { db, uid } from "./db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
 import { diffHmToSeconds } from "./time";
-import type { DailyTask, MasterTask, TimeSegment, WorkRecord } from "./types";
+import type { DailyTask, MasterTask, TimeSegment, TodoTask, WorkRecord } from "./types";
+import { buildWorkContextSources, workNameWithContext } from "./workContext";
 import type { ScheduleRow } from "./scheduleCsv";
 import { fireCompletionPopup } from "./completionPopup";
 
@@ -209,9 +210,13 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
   // 可視化する対象ではないため、ポップアップは出さない
   if (!task.isProvisional) {
+    // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」で出す(lib/workContext.ts)
+    const project = task.projectId ? await db.projects.get(task.projectId) : undefined;
+    const todo = task.todoTaskId ? await db.todoTasks.get(task.todoTaskId) : undefined;
+    const parentTodo = todo?.parentTaskId ? await db.todoTasks.get(todo.parentTaskId) : undefined;
     fireCompletionPopup({
       category: task.category,
-      name: task.name,
+      name: workNameWithContext(task, buildWorkContextSources(project ? [project] : [], [todo, parentTodo].filter((t): t is TodoTask => !!t))),
       seconds: Math.round(accumulatedMs / 1000),
       estimatedSeconds: task.estimatedSeconds,
     });

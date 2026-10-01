@@ -15,7 +15,7 @@ import {
   type SortMetric,
   type TrendGranularity,
 } from "@/lib/aggregate";
-import { withSubtaskParentNames } from "@/lib/todoLabel";
+import { buildWorkContextSources, withWorkContextNames } from "@/lib/workContext";
 import {
   aggregateByProject,
   aggregateByTodo,
@@ -105,7 +105,7 @@ export default function AggregationSection() {
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   // サブタスクから本日の作業に追加した作業は、作業名に親タスク名を添える
   const rows = records
-    ? withSubtaskParentNames(aggregateRecords(records, { type: period, fiscalYear }, sortBy), records, todoTasks ?? [])
+    ? withWorkContextNames(aggregateRecords(records, { type: period, fiscalYear }, sortBy), records, buildWorkContextSources(projects, todoTasks))
     : [];
   const linkedRows = useMemo(() => {
     if (!records) return [];

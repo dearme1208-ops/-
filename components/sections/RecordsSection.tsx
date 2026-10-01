@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useWorkContext } from "@/lib/useWorkContext";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import {
@@ -36,6 +37,7 @@ function withNewTime(epochMs: number, timeStr: string): number {
 }
 
 export default function RecordsSection() {
+  const workCtx = useWorkContext();
   const [search, setSearch] = useState("");
   // 外れ値・手動除外として集計から除外されている実績だけを絞り込んで見られるようにする
   const [showExcludedOnly, setShowExcludedOnly] = useState(false);
@@ -98,10 +100,16 @@ export default function RecordsSection() {
     let list = records;
     if (showExcludedOnly) list = list.filter((r) => r.excludedFromStats);
     if (search.trim()) {
-      list = list.filter((r) => r.category.includes(search) || r.name.includes(search) || r.date.includes(search));
+      list = list.filter(
+        (r) =>
+          r.category.includes(search) ||
+          r.name.includes(search) ||
+          r.date.includes(search) ||
+          (workCtx.context(r) ?? "").includes(search)
+      );
     }
     return list;
-  }, [records, search, showExcludedOnly]);
+  }, [records, search, showExcludedOnly, workCtx]);
 
   const excludedCount = useMemo(() => (records ?? []).filter((r) => r.excludedFromStats).length, [records]);
 
@@ -188,7 +196,7 @@ export default function RecordsSection() {
   }
 
   async function deleteRecord(r: WorkRecord) {
-    if (!confirm(`「${r.date} ${r.category}/${r.name}」の実績を削除しますか?`)) return;
+    if (!confirm(`「${r.date} ${r.category}/${workCtx.label(r)}」の実績を削除しますか?`)) return;
     await db.records.delete(r.id);
     if (r.masterTaskId) await recomputeEstimateFromRecords(r.masterTaskId);
   }
@@ -509,6 +517,13 @@ export default function RecordsSection() {
                 onBlur={(e) => updateRecord(r, { category: e.target.value })}
                 className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
+              {/* 案件の段階・ToDoのサブタスクから記録した実績は、作業名だけでは何のことか分からないので
+                  どの案件の/どのToDoの作業かを添える(lib/workContext.ts) */}
+              {workCtx.context(r) && (
+                <span className="max-w-[10rem] truncate text-[10px] text-cream/50" title={workCtx.context(r)}>
+                  {workCtx.context(r)} ›
+                </span>
+              )}
               <input
                 key={`name-${r.name}`}
                 defaultValue={r.name}

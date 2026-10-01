@@ -12,6 +12,7 @@ import type { DailyTask, MasterTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import VoiceInputButton from "@/components/ui/VoiceInputButton";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 作業の追加画面の作り。設定でどれを使うか選べる。
 //  tabs   … マスタ/自由入力をタブで切り替える(従来どおり)
@@ -28,6 +29,7 @@ export function normalizeAddTaskStyle(value: string): AddTaskStyle {
 // 本日中に完了した業務を選ぶ欄。1件を選ぶと「続きから/新しく」の選択が伴うため、
 // その判断は呼び出し元(本日タブ)のonSelectCompletedに委ねる
 function CompletedTaskList({ tasks, onSelect }: { tasks: DailyTask[]; onSelect: (task: DailyTask) => void }) {
+  const workCtx = useWorkContext();
   if (tasks.length === 0) {
     return <p className="text-xs text-cream/50">本日完了した業務はまだありません。</p>;
   }
@@ -42,7 +44,7 @@ function CompletedTaskList({ tasks, onSelect }: { tasks: DailyTask[]; onSelect: 
           <span className="text-cream/60">✅</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[10px] text-cream/45">{t.category}</span>
-            <span className="block truncate text-xs font-bold text-cream/85">{t.name}</span>
+            <span className="block truncate text-xs font-bold text-cream/85">{workCtx.label(t)}</span>
           </span>
         </button>
       ))}

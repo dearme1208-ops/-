@@ -1,6 +1,7 @@
 import type { MasterTask, ProjectItem, WorkRecord } from "./types";
 import { daysBetweenDateStrs, formatDateJp, formatHms, shiftDateStr, todayStr } from "./time";
 import { stageCompletionCountByDate, stagesCompletedOn } from "./stageProgress";
+import { workNameWithContext, type WorkContextSources } from "./workContext";
 
 export interface PersonalBest {
   id: string;
@@ -23,8 +24,11 @@ const MIN_PRODUCTIVITY_SAMPLE_SECONDS = 60; // 極端に短い作業のpctが偶
 export function computePersonalBests(
   records: WorkRecord[],
   masterTasks: MasterTask[],
-  projects: ProjectItem[] = []
+  projects: ProjectItem[] = [],
+  // 渡された場合、作業名に案件名・親タスク名を添える(lib/workContext.ts)
+  workCtx?: WorkContextSources
 ): PersonalBest[] {
+  const nameOf = (r: WorkRecord) => (workCtx ? workNameWithContext(r, workCtx) : r.name);
   const valid = records.filter((r) => !r.excludedFromStats && r.seconds > 0);
   const stageBests = computeStageBests(projects);
   if (valid.length === 0) return stageBests;
@@ -92,7 +96,7 @@ export function computePersonalBests(
     if (pct > bestPct) {
       bestPct = pct;
       bestPctDate = r.date;
-      bestPctDetail = `${r.category} / ${r.name}`;
+      bestPctDetail = `${r.category} / ${nameOf(r)}`;
       bestPctRecordId = r.id;
     }
   }
@@ -252,8 +256,10 @@ function enumerateDates(start: string, end: string): string[] {
 export function buildPersonalBestDetail(
   best: PersonalBest,
   records: WorkRecord[],
-  projects: ProjectItem[]
+  projects: ProjectItem[],
+  workCtx?: WorkContextSources
 ): PersonalBestDetail {
+  const nameOf = (r: WorkRecord) => (workCtx ? workNameWithContext(r, workCtx) : r.name);
   switch (best.id) {
     case "best-day-hours":
     case "best-day-count": {
@@ -262,7 +268,7 @@ export function buildPersonalBestDetail(
         .sort((a, b) => b.seconds - a.seconds);
       return {
         title: `${formatDateJp(best.date)}の実績`,
-        rows: dayRecords.map((r) => ({ label: r.name, sublabel: r.category, value: formatHms(r.seconds) })),
+        rows: dayRecords.map((r) => ({ label: nameOf(r), sublabel: r.category, value: formatHms(r.seconds) })),
         emptyMessage: "この日の実績が見当たりません。",
       };
     }
@@ -283,7 +289,7 @@ export function buildPersonalBestDetail(
       const record = records.find((r) => r.id === best.recordId);
       if (!record) return { title: best.label, rows: [], emptyMessage: "元になった実績が見当たりません。" };
       return {
-        title: `${record.category} / ${record.name}`,
+        title: `${record.category} / ${nameOf(record)}`,
         intro: formatDateJp(record.date),
         rows: [{ label: "実際にかかった時間", value: formatHms(record.seconds) }],
       };

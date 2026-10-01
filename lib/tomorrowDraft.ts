@@ -10,7 +10,15 @@ export interface DraftTaskSuggestion {
   reason: string;
   masterTaskId?: string;
   todoTaskId?: string;
+  // 案件の段階・案件から追加した作業を繰り越す場合の紐付け。落とすと、明日その作業をしても
+  // 案件の時間として集計されず、段階の完了確認も出なくなる
+  projectId?: string;
+  stageId?: string;
+  method?: string;
+  secondaryProjectIds?: string[];
 }
+
+type SuggestionLinks = Pick<DraftTaskSuggestion, "masterTaskId" | "todoTaskId" | "projectId" | "stageId" | "method" | "secondaryProjectIds">;
 
 const WEEKDAY_HISTORY_TOP_N = 3;
 const TODO_DUE_WINDOW_DAYS = 3;
@@ -35,9 +43,11 @@ export function computeTomorrowDraft(input: {
     name: string,
     estimatedSeconds: number,
     reason: string,
-    extra: { masterTaskId?: string; todoTaskId?: string } = {}
+    extra: SuggestionLinks = {}
   ) {
-    const key = `${category}::${name}`;
+    // 同じ名前の作業でも、別の案件・段階・ToDoのものは別の候補として扱う
+    // (違う案件の「設計」が1つにまとめられ、片方が繰り越されなかった)
+    const key = [category, name, extra.projectId, extra.stageId, extra.todoTaskId].filter(Boolean).join("::");
     if (seenKeys.has(key)) return;
     seenKeys.add(key);
     suggestions.push({ id: key, category, name, estimatedSeconds, reason, ...extra });
@@ -45,7 +55,14 @@ export function computeTomorrowDraft(input: {
 
   for (const t of input.todayTasks) {
     if (t.isProvisional || t.status === "done") continue;
-    addSuggestion(t.category, t.name, t.estimatedSeconds, "今日終わらなかった作業", { masterTaskId: t.masterTaskId });
+    addSuggestion(t.category, t.name, t.estimatedSeconds, "今日終わらなかった作業", {
+      masterTaskId: t.masterTaskId,
+      todoTaskId: t.todoTaskId,
+      projectId: t.projectId,
+      stageId: t.stageId,
+      method: t.method,
+      secondaryProjectIds: t.secondaryProjectIds,
+    });
   }
 
   const dayCount = computeWeekdayAverages(input.records).find((w) => w.dow === input.targetDow)?.dayCount ?? 0;

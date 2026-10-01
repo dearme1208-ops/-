@@ -1,4 +1,5 @@
 import type { WorkRecord } from "./types";
+import { workNameWithContext, type WorkContextSources } from "./workContext";
 
 // 「集中の連続性」の分析。
 //
@@ -19,9 +20,12 @@ export const DEEP_BLOCK_MS = 25 * 60 * 1000;
 /** この長さ以下の途切れは「中断」とみなさず、前後の区間をつなげる(押し間違い・一瞬の保留) */
 const GLUE_TOLERANCE_MS = 60 * 1000;
 
-/** 作業の同一性は「大項目/作業名」で見る。同名の別レコードに分かれていても1つの作業として扱う */
+/**
+ * 作業の同一性は「大項目/作業名」で見る。同名の別レコードに分かれていても1つの作業として扱う。
+ * ただし案件の段階(「設計」など)は案件が違えば別の作業なので、案件・ToDoも区別に含める
+ */
 function taskKeyOf(r: WorkRecord): string {
-  return `${r.category}\u0000${r.name}`;
+  return `${r.category}\u0000${r.name}\u0000${r.projectId ?? ""}\u0000${r.todoTaskId ?? ""}`;
 }
 
 export interface FocusBlock {
@@ -56,13 +60,13 @@ export interface DayFocus {
 }
 
 /** 区間を持つ記録から、その日の無中断区間を時系列で組み立てる */
-function buildBlocks(records: WorkRecord[]): FocusBlock[] {
+function buildBlocks(records: WorkRecord[], workCtx?: WorkContextSources): FocusBlock[] {
   const raw: FocusBlock[] = [];
   for (const r of records) {
     if (r.excludedFromStats) continue;
     for (const s of r.segments ?? []) {
       if (!s.end || s.end <= s.start) continue;
-      raw.push({ start: s.start, end: s.end, key: taskKeyOf(r), label: `${r.category} / ${r.name}` });
+      raw.push({ start: s.start, end: s.end, key: taskKeyOf(r), label: `${r.category} / ${workCtx ? workNameWithContext(r, workCtx) : r.name}` });
     }
   }
   raw.sort((a, b) => a.start - b.start);
@@ -80,8 +84,8 @@ function buildBlocks(records: WorkRecord[]): FocusBlock[] {
   return blocks;
 }
 
-export function computeDayFocus(date: string, records: WorkRecord[]): DayFocus | null {
-  const blocks = buildBlocks(records);
+export function computeDayFocus(date: string, records: WorkRecord[], workCtx?: WorkContextSources): DayFocus | null {
+  const blocks = buildBlocks(records, workCtx);
   if (blocks.length === 0) return null;
 
   let totalMs = 0;
@@ -159,7 +163,7 @@ function median(values: number[]): number | null {
  * 指定した日付群(通常は直近N日)の記録から、集中の連続性をまとめる。
  * recordsは全期間を渡してよい。dates に含まれる日だけを見る
  */
-export function computeFocusSummary(records: WorkRecord[], dates: string[]): FocusSummary {
+export function computeFocusSummary(records: WorkRecord[], dates: string[], workCtx?: WorkContextSources): FocusSummary {
   const byDate = new Map<string, WorkRecord[]>();
   for (const r of records) {
     if (!byDate.has(r.date)) byDate.set(r.date, []);
@@ -171,7 +175,7 @@ export function computeFocusSummary(records: WorkRecord[], dates: string[]): Foc
   for (const date of dates) {
     const recs = byDate.get(date);
     if (!recs || recs.length === 0) continue;
-    const day = computeDayFocus(date, recs);
+    const day = computeDayFocus(date, recs, workCtx);
     // 記録はあるのに区間が無い日 = 手動入力だけの日。分析できないので数だけ控える
     if (!day) skippedDayCount++;
     else days.push(day);

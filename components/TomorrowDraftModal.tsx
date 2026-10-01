@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useWorkContext } from "@/lib/useWorkContext";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { computeTomorrowDraft } from "@/lib/tomorrowDraft";
@@ -9,6 +10,8 @@ import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
 export default function TomorrowDraftModal({ today, todayTasks, onClose }: { today: string; todayTasks: DailyTask[]; onClose: () => void }) {
+  // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」で出す(lib/workContext.ts)
+  const workLabel = useWorkContext().label;
   const targetDate = shiftDateStr(today, 1);
   const targetDow = useMemo(() => new Date(targetDate + "T12:00:00").getDay(), [targetDate]);
 
@@ -63,6 +66,10 @@ export default function TomorrowDraftModal({ today, todayTasks, onClose }: { tod
         accumulatedMs: 0,
         isSpontaneous: true,
         todoTaskId: s.todoTaskId,
+        projectId: s.projectId,
+        stageId: s.stageId,
+        method: s.method,
+        secondaryProjectIds: s.secondaryProjectIds,
       };
       await db.dailyTasks.add(task);
     }
@@ -95,7 +102,7 @@ export default function TomorrowDraftModal({ today, todayTasks, onClose }: { tod
                   />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-cream">
-                      {s.category} / {s.name}
+                      {s.category} / {workLabel(s)}
                       {s.estimatedSeconds > 0 && <span className="ml-2 text-xs text-cream/40">目安 {formatHms(s.estimatedSeconds)}</span>}
                     </div>
                     <div className="text-[10px] text-cream/40">{s.reason}</div>

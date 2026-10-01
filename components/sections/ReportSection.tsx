@@ -9,7 +9,7 @@ import { aggregateRecords, aggregateKey } from "@/lib/aggregate";
 import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import { collectWaitingItems, waitingItemLine } from "@/lib/waiting";
 import { useWaitingSettings } from "@/lib/waitingSettings";
-import { withSubtaskParentNames } from "@/lib/todoLabel";
+import { buildWorkContextSources, rowLabelWithContext, withWorkContextField, withWorkContextNames } from "@/lib/workContext";
 import { computeAttentionList, type AttentionRow } from "@/lib/attention";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
@@ -100,9 +100,18 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
       : "累計";
     const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));
     // サブタスクから本日の作業に追加した作業は、作業名に親タスク名を添える
-    const ranking = withSubtaskParentNames(aggregateRecords(records, filter, "total"), periodRecords, todoTasks ?? []);
+    const ranking = withWorkContextNames(
+      aggregateRecords(records, filter, "total"),
+      periodRecords,
+      buildWorkContextSources(projects, todoTasks)
+    );
     const attention = computeAttentionList(masterTasks, periodRecords);
-    const afterHours = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
+    // 定時以降の内訳も、案件の段階・ToDoのサブタスクから記録した作業に案件名・親タスク名を添える
+    const afterHoursRaw = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
+    const afterHours = {
+      ...afterHoursRaw,
+      byTask: withWorkContextField(afterHoursRaw.byTask, periodRecords, buildWorkContextSources(projects, todoTasks)),
+    };
     const totalSeconds = ranking.reduce((s, r) => s + r.totalSeconds, 0);
     const totalCount = ranking.reduce((s, r) => s + r.count, 0);
 
@@ -306,7 +315,7 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
   function downloadIcs() {
     if (!data) return;
     const label = kind === "week" ? "weekly" : kind === "month" ? "monthly" : "daily";
-    downloadTextFile(`records_${label}_${todayStr()}.ics`, recordsToIcs(data.periodRecords));
+    downloadTextFile(`records_${label}_${todayStr()}.ics`, recordsToIcs(data.periodRecords, buildWorkContextSources(projects, todoTasks)));
   }
 
   const totalCost = useMemo(() => {
@@ -676,7 +685,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                 </p>
                 <RankingBarChart
                   data={data.afterHours.byTask.slice(0, TOP_N).map((r) => ({
-                    label: r.label,
+                    label: rowLabelWithContext(r),
                     sublabel: r.sublabel,
                     value: r.seconds,
                   }))}
@@ -688,7 +697,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                       (r) => r.category === row.sublabel && r.name === row.label
                     );
                     setViewingRanking({
-                      label: row.label,
+                      label: rowLabelWithContext(row),
                       sublabel: row.sublabel,
                       records: matched,
                       note: "各実績の時間は日全体の実働時間です（定時以降にかかった分だけではありません）。",

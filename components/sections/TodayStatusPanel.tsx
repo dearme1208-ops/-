@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeTodayNarrative, computeTodaySummarySentence } from "@/lib/narrative";
 import { useSetting } from "@/lib/settings";
+import { useWorkContext } from "@/lib/useWorkContext";
 import { formatHms, parseHourStr } from "@/lib/time";
 import type { ConditionLog, DailyTask } from "@/lib/types";
 import DonutChart, { type DonutDatum } from "@/components/charts/DonutChart";
@@ -25,6 +26,7 @@ export default function TodayStatusPanel({
   standardWorkStart: string;
   standardWorkEnd: string;
 }) {
+  const workCtx = useWorkContext();
   const [showDonut, setShowDonut] = useState(false);
   const [showNarrative, setShowNarrative] = useState(false);
   // パネル全体の開閉。ホーム画面を簡潔にしたい場合に畳めるよう、次回以降も畳んだままにする
@@ -87,13 +89,16 @@ export default function TodayStatusPanel({
       .sort((a, b) => b.seconds - a.seconds);
     const lines = [d.label, `合計 ${formatHms(d.value)}`, ""];
     for (const x of matching.slice(0, 15)) {
-      lines.push(`・${x.task.name}: ${formatHms(x.seconds)}${x.task.status === "done" ? "（完了）" : ""}`);
+      lines.push(`・${workCtx.label(x.task)}: ${formatHms(x.seconds)}${x.task.status === "done" ? "（完了）" : ""}`);
     }
     if (matching.length > 15) lines.push(`ほか${matching.length - 15}件`);
     return lines.join("\n");
   }
 
-  const narrativeItems = useMemo(() => computeTodayNarrative(realTasks, conditionLogs, now), [realTasks, conditionLogs, now]);
+  const narrativeItems = useMemo(
+    () => computeTodayNarrative(realTasks, conditionLogs, now, workCtx.src),
+    [realTasks, conditionLogs, now, workCtx.src]
+  );
   const summarySentence = useMemo(
     () => computeTodaySummarySentence(realTasks, conditionLogs, now),
     [realTasks, conditionLogs, now]

@@ -7,6 +7,7 @@ import { CONDITION_LEVELS } from "@/lib/condition";
 import { parseReflection } from "@/lib/reflection";
 import { formatClock, formatDateJp, formatHms, shiftDateStr, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // その日の実績を「朝刊の一面」として組版する観測法。
 // 見出しは最長作業、社会面は各作業、天気欄は体調、株価欄はカテゴリ別時間、社説は振り返り。
@@ -23,6 +24,7 @@ function headlineFor(top: WorkRecord | undefined, totalSeconds: number, count: n
 }
 
 export default function NewspaperView() {
+  const workCtx = useWorkContext();
   const [date, setDate] = useState(() => todayStr());
   const records = useLiveQuery(() => db.records.where("date").equals(date).toArray(), [date]);
   const conditionLogs = useLiveQuery(() => db.conditionLogs.where("date").equals(date).toArray(), [date]);
@@ -123,7 +125,7 @@ export default function NewspaperView() {
               <div className="columns-1 gap-4 text-[11px] leading-relaxed sm:columns-2">
                 {paper.chronological.map((r) => (
                   <p key={r.id} className="mb-2 break-inside-avoid">
-                    <span className="font-bold">【{r.category}】{r.name}　</span>
+                    <span className="font-bold">【{r.category}】{workCtx.label(r)}　</span>
                     {formatClock(r.startedAt)}から{formatHms(r.seconds)}にわたって行われた。
                     {r.note && `関係者は「${r.note}」と話している。`}
                     {r.excludedFromStats && "なお、この記録は集計から除外されている。"}

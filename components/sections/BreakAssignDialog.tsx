@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { BreakRange, DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 強制ストップされた休憩帯について、「実は移動やミーティングで作業していた」場合に
 // その時間帯を後から作業へ割り当てるためのダイアログ。既存の(未完了の)本日の作業へ
@@ -21,6 +22,7 @@ export default function BreakAssignDialog({
   onAssignNew: (category: string, workName: string) => void;
   onClose: () => void;
 }) {
+  const workCtx = useWorkContext();
   const [showNewDialog, setShowNewDialog] = useState(false);
 
   return (
@@ -39,7 +41,7 @@ export default function BreakAssignDialog({
                 onClick={() => onAssignExisting(t)}
               >
                 <div className="text-xs text-cream/50">{t.category}</div>
-                <div>{t.name}</div>
+                <div>{workCtx.label(t)}</div>
               </button>
             ))}
           </div>

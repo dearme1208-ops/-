@@ -1,6 +1,7 @@
 import { effectiveTag } from "./todo";
 import { computeProjectProgress, effectiveProjectTag, isStageDone } from "./projectStage";
 import type { DailyTask, ProjectItem, TodoTask } from "./types";
+import { buildWorkContextSources, workNameWithContext } from "./workContext";
 
 // 統合ボードの「ボード以外の見え方」ビュー群(諸島マップ・書架・氷山...)が共通して使う、
 // ToDo/案件/本日の作業を1種類のフラットな見た目データへ正規化したもの。各ビューは
@@ -97,12 +98,14 @@ export function buildBoardViewItems({
     });
   }
 
+  // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」にする
+  const workCtx = buildWorkContextSources(projects, [...todos, ...[...subtasksByParent.values()].flat()]);
   for (const t of boardTasks) {
     const estimatedMs = t.estimatedSeconds * 1000;
     items.push({
       id: `task:${t.id}`,
       kind: "task",
-      title: t.name,
+      title: workNameWithContext(t, workCtx),
       category: t.category,
       dueDate: today,
       overdue: false,

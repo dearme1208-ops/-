@@ -8,6 +8,8 @@ import { formatHms } from "@/lib/time";
 import { computeHourDowMatrix } from "@/lib/heatmap";
 import { computeCalendarHeatmap, heatLevel } from "@/lib/calendarHeatmap";
 import ScrollFadeHint from "@/components/ui/ScrollFadeHint";
+import { useWorkContext } from "@/lib/useWorkContext";
+import { formatContexts, workContextsByKey } from "@/lib/workContext";
 
 const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const CALENDAR_LEVEL_OPACITY = [0.04, 0.22, 0.42, 0.64, 0.9];
@@ -30,6 +32,13 @@ export default function HeatmapSection() {
   // 詳細文を入れ、テーブル下の詳細パネルで表示する(GanttSectionと同じパターン)
   const [selectedHourDetail, setSelectedHourDetail] = useState<string | null>(null);
 
+  // 同じ作業名が案件の段階・ToDoのサブタスク由来なら、内訳に案件名・親タスク名を添える
+  const workCtx = useWorkContext();
+  const contextsByWork = useMemo(
+    () => workContextsByKey(records ?? [], workCtx.src, (r) => `${r.category}::${r.name}`),
+    [records, workCtx.src]
+  );
+
   const hourMatrix = useMemo(
     () => computeHourDowMatrix((records ?? []).filter((r) => !r.excludedFromStats)),
     [records]
@@ -49,7 +58,8 @@ export default function HeatmapSection() {
     if (total === 0 || items.length === 0) return `${label}\nこの時間帯の記録はありません。`;
     const lines = [label, `合計 ${formatHms(total)}`, ""];
     for (const item of items.slice(0, 10)) {
-      lines.push(`・${item.category} / ${item.name}: ${formatHms(item.seconds)}（${item.count}件・${item.dates.length}日）`);
+      const ctx = formatContexts(contextsByWork.get(`${item.category}::${item.name}`), item.name);
+      lines.push(`・${item.category} / ${ctx ? `${ctx} › ` : ""}${item.name}: ${formatHms(item.seconds)}（${item.count}件・${item.dates.length}日）`);
     }
     if (items.length > 10) lines.push(`ほか${items.length - 10}件`);
     return lines.join("\n");

@@ -1,7 +1,7 @@
 import { subDays, subMonths, subWeeks } from "date-fns";
 import type { MasterTask, ProjectItem, TodoTask, WorkRecord } from "./types";
 import { aggregateRecords } from "./aggregate";
-import { withSubtaskParentNames } from "./todoLabel";
+import { buildWorkContextSources, rowLabelWithContext, withWorkContextField, withWorkContextNames } from "./workContext";
 import { collectWaitingItems, waitingItemLine } from "./waiting";
 import { computeAttentionList } from "./attention";
 import { computeAfterHoursBreakdown } from "./overtime";
@@ -79,8 +79,9 @@ export function generateReportText(
     : "累計";
 
   const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));
-  // サブタスクから本日の作業に追加した作業は、作業名に親タスク名を添える
-  const ranking = withSubtaskParentNames(aggregateRecords(records, filter, "total"), periodRecords, todoTasks);
+  // 案件(段階)・ToDoのサブタスクから本日の作業に追加した作業は、作業名に案件名・親タスク名を添える
+  const workCtx = buildWorkContextSources(projects, todoTasks);
+  const ranking = withWorkContextNames(aggregateRecords(records, filter, "total"), periodRecords, workCtx);
   const attention = computeAttentionList(masterTasks, periodRecords);
   const afterHours = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
 
@@ -105,8 +106,8 @@ export function generateReportText(
     lines.push("（該当なし）");
   } else {
     lines.push(`合計 ${formatHms(afterHours.totalSeconds)}`);
-    afterHours.byTask.slice(0, 20).forEach((r, i) => {
-      lines.push(`${i + 1}. ${r.sublabel} / ${r.label} - ${formatHms(r.seconds)}`);
+    withWorkContextField(afterHours.byTask, periodRecords, workCtx).slice(0, 20).forEach((r, i) => {
+      lines.push(`${i + 1}. ${r.sublabel} / ${rowLabelWithContext(r)} - ${formatHms(r.seconds)}`);
     });
   }
   lines.push("");

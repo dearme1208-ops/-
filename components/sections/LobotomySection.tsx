@@ -34,6 +34,7 @@ import AbnormalityPortrait from "@/components/lobotomy/AbnormalityPortrait";
 import { EnergyMeter, OrdealSigil, RiskSeal, VirtueChart, WorkGlyph } from "@/components/lobotomy/GlyphCanvas";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // Lobotomy Corporation風モード(管理局モード)の「本日の作業」タブ。
 //
@@ -50,6 +51,7 @@ import type { DailyTask, MasterTask } from "@/lib/types";
 type Panel = "facility" | "index" | "agent";
 
 export default function LobotomySection() {
+  const workCtx = useWorkContext();
   const { wordingEnabled } = useVisualMode();
   const W = lobotomyWordsFor(wordingEnabled);
   const today = todayStr();
@@ -225,7 +227,7 @@ export default function LobotomySection() {
     if (task.masterTaskId) {
       await db.masterTasks.update(task.masterTaskId, { estimatedSeconds: actual, updatedAt: Date.now() });
     }
-    setNotice(`${task.name}: ${W.actionSuppress}（${formatHms(actual)}）`);
+    setNotice(`${workCtx.label(task)}: ${W.actionSuppress}（${formatHms(actual)}）`);
   }
 
   async function containMaster(master: MasterTask) {
@@ -368,7 +370,7 @@ export default function LobotomySection() {
                   <p className="font-mono text-[10px] tracking-widest text-cream/45">
                     {W.subjectLabel} {selectedAbnormality.subjectNumber}
                   </p>
-                  <p className="truncate font-display text-sm font-bold text-cream/90">{selectedTask.name}</p>
+                  <p className="truncate font-display text-sm font-bold text-cream/90">{workCtx.label(selectedTask)}</p>
                   <p className="truncate text-[10px] text-cream/45">{selectedTask.category}</p>
                   <div className="flex items-center gap-1.5 pt-0.5">
                     <RiskSeal level={selectedAbnormality.riskLevel} size={26} className="shrink-0" />

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useWorkContext } from "@/lib/useWorkContext";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
@@ -174,6 +175,8 @@ export default function GanttSection() {
   }, [date]);
 
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).sortBy("order"), [date]);
+  // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」で出す(lib/workContext.ts)
+  const workLabel = useWorkContext().label;
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const conditionLogs = useLiveQuery(() => db.conditionLogs.where("date").equals(date).sortBy("loggedAt"), [date]);
   const masterMap = useMemo(() => new Map((masterTasks ?? []).map((m) => [m.id, m])), [masterTasks]);
@@ -291,7 +294,7 @@ export default function GanttSection() {
           start: seg.startMin,
           end: seg.endMin,
           category: r.task.category,
-          name: r.task.name,
+          name: workLabel(r.task),
           overPlan: r.overPlan,
           ongoing: seg.ongoing,
         });
@@ -311,7 +314,7 @@ export default function GanttSection() {
       }
     }
     return merged;
-  }, [rows]);
+  }, [rows, workLabel]);
 
   // 1本化しない通常表示: 1日の流れを上から下へ段々に追えるよう、実際の作業区間
   // （一時停止・再開で分かれた区間）単位で並べる。同じ作業が間に別の作業を挟まず
@@ -391,7 +394,7 @@ export default function GanttSection() {
         seenTaskIds.add(b.task.id);
         return {
           key: `block-${i}`,
-          label: b.task.name,
+          label: workLabel(b.task),
           sublabel: b.task.category,
           items: [
             {
@@ -407,7 +410,7 @@ export default function GanttSection() {
       });
       const pendingRows: GanttRow[] = pendingTasksSorted.map((r) => ({
         key: `pending-${r.task.id}`,
-        label: r.task.name,
+        label: workLabel(r.task),
         sublabel: r.task.category,
         items: [
           {
@@ -474,7 +477,7 @@ export default function GanttSection() {
       stackPlans(items);
       return { key: `cat-${category}`, label: category, sublabel: "", items };
     });
-  }, [rows, groupMode, scheduleBase, timelineBase]);
+  }, [rows, groupMode, scheduleBase, timelineBase, workLabel]);
 
   const autoMinutes = Math.max(
     ...rows.map((r) => r.scheduledStartMin + Math.max(r.task.estimatedSeconds, r.predictedSeconds) / 60),
@@ -868,13 +871,13 @@ export default function GanttSection() {
                 row.items.length === 1
                   ? row.items[0].block
                     ? segmentTooltip(
-                        row.items[0].task.name,
+                        workLabel(row.items[0].task),
                         timelineBase + row.items[0].block.start * 60000,
                         timelineBase + row.items[0].block.end * 60000,
                         row.items[0].block.ongoing
                       )
                     : predictedTooltip(
-                        row.items[0].task.name,
+                        workLabel(row.items[0].task),
                         timelineBase + row.items[0].scheduledStartMin * 60000,
                         timelineBase +
                           (row.items[0].scheduledStartMin +
@@ -886,10 +889,10 @@ export default function GanttSection() {
                     row.items
                       .map((item) =>
                         item.block
-                          ? `・${item.task.name} ${formatClock(timelineBase + item.block.start * 60000)}〜${
+                          ? `・${workLabel(item.task)} ${formatClock(timelineBase + item.block.start * 60000)}〜${
                               item.block.ongoing ? "計測中" : formatClock(timelineBase + item.block.end * 60000)
                             }`
-                          : `・${item.task.name}（予測のみ）`
+                          : `・${workLabel(item.task)}（予測のみ）`
                       )
                       .join("\n");
               return (
@@ -959,7 +962,7 @@ export default function GanttSection() {
                 <div className="mb-1 text-[10px] text-cream/40">カレンダー予定</div>
                 <div className="relative" style={{ height: 24 }}>
                   {scheduleItems.map(({ task, startMin, endMin }) => {
-                    const scheduleDetail = `${task.name}（カレンダー予定）\n${task.scheduledTime} 〜 ${formatClock(
+                    const scheduleDetail = `${workLabel(task)}（カレンダー予定）\n${task.scheduledTime} 〜 ${formatClock(
                       timelineBase + endMin * 60000
                     )}`;
                     return (
@@ -970,7 +973,7 @@ export default function GanttSection() {
                         className="group absolute flex appearance-none items-center overflow-hidden rounded border-2 border-cream/70 bg-ink/60 px-1 text-left text-[10px] leading-none text-cream/90"
                         style={{ left: startMin * pxPerMin, width: Math.max((endMin - startMin) * pxPerMin, 3), top: 0, height: 20 }}
                       >
-                        <span className="truncate">{task.name}</span>
+                        <span className="truncate">{workLabel(task)}</span>
                         <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden whitespace-pre rounded border border-cream/30 bg-ink px-2 py-1 text-[10px] leading-tight text-cream shadow-lg group-hover:block">
                           {scheduleDetail}
                         </div>
@@ -1022,7 +1025,7 @@ export default function GanttSection() {
                     const gapPredWidth = Math.max(predWidth - COMPACT_BAR_GAP_PX, 3);
                     const gapPlanWidth = Math.max(planWidth - COMPACT_BAR_GAP_PX, 3);
                     const predTip = predictedTooltip(
-                      r.task.name,
+                      workLabel(r.task),
                       timelineBase + startMin * 60000,
                       timelineBase + predEndMin * 60000,
                       r.predictedSeconds
@@ -1037,7 +1040,7 @@ export default function GanttSection() {
                           className="absolute appearance-none whitespace-nowrap border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-3 text-cream/90"
                           style={{ left: planLeft + 2, top: 1 }}
                         >
-                          {r.task.name}
+                          {workLabel(r.task)}
                         </button>
                         <HoverBar
                           left={gapLeft}
@@ -1056,8 +1059,8 @@ export default function GanttSection() {
                             top={14}
                             height={20}
                             className="rounded border border-dashed border-cream/70"
-                            tooltip={personalPlanTooltip(r.task.name, r.task.estimatedSeconds)}
-                            onTap={() => setSelectedDetail(personalPlanTooltip(r.task.name, r.task.estimatedSeconds))}
+                            tooltip={personalPlanTooltip(workLabel(r.task), r.task.estimatedSeconds)}
+                            onTap={() => setSelectedDetail(personalPlanTooltip(workLabel(r.task), r.task.estimatedSeconds))}
                           />
                         )}
                         <div
@@ -1137,14 +1140,14 @@ export default function GanttSection() {
                         const endLeft = endMin * pxPerMin;
                         const endLabel = formatClock(timelineBase + endMin * 60000);
                         const predTip = predictedTooltip(
-                          item.task.name,
+                          workLabel(item.task),
                           timelineBase + item.scheduledStartMin * 60000,
                           timelineBase + predEndMin * 60000,
                           item.predictedSeconds
                         );
                         const actualTip = item.block
                           ? segmentTooltip(
-                              item.task.name,
+                              workLabel(item.task),
                               timelineBase + item.block.start * 60000,
                               timelineBase + item.block.end * 60000,
                               item.block.ongoing
@@ -1162,7 +1165,7 @@ export default function GanttSection() {
                               className="absolute appearance-none whitespace-nowrap border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-3 text-cream/90"
                               style={{ left: nameLeft + 2, top: 1 }}
                             >
-                              {item.task.name}
+                              {workLabel(item.task)}
                             </button>
                             {/* 予測バー（実線・主役）・個人が設定した予定(点線・任意): 同じ作業の2回目以降のブロックでは重複表示しない */}
                             {item.showPlan && (
@@ -1183,8 +1186,8 @@ export default function GanttSection() {
                                     top={planBarTop}
                                     height={planBarHeight}
                                     className="rounded border border-dashed border-cream/70"
-                                    tooltip={personalPlanTooltip(item.task.name, item.task.estimatedSeconds)}
-                                    onTap={() => setSelectedDetail(personalPlanTooltip(item.task.name, item.task.estimatedSeconds))}
+                                    tooltip={personalPlanTooltip(workLabel(item.task), item.task.estimatedSeconds)}
+                                    onTap={() => setSelectedDetail(personalPlanTooltip(workLabel(item.task), item.task.estimatedSeconds))}
                                   />
                                 )}
                               </>

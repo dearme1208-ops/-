@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "fs";
-import { MASTER, clickButton, dailyTask, jstAt, jstDate, openTaskTab, seed } from "./helpers";
+import { MASTER, clickButton, dailyTask, jstAt, jstDate, openTaskTab, readAll, seed } from "./helpers";
 
 // サブタスクは名前だけでは何のことか分からないため、ToDoタブの外(本日の作業・報告)では
 // 親タスク名を「親 › 子」で添える
@@ -61,4 +61,44 @@ test("週報: 作業時間ランキングと完了したことに、サブタス
   const text = readFileSync((await download.path())!, "utf-8");
   expect(text).toContain("1. 業務 / A社見積 › 見積作成 - 合計 01:00:00");
   expect(text).toMatch(/サブタスク 1件\n- A社見積 › 見積作成/);
+});
+
+test("完了した業務から「新しく開始」しても、案件・段階・手段の紐付けが引き継がれ、作業名に案件名が出る", async ({ page }) => {
+  await page.clock.install({ time: jstAt("11:00") });
+  await seed(page, {
+    stores: {
+      masterTasks: [{ ...MASTER, name: "設計" }],
+      projects: [
+        { id: "p1", title: "新機能開発", category: "業務", workName: "x", dueDate: jstDate(7), createdAt: 0, stages: [{ id: "s1", title: "設計", completed: false }] },
+      ],
+      dailyTasks: [
+        dailyTask({
+          id: "d1",
+          date: jstDate(),
+          name: "設計",
+          projectId: "p1",
+          stageId: "s1",
+          method: "Excel",
+          status: "done",
+          segments: [{ start: jstAt("09:00"), end: jstAt("10:00") }],
+          accumulatedMs: 3600_000,
+          startedAt: jstAt("09:00"),
+          endedAt: jstAt("10:00"),
+          recordedMs: 3600_000,
+          recordedSegmentCount: 1,
+        }),
+      ],
+    },
+  });
+  await page.getByRole("button", { name: "✅ 業務 / 新機能開発 › 設計" }).click();
+  await expect(page.getByText("「業務 / 新機能開発 › 設計」を再開します")).toBeVisible();
+  await clickButton(page, /新しく開始する/);
+
+  await expect
+    .poll(async () => {
+      const tasks = await readAll<Record<string, unknown>>(page, "dailyTasks");
+      const started = tasks.find((t) => t.id !== "d1" && t.status === "running");
+      return started && { projectId: started.projectId, stageId: started.stageId, method: started.method };
+    })
+    .toEqual({ projectId: "p1", stageId: "s1", method: "Excel" });
 });

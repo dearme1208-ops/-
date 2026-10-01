@@ -9,6 +9,7 @@ import {
   type DayFocus,
 } from "@/lib/focus";
 import type { WorkRecord } from "@/lib/types";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 const LOOKBACK_DAYS = 30;
 
@@ -64,7 +65,9 @@ export default function FocusContinuityPanel({
   onToggle: () => void;
 }) {
   const dates = useMemo(() => recentDates(), []);
-  const summary = useMemo(() => computeFocusSummary(records ?? [], dates), [records, dates]);
+  // 案件の段階・ToDoのサブタスク由来の作業は、最長区間などの作業名に案件名・親タスク名を添える
+  const workCtx = useWorkContext();
+  const summary = useMemo(() => computeFocusSummary(records ?? [], dates, workCtx.src), [records, dates, workCtx.src]);
 
   if (summary.days.length === 0) return null;
 

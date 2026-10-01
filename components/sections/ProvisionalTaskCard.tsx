@@ -6,6 +6,7 @@ import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatMsClock, parseHmsToSeconds } from "@/lib/time";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 type Mode = "today" | "favorite" | "master" | "free";
 
@@ -35,6 +36,7 @@ export default function ProvisionalTaskCard({
   ) => void | Promise<void>;
   onFinishAsIs: () => void | Promise<void>;
 }) {
+  const workCtx = useWorkContext();
   const [mode, setMode] = useState<Mode>(
     candidateTasks.length > 0 ? "today" : favorites.length > 0 ? "favorite" : completedTasks.length > 0 ? "today" : "master"
   );
@@ -136,7 +138,7 @@ export default function ProvisionalTaskCard({
                 onClick={() => onAssignExisting(t.id)}
                 className="block w-full rounded-lg bg-ink/60 px-3 py-2 text-left text-sm text-cream hover:bg-ink"
               >
-                <span className="text-cream/50">{t.category}</span> {t.name}
+                <span className="text-cream/50">{t.category}</span> {workCtx.label(t)}
                 <span className="ml-2 text-xs text-cream/40">{t.status === "paused" ? "（一時停止中）" : "（未着手）"}</span>
               </button>
             ))}
@@ -149,7 +151,7 @@ export default function ProvisionalTaskCard({
                     onClick={() => onAssignExisting(t.id)}
                     className="block w-full rounded-lg bg-ink/60 px-3 py-2 text-left text-sm text-cream opacity-70 hover:bg-ink hover:opacity-100"
                   >
-                    <span className="text-cream/50">{t.category}</span> {t.name}
+                    <span className="text-cream/50">{t.category}</span> {workCtx.label(t)}
                     <span className="ml-2 text-xs text-cream/40">（完了済み）</span>
                   </button>
                 ))}

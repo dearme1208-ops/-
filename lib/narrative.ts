@@ -1,6 +1,7 @@
 import { CONDITION_LEVELS } from "./condition";
 import { formatClock, formatHms } from "./time";
 import type { ConditionLog, DailyTask } from "./types";
+import { workNameWithContext, type WorkContextSources } from "./workContext";
 
 // 業務区分の文字列から、内容を推測してざっくり絵文字を割り当てる（完全一致ではなく
 // キーワードによる簡易マッチ。当てはまらなければ既定の📌を返す）
@@ -41,7 +42,13 @@ const MIN_GAP_MS = 60_000;
 
 // その日の作業区間・体調記録・空白(未計測)区間を時系列に並べ、タイムライン表示用の
 // 構造化データにする
-export function computeTodayNarrative(tasks: DailyTask[], conditionLogs: ConditionLog[], now: number): NarrativeItem[] {
+export function computeTodayNarrative(
+  tasks: DailyTask[],
+  conditionLogs: ConditionLog[],
+  now: number,
+  // 渡された場合、作業名に案件名・親タスク名を添える(lib/workContext.ts)
+  workCtx?: WorkContextSources
+): NarrativeItem[] {
   const items: NarrativeItem[] = [];
   const segments: { start: number; end: number; ongoing: boolean; task: DailyTask }[] = [];
 
@@ -60,7 +67,7 @@ export function computeTodayNarrative(tasks: DailyTask[], conditionLogs: Conditi
       type: "task",
       at: seg.start,
       icon: categoryEmoji(seg.task.category),
-      title: `${seg.task.category} / ${seg.task.name}`,
+      title: `${seg.task.category} / ${workCtx ? workNameWithContext(seg.task, workCtx) : seg.task.name}`,
       subtitle: `${formatClock(seg.start)}〜${endLabel}（${formatHms(durationSec)}）`,
     });
   }

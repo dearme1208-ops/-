@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
 import { computePredictedSecondsByTaskId, computeRunningOverrunTaskIds, segmentsAccumulatedMs } from "./tasks";
 import { formatHms, todayStr } from "./time";
+import { useWorkContext } from "./useWorkContext";
 
 // 下部のタブバーは「実行中(3)」のように件数しか出さないため、何を計測しているのか・
 // どれだけ経ったのかは一覧まで見に行かないと分からなかった。
@@ -14,7 +15,7 @@ import { formatHms, todayStr } from "./time";
 // 止め忘れはたいてい最長のものなので、そちらを見せた方が気付ける
 // (1件しか動いていない通常のケースではどちらを選んでも同じ)。
 export interface RunningStripInfo {
-  /** 作業名 */
+  /** 作業名(案件・サブタスクから追加した作業は「案件名 › 作業名」) */
   name: string;
   /** 業務区分 */
   category: string;
@@ -30,6 +31,7 @@ export function useRunningTaskStrip(): RunningStripInfo | null {
   const date = todayStr();
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const workCtx = useWorkContext();
   const running = (tasks ?? []).filter((t) => t.status === "running");
   const hasRunning = running.length > 0;
 
@@ -74,7 +76,7 @@ export function useRunningTaskStrip(): RunningStripInfo | null {
   }
 
   return {
-    name: primary.name,
+    name: workCtx.label(primary),
     category: primary.category,
     elapsedLabel: formatHms(Math.floor(segmentsAccumulatedMs(primary, now) / 1000)),
     extraCount: running.length - 1,

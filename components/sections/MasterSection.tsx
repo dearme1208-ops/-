@@ -27,6 +27,7 @@ import {
   type EstimateDistribution,
 } from "@/lib/estimation";
 import Modal from "@/components/ui/Modal";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 実績の分布を1行で見せる。P50は自分の予定を立てるとき、P80は相手に締切を
 // 約束するときの目安。押せば、その値をそのまま想定時間に採用できる
@@ -81,6 +82,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 ];
 
 export default function MasterSection() {
+  const workCtx = useWorkContext();
   const { adventurerMode } = useVisualMode();
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -857,7 +859,7 @@ export default function MasterSection() {
                         {r.date}
                         {viewingRecords && "masterIds" in viewingRecords && (
                           <span className="ml-2 text-xs text-cream/50">
-                            {r.category} / {r.name}
+                            {r.category} / {workCtx.label(r)}
                           </span>
                         )}
                       </span>

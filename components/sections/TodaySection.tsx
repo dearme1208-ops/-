@@ -38,6 +38,7 @@ import { computeSuggestedTask } from "@/lib/suggest";
 import { computeNextTaskPick } from "@/lib/nextTaskPick";
 import { CONDITION_LEVELS, dominantConditionLevel, computeProductivityByCondition } from "@/lib/condition";
 import { completeTodoTask } from "@/lib/todo";
+import { buildWorkContextSources, dailyTaskLinksOf, workNameWithContext, type DailyTaskLinks } from "@/lib/workContext";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { computeProductivityByWeather } from "@/lib/weather";
@@ -203,7 +204,7 @@ export default function TodaySection({
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
-    { category: string; name: string; estimatedSeconds: number; masterTaskId: string | undefined } | null
+    { category: string; name: string; estimatedSeconds: number; masterTaskId: string | undefined; links?: DailyTaskLinks } | null
   >(null);
   // 完了済みの作業を再開する際、「続きから開始」か「新しく開始」かを選ばせるための対象タスク
   const [restartChoice, setRestartChoice] = useState<DailyTask | null>(null);
@@ -336,6 +337,9 @@ export default function TodaySection({
 
   const projectMap = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p])), [projects]);
   const todoTaskMap = useMemo(() => new Map((linkedTodoTasks ?? []).map((t) => [t.id, t])), [linkedTodoTasks]);
+  // 案件の段階・ToDoのサブタスクから追加した作業は、通知などで「案件名 › 作業名」と出す(lib/workContext.ts)
+  const workCtxSrc = useMemo(() => buildWorkContextSources(projects, linkedTodoTasks), [projects, linkedTodoTasks]);
+  const workLabel = (t: { name: string; projectId?: string; todoTaskId?: string }) => workNameWithContext(t, workCtxSrc);
   // 案件ごとの累計作業時間（全期間の実績を合算）。案件から追加した作業のモチベーション表示に使う
   const projectTotalSeconds = useMemo(() => {
     const map = new Map<string, number>();
@@ -514,7 +518,7 @@ export default function TodaySection({
       const elapsedMs = segmentsAccumulatedMs(task, now);
       const predMs = predicted * 1000;
       if (elapsedMs > predMs && !task.notifiedOverrun) {
-        notify("予測時間を超過しました", `${task.category} / ${task.name}`);
+        notify("予測時間を超過しました", `${task.category} / ${workLabel(task)}`);
         db.dailyTasks.update(task.id, { notifiedOverrun: true });
       }
       const dismissedAt = Math.max(task.overrunPromptDismissedAt ?? 0, overrunDismissedAtRef.current.get(task.id) ?? 0);
@@ -1038,7 +1042,7 @@ export default function TodaySection({
         return;
       }
       await finishTask(running);
-      const message = `「${running.category} / ${running.name}」を終了しました`;
+      const message = `「${running.category} / ${workLabel(running)}」を終了しました`;
       setQuickActionMessage(`🎤「${transcript}」→ 🛑${message}`);
       if (handsFreeMode) speak(message);
       return;
@@ -1053,7 +1057,7 @@ export default function TodaySection({
         return;
       }
       await pauseTask(running);
-      const message = `「${running.category} / ${running.name}」を一時停止しました`;
+      const message = `「${running.category} / ${workLabel(running)}」を一時停止しました`;
       setQuickActionMessage(`🎤「${transcript}」→ ‖${message}`);
       if (handsFreeMode) speak(message);
       return;
@@ -1065,7 +1069,7 @@ export default function TodaySection({
       let message: string;
       if (running) {
         const elapsedMs = segmentsAccumulatedMs(running, now);
-        message = `現在「${running.category} ${running.name}」を計測中です。経過時間は${formatMsClock(elapsedMs)}です。`;
+        message = `現在「${running.category} ${workLabel(running)}」を計測中です。経過時間は${formatMsClock(elapsedMs)}です。`;
       } else {
         message = "現在計測中の作業はありません。";
       }
@@ -1230,7 +1234,8 @@ export default function TodaySection({
     name: string,
     estimatedSeconds: number,
     masterTaskId: string | undefined,
-    startAt: number
+    startAt: number,
+    links?: DailyTaskLinks
   ) {
     const doInsert = async () => {
       const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
@@ -1252,6 +1257,7 @@ export default function TodaySection({
         accumulatedMs: 0,
         startedAt: startAt,
         isSpontaneous: true,
+        ...(links ?? {}),
         ...(isRetroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
       };
       await db.dailyTasks.add(task);
@@ -1294,12 +1300,18 @@ export default function TodaySection({
 
   // 新規作業（突発作業の追加・お気に入り）をすぐ開始しようとした際、未計測(仮計測)が
   // 計測中なら二重に計測が進行してしまうため、先に判断を仰ぐ
-  function requestStartNew(category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) {
+  function requestStartNew(
+    category: string,
+    name: string,
+    estimatedSeconds: number,
+    masterTaskId: string | undefined,
+    links?: DailyTaskLinks
+  ) {
     if (provisionalActive) {
-      setPendingStart({ category, name, estimatedSeconds, masterTaskId });
+      setPendingStart({ category, name, estimatedSeconds, masterTaskId, links });
       return;
     }
-    insertRunningTask(category, name, estimatedSeconds, masterTaskId, Date.now());
+    insertRunningTask(category, name, estimatedSeconds, masterTaskId, Date.now(), links);
   }
 
   // 未計測(仮計測)分を、これから開始する作業に合算する（未計測の開始時刻からそのまま続けて計測）
@@ -1308,7 +1320,7 @@ export default function TodaySection({
     const provisionalId = provisionalTask.id;
     const mergeStartAt = provisionalTask.startedAt ?? Date.now();
     await db.transaction("rw", db.dailyTasks, async () => {
-      await insertRunningTask(pendingStart.category, pendingStart.name, pendingStart.estimatedSeconds, pendingStart.masterTaskId, mergeStartAt);
+      await insertRunningTask(pendingStart.category, pendingStart.name, pendingStart.estimatedSeconds, pendingStart.masterTaskId, mergeStartAt, pendingStart.links);
       await db.dailyTasks.delete(provisionalId);
     });
     setPendingStart(null);
@@ -1319,7 +1331,7 @@ export default function TodaySection({
     if (!pendingStart || !provisionalTask) return;
     const provisionalId = provisionalTask.id;
     await db.transaction("rw", db.dailyTasks, async () => {
-      await insertRunningTask(pendingStart.category, pendingStart.name, pendingStart.estimatedSeconds, pendingStart.masterTaskId, Date.now());
+      await insertRunningTask(pendingStart.category, pendingStart.name, pendingStart.estimatedSeconds, pendingStart.masterTaskId, Date.now(), pendingStart.links);
       await db.dailyTasks.delete(provisionalId);
     });
     setPendingStart(null);
@@ -1562,7 +1574,7 @@ export default function TodaySection({
   }
 
   async function deleteTask(task: DailyTask) {
-    if (!confirm(`「${task.name}」を本日の作業リストから削除しますか?`)) return;
+    if (!confirm(`「${workLabel(task)}」を本日の作業リストから削除しますか?`)) return;
     await db.dailyTasks.delete(task.id);
   }
 
@@ -1601,7 +1613,7 @@ export default function TodaySection({
     const parts = ["本日の作業"];
     if (deleteRecord && existing) parts.push("実績");
     if (deleteMaster && masterSnapshot) parts.push("作業マスタ");
-    showUndoToast(`「${task.name}」の${parts.join("・")}を削除しました`, async () => {
+    showUndoToast(`「${workLabel(task)}」の${parts.join("・")}を削除しました`, async () => {
       await db.dailyTasks.add(taskSnapshot);
       if (recordSnapshot) await db.records.put(recordSnapshot);
       if (masterSnapshot) await db.masterTasks.put(masterSnapshot);
@@ -1880,7 +1892,8 @@ export default function TodaySection({
   // 本日すでに完了した作業を、もう一度(新しいインスタンスとして)開始し直す
   async function restartCompletedTask(daily: DailyTask) {
     const estimatedSeconds = await computeRemainingEstimatedSeconds(date, daily.category, daily.name, daily.estimatedSeconds);
-    requestStartNew(daily.category, daily.name, estimatedSeconds, daily.masterTaskId);
+    // 案件・段階・ToDoから追加した作業は、その紐付けも引き継ぐ(実績の案件集計・ToDoの進捗に反映されるように)
+    requestStartNew(daily.category, daily.name, estimatedSeconds, daily.masterTaskId, dailyTaskLinksOf(daily));
   }
 
   // 完了済みの作業を、同じインスタンスのまま「続きから」再開する(区間を追加して計測を継続する)。
@@ -1981,7 +1994,7 @@ export default function TodaySection({
   // 停止して開始するかどうかを確認する
   async function autoStartScheduledTask(task: DailyTask) {
     const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
-    notify("予定の時刻になりました", `${task.category} / ${task.name}`, `schedule-${task.id}`);
+    notify("予定の時刻になりました", `${task.category} / ${workLabel(task)}`, `schedule-${task.id}`);
     if (runningTasks.length > 0) {
       await db.dailyTasks.update(task.id, { autoStartNotified: true });
       setScheduleConflict({ task, runningTasks });
@@ -2229,7 +2242,7 @@ export default function TodaySection({
         >
           <div className="warning-ticker-track">
             {(() => {
-              const names = runningOverrunTasks.map((t) => `${t.category}/${t.name}`).join("、");
+              const names = runningOverrunTasks.map((t) => `${t.category}/${workLabel(t)}`).join("、");
               // 文言表示がオフの時はタイマーの階級名(ALEPH等)も出さず、通常の言い回しにする
               const tierName = wordingThemedMode ? worstRiskTier?.name : undefined;
               const message =
@@ -2569,7 +2582,7 @@ export default function TodaySection({
                       onClick={() => setRestartChoice(d)}
                       className="rounded-full border border-cream/30 bg-ink px-3 py-1.5 text-sm text-cream hover:bg-cream/10"
                     >
-                      ✅ {d.category} / {d.name}
+                      ✅ {d.category} / {workLabel(d)}
                     </button>
                   ))}
                 </div>
@@ -2950,8 +2963,8 @@ export default function TodaySection({
 
       {scheduleConflict && (
         <RunningConflictDialog title="予定の時刻になりました" onResolve={resolveScheduleConflict}>
-          予定「{scheduleConflict.task.category} / {scheduleConflict.task.name}」の時刻になりましたが、
-          現在「{scheduleConflict.runningTasks.map((t) => t.name).join("、")}」を計測中です。
+          予定「{scheduleConflict.task.category} / {workLabel(scheduleConflict.task)}」の時刻になりましたが、
+          現在「{scheduleConflict.runningTasks.map((t) => workLabel(t)).join("、")}」を計測中です。
           一時停止してこちらを開始しますか?
         </RunningConflictDialog>
       )}
@@ -2959,7 +2972,7 @@ export default function TodaySection({
       {geoArrivalConflict && (
         <RunningConflictDialog title="位置情報: 到着を検知しました" onResolve={resolveGeoArrivalConflict}>
           「{geoArrivalConflict.place.label}」（{geoArrivalConflict.place.category} / {geoArrivalConflict.place.name}）
-          への到着を検知しましたが、現在「{geoArrivalConflict.runningTasks.map((t) => t.name).join("、")}」を計測中です。
+          への到着を検知しましたが、現在「{geoArrivalConflict.runningTasks.map((t) => workLabel(t)).join("、")}」を計測中です。
           一時停止してこちらを開始しますか?
         </RunningConflictDialog>
       )}

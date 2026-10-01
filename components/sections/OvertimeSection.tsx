@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useWorkContext } from "@/lib/useWorkContext";
+import { rowLabelWithContext, withWorkContextField } from "@/lib/workContext";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { useSetting } from "@/lib/settings";
@@ -84,21 +86,24 @@ export default function OvertimeSection() {
     return map;
   }, [monthlyMap, outlierDetailMonth]);
 
-  const breakdownRows = useMemo(() => {
+  // 作業ごとの内訳では、案件の段階・ToDoのサブタスクから記録した作業に案件名・親タスク名を添える
+  // (作業名だけでは「設計」「確認」のように何の作業か分からないため。lib/workContext.ts)
+  const workCtx = useWorkContext();
+  const breakdownRows: (BreakdownRow & { context?: string })[] = useMemo(() => {
     return breakdownMode === "category"
-      ? breakdownByCategory(currentMonthRecords)
+      ? withWorkContextField(breakdownByCategory(currentMonthRecords), currentMonthRecords, workCtx.src)
       : breakdownByProject(currentMonthRecords, projectTitleById);
-  }, [currentMonthRecords, breakdownMode, projectTitleById]);
+  }, [currentMonthRecords, breakdownMode, projectTitleById, workCtx]);
 
   // ドーナツグラフの区分をタップした際、その区分の元になった実績(日付ごと)を見せる詳細パネル
   const [breakdownDetail, setBreakdownDetail] = useState<string | null>(null);
   function findBreakdownRow(d: DonutDatum): BreakdownRow | undefined {
     return (
-      breakdownRows.find((r) => r.label === d.label && r.seconds === d.value) ??
-      breakdownRows.find((r) => r.label === d.label)
+      breakdownRows.find((r) => rowLabelWithContext(r) === d.label && r.seconds === d.value) ??
+      breakdownRows.find((r) => rowLabelWithContext(r) === d.label)
     );
   }
-  function recordsForBreakdownRow(row: BreakdownRow) {
+  function recordsForBreakdownRow(row: BreakdownRow & { context?: string }) {
     if (breakdownMode === "category") {
       if (row.key.startsWith("__trouble__::")) {
         const category = row.key.slice("__trouble__::".length);
@@ -120,7 +125,7 @@ export default function OvertimeSection() {
     const row = findBreakdownRow(d);
     if (!row) return `${d.label}\n合計 ${formatHoursJp(d.value)}`;
     const records = recordsForBreakdownRow(row).sort((a, b) => b.date.localeCompare(a.date));
-    const title = breakdownMode === "category" && row.sublabel ? `${row.sublabel} / ${row.label}` : row.label;
+    const title = breakdownMode === "category" && row.sublabel ? `${row.sublabel} / ${rowLabelWithContext(row)}` : row.label;
     const lines = [title, `合計 ${formatHoursJp(d.value)}`, ""];
     for (const r of records.slice(0, 15)) {
       lines.push(`・${r.date}: ${formatHoursJp(r.seconds)}`);
@@ -324,13 +329,13 @@ export default function OvertimeSection() {
           <div className="panel p-4">
             {breakdownStyle === "bar" ? (
               <RankingBarChart
-                data={breakdownRows.map((r) => ({ label: r.label, sublabel: r.sublabel, value: r.seconds }))}
+                data={breakdownRows.map((r) => ({ label: rowLabelWithContext(r), sublabel: r.sublabel, value: r.seconds }))}
                 formatValue={formatHoursJp}
               />
             ) : (
               <>
                 <DonutChart
-                  data={breakdownRows.map((r) => ({ label: r.label, value: r.seconds }))}
+                  data={breakdownRows.map((r) => ({ label: rowLabelWithContext(r), value: r.seconds }))}
                   formatValue={formatHoursJp}
                   onSliceClick={(d, meta) => setBreakdownDetail(breakdownDetailText(d, meta))}
                 />
@@ -378,7 +383,7 @@ export default function OvertimeSection() {
                   {items.map((r, i) => (
                     <div key={i} className="flex items-center justify-between text-xs text-cream/60">
                       <span className="truncate">
-                        {r.category} / {r.name}
+                        {r.category} / {workCtx.label(r)}
                       </span>
                       <span className="shrink-0 tabular-nums text-alert">{formatHoursJp(r.seconds)}</span>
                     </div>

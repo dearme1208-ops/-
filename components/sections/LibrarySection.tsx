@@ -23,6 +23,7 @@ import type { Spine } from "@/lib/libraryArt";
 import { CardStock, DateSlip, OpenBook, ReadingRoom, Shelf } from "@/components/library/LibraryCanvas";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
+import { useWorkContext } from "@/lib/useWorkContext";
 
 // 図書館モードの「本日の作業」タブ。
 //
@@ -40,6 +41,7 @@ import type { DailyTask, MasterTask } from "@/lib/types";
 type Panel = "desk" | "shelf" | "catalog";
 
 export default function LibrarySection() {
+  const workCtx = useWorkContext();
   const { wordingEnabled } = useVisualMode();
   const W = libraryWordsFor(wordingEnabled);
   const today = todayStr();
@@ -85,7 +87,7 @@ export default function LibrarySection() {
         const book = master ? buildBook(master, records ?? [], tasks) : null;
         return {
           id: t.id,
-          title: t.name,
+          title: workCtx.label(t),
           callNumber: loan.callNumber,
           thickness: thicknessOf(t.estimatedSeconds),
           wear: book?.wear ?? 0,
@@ -94,7 +96,7 @@ export default function LibrarySection() {
           selected: t.id === selectedId,
         } satisfies Spine;
       }),
-    [tasks, elapsedSecondsOf, masterById, records, selectedId]
+    [tasks, elapsedSecondsOf, masterById, records, selectedId, workCtx]
   );
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
@@ -253,7 +255,7 @@ export default function LibrarySection() {
         <div className="space-y-2">
           <div className="overflow-hidden border border-cream/25 bg-panel">
             <OpenBook
-              title={running ? running.name : W.deskIdle}
+              title={running ? workCtx.label(running) : W.deskIdle}
               progress={runningLoan?.progress ?? 0}
               overdue={!!runningLoan && runningLoan.overdueSeconds > 0}
               idle={!running}
@@ -265,7 +267,7 @@ export default function LibrarySection() {
                   <p className="font-mono text-[10px] tracking-widest text-cream/45">
                     {W.callNumberLabel} {runningLoan.callNumber}
                   </p>
-                  <p className="font-display text-base font-bold text-cream/90">{running.name}</p>
+                  <p className="font-display text-base font-bold text-cream/90">{workCtx.label(running)}</p>
                   <p className="text-[11px] text-cream/50">{running.category}</p>
                   <p className="mt-1 tabular-nums text-sm text-cream/85">
                     {formatHms(Math.floor(runningLoan.elapsedSeconds))}
@@ -320,7 +322,7 @@ export default function LibrarySection() {
           {running && (
             <DateSlip
               stamps={buildDateSlip(selectedMaster ?? null, running.category, running.name, records ?? [])}
-              title={`${W.slipTitle}　${running.name}`}
+              title={`${W.slipTitle}　${workCtx.label(running)}`}
               className="overflow-hidden border border-cream/25"
             />
           )}
@@ -358,7 +360,7 @@ export default function LibrarySection() {
                 <p className="font-mono text-[10px] tracking-widest text-cream/55">
                   {W.callNumberLabel}　{selectedLoan.callNumber}
                 </p>
-                <p className="mt-1 font-display text-base font-bold text-cream/90">{selectedTask.name}</p>
+                <p className="mt-1 font-display text-base font-bold text-cream/90">{workCtx.label(selectedTask)}</p>
                 <p className="text-[11px] text-cream/55">
                   {W.authorLabel}　{selectedTask.category}
                 </p>
@@ -451,7 +453,7 @@ export default function LibrarySection() {
           {selectedTask && (
             <DateSlip
               stamps={selectedSlip}
-              title={`${W.slipTitle}　${selectedTask.name}`}
+              title={`${W.slipTitle}　${workCtx.label(selectedTask)}`}
               className="overflow-hidden border border-cream/25"
             />
           )}
