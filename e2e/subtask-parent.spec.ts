@@ -102,3 +102,49 @@ test("完了した業務から「新しく開始」しても、案件・段階�
     })
     .toEqual({ projectId: "p1", stageId: "s1", method: "Excel" });
 });
+
+test.describe("スクロールで親タスクが画面外に出ても、何のサブタスクか分かる", () => {
+  const many = () => [
+    { id: "p", listId: "l1", title: "8~9 花丸高校", important: false, completed: false, order: 0, createdAt: 0, boardX: 20, boardY: 20 },
+    ...Array.from({ length: 12 }, (_, i) => ({
+      id: `s${i}`,
+      listId: "l1",
+      parentTaskId: "p",
+      title: `サブタスク${i + 1}`,
+      important: false,
+      completed: false,
+      order: i,
+      createdAt: 0,
+    })),
+  ];
+
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.clock.install({ time: jstAt("10:00") });
+    await seed(page, { stores: { todoLists: lists, todoTasks: many() } });
+  });
+
+  test("ToDo: 親タスクの行が画面の上へ消えると、サブタスクの見出しに親タスク名が貼り付く", async ({ page }) => {
+    await page.locator(".tab-chip", { hasText: "ToDo" }).first().click();
+    await page.getByRole("button", { name: "タスク", exact: true }).click();
+    const sticky = page.getByTestId("subtask-parent-sticky");
+    await expect(sticky).toHaveCount(0);
+    await page.locator("input[value=\"サブタスク10\"]").scrollIntoViewIfNeeded();
+    await page.mouse.wheel(0, 300);
+    await expect(sticky).toHaveText("8~9 花丸高校");
+    await expect(sticky).toBeInViewport();
+  });
+
+  test("統合ボード: カードの題名が盤面の上へ隠れると、盤面の上端に題名が出て、押すと先頭へ戻る", async ({ page }) => {
+    await page.locator(".tab-chip", { hasText: "統合ボード" }).first().click();
+    const pinned = page.getByTestId("board-cutoff-title");
+    await expect(page.getByText("8~9 花丸高校").first()).toBeVisible();
+    await expect(pinned).toHaveCount(0);
+    const viewport = page.locator(".overflow-auto.panel").first();
+    await viewport.evaluate((el) => el.scrollTo({ top: 120 }));
+    await expect(pinned).toHaveText("▲ 8~9 花丸高校");
+    await pinned.click();
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThan(30);
+    await expect(pinned).toHaveCount(0);
+  });
+});

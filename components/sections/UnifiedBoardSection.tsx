@@ -576,6 +576,30 @@ export default function UnifiedBoardSection({
   const fitZoom =
     viewportWidth > 0 ? Math.min(1, Math.max(0.4, clampMemoZoom(viewportWidth / (contentRight + 24)))) : 1;
   const zoom = zoomStr === "" ? fitZoom : clampMemoZoom(Number(zoomStr) || 1);
+
+  // 盤面をスクロールしてToDo・案件のカードの上端(題名)が見えなくなると、サブタスク・段階だけが
+  // 並んで何のカードか分からなくなる。そうなっているカードの題名を盤面の上端に貼り付けて見せる
+  const cutOffCardTitles = useMemo(() => {
+    if (viewportWidth === 0) return [];
+    const rows: { key: string; title: string; left: number; width: number; y: number }[] = [];
+    const consider = (key: string, title: string, x: number | undefined, y: number | undefined, height: number) => {
+      if (x === undefined || y === undefined) return;
+      const top = y * zoom - scrollPos.top;
+      const bottom = (y + height) * zoom - scrollPos.top;
+      // 題名の行(上端から約40px)が隠れていて、カードの残りはまだ見えているもの
+      if (top >= -8 || bottom < 48) return;
+      const left = x * zoom - scrollPos.left;
+      const width = CARD_WIDTH * zoom;
+      if (left + width < 24 || left > viewportWidth - 24) return;
+      const clampedLeft = Math.max(0, left);
+      rows.push({ key, title, left: clampedLeft, width: Math.min(left + width, viewportWidth) - clampedLeft, y });
+    };
+    for (const t of visibleTodos) consider(`todo:${t.id}`, t.title, t.boardX, t.boardY, todoCardHeight(t.id));
+    for (const p of visibleProjects)
+      consider(`project:${p.id}`, p.groupName || p.title, p.boardX, p.boardY, computeProjectCardHeight(p, showCompletedProjectStages));
+    return rows;
+  }, [viewportWidth, zoom, scrollPos, visibleTodos, visibleProjects, todoCardHeight, showCompletedProjectStages]);
+
   function setZoom(z: number) {
     setZoomStr(String(clampMemoZoom(z)));
   }
@@ -2381,6 +2405,18 @@ export default function UnifiedBoardSection({
           追従させたくないので、スクロールするビューポート(boardViewportRef)の外側・
           このrelativeラッパーの中に兄弟として重ねる */}
       <div className={fullscreen ? "relative min-h-0 min-w-0 flex-1" : "relative min-w-0 flex-1"}>
+      {cutOffCardTitles.map((c) => (
+        <button
+          key={c.key}
+          className="absolute top-0 z-20 truncate rounded-b-md border border-t-0 border-cream/25 bg-ink/95 px-2 py-0.5 text-left text-xs font-bold text-cream shadow-md"
+          style={{ left: c.left, width: c.width }}
+          onClick={() => boardViewportRef.current?.scrollTo({ top: Math.max(0, c.y * zoom - 8), behavior: "smooth" })}
+          title="このカードの先頭までスクロールします"
+          data-testid="board-cutoff-title"
+        >
+          ▲ {c.title}
+        </button>
+      ))}
       <div
         ref={boardViewportRef}
         className="relative h-full w-full overflow-auto p-0 panel"

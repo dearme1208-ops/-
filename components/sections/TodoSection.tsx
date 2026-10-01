@@ -2656,6 +2656,21 @@ function TaskBlock({
   const visibleSubtasks = showCompletedSubtasks ? subtasks : subtasks.filter((s) => !s.completed);
   const doneSubtaskCount = subtasks.filter((s) => s.completed).length;
 
+  // サブタスクが多いと、スクロールで親タスクの行が画面の上へ消え、サブタスクだけが並んで
+  // 何のサブタスクか分からなくなる。見出し行を画面上端に貼り付け、親の行が見えなくなっている
+  // 間だけ見出しに親タスク名を出す
+  const parentRowRef = useRef<HTMLDivElement>(null);
+  const [parentRowHidden, setParentRowHidden] = useState(false);
+  useEffect(() => {
+    const el = parentRowRef.current;
+    if (!el || subtasks.length === 0 || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([entry]) => {
+      setParentRowHidden(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [subtasks.length]);
+
   function handleSubtaskDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id || !onReorderSubtasks) return;
@@ -2667,7 +2682,7 @@ function TaskBlock({
 
   return (
     <div className="space-y-1">
-      <div className="flex items-start gap-2">
+      <div ref={parentRowRef} className="flex items-start gap-2">
         {selectionMode && (
           <button
             onClick={onToggleSelect}
@@ -2693,7 +2708,16 @@ function TaskBlock({
       </div>
       {subtasks.length > 0 && (
         <div className="ml-7 space-y-1.5 border-l border-cream/10 pl-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div
+            className={`sticky top-0 z-10 -ml-3 flex flex-wrap items-center gap-x-3 gap-y-1 pl-3 ${
+              parentRowHidden ? "rounded-b-lg bg-ink/95 py-1 shadow-md" : ""
+            }`}
+          >
+            {parentRowHidden && (
+              <span className="w-full truncate text-xs font-bold text-cream" data-testid="subtask-parent-sticky">
+                {task.title}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setSubtasksCollapsed((c) => !c)}
