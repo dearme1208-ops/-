@@ -29,7 +29,7 @@ export default function AltBoardView({
   onOpenTodo,
   onOpenProject,
 }: {
-  mode: Exclude<BoardViewMode, "board">;
+  mode: Exclude<BoardViewMode, "board" | "progress">;
   todos: TodoTask[];
   projects: ProjectItem[];
   boardTasks: DailyTask[];

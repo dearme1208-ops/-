@@ -3,6 +3,7 @@
 // ドラッグ配置や図形・付箋の編集はボード表示でのみ行う)
 export type BoardViewMode =
   | "board"
+  | "progress"
   | "islands"
   | "stars"
   | "shelf"
@@ -16,6 +17,8 @@ export type BoardViewMode =
 
 export const BOARD_VIEW_MODES: { key: BoardViewMode; label: string }[] = [
   { key: "board", label: "📋 ボード" },
+  // ToDo・案件の進み具合・期日に対するペース・最近の動きを1件1行で並べる(実務向け)
+  { key: "progress", label: "📈 進捗" },
   { key: "islands", label: "🗺 諸島マップ" },
   { key: "stars", label: "🌌 星図" },
   { key: "shelf", label: "📚 書架" },

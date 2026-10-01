@@ -60,6 +60,8 @@ import {
 import { computeAutoAllocation } from "@/lib/allocate";
 import { BOARD_VIEW_MODES, type BoardViewMode } from "@/lib/boardViewModes";
 import AltBoardView from "@/components/board/AltBoardView";
+import ProgressView from "@/components/board/views/ProgressView";
+import { buildProgressRows, summarizeProgress } from "@/lib/progressOverview";
 import { computeProjectForecast } from "@/lib/projectForecast";
 import { exportElementToPng } from "@/lib/pdfExport";
 import Modal from "@/components/ui/Modal";
@@ -1854,6 +1856,17 @@ export default function UnifiedBoardSection({
   const showTools = showToolsStr === "true";
   const toolsOpen = showTools || boardSearchActive || tagFilter !== null;
   const viewMode = (BOARD_VIEW_MODES.some((m) => m.key === viewModeStr) ? viewModeStr : "board") as BoardViewMode;
+  const progressRows = useMemo(
+    () =>
+      viewMode === "progress" ? buildProgressRows({ todos: openTodos, subtasksByParent, projects: openProjects, today }) : [],
+    // openTodos・openProjectsは毎回作り直される配列なので、元のテーブルを見て作り直す
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [viewMode, todoTasks, projectItems, subtasksByParent, today]
+  );
+  const progressSummary = useMemo(
+    () => summarizeProgress({ rows: progressRows, allTodos: todoTasks ?? [], allProjects: projectItems ?? [], today }),
+    [progressRows, todoTasks, projectItems, today]
+  );
 
   return (
     <div className={fullscreen ? "fixed inset-0 z-50 flex flex-col gap-3 overflow-y-auto bg-ink p-3" : "space-y-3"}>
@@ -2247,7 +2260,14 @@ export default function UnifiedBoardSection({
           </div>
         )}
       </div>
-      {viewMode !== "board" ? (
+      {viewMode === "progress" ? (
+        // 進捗はボードに置いたものに限らず、未完了のToDo・案件をすべて対象にする
+        <ProgressView
+          rows={progressRows}
+          summary={progressSummary}
+          onOpen={(r) => (r.kind === "todo" ? setDetailTodoId(r.id) : onOpenProjectEdit?.(r.id))}
+        />
+      ) : viewMode !== "board" ? (
         <AltBoardView
           mode={viewMode}
           todos={todos}
@@ -3205,6 +3225,10 @@ export default function UnifiedBoardSection({
         </Modal>
       )}
 
+        </>
+      )}
+
+      {/* 以下のモーダルは表示切替(📈 進捗・諸島マップなど)からも開くので、ボード表示の外に置く */}
       {/* 盤面上のToDoの詳細。ToDoタブへ飛ばさず、盤面に居たまま中身を読んで
           対応状況を変えたりサブタスクを潰したりできるようにする */}
       {detailTodo && (
@@ -3592,8 +3616,6 @@ export default function UnifiedBoardSection({
             </div>
           </div>
         </Modal>
-      )}
-        </>
       )}
     </div>
   );
