@@ -5,7 +5,7 @@ import { MASTER, dailyTask, jstAt, jstDate, seed } from "./helpers";
 // 並べ方だけを変える機能なので、どのタブにも行けること・ほかの画面からの移動・
 // 茂みへ隠す・件数バッジ・スマホ幅・OFFで元に戻ること、を確かめる
 
-const FOREST = { "theme.visualMode": "home" };
+const FOREST = { "theme.visualMode": "home", "ui.groupTabs": "true" };
 const groupRow = (page: Page) => page.locator(".tab-nav-groups .tab-chip");
 const subRow = (page: Page) => page.locator(".tab-nav-sub .tab-chip");
 const labels = (loc: ReturnType<Page["locator"]>) => loc.evaluateAll((els) => els.map((e) => (e.textContent ?? "").trim()));
@@ -95,10 +95,19 @@ test("「茂みへ隠す」のスイッチをOFFにすると、従来の1列の�
   await expect(page.locator(".tab-chip[data-active='true']")).toHaveText("家庭モード管理");
 });
 
-test("ほかのモードでは、これまでどおり1列のタブのまま", async ({ page }) => {
-  await seed(page, { settings: { "theme.visualMode": "mountain", "powerpro.mainMenu": "false", "home.groupTabs": "true" } });
+test("ほかのモードでもタブが多ければ2段にまとまり、タブの少ないモード(禅)は1列のまま", async ({ page }) => {
+  await seed(page, { settings: { "theme.visualMode": "off", "ui.groupTabs": "true" } });
+  expect(await labels(groupRow(page))).toEqual(["🌱 今日", "📋 計画", "📊 振り返り", "🗂 記録・マスタ", "⚙ 設定"]);
+  await groupRow(page).filter({ hasText: "振り返り" }).click();
+  await subRow(page).filter({ hasText: "日報・週報・月報" }).click();
+  await expect(page.locator("button", { hasText: /^週報$/ })).toBeVisible();
+
+  await seed(page, { settings: { "theme.visualMode": "zen", "ui.groupTabs": "true" } });
   await expect(page.locator("[data-grouped-tabs]")).toHaveCount(0);
-  await seed(page, { settings: { "theme.visualMode": "off", "home.groupTabs": "true" } });
+  await expect(page.locator(".tab-chip")).toHaveCount(3);
+
+  // 設定でOFFにすると1列に戻る
+  await seed(page, { settings: { "theme.visualMode": "off", "ui.groupTabs": "false" } });
   await expect(page.locator("[data-grouped-tabs]")).toHaveCount(0);
   await expect(page.locator(".tab-chip")).toHaveCount(20);
 });

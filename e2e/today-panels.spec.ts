@@ -41,7 +41,7 @@ test("自動配分をライブにすると、終業までの残りと予測合�
       dailyTasks: [dailyTask({ id: "d1", date: jstDate(), estimatedSeconds: 3600, hasPlan: true })],
     },
   });
-  await expect(page.getByText("自動配分")).toBeVisible();
+  await expect(page.getByText("自動配分", { exact: true })).toBeVisible();
   // 時計は10:00から進み続けるため、残りは「8時間弱」になる
   await expect(page.getByText(/18:00までの残り 0[78]:\d\d:\d\d \/ 未完了作業の予測合計 \d\d:\d\d:\d\d/)).toBeVisible();
   await expect(page.getByText("業務時間内に収まる見込みです（圧縮なし）")).toBeVisible();

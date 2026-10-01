@@ -90,6 +90,8 @@ const TAB_ORDER: TabKey[] = [
   "settings",
 ];
 const TABS: TabDef[] = TAB_ORDER.map((key) => ({ key, label: PLAIN_TAB_LABELS[key] }));
+// これより多くのタブが並ぶモードだけ、タブを分類ごとの2段にまとめる
+const GROUP_TABS_MIN_COUNT = 10;
 
 export default function HomePage() {
   const [active, setActive] = useState("today");
@@ -143,9 +145,10 @@ export default function HomePage() {
 
   // 森モード中、家庭モード管理タブでユーザー自身が個別に隠したタブ
   const [homeHiddenTabsJson] = useSetting("home.hiddenTabKeys", "[]");
-  // 森モード中、タブを「分類(上段)+中のタブ(下段)」の2段にまとめて出すか(試験的に森モードだけ)
-  const [homeGroupTabsStr] = useSetting("home.groupTabs", "true");
-  const groupTabs = mode === "home" && homeGroupTabsStr === "true";
+  // タブを「分類(上段)+中のタブ(下段)」の2段にまとめて出すか(設定でOFFにできる)。
+  // 森モードで試したのち全モードに広げた。禅・Claudeなどタブを絞ってあるモードでは
+  // まとめるほどの数が無いので、タブが一定数を超える場合だけまとめる
+  const [groupTabsStr] = useSetting("ui.groupTabs", "true");
   const homeHiddenTabs = useMemo(() => parseHiddenTabKeys(homeHiddenTabsJson), [homeHiddenTabsJson]);
 
   const tabs = useMemo(() => {
@@ -157,6 +160,8 @@ export default function HomePage() {
       badge: t.key === "board" ? boardUrgentCount : undefined,
     }));
   }, [mode, wordingMode, boardUrgentCount, homeHiddenTabs]);
+
+  const groupTabs = groupTabsStr === "true" && tabs.length > GROUP_TABS_MIN_COUNT;
 
   // Claudeモードのようにタブ構成を絞るモードへ切り替えた際、今開いているタブが
   // 非表示になっていたら「本日の作業」タブへ戻す(存在しないタブが開いたままにならないように)

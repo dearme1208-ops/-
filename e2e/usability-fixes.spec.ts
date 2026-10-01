@@ -87,3 +87,63 @@ test("まだ何も記録していない使い始めには、バックアップ�
   await seed(page, { stores: { records: [{ id: "r1", date: jstDate(), category: "業務", name: "資料作成", seconds: 60, startedAt: 0, endedAt: 1 }] } });
   await expect(page.getByText("バックアップを取っておきませんか")).toBeVisible();
 });
+
+test.describe("画面の整理", () => {
+  test("本日の作業: 作業リストがお気に入り・作業状況などのパネルより上にあり、そのほかの表示はたためる", async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await seed(page, {
+      stores: {
+        masterTasks: [{ id: "m1", category: "業務", name: "資料作成", estimatedSeconds: 7200, isFavorite: true, sampleCount: 0, createdAt: 0, updatedAt: 0 }],
+        dailyTasks: [dailyTask({ id: "d1", date: jstDate(), status: "running", segments: [{ start: jstAt("09:30") }], startedAt: jstAt("09:30") })],
+        records: [{ id: "r1", date: jstDate(), category: "業務", name: "資料作成", seconds: 60, startedAt: 0, endedAt: 1 }],
+      },
+    });
+    const listTop = (await page.getByText(`${jstDate()} の作業リスト`).boundingBox())!.y;
+    // スマホの1画面目に作業リストの見出しが入っている
+    expect(listTop).toBeLessThan(PHONE.height);
+    for (const text of ["デイリーチャレンジ", "バックアップを取っておきませんか", "自動配分"]) {
+      expect((await page.getByText(text).first().boundingBox())!.y, text).toBeGreaterThan(listTop);
+    }
+    await page.locator("button", { hasText: "そのほかの表示" }).click();
+    await expect(page.getByText("デイリーチャレンジ")).toHaveCount(0);
+    // たたんだ状態は開き直しても覚えている
+    await page.reload();
+    await expect(page.locator("button", { hasText: "そのほかの表示" })).toContainText("開く");
+    await expect(page.getByText("デイリーチャレンジ")).toHaveCount(0);
+  });
+
+  test("ToDo: CSVの取り込み・書き出しは1つのボタンに畳まれていて、押すと出てくる", async ({ page }) => {
+    await seed(page, { stores: { todoLists: [{ id: "l1", title: "タスク", order: 0, createdAt: 0 }] } });
+    await openTab(page, "ToDo");
+    await expect(page.locator("button", { hasText: "CSVインポート" })).toHaveCount(0);
+    await page.locator("button", { hasText: "取り込み・書き出し" }).click();
+    await expect(page.locator("button", { hasText: "CSVインポート" })).toBeVisible();
+    await expect(page.locator("button", { hasText: "📋 ガイド貼り付けインポート" })).toBeVisible();
+  });
+
+  test("設定: 分類を選ぶとその分類の設定だけが並び、検索と組み合わせられる", async ({ page }) => {
+    await seed(page);
+    await openTab(page, "設定");
+    const visibleHeadings = () =>
+      page.locator("h3:visible").evaluateAll((els) => els.map((e) => (e.textContent ?? "").trim()));
+    await page.locator("button[aria-pressed]", { hasText: "🔔 通知" }).click();
+    expect(await visibleHeadings()).toEqual(["天気変化の通知（降水確率）", "朝の自動ダイジェスト通知", "1日の終わりの自動サマリー通知", "ToDoの期日リマインダー"]);
+    await page.getByPlaceholder("🔍 設定を検索（例: 通知、色、残業）").fill("朝");
+    expect(await visibleHeadings()).toEqual(["朝の自動ダイジェスト通知"]);
+    await page.getByPlaceholder("🔍 設定を検索（例: 通知、色、残業）").fill("");
+    await page.locator("button[aria-pressed]", { hasText: "すべて" }).click();
+    expect((await visibleHeadings()).length).toBeGreaterThan(30);
+  });
+
+  test("案件を登録すると「登録しました」と出て、期日の初期値は1週間後", async ({ page }) => {
+    await seed(page);
+    await openTab(page, "案件");
+    await page.locator("button", { hasText: "案件を登録" }).click();
+    await expect(page.locator("input[type=date]").first()).toHaveValue(jstDate(7));
+    await page.getByPlaceholder("件名").first().fill("J社見積");
+    await page.getByPlaceholder("業務区分（大項目）").first().fill("営業");
+    await page.getByPlaceholder("詳細作業名").first().fill("見積");
+    await page.locator("button", { hasText: /^追加$/ }).first().click();
+    await expect(page.getByText(`案件「J社見積」を登録しました（期日 ${jstDate(7)}）`)).toBeVisible();
+  });
+});

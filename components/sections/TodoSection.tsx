@@ -192,6 +192,7 @@ export default function TodoSection({
   onInitialFilterConsumed?: () => void;
 } = {}) {
   const [view, setView] = useState<ViewKey>("myday");
+  const [csvMenuOpen, setCsvMenuOpen] = useState(false);
   // 本日の作業を計測したままToDoを触ることが多いので、このタブでも
   // 下部バーに「今なにを計測しているか」を出す
   const runningStrip = useRunningTaskStrip();
@@ -1459,7 +1460,20 @@ export default function TodoSection({
         </div>
       )}
 
+      {/* CSVの取り込み・書き出しはたまにしか使わないので、普段は1つのボタンに畳んでおく
+          (スマホでは4つのボタンだけで画面の1/3を使い、ToDoが下に押し出されていた) */}
       {showCsvTools && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            className="btn-pill-outline text-xs"
+            onClick={() => setCsvMenuOpen((v) => !v)}
+            aria-expanded={csvMenuOpen}
+          >
+            📂 取り込み・書き出し {csvMenuOpen ? "▲" : "▼"}
+          </button>
+        </div>
+      )}
+      {showCsvTools && csvMenuOpen && (
         <div className="flex flex-wrap justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
             CSVテンプレート

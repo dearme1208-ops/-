@@ -39,8 +39,9 @@ export default function HomeMasterSection() {
   const [hiddenTabsJson, setHiddenTabsJson] = useSetting("home.hiddenTabKeys", "[]");
   const hiddenTabs = useMemo(() => parseHiddenTabKeys(hiddenTabsJson), [hiddenTabsJson]);
 
-  // タブを分類ごとの2段にまとめて出すか(試験的に森モードだけ)。OFFで従来の1列に戻る
-  const [groupTabsStr, setGroupTabsStr] = useSetting("home.groupTabs", "true");
+  // タブを分類ごとの2段にまとめて出すか(全モード共通の設定。設定タブの「見た目・操作」と同じもの)。
+  // OFFで従来の1列に戻る
+  const [groupTabsStr, setGroupTabsStr] = useSetting("ui.groupTabs", "true");
   const groupTabs = groupTabsStr === "true";
 
   async function toggleTabHidden(key: TabKey) {

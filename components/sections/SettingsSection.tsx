@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
+import { SETTINGS_CATEGORIES, settingCategoryOf } from "@/lib/settingsCategories";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib/todo";
 import { DEFAULT_WAITING_NUDGE_DAYS, DEFAULT_WAITING_TAGS } from "@/lib/changeTracking";
@@ -141,6 +142,8 @@ export default function SettingsSection() {
   const growthStageEnabled = growthStageEnabledStr === "true";
   const [conditionIconStyle, setConditionIconStyle] = useSetting("condition.iconStyle", "custom");
   const [autoImportantTag, setAutoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
+  // タブを分類ごとの2段にまとめるか(app/page.tsx)
+  const [groupTabsStr, setGroupTabsStr] = useSetting("ui.groupTabs", "true");
   const [tagPresetsJson, setTagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
   // 相手の返事待ちとみなす対応状況と、何日目から催促の目安を出すか(lib/changeTracking.ts)
   const [waitingTagsJson, setWaitingTagsJson] = useSetting("todo.waitingTags", JSON.stringify(DEFAULT_WAITING_TAGS));
@@ -537,6 +540,8 @@ export default function SettingsSection() {
   // 絞り込みは各パネルのstyle.displayを直接切り替える方式にしてある
   const panelsRef = useRef<HTMLDivElement>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
+  // 分類での絞り込み("all"=すべて)。分類は見出しから決まる(lib/settingsCategories.ts)
+  const [settingsCategory, setSettingsCategory] = useState("all");
   const [showSettingsIndex, setShowSettingsIndex] = useState(false);
   const [settingsHeadings, setSettingsHeadings] = useState<string[]>([]);
   const [matchedHeadings, setMatchedHeadings] = useState<string[]>([]);
@@ -566,7 +571,9 @@ export default function SettingsSection() {
     const matched: string[] = [];
     for (const el of settingPanels()) {
       const heading = el.querySelector("h3")?.textContent?.trim() ?? "";
-      const hit = q === "" || (el.textContent ?? "").toLowerCase().includes(q);
+      const hit =
+        (q === "" || (el.textContent ?? "").toLowerCase().includes(q)) &&
+        (settingsCategory === "all" || settingCategoryOf(heading) === settingsCategory);
       el.style.display = hit ? "" : "none";
       if (hit && heading) matched.push(heading);
     }
@@ -608,6 +615,19 @@ export default function SettingsSection() {
             目次 {showSettingsIndex ? "▲" : "▼"}
           </button>
         </div>
+        {/* 分類で絞り込む。35項目を1列に並べると目的の項目を探すのに何画面もスクロールするため */}
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="設定の分類">
+          {[{ key: "all", label: "すべて" }, ...SETTINGS_CATEGORIES].map((c) => (
+            <button
+              key={c.key}
+              className={settingsCategory === c.key ? "btn-pill px-2.5 py-1 text-xs" : "btn-pill-outline px-2.5 py-1 text-xs"}
+              onClick={() => setSettingsCategory(c.key)}
+              aria-pressed={settingsCategory === c.key}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
         {settingsQuery && (
           <p className="text-xs text-cream/50 tabular-nums">
             {matchedHeadings.length > 0
@@ -617,7 +637,7 @@ export default function SettingsSection() {
         )}
         {showSettingsIndex && (
           <div className="flex flex-wrap gap-1.5">
-            {(settingsQuery ? matchedHeadings : settingsHeadings).map((h) => (
+            {(settingsQuery || settingsCategory !== "all" ? matchedHeadings : settingsHeadings).map((h) => (
               <button
                 key={h}
                 className="btn-pill-outline px-2.5 py-1 text-[11px]"
@@ -1564,6 +1584,22 @@ export default function SettingsSection() {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">タブの並べ方</h3>
+        <label className="flex items-center gap-2 text-sm text-cream/85">
+          <input
+            type="checkbox"
+            checked={groupTabsStr === "true"}
+            onChange={() => setGroupTabsStr(groupTabsStr === "true" ? "false" : "true")}
+            className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+          />
+          タブを分類ごとにまとめる
+        </label>
+        <p className="text-xs text-cream/50">
+          ONにすると、上の段に「今日・計画・振り返り・記録・マスタ・設定」の分類だけを並べ、選んだ分類のタブを下の段に出します。タブが10個以下のモード(禅・Claudeなど)では、もともと少ないので1列のままです。
+        </p>
       </div>
 
       <div className="panel space-y-3 p-4">

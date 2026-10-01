@@ -33,6 +33,7 @@ import {
   formatDateTimeJp,
   formatHms,
   todayStr,
+  shiftDateStr,
 } from "@/lib/time";
 import type { DailyTask, ProjectItem, ProjectStage } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
@@ -61,6 +62,9 @@ import { mountainWordsFor } from "@/lib/mountainWords";
 import { Profile as MountainProfile, Signboard } from "@/components/mountain/MountainCanvas";
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { PennantBar, Standings } from "@/components/powerpro/PowerproCanvas";
+
+// 案件を新しく登録するときの期日の初期値(今日から何日後か)
+const NEW_PROJECT_DUE_DAYS = 7;
 
 type ViewMode = "gantt" | "calendar" | "tree" | "ppm" | "progress";
 const TREE_LEAF_LIMIT = 15;
@@ -115,7 +119,9 @@ export default function ProjectsSection({
   const [groupName, setGroupName] = useState("");
   const [category, setCategory] = useState("");
   const [workName, setWorkName] = useState("");
-  const [dueDate, setDueDate] = useState(todayStr());
+  // 期日の初期値は1週間後。今日にしておくと、登録した瞬間から「本日期限」扱いになり
+  // 毎回直す手間がかかっていた
+  const [dueDate, setDueDate] = useState(() => shiftDateStr(todayStr(), NEW_PROJECT_DUE_DAYS));
   const [clientId, setClientId] = useState("");
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const [viewMode, setViewMode] = useState<ViewMode>("gantt");
@@ -353,7 +359,11 @@ export default function ProjectsSection({
     setGroupName("");
     setCategory("");
     setWorkName("");
-    setDueDate(todayStr());
+    setDueDate(shiftDateStr(todayStr(), NEW_PROJECT_DUE_DAYS));
+    // 登録した案件は一覧の下の方に入るため、登録できたことが画面上で分からなかった
+    showUndoToast(`案件「${item.title}」を登録しました（期日 ${item.dueDate}）`, async () => {
+      await db.projects.delete(item.id);
+    });
   }
 
   // 取引先マスタの追加・リネーム・削除。既存の付箋ボード管理(MemoSection)と同じ

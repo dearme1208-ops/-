@@ -27,6 +27,9 @@ export const BASE_SETTINGS: Record<string, string> = {
   "condition.enabled": "false",
   "today.standardWorkStart": "09:00",
   "today.standardWorkEnd": "18:00",
+  // 既存のテストはタブが1列に並ぶ前提で書いているので、2段のまとめ表示は
+  // それを確かめるテスト(forest-tabs.spec.ts)でだけONにする
+  "ui.groupTabs": "false",
 };
 
 export async function seed(

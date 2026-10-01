@@ -194,6 +194,9 @@ export default function TodaySection({
   const showNextMovePick = showNextMovePickStr === "true";
   const [showDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
   const showDailyChallenge = showDailyChallengeStr === "true";
+  // 作業リストの下にまとめた「そのほかの表示」を畳んでいるか
+  const [extrasCollapsedStr, setExtrasCollapsedStr] = useSetting("today.collapseExtras", "false");
+  const extrasCollapsed = extrasCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
   const { va11hallaMode, themedMode, wordingThemedMode, wordingMode } = useVisualMode();
@@ -2271,275 +2274,6 @@ export default function TodaySection({
           </button>
         </div>
       )}
-      <TodayHandoffPanel today={date} />
-      {showStatusPanel && (
-        <TodayStatusPanel
-          tasks={tasks ?? []}
-          conditionLogs={conditionLogs ?? []}
-          now={now}
-          standardWorkStart={standardWorkStart}
-          standardWorkEnd={standardWorkEnd}
-        />
-      )}
-      {showDailyChallenge && <DailyChallengePanel />}
-      <TodayHintPanel />
-      <BackupNudge />
-      <TodayMemoPanel onOpenMemo={onOpenMemo} />
-      {startedForceStopRanges.length > 0 && (
-        <div className="panel space-y-2 p-4">
-          <h3 className="font-display text-sm font-bold text-cream/80">☕ 本日の休憩</h3>
-          <p className="text-xs text-cream/50">
-            この時間帯になると計測中の作業を自動で一時停止します。移動やミーティングなどで実際には
-            作業していた場合は、後からその作業に割り当てられます。
-          </p>
-          <div className="space-y-1.5">
-            {startedForceStopRanges.map((r, i) => (
-              <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 text-sm">
-                <span className="text-cream/70">
-                  {r.start}〜{r.end}
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {(r.checklist?.length ?? 0) > 0 && (
-                    <button className="btn-pill-outline text-xs" onClick={() => setBreakChecklistRange(r)}>
-                      チェックリストを見る
-                    </button>
-                  )}
-                  <button className="btn-pill-outline text-xs" onClick={() => setBreakAssignRange(r)}>
-                    実は作業していた分を割り当てる
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {showAutoAllocate && (
-        <AutoAllocatePanel
-          mode={autoAllocateMode as AutoAllocateMode}
-          onModeChange={setAutoAllocateMode}
-          standardWorkEnd={standardWorkEnd}
-          allocation={effectiveAllocation}
-          manualComputed={!!manualAllocation}
-          manualComputedAt={manualAllocationAt}
-          onRunManual={runManualAllocation}
-        />
-      )}
-      {conditionEnabled && (
-        <div className="panel p-4">
-          <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
-          <div className="flex flex-wrap gap-2">
-            {CONDITION_LEVELS.map((c) => (
-              <button
-                key={c.level}
-                className={
-                  c.level === latestConditionLevel
-                    ? "btn-pill p-1.5"
-                    : "btn-pill-outline p-1.5"
-                }
-                onClick={() => logCondition(c.level)}
-                aria-label={c.label}
-                title={c.label}
-              >
-                <ConditionGlyph level={c.level} size={28} />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(!tasks || tasks.length === 0) && (
-        <div className="panel p-5">
-          <h2 className="mb-3 font-display text-lg font-bold">本日の作業リストを生成</h2>
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={weekday}
-              onChange={(e) => setWeekday(Number(e.target.value) as Weekday)}
-              className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-cream"
-            >
-              {([1, 2, 3, 4, 5] as Weekday[]).map((w) => (
-                <option key={w} value={w}>
-                  {WEEKDAY_LABELS[w]}曜日
-                </option>
-              ))}
-            </select>
-            <button className="btn-pill" onClick={requestGenerateFromTemplate}>
-              テンプレートから生成
-            </button>
-          </div>
-        </div>
-      )}
-
-      {notifPermission !== "granted" && notifPermission !== "unsupported" && (
-        <div className="panel flex items-center justify-between p-4">
-          <p className="text-sm text-cream/80">予定超過を通知でお知らせできます。</p>
-          <button className="btn-pill-outline text-sm" onClick={enableNotifications}>
-            通知を許可
-          </button>
-        </div>
-      )}
-
-      {geoTrackingEnabled && (
-        <GeoTrackingStatus
-          error={geoMovement.error}
-          distanceThresholdMeters={geoDistanceThresholdMeters}
-          category={geoCategorySetting}
-          taskName={geoTaskNameSetting}
-          stillMs={geoStillMs}
-        />
-      )}
-
-      {geoArrivalEnabled && (
-        <GeoArrivalStatus
-          error={geoArrival.error}
-          placeCount={(geoPlaces ?? []).length}
-          wakeLockActive={wakeLock.active}
-          wakeLockError={wakeLock.error}
-        />
-      )}
-
-      {weather.notifyEnabled && (weather.places ?? []).length > 0 && (
-        <WeatherStatus
-          placeCount={(weather.places ?? []).length}
-          thresholdPercent={weather.thresholdStr}
-          leadHours={weather.leadHoursStr}
-          error={weather.error}
-          checking={weather.checking}
-          lastCheckedAt={weather.lastCheckedAt}
-          current={weather.current}
-          nextCrossings={weather.nextCrossings}
-          onCheckNow={weather.checkNow}
-        />
-      )}
-
-      {estimateAdjustment && (
-        <div className="panel p-4">
-          <p className="text-sm text-cream/80">
-            🔍 今日は{estimateAdjustment.factors.join("・")}の影響で、いつもより
-            <span className="mx-1 font-bold text-alert">+{estimateAdjustment.avgShortfallPct}%</span>
-            ほど時間がかかる見込みです。
-          </p>
-          <p className="mt-1 text-[10px] text-cream/40">
-            過去の{estimateAdjustment.factors.join("・")}別の生産性データ(要注意リスト)から算出した目安です。
-          </p>
-        </div>
-      )}
-
-      {showNextMovePick && nextTaskPick && (
-        <div className="panel flex flex-wrap items-center justify-between gap-2 border border-alert/40 bg-alert/5 p-4">
-          <div>
-            <h3 className="font-display text-sm font-bold text-alert">🎯 今この一手</h3>
-            <p className="text-xs text-cream/50">{nextTaskPick.reason}</p>
-            <p className="mt-1 text-sm text-cream">
-              {nextTaskPick.category} / {nextTaskPick.name}
-            </p>
-          </div>
-          <button className="btn-pill text-sm" onClick={startNextTaskPick}>
-            ワンタップで開始
-          </button>
-        </div>
-      )}
-
-      {showSuggestedTask && suggestedTask && (
-        <div className="panel flex flex-wrap items-center justify-between gap-2 p-4">
-          <div>
-            <h3 className="font-display text-sm font-bold text-cream/80">💡 そろそろこの作業では?</h3>
-            <p className="text-xs text-cream/50">
-              同じ曜日のこの時間帯によく行っている作業です（{suggestedTask.count}回）
-            </p>
-            <p className="mt-1 text-sm text-cream">
-              {suggestedTask.category} / {suggestedTask.name}
-            </p>
-          </div>
-          <button className="btn-pill text-sm" onClick={startSuggested}>
-            ワンタップで開始
-          </button>
-        </div>
-      )}
-
-      <div className="panel space-y-2 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">📓 今日の記録</h3>
-        <textarea
-          value={dailyJournal}
-          onChange={(e) => setDailyJournal(e.target.value)}
-          placeholder="タスクに縛られない、今日の気づき・メモを自由に書けます"
-          rows={2}
-          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
-        <p className="text-[11px] text-cream/40">過去の記録は「実績編集」タブの「記録の履歴」から見返せます。</p>
-      </div>
-
-      {favorites && favorites.length > 0 && (
-        <div className="panel p-4">
-          <button
-            className="flex w-full items-center justify-between text-left"
-            onClick={() => setFavoritesCollapsedStr(favoritesCollapsed ? "false" : "true")}
-          >
-            <h3 className="font-display text-sm font-bold text-cream/80">
-              ★ お気に入り（ワンタップで追加+開始）
-              {favoritesCollapsed && <span className="ml-1 font-normal text-cream/40">（{favorites.length}件）</span>}
-            </h3>
-            <span className="text-xs text-cream/40">{favoritesCollapsed ? "▶" : "▼"}</span>
-          </button>
-          {!favoritesCollapsed && (
-            <>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {favorites.map((f) => (
-                  <div
-                    key={f.id}
-                    className="flex items-center gap-1 rounded-full border border-cream/30 bg-ink py-1 pl-1 pr-2"
-                  >
-                    <button
-                      onClick={() => addFavoriteAndStart(f.id)}
-                      className="rounded-full px-3 py-1 text-sm text-cream hover:bg-cream/10"
-                    >
-                      ★ {f.category} / {f.name}
-                    </button>
-                    {quickStartEnabled && (
-                      <div className="flex gap-0.5">
-                        {[1, 2, 3, 4].map((slot) => (
-                          <button
-                            key={slot}
-                            onClick={() => toggleQuickSlot(f.id, slot)}
-                            title={`ホーム画面ショートカット${slot}に割り当て`}
-                            className={`h-5 w-5 rounded text-[10px] font-bold ${
-                              f.quickSlot === slot ? "bg-alert text-ink" : "text-cream/30 hover:text-cream/70"
-                            }`}
-                          >
-                            {slot}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {quickStartEnabled && (
-                <p className="mt-2 text-[10px] text-cream/40">
-                  番号を押すと、ホーム画面に追加したこのアプリのアイコンを長押しして出てくる「クイック起動①〜④」ショートカットにその作業を割り当てられます。ショートカットをタップすると、計測中なら終了・一時停止中なら再開・それ以外なら新規開始、とワンタップで切り替わります(対応はAndroidのChrome/Edge等。iOS Safariのホーム画面追加ではショートカットメニュー自体が利用できません)。設定画面でOFFにできます。
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {doneTodayUnique.length > 0 && (
-        <div className="panel p-4">
-          <h3 className="font-display text-sm font-bold text-cream/80">✅ 完了した業務から再開</h3>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {doneTodayUnique.map((d) => (
-              <button
-                key={d.id}
-                onClick={() => setRestartChoice(d)}
-                className="rounded-full border border-cream/30 bg-ink px-3 py-1.5 text-sm text-cream hover:bg-cream/10"
-              >
-                ✅ {d.category} / {d.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       <TodayToolbar
         date={date}
         simpleButtons={simpleButtons}
@@ -2729,6 +2463,297 @@ export default function TodaySection({
             : undefined
         }
       />
+
+
+      {/* 作業の開始に使うもの(テンプレート・お気に入り・提案など)と、状況の表示(作業状況・
+          チャレンジ・自動配分・通知など)は、作業リストの下にまとめる。以前は作業リストの上に
+          並んでいて、スマホでは作業リストが数画面下に埋もれていた。まとめて折りたためる */}
+      <div className="space-y-4">
+        <button
+          className="flex w-full items-center justify-between rounded-lg border border-cream/15 px-3 py-2 text-left text-sm font-bold text-cream/70 hover:text-cream"
+          onClick={() => setExtrasCollapsedStr(extrasCollapsed ? "false" : "true")}
+          aria-expanded={!extrasCollapsed}
+        >
+          <span className="min-w-0">
+            🧰 そのほかの表示
+            <span className="ml-1 text-[11px] font-normal text-cream/40">お気に入り・提案・作業状況 など</span>
+          </span>
+          <span className="shrink-0 whitespace-nowrap text-xs text-cream/40">{extrasCollapsed ? "▶ 開く" : "▼ たたむ"}</span>
+        </button>
+        {!extrasCollapsed && (
+          <>
+            {(!tasks || tasks.length === 0) && (
+              <div className="panel p-5">
+                <h2 className="mb-3 font-display text-lg font-bold">本日の作業リストを生成</h2>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={weekday}
+                    onChange={(e) => setWeekday(Number(e.target.value) as Weekday)}
+                    className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-cream"
+                  >
+                    {([1, 2, 3, 4, 5] as Weekday[]).map((w) => (
+                      <option key={w} value={w}>
+                        {WEEKDAY_LABELS[w]}曜日
+                      </option>
+                    ))}
+                  </select>
+                  <button className="btn-pill" onClick={requestGenerateFromTemplate}>
+                    テンプレートから生成
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {favorites && favorites.length > 0 && (
+              <div className="panel p-4">
+                <button
+                  className="flex w-full items-center justify-between text-left"
+                  onClick={() => setFavoritesCollapsedStr(favoritesCollapsed ? "false" : "true")}
+                >
+                  <h3 className="font-display text-sm font-bold text-cream/80">
+                    ★ お気に入り（ワンタップで追加+開始）
+                    {favoritesCollapsed && <span className="ml-1 font-normal text-cream/40">（{favorites.length}件）</span>}
+                  </h3>
+                  <span className="text-xs text-cream/40">{favoritesCollapsed ? "▶" : "▼"}</span>
+                </button>
+                {!favoritesCollapsed && (
+                  <>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {favorites.map((f) => (
+                        <div
+                          key={f.id}
+                          className="flex items-center gap-1 rounded-full border border-cream/30 bg-ink py-1 pl-1 pr-2"
+                        >
+                          <button
+                            onClick={() => addFavoriteAndStart(f.id)}
+                            className="rounded-full px-3 py-1 text-sm text-cream hover:bg-cream/10"
+                          >
+                            ★ {f.category} / {f.name}
+                          </button>
+                          {quickStartEnabled && (
+                            <div className="flex gap-0.5">
+                              {[1, 2, 3, 4].map((slot) => (
+                                <button
+                                  key={slot}
+                                  onClick={() => toggleQuickSlot(f.id, slot)}
+                                  title={`ホーム画面ショートカット${slot}に割り当て`}
+                                  className={`h-5 w-5 rounded text-[10px] font-bold ${
+                                    f.quickSlot === slot ? "bg-alert text-ink" : "text-cream/30 hover:text-cream/70"
+                                  }`}
+                                >
+                                  {slot}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {quickStartEnabled && (
+                      <p className="mt-2 text-[10px] text-cream/40">
+                        番号を押すと、ホーム画面に追加したこのアプリのアイコンを長押しして出てくる「クイック起動①〜④」ショートカットにその作業を割り当てられます。ショートカットをタップすると、計測中なら終了・一時停止中なら再開・それ以外なら新規開始、とワンタップで切り替わります(対応はAndroidのChrome/Edge等。iOS Safariのホーム画面追加ではショートカットメニュー自体が利用できません)。設定画面でOFFにできます。
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {doneTodayUnique.length > 0 && (
+              <div className="panel p-4">
+                <h3 className="font-display text-sm font-bold text-cream/80">✅ 完了した業務から再開</h3>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {doneTodayUnique.map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => setRestartChoice(d)}
+                      className="rounded-full border border-cream/30 bg-ink px-3 py-1.5 text-sm text-cream hover:bg-cream/10"
+                    >
+                      ✅ {d.category} / {d.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+
+            {showNextMovePick && nextTaskPick && (
+              <div className="panel flex flex-wrap items-center justify-between gap-2 border border-alert/40 bg-alert/5 p-4">
+                <div>
+                  <h3 className="font-display text-sm font-bold text-alert">🎯 今この一手</h3>
+                  <p className="text-xs text-cream/50">{nextTaskPick.reason}</p>
+                  <p className="mt-1 text-sm text-cream">
+                    {nextTaskPick.category} / {nextTaskPick.name}
+                  </p>
+                </div>
+                <button className="btn-pill text-sm" onClick={startNextTaskPick}>
+                  ワンタップで開始
+                </button>
+              </div>
+            )}
+
+            {showSuggestedTask && suggestedTask && (
+              <div className="panel flex flex-wrap items-center justify-between gap-2 p-4">
+                <div>
+                  <h3 className="font-display text-sm font-bold text-cream/80">💡 そろそろこの作業では?</h3>
+                  <p className="text-xs text-cream/50">
+                    同じ曜日のこの時間帯によく行っている作業です（{suggestedTask.count}回）
+                  </p>
+                  <p className="mt-1 text-sm text-cream">
+                    {suggestedTask.category} / {suggestedTask.name}
+                  </p>
+                </div>
+                <button className="btn-pill text-sm" onClick={startSuggested}>
+                  ワンタップで開始
+                </button>
+              </div>
+            )}
+
+            {conditionEnabled && (
+              <div className="panel p-4">
+                <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
+                <div className="flex flex-wrap gap-2">
+                  {CONDITION_LEVELS.map((c) => (
+                    <button
+                      key={c.level}
+                      className={
+                        c.level === latestConditionLevel
+                          ? "btn-pill p-1.5"
+                          : "btn-pill-outline p-1.5"
+                      }
+                      onClick={() => logCondition(c.level)}
+                      aria-label={c.label}
+                      title={c.label}
+                    >
+                      <ConditionGlyph level={c.level} size={28} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <TodayHandoffPanel today={date} />
+            {showStatusPanel && (
+              <TodayStatusPanel
+                tasks={tasks ?? []}
+                conditionLogs={conditionLogs ?? []}
+                now={now}
+                standardWorkStart={standardWorkStart}
+                standardWorkEnd={standardWorkEnd}
+              />
+            )}
+            {showDailyChallenge && <DailyChallengePanel />}
+            <TodayHintPanel />
+            <BackupNudge />
+            <TodayMemoPanel onOpenMemo={onOpenMemo} />
+            {startedForceStopRanges.length > 0 && (
+              <div className="panel space-y-2 p-4">
+                <h3 className="font-display text-sm font-bold text-cream/80">☕ 本日の休憩</h3>
+                <p className="text-xs text-cream/50">
+                  この時間帯になると計測中の作業を自動で一時停止します。移動やミーティングなどで実際には
+                  作業していた場合は、後からその作業に割り当てられます。
+                </p>
+                <div className="space-y-1.5">
+                  {startedForceStopRanges.map((r, i) => (
+                    <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2 text-sm">
+                      <span className="text-cream/70">
+                        {r.start}〜{r.end}
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {(r.checklist?.length ?? 0) > 0 && (
+                          <button className="btn-pill-outline text-xs" onClick={() => setBreakChecklistRange(r)}>
+                            チェックリストを見る
+                          </button>
+                        )}
+                        <button className="btn-pill-outline text-xs" onClick={() => setBreakAssignRange(r)}>
+                          実は作業していた分を割り当てる
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {showAutoAllocate && (
+              <AutoAllocatePanel
+                mode={autoAllocateMode as AutoAllocateMode}
+                onModeChange={setAutoAllocateMode}
+                standardWorkEnd={standardWorkEnd}
+                allocation={effectiveAllocation}
+                manualComputed={!!manualAllocation}
+                manualComputedAt={manualAllocationAt}
+                onRunManual={runManualAllocation}
+              />
+            )}
+            {notifPermission !== "granted" && notifPermission !== "unsupported" && (
+              <div className="panel flex items-center justify-between p-4">
+                <p className="text-sm text-cream/80">予定超過を通知でお知らせできます。</p>
+                <button className="btn-pill-outline text-sm" onClick={enableNotifications}>
+                  通知を許可
+                </button>
+              </div>
+            )}
+
+            {geoTrackingEnabled && (
+              <GeoTrackingStatus
+                error={geoMovement.error}
+                distanceThresholdMeters={geoDistanceThresholdMeters}
+                category={geoCategorySetting}
+                taskName={geoTaskNameSetting}
+                stillMs={geoStillMs}
+              />
+            )}
+
+            {geoArrivalEnabled && (
+              <GeoArrivalStatus
+                error={geoArrival.error}
+                placeCount={(geoPlaces ?? []).length}
+                wakeLockActive={wakeLock.active}
+                wakeLockError={wakeLock.error}
+              />
+            )}
+
+            {weather.notifyEnabled && (weather.places ?? []).length > 0 && (
+              <WeatherStatus
+                placeCount={(weather.places ?? []).length}
+                thresholdPercent={weather.thresholdStr}
+                leadHours={weather.leadHoursStr}
+                error={weather.error}
+                checking={weather.checking}
+                lastCheckedAt={weather.lastCheckedAt}
+                current={weather.current}
+                nextCrossings={weather.nextCrossings}
+                onCheckNow={weather.checkNow}
+              />
+            )}
+
+            {estimateAdjustment && (
+              <div className="panel p-4">
+                <p className="text-sm text-cream/80">
+                  🔍 今日は{estimateAdjustment.factors.join("・")}の影響で、いつもより
+                  <span className="mx-1 font-bold text-alert">+{estimateAdjustment.avgShortfallPct}%</span>
+                  ほど時間がかかる見込みです。
+                </p>
+                <p className="mt-1 text-[10px] text-cream/40">
+                  過去の{estimateAdjustment.factors.join("・")}別の生産性データ(要注意リスト)から算出した目安です。
+                </p>
+              </div>
+            )}
+
+            <div className="panel space-y-2 p-4">
+              <h3 className="font-display text-sm font-bold text-cream/80">📓 今日の記録</h3>
+              <textarea
+                value={dailyJournal}
+                onChange={(e) => setDailyJournal(e.target.value)}
+                placeholder="タスクに縛られない、今日の気づき・メモを自由に書けます"
+                rows={2}
+                className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              />
+              <p className="text-[11px] text-cream/40">過去の記録は「実績編集」タブの「記録の履歴」から見返せます。</p>
+            </div>
+          </>
+        )}
+      </div>
 
       {showAddDialog && (
         <AddTaskDialog
