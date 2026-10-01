@@ -62,6 +62,10 @@ import { BOARD_VIEW_MODES, type BoardViewMode } from "@/lib/boardViewModes";
 import AltBoardView from "@/components/board/AltBoardView";
 import ProgressView from "@/components/board/views/ProgressView";
 import { buildProgressRows, summarizeProgress } from "@/lib/progressOverview";
+import { addProgressStepToToday, completeProgressStep, stepKeysInToday } from "@/lib/progressActions";
+import { projectWaitingInfo, todoWaitingInfo } from "@/lib/waiting";
+import { useWaitingSettings } from "@/lib/waitingSettings";
+import { showUndoToast } from "@/lib/toast";
 import { computeProjectForecast } from "@/lib/projectForecast";
 import { exportElementToPng } from "@/lib/pdfExport";
 import Modal from "@/components/ui/Modal";
@@ -1856,13 +1860,24 @@ export default function UnifiedBoardSection({
   const showTools = showToolsStr === "true";
   const toolsOpen = showTools || boardSearchActive || tagFilter !== null;
   const viewMode = (BOARD_VIEW_MODES.some((m) => m.key === viewModeStr) ? viewModeStr : "board") as BoardViewMode;
-  const progressRows = useMemo(
-    () =>
-      viewMode === "progress" ? buildProgressRows({ todos: openTodos, subtasksByParent, projects: openProjects, today }) : [],
+  const { waitingTags, nudgeDays } = useWaitingSettings();
+  const progressRows = useMemo(() => {
+    if (viewMode !== "progress") return [];
+    const now = Date.now();
+    return buildProgressRows({
+      todos: openTodos,
+      subtasksByParent,
+      projects: openProjects,
+      today,
+      waiting: {
+        todo: (t, subs) => todoWaitingInfo(t, subs, stampPresets, waitingTags, nudgeDays, now),
+        project: (p) => projectWaitingInfo(p, waitingTags, nudgeDays, now),
+      },
+    });
     // openTodos・openProjectsは毎回作り直される配列なので、元のテーブルを見て作り直す
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [viewMode, todoTasks, projectItems, subtasksByParent, today]
-  );
+  }, [viewMode, todoTasks, projectItems, subtasksByParent, today, stampPresets, waitingTags, nudgeDays]);
+  const progressInTodayKeys = useMemo(() => stepKeysInToday(dailyTasks ?? []), [dailyTasks]);
   const progressSummary = useMemo(
     () => summarizeProgress({ rows: progressRows, allTodos: todoTasks ?? [], allProjects: projectItems ?? [], today }),
     [progressRows, todoTasks, projectItems, today]
@@ -2265,7 +2280,17 @@ export default function UnifiedBoardSection({
         <ProgressView
           rows={progressRows}
           summary={progressSummary}
+          today={today}
+          inTodayKeys={progressInTodayKeys}
           onOpen={(r) => (r.kind === "todo" ? setDetailTodoId(r.id) : onOpenProjectEdit?.(r.id))}
+          onCompleteStep={async (r, stepId) => {
+            const done = await completeProgressStep(r, stepId, today);
+            if (done) showUndoToast(`「${done.title}」を完了にしました`, done.undo ? () => void done.undo!() : undefined);
+          }}
+          onAddStepToToday={async (r, stepId) => {
+            const added = await addProgressStepToToday(r, stepId, today);
+            if (added) showUndoToast("本日の作業に追加しました（未着手）");
+          }}
         />
       ) : viewMode !== "board" ? (
         <AltBoardView
