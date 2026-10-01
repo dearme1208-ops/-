@@ -154,3 +154,19 @@ test("案件を完了にしたときの完了レポートで振り返りを残�
   await expect.poll(async () => (await readOne<{ retrospective?: string }>(page, "projects", "p1"))?.retrospective).toBe("見積の前に過去の単価表を確認する");
 });
 
+
+test("週次レビューでは、件名に加えてリスト名・案件名が出て、何のToDoか分かる", async ({ page }) => {
+  await seed(page, {
+    stores: {
+      todoLists: [{ id: "l1", title: "ゲーム", order: 0, createdAt: 0 }],
+      projects: [project({ id: "p1", title: "ゲーム攻略", dueDate: jstDate(30), stages: [{ id: "s1", title: "41~50", completed: false }] })],
+      todoTasks: [{ id: "t1", listId: "l1", title: "42~50", projectId: "p1", important: false, completed: false, order: 0, createdAt: jstAt("09:00", -30) }],
+    },
+  });
+  await openTab(page, "ToDo");
+  await page.locator("button", { hasText: "📋 週次レビュー" }).first().click();
+  const dialog = page.locator(".modal-scrim").last();
+  await expect(dialog.getByText("42~50")).toBeVisible();
+  await expect(dialog.getByText("📋 ゲーム")).toBeVisible();
+  await expect(dialog.getByText("ゲーム攻略")).toBeVisible();
+});

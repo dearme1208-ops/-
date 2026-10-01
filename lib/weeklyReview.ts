@@ -1,5 +1,5 @@
 import { summarizePostpones } from "./changeTracking";
-import type { ProjectItem, TodoTask } from "./types";
+import type { ProjectItem, TodoList, TodoTask } from "./types";
 import { daysBetweenDateStrs, todayStr } from "./time";
 
 // 停滞している項目を1件ずつ見せて「今日やる/期日を変える/アーカイブ」を決めていく
@@ -21,6 +21,31 @@ export interface ReviewItem {
   // これまでに期日を後ろへずらした回数・日数の合計(lib/changeTracking.ts)。0回なら未設定
   postponeCount?: number;
   postponeDays?: number;
+  // 件名だけでは何のことか分からない(「42~50」「確認」など)ため、どこに属する項目かを添える
+  /** ToDoの入っているリスト名 */
+  listTitle?: string;
+  /** サブタスクの場合の親タスク名 */
+  parentTitle?: string;
+  /** ToDoが反映されている案件の件名 */
+  projectTitle?: string;
+  /** 案件の場合: グループ名と、まだ終わっていない段階(先頭から最大3つ) */
+  groupName?: string;
+  openStages?: string[];
+}
+
+export interface ReviewContextSources {
+  lists?: TodoList[];
+}
+
+function todoContext(t: TodoTask, todoById: Map<string, TodoTask>, projectById: Map<string, ProjectItem>, listById: Map<string, TodoList>) {
+  const parent = t.parentTaskId ? todoById.get(t.parentTaskId) : undefined;
+  // サブタスク自身が案件に反映されていなくても、親が反映されていればその案件の一部とみなす
+  const projectId = t.projectId ?? parent?.projectId;
+  return {
+    listTitle: listById.get(t.listId)?.title,
+    parentTitle: parent?.title,
+    projectTitle: projectId ? projectById.get(projectId)?.title : undefined,
+  };
 }
 
 // 期日が無いまま何日以上放置されていれば「停滞」とみなすか
@@ -37,9 +62,18 @@ export function buildWeeklyReviewQueue(
   todoTasks: TodoTask[],
   projects: ProjectItem[],
   today: string = todayStr(),
-  staleDays: number = STALE_DAYS_THRESHOLD
+  staleDays: number = STALE_DAYS_THRESHOLD,
+  sources: ReviewContextSources = {}
 ): ReviewItem[] {
   const items: ReviewItem[] = [];
+  const todoById = new Map(todoTasks.map((t) => [t.id, t]));
+  const projectById = new Map(projects.map((p) => [p.id, p]));
+  const listById = new Map((sources.lists ?? []).map((l) => [l.id, l]));
+  const ctx = (t: TodoTask) => todoContext(t, todoById, projectById, listById);
+  const projectCtx = (p: ProjectItem) => ({
+    groupName: p.groupName,
+    openStages: (p.stages ?? []).filter((s) => !s.completed).slice(0, 3).map((s) => s.title),
+  });
 
   for (const t of todoTasks) {
     if (t.parentTaskId || t.completed || t.archived) continue;
@@ -49,6 +83,7 @@ export function buildWeeklyReviewQueue(
           kind: "todo",
           id: t.id,
           title: t.title,
+          ...ctx(t),
           subtitle: [t.category, t.customer].filter(Boolean).join(" / ") || undefined,
           dueDate: t.dueDate,
           reason: "overdue",
@@ -61,6 +96,7 @@ export function buildWeeklyReviewQueue(
           kind: "todo",
           id: t.id,
           title: t.title,
+          ...ctx(t),
           subtitle: [t.category, t.customer].filter(Boolean).join(" / ") || undefined,
           dueDate: t.dueDate,
           reason: "postponed",
@@ -75,6 +111,7 @@ export function buildWeeklyReviewQueue(
         kind: "todo",
         id: t.id,
         title: t.title,
+        ...ctx(t),
         subtitle: [t.category, t.customer].filter(Boolean).join(" / ") || undefined,
         reason: "stale",
         daysSinceCreated,
@@ -89,6 +126,7 @@ export function buildWeeklyReviewQueue(
         kind: "project",
         id: p.id,
         title: p.title,
+        ...projectCtx(p),
         subtitle: [p.category, p.workName].filter(Boolean).join(" / ") || undefined,
         dueDate: p.dueDate,
         reason: "overdue",
@@ -100,6 +138,7 @@ export function buildWeeklyReviewQueue(
         kind: "project",
         id: p.id,
         title: p.title,
+        ...projectCtx(p),
         subtitle: [p.category, p.workName].filter(Boolean).join(" / ") || undefined,
         dueDate: p.dueDate,
         reason: "postponed",

@@ -16,15 +16,16 @@ export default function WeeklyReviewModal({ onClose }: { onClose: () => void }) 
   const today = todayStr();
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
+  const lists = useLiveQuery(() => db.todoLists.toArray(), []);
 
   // キューは開いた時点のスナップショットで固定する。レビュー中に他の項目の状態が
   // 動いて対象の並びがガクガク変わると、落ち着いて見直せなくなるため
   const [queue, setQueue] = useState<ReviewItem[] | null>(null);
   useEffect(() => {
-    if (queue !== null || !todoTasks || !projects) return;
-    setQueue(buildWeeklyReviewQueue(todoTasks, projects, today));
+    if (queue !== null || !todoTasks || !projects || !lists) return;
+    setQueue(buildWeeklyReviewQueue(todoTasks, projects, today, undefined, { lists }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todoTasks, projects]);
+  }, [todoTasks, projects, lists]);
 
   const [index, setIndex] = useState(0);
   const current = queue?.[index];
@@ -103,7 +104,33 @@ export default function WeeklyReviewModal({ onClose }: { onClose: () => void }) 
             <span>{current.kind === "todo" ? "✅ ToDo" : "📁 案件"}</span>
             {current.subtitle && <span>{current.subtitle}</span>}
           </div>
-          <div className="text-lg font-bold text-cream">{current.title}</div>
+          {/* 件名だけでは何のことか分からない(「42~50」など)ので、どこに属する項目かを先に出す */}
+          {(current.listTitle || current.parentTitle) && (
+            <div className="text-xs text-cream/60">
+              📋 {current.listTitle}
+              {current.parentTitle && (
+                <>
+                  {current.listTitle ? " › " : ""}
+                  <span className="font-bold text-cream/80">{current.parentTitle}</span>
+                </>
+              )}
+            </div>
+          )}
+          {current.projectTitle && (
+            <div className="text-xs text-cream/60">
+              📁 案件「<span className="font-bold text-cream/80">{current.projectTitle}</span>」
+            </div>
+          )}
+          {current.groupName && current.groupName !== current.title && (
+            <div className="text-xs text-cream/60">🗂 グループ「{current.groupName}」</div>
+          )}
+          <div className="text-lg font-bold text-cream">
+            {current.parentTitle && <span className="text-cream/50">{current.parentTitle} › </span>}
+            {current.title}
+          </div>
+          {current.openStages && current.openStages.length > 0 && (
+            <div className="mt-1 text-xs text-cream/60">残りの段階: {current.openStages.join("・")}</div>
+          )}
           <div className="mt-2 text-sm font-bold text-alert">
             {current.reason === "overdue"
               ? `⚠ 期日 ${current.dueDate ? formatDateJp(current.dueDate) : ""}（${current.daysOverdue}日超過）`
