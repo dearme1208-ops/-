@@ -64,6 +64,7 @@ export interface TodayToolbarProps {
   onDayCard: () => void;
   onDayPlan: () => void;
   onTomorrowDraft: () => void;
+  onTimebox: () => void;
   onReflection: () => void;
   onDownloadScheduleTemplate: () => void;
   onImportScheduleFile: (file: File) => void;
@@ -128,6 +129,14 @@ export default function TodayToolbar(props: TodayToolbarProps) {
         )}
         <ModeButton simple={simple} icon="🧭" label="🧭 今日の段取り" title="今日の段取りを提案" onClick={props.onDayPlan} />
         <ModeButton simple={simple} icon="🗓" label="🗓 明日の下書き" title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
+        <ModeButton
+          simple={simple}
+          icon="⏱"
+          label="⏱ 時間割"
+          title="作業ごとに時間の枠を決める(タイムボックス)"
+          ariaLabel="時間割を作る"
+          onClick={props.onTimebox}
+        />
         <ModeButton
           simple={simple}
           icon={props.reflectionAnsweredToday ? "🌙✓" : "🌙"}

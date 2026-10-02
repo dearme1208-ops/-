@@ -116,6 +116,8 @@ export interface DailyTask {
   scheduledTime?: string; // HH:MM。カレンダー予定インポート等で設定され、その時刻になったら自動的に差し込み開始する
   autoStartNotified?: boolean; // scheduledTimeによる自動開始・通知をすでに行ったか（二重発火防止）
   autoStartDisabled?: boolean; // true の場合、scheduledTimeになっても自動開始せず時刻の目安表示のみにする
+  timeboxEnd?: string; // HH:MM。タイムボックス(時間割)の枠の終わり。枠の始まりはscheduledTime(lib/timebox.ts)
+  timeboxEndHandled?: boolean; // 枠の終わりの「時間です」をすでに出したか（二重発火防止。延長すると戻す）
   hasPlan?: boolean; // false の場合、この作業インスタンスには「予定」を設定しない（目安のestimatedSecondsは0扱い）。
   // 未設定/trueは従来通り予定ありとして扱う（テンプレート・予定インポート・クイックスタート等は常に予定あり）
   secondaryProjectIds?: string[]; // 兼務・並行作業などで、主案件(projectId)以外にも時間を按分したい場合の

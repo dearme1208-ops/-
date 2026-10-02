@@ -375,11 +375,11 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             <div className="flex items-center gap-2 text-xs">
               {task.autoStartDisabled ? (
                 <span className="text-cream/50" title="この時刻になっても自動的には開始されません">
-                  ⏰ {task.scheduledTime}（自動開始OFF）
+                  ⏰ {task.scheduledTime}{task.timeboxEnd ? `〜${task.timeboxEnd}` : ""}（自動開始OFF）
                 </span>
               ) : (
                 <span className="font-bold text-alert" title="この時刻になったら自動的に差し込み開始されます">
-                  ⏰ {task.scheduledTime} に自動開始
+                  ⏰ {task.timeboxEnd ? `${task.scheduledTime}〜${task.timeboxEnd} の枠で自動開始` : `${task.scheduledTime} に自動開始`}
                 </span>
               )}
               <button

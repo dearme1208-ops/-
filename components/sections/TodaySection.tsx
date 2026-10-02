@@ -89,6 +89,11 @@ import TodayMemoPanel from "@/components/TodayMemoPanel";
 import TodayHandoffPanel from "@/components/TodayHandoffPanel";
 import type { DayCardData } from "@/lib/dayCard";
 import TomorrowDraftModal from "@/components/TomorrowDraftModal";
+import TimeboxModal from "@/components/TimeboxModal";
+import Modal from "@/components/ui/Modal";
+import TimeboxBand from "@/components/sections/today/TimeboxBand";
+import { extendTimebox, findEndedTimeboxes, timeboxesOf } from "@/lib/timebox";
+import { playChime } from "@/lib/chime";
 import DayPlanModal from "@/components/DayPlanModal";
 import {
   ConditionStartDialog,
@@ -533,6 +538,48 @@ export default function TodaySection({
       }
     }
   }, [now, tasks, overrunTask, predictedSecondsByTaskId]);
+
+  // タイムボックス(時間割)。枠の始まりは上の予定時刻の自動開始がそのまま受け持ち、
+  // 枠の終わりで「時間です」と音・通知で知らせて、止めるか延ばすかを選ばせる
+  // (設定で、確認せずにその場で止めることもできる)
+  const timeboxes = useMemo(() => timeboxesOf(tasks ?? [], date), [tasks, date]);
+  const [timeboxEndPrompt, setTimeboxEndPrompt] = useState<DailyTask | null>(null);
+  const [timeboxAutoStopStr] = useSetting("today.timeboxAutoStop", "false");
+  useEffect(() => {
+    if (!tasks) return;
+    const ended = findEndedTimeboxes(tasks, date, now);
+    if (ended.length === 0) return;
+    (async () => {
+      for (const task of ended) {
+        await db.dailyTasks.update(task.id, { timeboxEndHandled: true });
+        playChime();
+        notify("時間です", `「${workLabel(task)}」の枠が終わりました。途中でも止めて次へ`, `timebox-${task.id}`);
+        if (timeboxAutoStopStr === "true") {
+          await pauseTask(task);
+          showUndoToast(`⏰ 時間です。「${workLabel(task)}」を止めました`);
+        } else {
+          setTimeboxEndPrompt(task);
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now, tasks, date]);
+
+  async function resolveTimeboxEnd(choice: "stop" | "extend" | "continue") {
+    const target = timeboxEndPrompt;
+    setTimeboxEndPrompt(null);
+    if (!target) return;
+    const latest = await db.dailyTasks.get(target.id);
+    if (!latest) return;
+    if (choice === "stop") {
+      if (latest.status === "running") await pauseTask(latest);
+    } else if (choice === "extend") {
+      const updates = extendTimebox(await db.dailyTasks.where("date").equals(date).toArray(), latest.id, 5);
+      await db.transaction("rw", db.dailyTasks, async () => {
+        for (const u of updates) await db.dailyTasks.update(u.id, u.changes);
+      });
+    }
+  }
 
   // 予定インポートで登録した作業(scheduledTime)が指定時刻になったら自動的に差し込み開始する
   useEffect(() => {
@@ -2096,6 +2143,7 @@ export default function TodaySection({
   const [showDayCard, setShowDayCard] = useState(false);
   const [showTomorrowDraft, setShowTomorrowDraft] = useState(false);
   const [showDayPlan, setShowDayPlan] = useState(false);
+  const [showTimebox, setShowTimebox] = useState(false);
   const [showReflection, setShowReflection] = useState(false);
   const reflectionAnsweredToday = useLiveQuery(
     async () => !!(await db.settings.get(`reflection.daily.${date}`)),
@@ -2309,11 +2357,14 @@ export default function TodaySection({
         onDayCard={() => setShowDayCard(true)}
         onDayPlan={() => setShowDayPlan(true)}
         onTomorrowDraft={() => setShowTomorrowDraft(true)}
+        onTimebox={() => setShowTimebox(true)}
         onReflection={() => setShowReflection(true)}
         onDownloadScheduleTemplate={downloadScheduleTemplate}
         onImportScheduleFile={importScheduleFile}
         onRegenerate={requestGenerateFromTemplate}
       />
+
+      <TimeboxBand boxes={timeboxes} now={now} workLabel={workLabel} onEdit={() => setShowTimebox(true)} />
 
       {scheduleImportResult && <p className="text-xs text-cream/70">{scheduleImportResult}</p>}
       {scheduleImportErrors.length > 0 && (
@@ -2787,6 +2838,26 @@ export default function TodaySection({
 
       {showDayCard && <DayCardModal data={dayCardData} onClose={() => setShowDayCard(false)} />}
       {showDayPlan && <DayPlanModal today={date} onClose={() => setShowDayPlan(false)} />}
+      {showTimebox && <TimeboxModal today={date} onClose={() => setShowTimebox(false)} />}
+      {timeboxEndPrompt && (
+        <Modal title="⏰ 時間です" onClose={() => setTimeboxEndPrompt(null)}>
+          <p className="mb-1 text-sm text-cream">
+            「{workLabel(timeboxEndPrompt)}」の枠（{timeboxEndPrompt.scheduledTime}〜{timeboxEndPrompt.timeboxEnd}）が終わりました。
+          </p>
+          <p className="mb-4 text-xs text-cream/60">いいところでも、ここで止めて次へ。続きは別の枠で。</p>
+          <div className="flex flex-col gap-2">
+            <button className="btn-pill text-sm" onClick={() => resolveTimeboxEnd("stop")}>
+              止める（一時停止）
+            </button>
+            <button className="btn-pill-outline text-sm" onClick={() => resolveTimeboxEnd("extend")}>
+              5分だけ延長（後ろの枠も5分ずらす）
+            </button>
+            <button className="text-xs text-cream/50" onClick={() => resolveTimeboxEnd("continue")}>
+              このまま続ける
+            </button>
+          </div>
+        </Modal>
+      )}
       {showTomorrowDraft && (
         <TomorrowDraftModal today={date} todayTasks={tasks ?? []} onClose={() => setShowTomorrowDraft(false)} />
       )}

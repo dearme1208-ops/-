@@ -51,6 +51,8 @@ export default function SettingsSection() {
     "true"
   );
   const provisionalNotifyEnabled = provisionalNotifyEnabledStr === "true";
+  const [timeboxAutoStopStr, setTimeboxAutoStopStr] = useSetting("today.timeboxAutoStop", "false");
+  const timeboxAutoStop = timeboxAutoStopStr === "true";
   const [breakRangesStr, setBreakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
   const breakRanges = parseBreakRanges(breakRangesStr);
   // チェックリストのテキストエリアは、キー入力のたびにDBへ書き込んで再レンダーすると
@@ -648,6 +650,20 @@ export default function SettingsSection() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="font-display text-sm font-bold text-cream/80">時間割（タイムボックス）</h3>
+        <p className="text-xs text-cream/60">
+          本日の作業の「⏱ 時間割」で作業ごとに時間の枠を決めると、枠の始まりで自動的に計測を始め、終わりで音と通知で知らせます。
+        </p>
+        <button
+          className={timeboxAutoStop ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => setTimeboxAutoStopStr(timeboxAutoStop ? "false" : "true")}
+        >
+          枠の終わりで確認せずに止める: {timeboxAutoStop ? "ON" : "OFF"}
+        </button>
+        <p className="text-[11px] text-cream/45">OFFのときは「止める・5分延長・このまま続ける」を選べます。</p>
       </div>
 
       <div className="panel space-y-3 p-4">

@@ -15,6 +15,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     label: "⏱ 本日の作業",
     headings: [
       "未計測時間の自動計測",
+      "時間割（タイムボックス）",
       "本日の作業の表示",
       "作業の追加画面",
       "本日タブのパネル表示",
