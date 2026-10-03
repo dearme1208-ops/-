@@ -4475,3 +4475,73 @@ html[data-high-contrast="true"] :focus-visible {
     }
   }
 }
+
+/* ペルソナ風モード: 日めくりと予告状(components/sections/today/PersonaPanels.tsx) */
+@layer components {
+  .p5-calendar {
+    background: #0d0d0d;
+    clip-path: polygon(0 0, 100% 0, 97% 100%, 0 100%);
+  }
+  .p5-date {
+    background: #fff;
+    color: #0d0d0d;
+    clip-path: polygon(0 0, 100% 6%, 92% 100%, 0 94%);
+  }
+  .p5-card {
+    background: rgb(var(--p5-red-rgb));
+    color: #fff;
+    clip-path: polygon(3% 0, 100% 0, 96% 100%, 0 100%);
+  }
+  .p5-count {
+    display: inline-block;
+    margin: 0 0.2rem;
+    padding: 0 0.3rem;
+    background: #0d0d0d;
+    color: #fff;
+    font-size: 1.35rem;
+    font-weight: 900;
+    line-height: 1.2;
+    transform: rotate(-4deg);
+  }
+  .p5-rank {
+    background: rgb(var(--p5-red-rgb));
+    color: #fff;
+    clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%);
+  }
+}
+
+/* 禅モード: 一分だけ息を整える円。4秒で膨らみ、4秒でしぼむ */
+@layer components {
+  .zen-breath {
+    animation: zen-breath 8s ease-in-out infinite;
+  }
+  @keyframes zen-breath {
+    0%,
+    100% {
+      transform: scale(0.78);
+      background: rgb(var(--cream-rgb) / 0.03);
+    }
+    50% {
+      transform: scale(1.08);
+      background: rgb(var(--cream-rgb) / 0.08);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .zen-breath {
+      animation: none;
+    }
+  }
+}
+
+/* 原点モード: キー操作の案内 */
+.origin-keyhint {
+  display: none;
+  margin: 0.25rem 0 0.5rem;
+  font-size: 11px;
+  color: rgb(var(--cream-rgb) / 0.55);
+}
+@media (min-width: 640px) {
+  .origin-keyhint {
+    display: block;
+  }
+}

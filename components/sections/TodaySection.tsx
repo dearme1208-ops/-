@@ -123,6 +123,8 @@ import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import { QuickStampButton, QuickStampPanel, QuickStampSheet } from "@/components/sections/today/QuickStamp";
+import { CarePanel, ForestGrove } from "@/components/sections/today/ForestPanels";
+import { CallingCardPanel, PersonaStatsPanel } from "@/components/sections/today/PersonaPanels";
 import { addQuickStamp } from "@/lib/quickStamp";
 import { TODAY_ACTION_EVENT } from "@/lib/todayActions";
 import type { QuickStamp } from "@/lib/types";
@@ -2469,6 +2471,9 @@ export default function TodaySection({
 
       <TimeboxBand boxes={timeboxes} now={now} workLabel={workLabel} onEdit={() => setShowTimebox(true)} />
 
+      {/* ペルソナ風: 日めくりと、期日の迫る仕事の予告状 */}
+      {themedMode === "persona5" && <CallingCardPanel today={date} />}
+
       {scheduleImportResult && <p className="text-xs text-cream/70">{scheduleImportResult}</p>}
       {scheduleImportErrors.length > 0 && (
         <div className="panel border border-alert/40 p-3 text-xs text-alert">
@@ -2594,6 +2599,9 @@ export default function TodaySection({
 
       <QuickStampPanel date={date} now={now} />
 
+      {/* 森モード(家庭で毎日使うモード): 家事を前回からの間隔で見る */}
+      {themedMode === "home" && <CarePanel today={date} onStart={addFavoriteAndStart} />}
+
       {/* 作業の開始に使うもの(テンプレート・お気に入り・提案など)と、状況の表示(作業状況・
           チャレンジ・自動配分・通知など)は、作業リストの下にまとめる。以前は作業リストの上に
           並んでいて、スマホでは作業リストが数画面下に埋もれていた。まとめて折りたためる */}
@@ -2611,6 +2619,8 @@ export default function TodaySection({
         </button>
         {!extrasCollapsed && (
           <>
+            {themedMode === "home" && <ForestGrove today={date} />}
+            {themedMode === "persona5" && <PersonaStatsPanel today={date} />}
             {(!tasks || tasks.length === 0) && (
               <div className="panel p-5">
                 <h2 className="mb-3 font-display text-lg font-bold">本日の作業リストを生成</h2>

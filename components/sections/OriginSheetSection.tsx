@@ -8,6 +8,8 @@ import { parseBreakRanges, timeToMsOfDay } from "@/lib/breaks";
 import { useSetting } from "@/lib/settings";
 import { finishDailyTask } from "@/lib/tasks";
 import { formatHms, shiftDateStr, todayStr } from "@/lib/time";
+import { buildXlsx } from "@/lib/xlsx";
+import { downloadBlob } from "@/lib/report";
 import {
   ORIGIN_AXIS_END_HM,
   ORIGIN_AXIS_STEP_MIN,
@@ -223,6 +225,67 @@ export default function OriginSheetSection({
     await db.dailyTasks.add(task);
   }
 
+  /**
+   * 元ブックと同じ並び(7行目から予定行・実績行の2行ペア)で .xlsx に書き出す。
+   * 時刻はExcelでそのまま計算できるよう「HH:MM」の文字列ではなく1日=1の小数にしている
+   */
+  function exportXlsx() {
+    const dayFrac = (ms?: number) => {
+      if (ms === undefined) return null;
+      const d = new Date(ms);
+      return Math.round(((d.getHours() * 60 + d.getMinutes()) / 1440) * 1e6) / 1e6;
+    };
+    const header = ["行", "区分", "作業", "内容", "開始", "終了", "想定(分)", "実績(分)", "完了"];
+    const body = rows.flatMap((r) => [
+      [r.rowNo, "予定", r.task.category, r.task.name, dayFrac(r.planStartMs), dayFrac(r.planEndMs), Math.round(r.plannedSeconds / 60) || null, null, null],
+      [r.rowNo + 1, r.unplanned ? "実(予定外)" : "実", r.task.category, r.task.name, dayFrac(r.actualStartMs), dayFrac(r.actualEndMs), null, Math.round(r.actualMs / 60000) || null, r.done ? 1 : null],
+    ]);
+    const tally = [
+      ["集計", ""],
+      ["予定内", `${summary.plannedCount}件`, formatOriginDuration(summary.plannedMs)],
+      ["予定外", `${summary.unplannedCount}件`, formatOriginDuration(summary.unplannedMs)],
+      ["予定外の割合", `${Math.round(summary.unplannedShare * 100)}%`],
+      ["完了", `${summary.doneCount}/${summary.totalCount}`],
+    ];
+    const bytes = buildXlsx([
+      { name: "工程表", rows: [["日付", date], [], header, ...body], widths: [5, 10, 12, 24, 8, 8, 9, 9, 6] },
+      { name: "集計", rows: tally, widths: [14, 10, 12] },
+    ]);
+    downloadBlob(
+      `koutei-hyo_${date}.xlsx`,
+      new Blob([bytes as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+    );
+  }
+
+  // キーボードだけで操作する(元ブックをキーで動かしていた手触り)。入力欄やダイアログの中では反応しない
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if (finishOpen || insertOpen || pushOpen || pickerOpen || document.querySelector(".modal-scrim")) return;
+      const idx = rows.findIndex((r) => r.task.id === detailRowId);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        if (rows.length === 0) return;
+        e.preventDefault();
+        const next = e.key === "ArrowDown" ? Math.min(rows.length - 1, idx + 1) : Math.max(0, idx < 0 ? 0 : idx - 1);
+        setDetailRowId(rows[next].task.id);
+      } else if (e.key === "Enter") {
+        const row = rows[idx];
+        if (!row) return;
+        e.preventDefault();
+        if (row.running) setFinishOpen(true);
+        else if (!row.done && isToday) startRow(row.task, stampNow());
+      } else if (e.key === "i" || e.key === "I") {
+        e.preventDefault();
+        setInsertOpen(true);
+      } else if (e.key === "Escape") {
+        setDetailRowId(null);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   /** 予定行をその場で開始する(打刻は丸めた時刻をそのまま区間の開始にする) */
   async function startRow(task: DailyTask, atMs: number) {
     const all = await db.dailyTasks.where("date").equals(date).toArray();
@@ -376,7 +439,12 @@ export default function OriginSheetSection({
         <button className="origin-xbtn" onClick={() => setPickerOpen(true)}>
           作業項目…
         </button>
+        <span className="origin-bar-sep" />
+        <button className="origin-xbtn" onClick={exportXlsx} title="元の工程表ブックと同じ並び(予定行・実績行)でExcelファイルに書き出します">
+          Excelに書き出す
+        </button>
       </div>
+      <p className="origin-keyhint">キー操作: ↑↓ 行を選ぶ ・ Enter 選んだ行を開始(計測中なら作業完了) ・ I 予定外差し込み ・ Esc 選択を外す</p>
 
       {/* ---- 予定内と予定外の集計(元ブック Module8)。元ブックはボタンを押して別表に出していたが、
              メモシートに「予定内外の合計がおかしい」と書かれていたので、常に出して毎回数え直す ---- */}

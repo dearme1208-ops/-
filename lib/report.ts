@@ -173,7 +173,11 @@ export function generateReportText(
 }
 
 export function downloadTextFile(filename: string, content: string): void {
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  downloadBlob(filename, new Blob([content], { type: "text/plain;charset=utf-8" }));
+}
+
+/** 任意の中身(Excelファイルなど)をファイルとして保存させる */
+export function downloadBlob(filename: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

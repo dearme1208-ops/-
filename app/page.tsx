@@ -60,6 +60,15 @@ const OvertimeSection = dynamic(() => import("@/components/sections/OvertimeSect
 const YearlyChartSection = dynamic(() => import("@/components/sections/YearlyChartSection"), { ssr: false });
 const MandalaSection = dynamic(() => import("@/components/sections/MandalaSection"), { ssr: false });
 const MemoSection = dynamic(() => import("@/components/sections/MemoSection"), { ssr: false });
+const ModeExtras = () => import("@/components/modes/ModeExtras");
+const MountainPlanPanel = dynamic(() => ModeExtras().then((m) => m.MountainPlanPanel), { ssr: false });
+const PowerproInjuryPanel = dynamic(() => ModeExtras().then((m) => m.PowerproInjuryPanel), { ssr: false });
+const HayarigamiDeductionPanel = dynamic(() => ModeExtras().then((m) => m.HayarigamiDeductionPanel), { ssr: false });
+const OverdueTodoPanel = dynamic(() => ModeExtras().then((m) => m.OverdueTodoPanel), { ssr: false });
+const NatsuyasumiPanels = dynamic(() => ModeExtras().then((m) => m.NatsuyasumiPanels), { ssr: false });
+const ZenPanels = dynamic(() => ModeExtras().then((m) => m.ZenPanels), { ssr: false });
+const LibraryCounterPanel = dynamic(() => ModeExtras().then((m) => m.LibraryCounterPanel), { ssr: false });
+const HubTimelineStrip = dynamic(() => ModeExtras().then((m) => m.HubTimelineStrip), { ssr: false });
 const QuickStampDock = dynamic(() => import("@/components/QuickStampDock"), { ssr: false });
 const UnifiedBoardSection = dynamic(() => import("@/components/sections/UnifiedBoardSection"), { ssr: false });
 const OriginSheetSection = dynamic(() => import("@/components/sections/OriginSheetSection"), { ssr: false });
@@ -318,10 +327,26 @@ export default function HomePage() {
       {!showMenu && (
       <>
       {active === "today" && mode === "claude" && <ClaudeWorkspaceSection onOpenInsights={() => setActive("aggregation")} />}
-      {active === "today" && mode === "natsuyasumi" && <NatsuyasumiSection />}
-      {active === "today" && mode === "zen" && <ZenSection />}
+      {active === "today" && mode === "natsuyasumi" && (
+        <div className="space-y-4">
+          <NatsuyasumiSection />
+          <NatsuyasumiPanels />
+        </div>
+      )}
+      {active === "today" && mode === "zen" && (
+        <>
+          <ZenSection />
+          <ZenPanels />
+        </>
+      )}
       {active === "today" && mode === "terminal" && <TerminalDashboardSection />}
-      {active === "today" && mode === "adventurer" && <AdventurerQuestSection />}
+      {active === "today" && mode === "adventurer" && (
+        <div className="space-y-4">
+          <AdventurerQuestSection />
+          <OverdueTodoPanel variant="adventurer" />
+        </div>
+      )}
+      {active === "today" && mode === "hub" && <HubTimelineStrip />}
       {active === "today" && mode === "hub" && (
         <UnifiedBoardSection
           onOpenTodo={() => setActive("todo")}
@@ -335,11 +360,36 @@ export default function HomePage() {
           }}
         />
       )}
-      {active === "today" && mode === "powerpro" && <PowerproTrainingSection />}
-      {active === "today" && mode === "mountain" && <MountainSection />}
-      {active === "today" && mode === "hayarigami" && <HayarigamiSection />}
-      {active === "today" && mode === "lobotomy" && <LobotomySection />}
-      {active === "today" && mode === "library" && <LibrarySection />}
+      {active === "today" && mode === "powerpro" && (
+        <div className="space-y-4">
+          <PowerproTrainingSection />
+          <PowerproInjuryPanel />
+        </div>
+      )}
+      {active === "today" && mode === "mountain" && (
+        <div className="space-y-4">
+          <MountainSection />
+          <MountainPlanPanel />
+        </div>
+      )}
+      {active === "today" && mode === "hayarigami" && (
+        <div className="space-y-4">
+          <HayarigamiSection />
+          <HayarigamiDeductionPanel />
+        </div>
+      )}
+      {active === "today" && mode === "lobotomy" && (
+        <div className="space-y-4">
+          <OverdueTodoPanel variant="lobotomy" />
+          <LobotomySection />
+        </div>
+      )}
+      {active === "today" && mode === "library" && (
+        <div className="space-y-4">
+          <LibrarySection />
+          <LibraryCounterPanel />
+        </div>
+      )}
       {active === "today" && mode === "origin" && <OriginSheetSection onOpenTodo={() => setActive("todo")} />}
       {active === "todo" && (
         <TodoSection

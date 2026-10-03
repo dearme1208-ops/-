@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import TerminalCommandLine from "@/components/sections/TerminalCommandLine";
 import { db, uid } from "@/lib/db";
 import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
@@ -399,6 +400,7 @@ export default function TerminalDashboardSection() {
 
   return (
     <div className="space-y-3 font-sans">
+      <TerminalCommandLine />
       {/* --- ヘッダー行: 時刻・システム負荷・育成ステージ・継続日数を横並びで一望する。
            いずれもタップすると下部のDETAILパネルに内訳が出る --- */}
       <div className="panel grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
