@@ -41,6 +41,20 @@ export interface ClaudeWords {
   seeAll: string;
   captureLabel: string;
   capturePlaceholder: string;
+
+  /** 見出しの挨拶(時刻で変わる)。文言オフでは「ワークスペース」 */
+  greeting: (hour: number) => string;
+  /** 計測中の作業に添える、取り組み中を表す言葉(数秒ごとに入れ替わる) */
+  workingVerbs: string[];
+  understood: string;
+  memoryTitle: string;
+  memoryLead: string;
+  memoryEmpty: string;
+  memoryNotesTitle: string;
+  memoryNotePlaceholder: string;
+  memoryForget: string;
+  connectTitle: string;
+  connectLead: string;
 }
 
 const THEMED: ClaudeWords = {
@@ -87,7 +101,20 @@ const THEMED: ClaudeWords = {
   topFindingLead: "いま、いちばん気になっているのは",
   seeAll: "すべての気づきを見る",
   captureLabel: "今、何を考えていますか？",
-  capturePlaceholder: "例: 見積書を送る @経理",
+  capturePlaceholder: "何を進めましょう？ 例: 明日までに見積書を送る 30分 @営業",
+
+  greeting: (h) =>
+    h < 5 ? "遅くまでおつかれさまです" : h < 10 ? "おはようございます" : h < 17 ? "こんにちは" : "おつかれさまです",
+  workingVerbs: ["取り組み中", "考えをまとめ中", "手を動かし中", "組み立て中", "じっくり進行中", "磨き込み中", "整え中", "練り上げ中"],
+  understood: "こう受け取りました",
+  memoryTitle: "覚えていること",
+  memoryLead: "あなたの記録から読み取った働き方です。違っていれば忘れられますし、記録からは分からないことは書き足せます。",
+  memoryEmpty: "まだ覚えていることはありません。記録が増えると、ここに働き方の傾向が出ます。",
+  memoryNotesTitle: "あなたが書き残したこと",
+  memoryNotePlaceholder: "覚えておいてほしいこと（例: 午後は電話が多い）",
+  memoryForget: "忘れる",
+  connectTitle: "Claudeと続ける",
+  connectLead: "ここで覚えていることと今の状況をまとめて、Claudeとの会話にそのまま渡せます。",
 };
 
 const PLAIN: ClaudeWords = {
@@ -133,7 +160,19 @@ const PLAIN: ClaudeWords = {
   topFindingLead: "最も優先度の高い指摘",
   seeAll: "分析結果をすべて見る",
   captureLabel: "タスクを追加",
-  capturePlaceholder: "例: 見積書を送る @経理",
+  capturePlaceholder: "例: 明日までに見積書を送る 30分 @営業",
+
+  greeting: () => "ワークスペース",
+  workingVerbs: ["計測中"],
+  understood: "入力内容",
+  memoryTitle: "記録から分かる傾向",
+  memoryLead: "記録から読み取った働き方の傾向です。当てはまらないものは非表示にでき、記録にないことは追記できます。",
+  memoryEmpty: "まだ傾向を読み取れるだけの記録がありません。",
+  memoryNotesTitle: "追記したこと",
+  memoryNotePlaceholder: "追記する内容（例: 午後は電話が多い）",
+  memoryForget: "非表示",
+  connectTitle: "AIと連携",
+  connectLead: "傾向と現在の状況をまとめた文章をコピーして、AIとの会話に渡せます。",
 };
 
 export function claudeWordsFor(wordingEnabled: boolean): ClaudeWords {

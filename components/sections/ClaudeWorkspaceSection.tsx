@@ -6,13 +6,19 @@ import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
-import { daysBetweenDateStrs, formatMsClock, todayStr } from "@/lib/time";
+import { daysBetweenDateStrs, formatMsClock, shiftDateStr, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
 import { useSetting } from "@/lib/settings";
 import { useVisualMode } from "@/lib/theme";
 import { buildThinking, confidenceLabel } from "@/lib/claudeThinking";
 import { claudeWordsFor } from "@/lib/claudeWords";
 import { ConfidenceScale, Paper } from "@/components/claude/ClaudeCanvas";
+import { Composer, DueEditor, MemoryPanel, SparkMark, WorkingLine } from "@/components/claude/ClaudeParts";
+import { dueLabel } from "@/lib/claudeCompose";
+import ProgressSyncModal from "@/components/ProgressSyncModal";
+import { copyText } from "@/components/ai/aiData";
+import { buildHandoff, deriveMemories, parseForgotten, parseNotes } from "@/lib/claudeMemory";
+import type { ComposeResult } from "@/lib/claudeCompose";
 import type { DailyTask, ProjectItem, ProjectStage, TodoTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
 
@@ -39,10 +45,12 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masters = useLiveQuery(() => db.masterTasks.toArray(), []);
   const [now, setNow] = useState(Date.now());
-  const [captureText, setCaptureText] = useState("");
-  const [newProjectTitle, setNewProjectTitle] = useState("");
-  const [newProjectDue, setNewProjectDue] = useState("");
-  const [showProjectForm, setShowProjectForm] = useState(false);
+  const [showSync, setShowSync] = useState(false);
+  // 覚えていること(lib/claudeMemory.ts)。忘れたものと、自分で書き足したものは設定に残す
+  const [forgottenJson, setForgottenJson] = useSetting("claude.memory.forgotten", "[]");
+  const [notesJson, setNotesJson] = useSetting("claude.memory.notes", "[]");
+  const forgotten = useMemo(() => parseForgotten(forgottenJson), [forgottenJson]);
+  const notes = useMemo(() => parseNotes(notesJson), [notesJson]);
   const [newStageTitle, setNewStageTitle] = useState<Record<string, string>>({});
   // 完了済みの段階・サブタスクを表示するかどうか。段階側は案件タブ・統合ボードと同じ
   // 設定キー(projects.showCompletedStages)を共有し、どちらで切り替えても一致させる
@@ -130,10 +138,6 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c]) => c);
   }, [todos]);
 
-  function insertTag(tag: string) {
-    const withoutTag = captureText.replace(/\s*@\S+\s*$/, "").trimEnd();
-    setCaptureText(withoutTag ? `${withoutTag} @${tag}` : `@${tag}`);
-  }
 
   // カテゴリ(@タグ)ごとに軽くまとめる。未分類は最後のグループにまとめる
   const todoGroups = useMemo(() => {
@@ -184,6 +188,25 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
     return buildThinking(records, masters, allTodoTasks, projects, today).findings[0] ?? null;
   }, [records, masters, allTodoTasks, projects, today]);
 
+  const allMemories = useMemo(
+    () => (records && allTodoTasks ? deriveMemories(records, allTodoTasks, today) : []),
+    [records, allTodoTasks, today]
+  );
+  const memories = allMemories.filter((m) => !forgotten.includes(m.id));
+
+  async function copyHandoff() {
+    const text = buildHandoff({
+      today,
+      memories,
+      notes,
+      running: runningDaily,
+      todos: allTodoTasks ?? [],
+      projects: projects ?? [],
+    });
+    const ok = await copyText(text);
+    showUndoToast(ok ? "コピーしました。Claudeとの会話に貼り付けてください" : "コピーできませんでした");
+  }
+
   // 案件ごとの、直近14日に充てた時間。インサイトタブの分析と同じ窓を使い、
   // 同じ画面で「順調です」と「14日間まったく進んでいません」が併存しないようにする
   const recentSecondsByProject = useMemo(() => {
@@ -212,43 +235,34 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
     return id;
   }
 
-  async function addTodo() {
-    const raw = captureText.trim();
-    if (!raw) return;
-    const match = raw.match(/^(.*?)\s*@(\S+)\s*$/);
-    const title = match ? match[1].trim() : raw;
-    const category = match ? match[2].trim() : undefined;
-    if (!title) return;
+  // 入力欄から送られた内容を、タスクかプロジェクトとして登録する。
+  // プロジェクトで期日が書かれていなければ、案件タブと同じく1週間後を期日にする
+  async function submitCompose(parsed: ComposeResult, asProject: boolean) {
+    if (asProject) {
+      const due = parsed.dueDate ?? shiftDateStr(today, 7);
+      await db.projects.add({
+        id: uid(),
+        title: parsed.title,
+        category: parsed.category || "プロジェクト",
+        workName: parsed.title,
+        dueDate: due,
+        createdAt: Date.now(),
+      });
+      return;
+    }
     const listId = await ensureListId();
-    const task: TodoTask = {
+    await db.todoTasks.add({
       id: uid(),
       listId,
-      title,
-      category,
-      important: false,
+      title: parsed.title,
+      category: parsed.category,
+      dueDate: parsed.dueDate,
+      estimateMinutes: parsed.estimateMin,
+      important: parsed.important,
       completed: false,
       order: todos.length,
       createdAt: Date.now(),
-    };
-    await db.todoTasks.add(task);
-    setCaptureText("");
-  }
-
-  async function addProject() {
-    const title = newProjectTitle.trim();
-    if (!title || !newProjectDue) return;
-    const item: ProjectItem = {
-      id: uid(),
-      title,
-      category: "プロジェクト",
-      workName: title,
-      dueDate: newProjectDue,
-      createdAt: Date.now(),
-    };
-    await db.projects.add(item);
-    setNewProjectTitle("");
-    setNewProjectDue("");
-    setShowProjectForm(false);
+    });
   }
 
   async function pauseDaily(daily: DailyTask) {
@@ -269,7 +283,8 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
       return;
     }
     const category = t.category || "タスク";
-    const master = await findOrCreateMasterTask(category, t.title, 0);
+    const estimatedSeconds = (t.estimateMinutes ?? 0) * 60;
+    const master = await findOrCreateMasterTask(category, t.title, estimatedSeconds);
     const task: DailyTask = {
       id: uid(),
       date: today,
@@ -277,7 +292,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
       masterTaskId: master.id,
       category,
       name: t.title,
-      estimatedSeconds: 0,
+      estimatedSeconds,
       hasPlan: false,
       status: "running",
       segments: [{ start: Date.now() }],
@@ -381,66 +396,71 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
 
   return (
     <div className="space-y-5">
-      {/* ══ 見出し ══ */}
-      <header className="space-y-1.5">
-        <p className="text-[11px] tracking-[0.2em] text-cream/35">{today}</p>
-        <h2 className="font-display text-2xl font-bold tracking-tight text-cream">ワークスペース</h2>
-        <p className="text-[13px] text-cream/55">{W.todayLine(doneCountToday, formatMsClock(totalMsToday))}</p>
+      {/* ══ 見出し: 本家Claudeの最初の画面のように、スパークと時刻の挨拶から始める ══ */}
+      <header className="space-y-2 pt-2" data-testid="claude-greeting">
+        <div className="flex items-center gap-3">
+          <SparkMark className="h-8 w-8 shrink-0" spin />
+          <h2 className="claude-display text-[28px] leading-tight text-cream">{W.greeting(new Date(now).getHours())}</h2>
+        </div>
+        <p className="text-[14px] leading-relaxed text-cream/60">{W.todayLine(doneCountToday, formatMsClock(totalMsToday))}</p>
         {suggestion && (
-          <p className="text-[13px] text-cream/60">
-            次に取り組むなら「<span className="font-bold text-cream/80">{suggestion.label}</span>」です（
-            {suggestion.reason}）。
+          <p className="text-[14px] leading-relaxed text-cream/60">
+            次に取り組むなら「<span className="font-medium text-cream">{suggestion.label}</span>」です（{suggestion.reason}）。
           </p>
         )}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-0.5 text-[11px] text-cream/40">
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={showCompletedStages}
-              onChange={(e) => setShowCompletedStagesStr(e.target.checked ? "true" : "false")}
-              className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-alert"
-            />
-            完了済みの段階を表示
-          </label>
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={showCompletedSubtasks}
-              onChange={(e) => setShowCompletedSubtasksStr(e.target.checked ? "true" : "false")}
-              className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-alert"
-            />
-            完了済みのサブタスクを表示
-          </label>
-        </div>
-        <div className="h-px w-full bg-cream/10" />
       </header>
+
+      <Composer today={today} words={W} recentTags={recentTags} onSubmit={submitCompose} />
+
+      {runningDaily && (
+        <div className="claude-card claude-card-working" data-testid="claude-working">
+          <WorkingLine verbs={W.workingVerbs} seed={runningDaily.id.charCodeAt(0)} />
+          <div className="mt-1.5 flex items-baseline justify-between gap-3">
+            <p className="min-w-0 flex-1 truncate text-[16px] font-medium text-cream">{workCtx.label(runningDaily)}</p>
+            <span className="shrink-0 text-[24px] tabular-nums tracking-tight text-cream">
+              {formatMsClock(segmentsAccumulatedMs(runningDaily, now))}
+            </span>
+          </div>
+          {runningDaily.estimatedSeconds > 0 && (
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-cream/10">
+              <div
+                className="h-full rounded-full bg-[rgb(var(--accent-rgb))]"
+                style={{ width: `${Math.min(100, (segmentsAccumulatedMs(runningDaily, now) / (runningDaily.estimatedSeconds * 1000)) * 100)}%` }}
+              />
+            </div>
+          )}
+          <div className="mt-3 flex gap-2">
+            <button className="btn-pill-outline text-xs" onClick={() => pauseDaily(runningDaily)}>
+              一時停止
+            </button>
+            <button className="btn-pill text-xs" onClick={() => finishDailyTask(runningDaily)}>
+              完了にする
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ══ 今いちばん気になっていること ══ */}
       {topFinding && (
-        <article className="relative overflow-hidden rounded-xl border border-cream/12">
+        <article className="claude-card relative overflow-hidden">
           <Paper seed={topFinding.id} className="absolute inset-0" />
-          <div className="relative p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cream/35">{W.topFindingLead}</p>
-            <h3 className="mt-1.5 font-display text-[15px] font-bold leading-snug text-cream">
-              {topFinding.headline}
-            </h3>
+          <div className="relative">
+            <p className="claude-eyebrow">{W.topFindingLead}</p>
+            <h3 className="claude-display mt-1.5 text-[17px] leading-snug text-cream">{topFinding.headline}</h3>
             {topFinding.action && (
-              <p className="mt-2 border-l-2 border-alert/50 pl-3 text-[13px] leading-relaxed text-cream/70">
+              <p className="mt-2 border-l-2 border-[rgb(var(--accent-rgb)/0.5)] pl-3 text-[13px] leading-relaxed text-cream/70">
                 {topFinding.action}
               </p>
             )}
             <div className="mt-3 flex items-center gap-2.5">
-              <span className="shrink-0 text-[10px] tracking-wider text-cream/40">{W.confidenceLabel}</span>
+              <span className="shrink-0 text-[11px] text-cream/45">{W.confidenceLabel}</span>
               <ConfidenceScale value={topFinding.confidence} className="min-w-0 flex-1" />
-              <span className="shrink-0 text-[10px] tabular-nums text-cream/50">
+              <span className="shrink-0 text-[11px] tabular-nums text-cream/50">
                 {Math.round(topFinding.confidence * 100)}%・{confidenceLabel(topFinding.confidence)}
               </span>
             </div>
             {onOpenInsights && (
-              <button
-                onClick={onOpenInsights}
-                className="mt-3 text-[12px] text-alert underline decoration-alert/40 underline-offset-4 hover:decoration-alert"
-              >
+              <button onClick={onOpenInsights} className="claude-link mt-3 text-[13px]">
                 {W.seeAll} →
               </button>
             )}
@@ -448,90 +468,28 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
         </article>
       )}
 
-      {runningDaily && (
-        <div className="rounded-xl border border-alert/30 bg-panel/70 p-4">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-alert">
-            <span className="claude-pulse-dot inline-flex h-1.5 w-1.5 rounded-full bg-alert" aria-hidden="true" />
-            {W.focusTitle}
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between gap-3">
-            <p className="min-w-0 flex-1 truncate font-display text-base font-bold text-cream">{workCtx.label(runningDaily)}</p>
-            <span className="shrink-0 font-display text-2xl font-bold tabular-nums tracking-tight text-alert">
-              {formatMsClock(segmentsAccumulatedMs(runningDaily, now))}
-            </span>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button className="btn-pill-outline text-xs" onClick={() => pauseDaily(runningDaily)}>
-              一時停止
-            </button>
-            <button
-              className="btn-pill text-xs"
-              onClick={async () => {
-                await finishDailyTask(runningDaily);
-              }}
-            >
-              完了にする
-            </button>
-          </div>
+      {(sortedProjects.length > 0 || activeTodos.length > 0) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[12px] text-cream/45">
+          <label className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={showCompletedStages}
+              onChange={(e) => setShowCompletedStagesStr(e.target.checked ? "true" : "false")}
+              className="claude-check"
+            />
+            完了した段階も表示
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={showCompletedSubtasks}
+              onChange={(e) => setShowCompletedSubtasksStr(e.target.checked ? "true" : "false")}
+              className="claude-check"
+            />
+            完了したサブタスクも表示
+          </label>
         </div>
       )}
-
-      <div className="panel space-y-2 p-4">
-        <label className="block text-[11px] font-bold uppercase tracking-[0.2em] text-cream/40">{W.captureLabel}</label>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <input
-            value={captureText}
-            onChange={(e) => setCaptureText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addTodo()}
-            placeholder={W.capturePlaceholder}
-            className="w-full min-w-0 flex-1 rounded-lg border border-cream/15 bg-ink px-3 py-2 text-sm text-cream"
-          />
-          <button className="btn-pill text-xs" onClick={addTodo} disabled={!captureText.trim()}>
-            追加
-          </button>
-        </div>
-        <p className="text-[11px] text-cream/40">
-          末尾に「@分類名」を書くと、その分類でまとめられます。段階や期日で管理したい大きな仕事は
-          <button className="ml-1 text-cream/60 underline" onClick={() => setShowProjectForm((v) => !v)}>
-            プロジェクトとして登録
-          </button>
-          できます。
-        </p>
-        {recentTags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-cream/30">よく使うタグ:</span>
-            {recentTags.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => insertTag(tag)}
-                className="rounded-full border border-cream/15 px-2 py-0.5 text-[11px] text-cream/60 hover:border-accent/50 hover:text-cream"
-              >
-                @{tag}
-              </button>
-            ))}
-          </div>
-        )}
-        {showProjectForm && (
-          <div className="flex flex-col gap-2 border-t border-cream/10 pt-2 sm:flex-row">
-            <input
-              value={newProjectTitle}
-              onChange={(e) => setNewProjectTitle(e.target.value)}
-              placeholder="例: 新サイトの制作"
-              className="w-full min-w-0 flex-1 rounded-lg border border-cream/15 bg-ink px-3 py-2 text-sm text-cream"
-            />
-            <input
-              type="date"
-              value={newProjectDue}
-              onChange={(e) => setNewProjectDue(e.target.value)}
-              className="rounded-lg border border-cream/15 bg-ink px-3 py-2 text-sm text-cream"
-            />
-            <button className="btn-pill text-xs" onClick={addProject} disabled={!newProjectTitle.trim() || !newProjectDue}>
-              登録
-            </button>
-          </div>
-        )}
-      </div>
 
       {sortedProjects.map((project) => {
         const progress = computeProjectProgress(project.stages);
@@ -540,31 +498,35 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
         const isPaused = daily?.status === "paused";
         const overdue = project.dueDate < today;
         return (
-          <div key={project.id} className={`panel space-y-3 p-4 ${overdue ? "ring-1 ring-alert/40" : ""}`}>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <span className="mr-1.5 rounded-full bg-alert/10 px-2 py-0.5 text-[10px] font-bold text-alert">プロジェクト</span>
-                <h3 className="mt-1 font-display text-base font-bold text-cream">{project.title}</h3>
-                <p className="text-xs text-cream/40">
-                  期日 {project.dueDate}
-                  {daily && !isRunning && (
-                    <span className="ml-2">今日はこれまで {formatMsClock(segmentsAccumulatedMs(daily, now))}</span>
-                  )}
-                </p>
+          <section key={project.id} className={`claude-card space-y-3 ${overdue ? "claude-card-alert" : ""}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="claude-eyebrow">プロジェクト・期日 {dueLabel(project.dueDate, today)}</p>
+                <h3 className="claude-display mt-1 text-[20px] leading-snug text-cream">{project.title}</h3>
+                {daily && !isRunning && (
+                  <p className="mt-0.5 text-[12px] text-cream/45">今日はこれまで {formatMsClock(segmentsAccumulatedMs(daily, now))}</p>
+                )}
               </div>
-              <button className="text-xs text-cream/30 hover:text-alert" onClick={() => deleteProject(project)}>
+              <button
+                className="-m-1 shrink-0 p-2 text-[13px] text-cream/35 hover:text-cream"
+                onClick={() => deleteProject(project)}
+                aria-label={`「${project.title}」を削除`}
+              >
                 ✕
               </button>
             </div>
 
-            <p className={`text-sm ${overdue ? "font-bold text-alert" : "text-cream/60"}`}>
-              <span className="text-cream/40">Claude: </span>
-              {projectInsight(project)}
-            </p>
+            <div className="flex gap-2.5">
+              <SparkMark className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className={`text-[14px] leading-relaxed ${overdue ? "font-medium text-alert" : "text-cream/70"}`}>{projectInsight(project)}</p>
+            </div>
 
             {progress !== null && (
-              <div className="h-1.5 overflow-hidden rounded-full bg-ink/40">
-                <div className="h-full rounded-full bg-alert/70" style={{ width: `${Math.round(progress * 100)}%` }} />
+              <div className="flex items-center gap-2">
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-cream/10">
+                  <div className="h-full rounded-full bg-[rgb(var(--accent-rgb))]" style={{ width: `${Math.round(progress * 100)}%` }} />
+                </div>
+                <span className="text-[11px] tabular-nums text-cream/45">{Math.round(progress * 100)}%</span>
               </div>
             )}
 
@@ -573,187 +535,182 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
               const visibleStages = showCompletedStages ? allStages : allStages.filter((s) => !s.completed);
               const hiddenCount = allStages.length - visibleStages.length;
               return (
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {visibleStages.map((stage) => (
-                    <label key={stage.id} className="flex items-center gap-2 text-sm text-cream/80">
-                      <input
-                        type="checkbox"
-                        checked={stage.completed}
-                        onChange={() => toggleStage(project, stage)}
-                        className="h-4 w-4 rounded border-cream/30 bg-ink accent-alert"
-                      />
+                    <label key={stage.id} className="flex items-center gap-2.5 py-1 text-[14px] text-cream/85">
+                      <input type="checkbox" checked={stage.completed} onChange={() => toggleStage(project, stage)} className="claude-check" />
                       <span className={stage.completed ? "text-cream/40 line-through" : ""}>{stage.title}</span>
                     </label>
                   ))}
-                  {hiddenCount > 0 && <p className="text-[11px] text-cream/30">完了済み{hiddenCount}件を非表示中</p>}
+                  {hiddenCount > 0 && <p className="text-[11px] text-cream/35">完了した{hiddenCount}件を隠しています</p>}
                 </div>
               );
             })()}
             <input
               value={newStageTitle[project.id] ?? ""}
               onChange={(e) => setNewStageTitle((prev) => ({ ...prev, [project.id]: e.target.value }))}
-              onKeyDown={(e) => e.key === "Enter" && addStage(project)}
+              onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && addStage(project)}
               placeholder="+ 段階を追加"
-              className="w-40 rounded-lg border border-transparent bg-transparent px-1 py-1 text-xs text-cream/60 focus:border-cream/15 focus:outline-none"
+              className="w-full rounded-md bg-transparent px-1 py-1 text-[13px] text-cream/60 placeholder:text-cream/35 focus:bg-cream/5 focus:outline-none"
             />
 
-            <div className="flex flex-wrap gap-2 border-t border-cream/10 pt-2">
+            <div className="flex flex-wrap items-center gap-2 border-t border-cream/10 pt-3">
               {isRunning ? (
                 <>
-                  <span className="claude-pulse-dot inline-flex h-2 w-2 self-center rounded-full bg-alert" aria-hidden="true" />
-                  <span className="self-center text-xs font-bold tabular-nums text-alert">
-                    {formatMsClock(segmentsAccumulatedMs(daily!, now))}
-                  </span>
-                  <button className="btn-pill-outline text-xs" onClick={() => pauseDaily(daily!)}>
+                  <WorkingLine verbs={W.workingVerbs} seed={project.id.charCodeAt(0)} />
+                  <span className="text-[13px] tabular-nums text-cream">{formatMsClock(segmentsAccumulatedMs(daily!, now))}</span>
+                  <button className="btn-pill-outline ml-auto text-xs" onClick={() => pauseDaily(daily!)}>
                     一時停止
                   </button>
                 </>
               ) : (
                 <button className="btn-pill-outline text-xs" onClick={() => startProject(project)}>
-                  {isPaused ? "再開" : "今から取り組む"}
+                  {isPaused ? "▸ 再開" : "▸ 今から取り組む"}
                 </button>
               )}
               <button className="btn-pill-outline text-xs" onClick={() => toggleProjectComplete(project)}>
                 完了にする
               </button>
             </div>
-          </div>
+          </section>
         );
       })}
 
       {todoGroups.map((group) => (
-        <div key={group.category || "__none__"} className="panel space-y-2 p-4">
-          {group.category ? (
-            <h3 className="font-display text-sm font-bold text-cream/70">@{group.category}</h3>
-          ) : sortedProjects.length > 0 || todoGroups.length > 1 ? (
-            <h3 className="font-display text-sm font-bold text-cream/70">タスク</h3>
-          ) : null}
-          <div className="space-y-1.5">
+        <section key={group.category || "__none__"} className="claude-card">
+          {(group.category || sortedProjects.length > 0 || todoGroups.length > 1) && (
+            <p className="claude-eyebrow mb-1">{group.category ? `@${group.category}` : "タスク"}</p>
+          )}
+          <ul className="divide-y divide-cream/10">
             {group.items.map((t) => {
-              const overdue = !!t.dueDate && t.dueDate < today;
               const subCount = subtaskCountByParent.get(t.id) ?? 0;
               const daily = dailyByTodoId.get(t.id);
               const isRunning = daily?.status === "running";
               const isPaused = daily?.status === "paused";
               return (
-                <div key={t.id} className="rounded-lg bg-ink/40 px-3 py-2">
-                  <div className="flex items-center gap-2">
+                <li key={t.id} className="py-2.5" data-testid="claude-todo">
+                  <div className="flex items-start gap-3">
                     <button
                       onClick={() => toggleTodoComplete(t)}
-                      aria-label="完了"
-                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-cream/40"
+                      aria-label={`「${t.title}」を完了`}
+                      className="claude-circle mt-0.5"
                     />
-                    <input
-                      key={t.id + t.title}
-                      defaultValue={t.title}
-                      onBlur={(e) => updateTodoTitle(t, e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                      className="min-w-0 flex-1 bg-transparent text-sm text-cream focus:outline-none focus:ring-1 focus:ring-cream/30"
-                    />
-                    <button className="shrink-0 text-xs text-cream/30 hover:text-alert" onClick={() => deleteTodo(t)}>
+                    <div className="min-w-0 flex-1">
+                      <input
+                        key={t.id + t.title}
+                        defaultValue={t.title}
+                        onBlur={(e) => updateTodoTitle(t, e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && (e.target as HTMLInputElement).blur()}
+                        className="w-full rounded bg-transparent text-[15px] text-cream focus:bg-cream/5 focus:outline-none"
+                      />
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        {t.important && <span className="text-[12px] text-[rgb(var(--accent-rgb))]">★ 重要</span>}
+                        <DueEditor value={t.dueDate} today={today} onChange={(v) => updateTodoDueDate(t, v)} />
+                        {t.estimateMinutes ? <span className="text-[12px] text-cream/45">見込み {t.estimateMinutes}分</span> : null}
+                        {isRunning ? (
+                          <>
+                            <WorkingLine verbs={W.workingVerbs} seed={t.id.charCodeAt(0)} />
+                            <span className="text-[12px] tabular-nums text-cream">{formatMsClock(segmentsAccumulatedMs(daily!, now))}</span>
+                            <button className="text-[12px] text-cream/50 underline decoration-dotted hover:text-cream" onClick={() => pauseDaily(daily!)}>
+                              一時停止
+                            </button>
+                          </>
+                        ) : (
+                          <button className="claude-link text-[12px]" onClick={() => startTodo(t)}>
+                            {isPaused ? "▸ 再開" : "▸ 今から取り組む"}
+                          </button>
+                        )}
+                        {subCount > 0 && (
+                          <button className="text-[12px] text-cream/45 hover:text-cream" onClick={() => toggleSubtasksExpanded(t.id)}>
+                            {expandedSubtasksOf.has(t.id) ? "▾" : "▸"} サブタスク{subCount}件
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      className="-m-1 shrink-0 p-2 text-[13px] text-cream/30 hover:text-cream"
+                      onClick={() => deleteTodo(t)}
+                      aria-label={`「${t.title}」を削除`}
+                    >
                       ✕
                     </button>
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 pl-6">
-                    <div className="flex items-center gap-2">
-                      {isRunning ? (
-                        <span className="flex items-center gap-1.5 text-xs font-bold tabular-nums text-alert">
-                          <span className="claude-pulse-dot inline-flex h-2 w-2 rounded-full bg-alert" aria-hidden="true" />
-                          {formatMsClock(segmentsAccumulatedMs(daily!, now))}
-                        </span>
-                      ) : (
-                        <button
-                          className="text-xs text-cream/40 hover:text-cream"
-                          onClick={() => startTodo(t)}
-                        >
-                          {isPaused ? "▸ 再開" : "▸ 今から取り組む"}
-                        </button>
-                      )}
-                      {isRunning && (
-                        <button className="text-[11px] text-cream/40 hover:text-cream" onClick={() => pauseDaily(daily!)}>
-                          一時停止
-                        </button>
-                      )}
-                      {subCount > 0 && (
-                        <button
-                          className="text-[10px] text-cream/30 hover:text-cream/60"
-                          onClick={() => toggleSubtasksExpanded(t.id)}
-                        >
-                          {expandedSubtasksOf.has(t.id) ? "▾" : "▸"} {subCount}件のサブタスク
-                        </button>
-                      )}
-                    </div>
-                    <input
-                      key={t.id + (t.dueDate ?? "")}
-                      type="date"
-                      defaultValue={t.dueDate ?? ""}
-                      onChange={(e) => updateTodoDueDate(t, e.target.value)}
-                      className={`w-[8.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[11px] focus:border-cream/20 focus:outline-none ${
-                        overdue ? "font-bold text-alert" : "text-cream/40"
-                      }`}
-                    />
                   </div>
                   {subCount > 0 && expandedSubtasksOf.has(t.id) && (() => {
                     const allSubs = subtasksByParent.get(t.id) ?? [];
                     const visibleSubs = showCompletedSubtasks ? allSubs : allSubs.filter((s) => !s.completed);
                     const hiddenCount = allSubs.length - visibleSubs.length;
                     return (
-                      <div className="mt-1.5 space-y-1 border-t border-cream/10 pl-6 pt-1.5">
+                      <div className="mt-2 space-y-1 pl-8">
                         {visibleSubs.map((sub) => (
-                          <label key={sub.id} className="flex items-center gap-1.5">
-                            <input
-                              type="checkbox"
-                              checked={sub.completed}
-                              onChange={() => toggleSubtaskComplete(sub)}
-                              className="h-3.5 w-3.5 rounded border-cream/30 bg-ink accent-cream"
-                            />
-                            <span className={`text-xs ${sub.completed ? "text-cream/30 line-through" : "text-cream/75"}`}>
-                              {sub.title}
-                            </span>
+                          <label key={sub.id} className="flex items-center gap-2">
+                            <input type="checkbox" checked={sub.completed} onChange={() => toggleSubtaskComplete(sub)} className="claude-check" />
+                            <span className={`text-[13px] ${sub.completed ? "text-cream/35 line-through" : "text-cream/75"}`}>{sub.title}</span>
                           </label>
                         ))}
-                        {hiddenCount > 0 && <p className="text-[10px] text-cream/25">完了済み{hiddenCount}件を非表示中</p>}
+                        {hiddenCount > 0 && <p className="text-[11px] text-cream/30">完了した{hiddenCount}件を隠しています</p>}
                       </div>
                     );
                   })()}
-                </div>
+                </li>
               );
             })}
-          </div>
-        </div>
+          </ul>
+        </section>
       ))}
 
       {activeTodos.length === 0 && sortedProjects.length === 0 && (
-        <p className="px-1 py-6 text-center text-sm text-cream/40">
-          今のところ何もありません。上の欄から始めてみましょう。
-        </p>
+        <p className="px-1 py-6 text-center text-[14px] text-cream/45">今のところ何もありません。上の欄に、進めたいことを書いてみてください。</p>
       )}
 
       {(doneTodos.length > 0 || doneProjects.length > 0) && (
-        <details className="panel p-4">
-          <summary className="cursor-pointer font-display text-sm font-bold text-cream/60">
-            完了済み {doneTodos.length + doneProjects.length}件
-          </summary>
-          <div className="mt-2 space-y-1.5">
-            {doneProjects.map((p) => (
-              <div key={p.id} className="flex items-center justify-between rounded-lg bg-ink/20 px-3 py-1.5 opacity-60">
-                <span className="text-sm text-cream/60 line-through">{p.title}</span>
-                <button className="text-xs text-cream/40 hover:text-cream" onClick={() => toggleProjectComplete(p)}>
+        <details className="claude-card">
+          <summary className="cursor-pointer list-none text-[13px] text-cream/55">完了したもの {doneTodos.length + doneProjects.length}件 ›</summary>
+          <ul className="mt-2 divide-y divide-cream/10">
+            {[...doneProjects.map((p) => ({ id: p.id, title: p.title, undo: () => toggleProjectComplete(p) })),
+              ...doneTodos.map((t) => ({ id: t.id, title: t.title, undo: () => toggleTodoComplete(t) }))].map((x) => (
+              <li key={x.id} className="flex items-center justify-between gap-3 py-2">
+                <span className="min-w-0 truncate text-[14px] text-cream/45 line-through">{x.title}</span>
+                <button className="shrink-0 text-[12px] text-cream/50 underline decoration-dotted hover:text-cream" onClick={x.undo}>
                   戻す
                 </button>
-              </div>
+              </li>
             ))}
-            {doneTodos.map((t) => (
-              <div key={t.id} className="flex items-center justify-between rounded-lg bg-ink/20 px-3 py-1.5 opacity-60">
-                <span className="text-sm text-cream/60 line-through">{t.title}</span>
-                <button className="text-xs text-cream/40 hover:text-cream" onClick={() => toggleTodoComplete(t)}>
-                  戻す
-                </button>
-              </div>
-            ))}
-          </div>
+          </ul>
         </details>
       )}
+
+      {/* ══ 覚えていること ══ */}
+      <MemoryPanel
+        words={W}
+        memories={memories}
+        notes={notes}
+        forgottenCount={allMemories.length - memories.length}
+        onForget={(id) => setForgottenJson(JSON.stringify([...forgotten, id]))}
+        onRestoreAll={() => setForgottenJson("[]")}
+        onAddNote={(text) => setNotesJson(JSON.stringify([...notes, { id: uid(), text, createdAt: Date.now() }]))}
+        onRemoveNote={(id) => setNotesJson(JSON.stringify(notes.filter((n) => n.id !== id)))}
+      />
+
+      {/* ══ 本物のClaudeと続ける ══ */}
+      <section className="claude-card claude-card-dark space-y-3" data-testid="claude-connect">
+        <div className="flex items-center gap-2">
+          <SparkMark className="h-5 w-5" />
+          <p className="claude-display text-[18px]">{W.connectTitle}</p>
+        </div>
+        <p className="text-[13px] leading-relaxed opacity-75">{W.connectLead}</p>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-pill text-xs" onClick={copyHandoff}>
+            引き継ぎ文をコピー
+          </button>
+          <a className="btn-pill-outline text-xs" href="https://claude.ai/new" target="_blank" rel="noreferrer">
+            Claudeを開く ↗
+          </a>
+          <button className="btn-pill-outline text-xs" onClick={() => setShowSync(true)}>
+            進捗・時間割をやり取りする
+          </button>
+        </div>
+      </section>
+      {showSync && <ProgressSyncModal onClose={() => setShowSync(false)} />}
     </div>
   );
 }

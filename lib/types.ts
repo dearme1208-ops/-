@@ -360,6 +360,7 @@ export interface TodoTask {
   notes?: string;
   startDate?: string; // 開始日 YYYY-MM-DD。設定されていれば期日よりこちらを優先してリスト順に反映する
   dueDate?: string; // YYYY-MM-DD
+  estimateMinutes?: number; // 見込み時間(分)。Claudeモードの入力欄で「30分」などと書いた場合。計測を始める時の想定時間に使う
   important: boolean;
   completed: boolean;
   completedAt?: number;

@@ -345,18 +345,19 @@ html[data-high-contrast="true"] :focus-visible {
      (prefers-color-scheme)に自動追従する。トグルは持たせず、OS側の設定にそのまま委ねる */
   html[data-visual-mode="claude"] {
     color-scheme: light;
+    /* 今のClaudeの配色: 温かいアイボリーの地(#faf9f5)、ほぼ黒の文字(#141413)、Claudeのオレンジ(#d97757) */
     --accent-rgb: 217 119 87;
-    --ink-rgb: 250 248 240;
-    --cream-rgb: 38 34 28;
-    --panel-rgb: 255 253 247;
+    --ink-rgb: 250 249 245;
+    --cream-rgb: 20 20 19;
+    --panel-rgb: 255 255 255;
   }
   @media (prefers-color-scheme: dark) {
     html[data-visual-mode="claude"] {
       color-scheme: dark;
-      --accent-rgb: 224 140 102;
+      --accent-rgb: 217 119 87;
       --ink-rgb: 38 38 36;
-      --cream-rgb: 236 232 224;
-      --panel-rgb: 48 47 44;
+      --cream-rgb: 245 244 238;
+      --panel-rgb: 48 48 46;
     }
   }
 
@@ -971,15 +972,15 @@ html[data-high-contrast="true"] :focus-visible {
   }
   /* Claudeモード: Claude自身の製品デザインを思わせる温かいセリフ体を見出し・アプリ名・
      ボタン・数字に使う。日本語グリフを持つ書体なので日本語の見出しにも直接効く */
+  /* 今のClaudeに合わせ、セリフ体は見出しだけに使い、太くしない(本家も見出しのセリフは細いまま)。
+     ボタンや数字は読みやすい本文の書体のまま */
   html[data-visual-mode="claude"] .app-title,
   html[data-visual-mode="claude"] h2.font-display,
   html[data-visual-mode="claude"] h3.font-display,
-  html[data-visual-mode="claude"] .btn-pill,
-  html[data-visual-mode="claude"] .btn-pill-outline,
-  html[data-visual-mode="claude"] .tabular-nums {
+  html[data-visual-mode="claude"] .claude-display {
     font-family: var(--font-noto-serif-jp), var(--font-noto-sans-jp), serif;
-    font-weight: 600;
-    letter-spacing: 0.01em;
+    font-weight: 400;
+    letter-spacing: -0.005em;
   }
   /* 禅モード: Claudeモードと同じセリフ体を使うが、太くせず素の細さのまま流し、
      筆で書いたような静けさを保つ */
@@ -1331,7 +1332,7 @@ html[data-high-contrast="true"] :focus-visible {
   /* Claudeモード: 同じ器を流用し、他テーマのグリッド/ストライプの代わりに、
      Claudeが考え込んでいるかのような、ゆっくり呼吸する柔らかい光暈に差し替える */
   html[data-visual-mode="claude"] .synthwave-grid {
-    opacity: 0.3;
+    opacity: 0.12;
     background-image: radial-gradient(ellipse 70% 55% at 50% 105%, rgb(var(--claude-glow-rgb) / 0.6), transparent 70%);
     background-size: auto;
     background-repeat: no-repeat;
@@ -1634,11 +1635,11 @@ html[data-high-contrast="true"] :focus-visible {
   }
   /* Claudeモード: 他テーマの装飾(質感・アイコン・太枠)を一切足さず、枠線をほぼ消して
      柔らかい影だけで浮かせる、最も削ぎ落としたシンプルな紙のカードにする */
+  /* 今のClaudeは影でなく、細い線と面の色の差で区切る。角丸も控えめ */
   html[data-visual-mode="claude"] .panel {
-    border: 1px solid rgb(var(--cream-rgb) / 0.06);
-    border-radius: 1.5rem;
-    /* 純黒の影にしておくことで、ライト/ダーク両方のパレットで違和感なく沈む */
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 10px 24px -12px rgb(0 0 0 / 0.22);
+    border: 1px solid rgb(var(--cream-rgb) / 0.1);
+    border-radius: 14px;
+    box-shadow: none;
   }
   /* 禅モード: 影も枠線もほぼ無くし、紙の上に文字が置かれているだけのような佇まいにする。
      禅モードでは「本日の作業」タブ自体を専用画面に総入れ替えするため、.panelが実際に
@@ -1662,11 +1663,7 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="zen"] h3.font-display {
     letter-spacing: 0.03em;
   }
-  html[data-visual-mode="claude"] h2.font-display::before,
-  html[data-visual-mode="claude"] h3.font-display::before {
-    content: "✳ ";
-    color: rgb(var(--accent-rgb) / 0.8);
-  }
+  /* Claudeモードの見出しには記号を付けない(スパークは要所にだけ、図として置く) */
   /* 禅モード: 他テーマのような装飾プレフィックス(★・▓・//等)を見出しに一切付けない。
      飾りが無いこと自体が、このモードの「引き算」を体現している */
   html[data-visual-mode="lobotomy"] h2.font-display::before,
@@ -4293,5 +4290,188 @@ html[data-high-contrast="true"] :focus-visible {
   .tab-nav-groups .tab-chip-label[data-short]::after {
     content: attr(data-short);
     font-size: 0.75rem;
+  }
+}
+
+/* ══ Claudeモードの部品(components/claude/ClaudeParts.tsx・ClaudeWorkspaceSection) ══
+   今のClaudeの作法に合わせる: 白い面と細い線、角丸は控えめ、オレンジは要所(送る・主な操作・作業中)にだけ */
+@layer components {
+  html[data-visual-mode="claude"] .btn-pill:not(.tab-chip) {
+    background: rgb(var(--accent-rgb));
+    color: #fff;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    box-shadow: none;
+    padding: 0.55rem 1rem;
+  }
+  html[data-visual-mode="claude"] .btn-pill:not(.tab-chip):hover {
+    background: rgb(var(--accent-rgb) / 0.88);
+  }
+  html[data-visual-mode="claude"] .btn-pill-outline:not(.tab-chip) {
+    background: rgb(var(--panel-rgb));
+    border: 1px solid rgb(var(--cream-rgb) / 0.15);
+    color: rgb(var(--cream-rgb));
+    border-radius: 0.5rem;
+    font-weight: 500;
+    padding: 0.55rem 1rem;
+  }
+  html[data-visual-mode="claude"] .btn-pill-outline:not(.tab-chip):hover {
+    background: rgb(var(--cream-rgb) / 0.05);
+  }
+  /* タブ: 今のClaudeの切り替えのように、選んだものだけ薄い面を敷く */
+  html[data-visual-mode="claude"] .tab-chip {
+    border-radius: 0.5rem;
+    font-weight: 500;
+    box-shadow: none;
+    padding: 0.5rem 0.9rem;
+  }
+  html[data-visual-mode="claude"] .tab-chip[data-active="true"] {
+    background: rgb(var(--cream-rgb) / 0.08);
+    color: rgb(var(--cream-rgb));
+    border: 1px solid rgb(var(--cream-rgb) / 0.12);
+  }
+  html[data-visual-mode="claude"] .tab-chip[data-active="false"] {
+    background: transparent;
+    color: rgb(var(--cream-rgb) / 0.6);
+    border: 1px solid transparent;
+  }
+
+  .claude-display {
+    font-weight: 400;
+  }
+  .claude-card {
+    display: block;
+    background: rgb(var(--panel-rgb));
+    border: 1px solid rgb(var(--cream-rgb) / 0.1);
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+  }
+  .claude-card-working {
+    border-color: rgb(var(--accent-rgb) / 0.4);
+  }
+  .claude-card-alert {
+    border-color: rgb(var(--alert-rgb) / 0.45);
+  }
+  /* 本家のサイトが要所で使う、暗い面のカード。明暗どちらの設定でも暗いまま */
+  .claude-card-dark {
+    background: #1f1e1d;
+    border-color: #1f1e1d;
+    color: #faf9f5;
+  }
+  .claude-card-dark .btn-pill-outline:not(.tab-chip) {
+    background: transparent !important;
+    color: #faf9f5 !important;
+    border-color: rgb(250 249 245 / 0.25) !important;
+  }
+  .claude-eyebrow {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgb(var(--cream-rgb) / 0.5);
+    letter-spacing: 0.02em;
+  }
+  .claude-composer {
+    background: rgb(var(--panel-rgb));
+    border: 1px solid rgb(var(--cream-rgb) / 0.14);
+    border-radius: 18px;
+    padding: 0.8rem 0.8rem 0.6rem;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 20px -12px rgb(0 0 0 / 0.18);
+    transition: border-color 0.15s ease;
+  }
+  .claude-composer:focus-within {
+    border-color: rgb(var(--accent-rgb) / 0.55);
+    box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.12);
+  }
+  .claude-send {
+    display: inline-flex;
+    height: 2.1rem;
+    width: 2.1rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.6rem;
+    background: rgb(var(--accent-rgb));
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 700;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+  }
+  .claude-send:active {
+    transform: scale(0.94);
+  }
+  .claude-send:disabled {
+    opacity: 0.35;
+  }
+  .claude-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    border: 1px solid rgb(var(--cream-rgb) / 0.12);
+    background: rgb(var(--cream-rgb) / 0.04);
+    padding: 0.15rem 0.6rem;
+    font-size: 12px;
+    color: rgb(var(--cream-rgb) / 0.75);
+    white-space: nowrap;
+  }
+  .claude-chip-button:hover {
+    border-color: rgb(var(--cream-rgb) / 0.3);
+    color: rgb(var(--cream-rgb));
+  }
+  .claude-chip-on {
+    border-color: rgb(var(--accent-rgb) / 0.55);
+    background: rgb(var(--accent-rgb) / 0.12);
+    color: rgb(var(--accent-rgb));
+  }
+  .claude-input {
+    border-radius: 0.5rem;
+    border: 1px solid rgb(var(--cream-rgb) / 0.15);
+    background: rgb(var(--ink-rgb));
+    padding: 0.45rem 0.75rem;
+    font-size: 14px;
+    color: rgb(var(--cream-rgb));
+  }
+  .claude-input:focus {
+    outline: none;
+    border-color: rgb(var(--accent-rgb) / 0.55);
+  }
+  .claude-link {
+    color: rgb(var(--accent-rgb));
+    text-decoration: underline;
+    text-decoration-color: rgb(var(--accent-rgb) / 0.35);
+    text-underline-offset: 3px;
+  }
+  .claude-link:hover {
+    text-decoration-color: rgb(var(--accent-rgb));
+  }
+  .claude-check {
+    height: 1rem;
+    width: 1rem;
+    flex-shrink: 0;
+    accent-color: rgb(var(--accent-rgb));
+  }
+  .claude-circle {
+    height: 1.15rem;
+    width: 1.15rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    border: 1.5px solid rgb(var(--cream-rgb) / 0.35);
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .claude-circle:hover {
+    border-color: rgb(var(--accent-rgb));
+    background: rgb(var(--accent-rgb) / 0.12);
+  }
+  .claude-spark-mark {
+    animation: claude-spark-turn 18s linear infinite;
+    transform-origin: center;
+  }
+  @keyframes claude-spark-turn {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .claude-spark-mark {
+      animation: none;
+    }
   }
 }
