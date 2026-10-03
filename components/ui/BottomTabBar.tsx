@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 // 「本日の作業」「ToDo」共通の下部固定タブバー。設定(today.tabBarStyle等)で
 // 見た目のスタイルを切り替えられるようにするため、見た目のバリエーションを
 // このコンポーネント1箇所にまとめている。データ側(タブの一覧・件数・選択状態)は
@@ -108,6 +110,26 @@ export default function BottomTabBar({
     items.findIndex((it) => it.key === activeKey)
   );
   const showProgress = !!progress && progress.some((p) => p.ratio > 0);
+  // 5つ以上並ぶと(ToDoのマイデイ〜返事待ち)、スマホの幅では横1行に収まらず最後のタブが画面の外に
+  // はみ出していた。その場合、狭い画面ではアイコンを上・名前を下の2段に積んで全部を収める
+  const stacked = items.length >= 5;
+  const stackClass = stacked
+    ? "flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 text-[11px] leading-tight sm:flex-row sm:gap-1 sm:px-2 sm:py-2 sm:text-sm"
+    : "";
+  const content = (it: BottomTabBarItem, countNode: ReactNode) =>
+    stacked ? (
+      <>
+        {/* 狭い幅では件数をアイコンの横へ出し、ラベルは全文を見せる */}
+        <span className="whitespace-nowrap leading-none">
+          {it.icon}
+          <span className="text-[10px] sm:hidden">{countNode}</span>
+        </span>
+        <span className="max-w-full truncate">
+          {it.label}
+          <span className="hidden sm:inline">{countNode}</span>
+        </span>
+      </>
+    ) : null;
 
   return (
     <div className="sticky bottom-2 z-10 pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
@@ -127,7 +149,7 @@ export default function BottomTabBar({
       {style === "segment" && (
         <div className="panel relative flex items-center gap-0 p-1.5 shadow-lg backdrop-blur">
           <div
-            className="absolute bottom-1.5 top-1.5 rounded-full border border-alert/60 bg-alert/20 transition-all duration-300 ease-out"
+            className="absolute bottom-1.5 top-1.5 rounded-full border border-[rgb(var(--accent-rgb)/0.8)] bg-[rgb(var(--accent-rgb)/0.28)] transition-all duration-300 ease-out"
             style={{ left: `${(activeIndex / items.length) * 100}%`, width: `${100 / items.length}%` }}
             aria-hidden="true"
           />
@@ -138,8 +160,10 @@ export default function BottomTabBar({
               <button
                 key={it.key}
                 onClick={() => onSelect(it.key)}
-                className={`relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-xs transition-transform sm:text-sm ${
-                  active ? "font-bold text-cream" : "text-cream/45"
+                className={`relative z-10 flex-1 rounded-full transition-transform ${
+                  stacked ? stackClass : "flex items-center justify-center gap-1.5 px-2 py-2 text-xs sm:text-sm"
+                } ${
+                  active ? "font-bold text-cream" : "text-cream/80"
                 } ${emphasized ? "scale-[1.06]" : ""}`}
               >
                 {it.badge && (
@@ -149,9 +173,15 @@ export default function BottomTabBar({
                     aria-label={it.badgeTitle}
                   />
                 )}
-                <span>{it.icon}</span>
-                <span className="truncate">{it.label}</span>
-                {it.count !== undefined && <span className="tabular-nums opacity-60">({it.count})</span>}
+                {stacked ? (
+                  content(it, it.count !== undefined && <span className="ml-0.5 tabular-nums opacity-80">({it.count})</span>)
+                ) : (
+                  <>
+                    <span>{it.icon}</span>
+                    <span className="truncate">{it.label}</span>
+                    {it.count !== undefined && <span className="tabular-nums opacity-80">({it.count})</span>}
+                  </>
+                )}
               </button>
             );
           })}
@@ -167,8 +197,11 @@ export default function BottomTabBar({
               <button
                 key={it.key}
                 onClick={() => onSelect(it.key)}
+                // 選んでいるタブはアクセント色で塗って太字にする(以前は小さな下線だけで、薄い文字の中で見分けにくかった)
                 className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 transition-transform ${
-                  active ? "text-cream" : "text-cream/45"
+                  active
+                    ? "bg-[rgb(var(--accent-rgb)/0.25)] font-bold text-cream ring-1 ring-[rgb(var(--accent-rgb)/0.75)]"
+                    : "text-cream/80"
                 } ${emphasized ? "scale-[1.08]" : ""}`}
               >
                 {it.badge && (
@@ -186,9 +219,9 @@ export default function BottomTabBar({
                     </span>
                   )}
                 </span>
-                <span className="text-[10px] leading-none">{it.label}</span>
+                <span className="text-[11px] leading-none">{it.label}</span>
                 <span
-                  className={`mt-0.5 h-0.5 w-3 rounded-full transition-colors ${active ? "bg-alert" : "bg-transparent"}`}
+                  className={`mt-0.5 h-0.5 w-4 rounded-full transition-colors ${active ? "bg-[rgb(var(--accent-rgb))]" : "bg-transparent"}`}
                   aria-hidden="true"
                 />
               </button>
@@ -206,13 +239,17 @@ export default function BottomTabBar({
               <button
                 key={it.key}
                 onClick={() => onSelect(it.key)}
-                className={`relative flex-1 whitespace-nowrap rounded-md border px-1.5 py-2 text-xs transition-transform sm:px-2 sm:text-sm ${
-                  active ? "border-alert bg-alert/15 text-cream" : "border-dashed border-cream/25 text-cream/55"
+                className={`relative flex-1 whitespace-nowrap rounded-md border transition-transform ${
+                  stacked ? stackClass : "px-1.5 py-2 text-xs sm:px-2 sm:text-sm"
+                } ${
+                  active
+                    ? "border-[rgb(var(--accent-rgb))] bg-[rgb(var(--accent-rgb)/0.22)] font-bold text-cream"
+                    : "border-dashed border-cream/35 text-cream/80"
                 } ${emphasized ? "scale-[1.05]" : ""}`}
               >
                 {active && (
                   <span
-                    className="absolute -right-px -top-px h-0 w-0 border-b-[11px] border-l-[11px] border-b-transparent border-l-alert"
+                    className="absolute -right-px -top-px h-0 w-0 border-b-[11px] border-l-[11px] border-b-transparent border-l-[rgb(var(--accent-rgb))]"
                     aria-hidden="true"
                   />
                 )}
@@ -223,10 +260,16 @@ export default function BottomTabBar({
                     aria-label={it.badgeTitle}
                   />
                 )}
-                <span>
-                  {it.icon} {it.label}
-                </span>
-                {it.count !== undefined && <span className="ml-1 font-mono tabular-nums opacity-70">[{it.count}]</span>}
+                {stacked ? (
+                  content(it, it.count !== undefined && <span className="ml-0.5 font-mono tabular-nums opacity-85">[{it.count}]</span>)
+                ) : (
+                  <>
+                    <span>
+                      {it.icon} {it.label}
+                    </span>
+                    {it.count !== undefined && <span className="ml-1 font-mono tabular-nums opacity-85">[{it.count}]</span>}
+                  </>
+                )}
               </button>
             );
           })}
@@ -242,7 +285,9 @@ export default function BottomTabBar({
               <button
                 key={it.key}
                 onClick={() => onSelect(it.key)}
-                className={`relative flex-1 whitespace-nowrap transition-transform ${active ? "btn-pill" : "btn-pill-outline"} px-1.5 py-2 text-xs sm:px-2 sm:text-sm ${
+                className={`relative flex-1 whitespace-nowrap transition-transform ${active ? "btn-pill font-bold" : "btn-pill-outline text-cream/90"} ${
+                  stacked ? stackClass : "px-1.5 py-2 text-xs sm:px-2 sm:text-sm"
+                } ${
                   emphasized ? "scale-[1.05]" : ""
                 }`}
               >
@@ -253,8 +298,14 @@ export default function BottomTabBar({
                     aria-label={it.badgeTitle}
                   />
                 )}
-                {it.icon} {it.label}
-                {it.count !== undefined && <span className={`tabular-nums ${active ? "opacity-70" : "opacity-50"}`}>({it.count})</span>}
+                {stacked ? (
+                  content(it, it.count !== undefined && <span className="ml-0.5 tabular-nums opacity-80">({it.count})</span>)
+                ) : (
+                  <>
+                    {it.icon} {it.label}
+                    {it.count !== undefined && <span className={`tabular-nums ${active ? "opacity-80" : "opacity-75"}`}>({it.count})</span>}
+                  </>
+                )}
               </button>
             );
           })}
