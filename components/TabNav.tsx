@@ -5,6 +5,10 @@ export interface TabDef {
   label: string;
   /** タブを開かなくても件数が分かるよう、ラベル横に出す小さな数字バッジ(0/未指定なら出さない) */
   badge?: number;
+  /** アイコン。指定するとラベルと別の要素にし、狭い画面の分類タブで「アイコンを上・名前を下」に積める */
+  icon?: string;
+  /** 狭い画面で使う短い名前(例:「記録・マスタ」→「記録」)。見た目だけを差し替え、読み上げ等は正式名のまま */
+  shortLabel?: string;
 }
 
 export default function TabNav({
@@ -37,9 +41,18 @@ export default function TabNav({
                 : "tab-chip btn-pill-outline whitespace-nowrap text-sm"
             }
           >
-            {t.label}
+            {t.icon ? (
+              <>
+                <span className="tab-chip-icon">{t.icon}</span>{" "}
+                <span className="tab-chip-label" data-short={t.shortLabel}>
+                  {t.label}
+                </span>
+              </>
+            ) : (
+              t.label
+            )}
             {!!t.badge && (
-              <span className="ml-1.5 rounded-full bg-alert px-1.5 py-0.5 text-[10px] font-bold leading-none text-ink">
+              <span className="tab-chip-badge ml-1.5 rounded-full bg-alert px-1.5 py-0.5 text-[10px] font-bold leading-none text-ink">
                 {t.badge}
               </span>
             )}

@@ -11,6 +11,8 @@ export interface TabGroupDef {
   key: string;
   icon: string;
   label: string;
+  /** 狭い画面で使う短い名前(分類タブが5等分の幅に収まるように) */
+  shortLabel?: string;
   tabs: TabKey[];
 }
 
@@ -23,7 +25,7 @@ export const TAB_GROUPS: TabGroupDef[] = [
     label: "振り返り",
     tabs: ["report", "aggregation", "attention", "overtime", "gantt", "charts", "heatmap", "yearlyChart", "observatory"],
   },
-  { key: "records", icon: "🗂", label: "記録・マスタ", tabs: ["records", "master", "homeMaster"] },
+  { key: "records", icon: "🗂", label: "記録・マスタ", shortLabel: "記録", tabs: ["records", "master", "homeMaster"] },
   { key: "settings", icon: "⚙", label: "設定", tabs: ["appearance", "settings"] },
 ];
 
@@ -42,6 +44,7 @@ export interface VisibleTabGroup {
   key: string;
   icon: string;
   label: string;
+  shortLabel?: string;
   tabs: VisibleTab[];
   /** 中のタブのバッジ(件数)の合計。分類を開かなくても気づけるよう上段に出す */
   badge: number;
@@ -57,7 +60,7 @@ export function buildVisibleTabGroups(visibleTabs: VisibleTab[]): VisibleTabGrou
   for (const g of TAB_GROUPS) {
     const tabs = g.tabs.map((k) => byKey.get(k)).filter((t): t is VisibleTab => t !== undefined);
     if (tabs.length === 0) continue;
-    groups.push({ key: g.key, icon: g.icon, label: g.label, tabs, badge: sumBadges(tabs) });
+    groups.push({ key: g.key, icon: g.icon, label: g.label, shortLabel: g.shortLabel, tabs, badge: sumBadges(tabs) });
   }
   const others = visibleTabs.filter((t) => groupOfTab(t.key) === null);
   if (others.length > 0) {

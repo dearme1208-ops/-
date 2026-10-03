@@ -733,7 +733,7 @@ html[data-high-contrast="true"] :focus-visible {
 
   /* タブ横の件数バッジ。基調色の緑のままでは「急ぎ」が伝わらないので、
      落ち葉の琥珀で一段手前に出す */
-  html[data-visual-mode="home"] .tab-chip > span {
+  html[data-visual-mode="home"] .tab-chip > .tab-chip-badge {
     background-color: rgb(var(--forest-amber-rgb));
     color: rgb(var(--ink-rgb));
   }
@@ -4251,7 +4251,8 @@ html[data-high-contrast="true"] :focus-visible {
 }
 
 /* 森モードなどの「分類」タブ(上段)。スマホの幅では5つが横に並びきらず、「記録・マスタ」「設定」が
-   画面の外に隠れて、横にずらさないと気づけなかった。狭い画面では5等分にして全部を見せる */
+   画面の外に隠れていた。狭い画面では5等分にし、「アイコンを上・名前を下」に積んで、件数の印は角に重ねる。
+   名前は途中で折り返さない(「計 / 画」「振り返 / り」のように割れて読みにくかった)。長い名前は短い名前に */
 @media (max-width: 520px) {
   .tab-nav-groups > div {
     display: grid;
@@ -4261,11 +4262,36 @@ html[data-high-contrast="true"] :focus-visible {
     gap: 0.3rem;
   }
   .tab-nav-groups .tab-chip {
-    white-space: normal;
-    padding: 0.4rem 0.15rem;
-    font-size: 0.72rem;
-    line-height: 1.15;
-    text-align: center;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
+    gap: 0.1rem;
+    white-space: nowrap;
+    padding: 0.35rem 0.1rem;
+    font-size: 0.75rem;
+    line-height: 1.15;
+    letter-spacing: 0;
+  }
+  .tab-nav-groups .tab-chip-icon {
+    font-size: 1rem;
+    line-height: 1;
+  }
+  /* 横スクロールの枠で上が切れないよう、タブの内側の右上に重ねる */
+  .tab-nav-groups .tab-chip-badge {
+    position: absolute;
+    top: 0.15rem;
+    right: 0.2rem;
+    margin: 0;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.6rem;
+  }
+  .tab-nav-groups .tab-chip-label[data-short] {
+    font-size: 0;
+  }
+  .tab-nav-groups .tab-chip-label[data-short]::after {
+    content: attr(data-short);
+    font-size: 0.75rem;
   }
 }

@@ -38,7 +38,9 @@ export default function GroupedTabNav({
 
   const groupTabs: TabDef[] = groups.map((g) => ({
     key: g.key,
-    label: `${g.icon} ${g.label}`,
+    icon: g.icon,
+    label: g.label,
+    shortLabel: g.shortLabel,
     badge: g.badge,
   }));
 

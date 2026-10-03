@@ -80,7 +80,7 @@ test("統合ボードの期限の件数バッジは、分類「計画」にも�
       todoTasks: [{ id: "t1", listId: "l1", title: "見積", important: false, completed: false, order: 0, createdAt: 0, dueDate: jstDate(), boardX: 10, boardY: 10 }],
     },
   });
-  await expect(groupRow(page).filter({ hasText: "計画" }).locator("span")).toHaveText("1");
+  await expect(groupRow(page).filter({ hasText: "計画" }).locator(".tab-chip-badge")).toHaveText("1");
 });
 
 test("「茂みへ隠す」のスイッチをOFFにすると、従来の1列のタブに戻る", async ({ page }) => {
