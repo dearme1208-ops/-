@@ -35,6 +35,7 @@ test("仕様書と現状を書き出し、AIの返答を貼り付けて確認・
   await page.locator(".tab-chip", { hasText: "案件" }).first().click();
   await page.getByRole("button", { name: "🤖 AIと進捗をやり取り" }).click();
 
+  await page.getByText("仕様書・現状のデータを個別に渡す").click();
   const [specDl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /仕様書（.md）をダウンロード/ }).click()]);
   expect(specDl.suggestedFilename()).toMatch(/\.md$/);
   expect(readFileSync((await specDl.path())!, "utf-8")).toContain("koutei-progress-update");
@@ -94,4 +95,33 @@ test("ToDoタブからも開け、形式の違うものは取り込まない", a
   await page.getByLabel("進捗の更新").fill("よろしくお願いします");
   await page.getByRole("button", { name: "内容を確認" }).click();
   await expect(page.getByText(/JSONとして読めませんでした/)).toBeVisible();
+});
+
+test("依頼文をワンタップでコピーでき、コピーできない環境では全文を出して保存もできる", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.clock.install({ time: jstAt("10:00") });
+  await seed(page, {
+    stores: {
+      todoLists: lists,
+      todoTasks: [{ id: "t1", listId: "l1", title: "B社対応", important: false, completed: false, order: 0, createdAt: 0 }],
+    },
+  });
+  await page.locator(".tab-chip", { hasText: "ToDo" }).first().click();
+  await page.getByRole("button", { name: "🤖 AIと進捗をやり取り" }).click();
+  await page.getByRole("button", { name: "📈 進捗を登録してもらう" }).click();
+  await expect(page.getByText("コピーしました。Claudeとの会話に貼り付けてください。")).toBeVisible();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("進捗を「工程表」アプリに登録するアシスタント");
+  expect(copied).toContain("koutei-progress-update");
+  expect(copied).toContain('"id": "t1"');
+
+  // クリップボードが使えない場合
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("denied")) }, configurable: true });
+  });
+  await page.getByRole("button", { name: "📝 議事録・メールからToDoにしてもらう" }).click();
+  await expect(page.getByText("自動でコピーできませんでした。")).toBeVisible();
+  await expect(page.getByLabel("依頼文")).toHaveValue(/議事録・メールから/);
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "ファイルで保存（.txt）" }).click()]);
+  expect(dl.suggestedFilename()).toMatch(/^koutei-prompt-notes-.*\.txt$/);
 });

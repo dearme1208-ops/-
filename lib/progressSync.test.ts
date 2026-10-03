@@ -107,11 +107,55 @@ describe("仕様書(public/progress-sync-spec.md)とのずれ", () => {
     const { readFileSync } = await import("fs");
     const spec = readFileSync("public/progress-sync-spec.md", "utf-8");
     const documented = [...spec.matchAll(/^#### (\w+) — /gm)].map((m) => m[1]).sort();
-    expect(documented).toEqual(["addProject", "addStage", "addSubtask", "addTodo", "updateProject", "updateStage", "updateSubtask", "updateTodo"]);
+    expect(documented).toEqual(["addProject", "addStage", "addSubtask", "addTodo", "planTimebox", "updateProject", "updateStage", "updateSubtask", "updateTodo"]);
     for (const op of documented) {
       const p = planProgressUpdate({ format: UPDATE_FORMAT, version: 1, operations: [{ op }] }, state(), NOW);
       expect(p.operations[0].error ?? "", op).not.toContain("知らない操作");
     }
     expect(spec).toContain(UPDATE_FORMAT);
+  });
+});
+
+describe("時間割(planTimebox)", () => {
+  const D = "2026-10-03";
+  const daily = (id: string, o: Record<string, unknown> = {}) =>
+    ({ id, date: D, order: 0, category: "業務", name: id, estimatedSeconds: 0, status: "pending", segments: [], accumulatedMs: 0, isSpontaneous: true, ...o }) as import("@/lib/types").DailyTask;
+  const st = () => ({
+    ...state(),
+    dailyTasks: [
+      daily("資料作成", { order: 2 }),
+      daily("メール返信", { order: 0 }),
+      daily("前の枠", { order: 1, scheduledTime: "08:00", timeboxEnd: "08:30" }),
+      daily("会議", { order: 3, scheduledTime: "13:00" }),
+    ],
+    breaks: [{ start: "12:00", end: "13:00" }],
+  });
+  const at = (hm: string) => new Date(`${D}T${hm}:00`).getTime();
+
+  it("枠を付け、枠に入れなかった作業の前の枠は外し、並びを時間割の順にそろえる", () => {
+    const p = planProgressUpdate(
+      { format: UPDATE_FORMAT, version: 1, operations: [{ op: "planTimebox", date: D, slots: [{ taskId: "メール返信", start: "16:30", end: "16:50" }, { taskId: "資料作成", start: "16:00", end: "16:25" }] }] },
+      st(),
+      at("15:00")
+    );
+    expect(p.operations[0]).toMatchObject({ ok: true, summary: `${D}の時間割: 2枠（16:00〜16:50）` });
+    expect(p.operations[0].details).toEqual(["16:00〜16:25 業務 / 資料作成", "16:30〜16:50 業務 / メール返信", "時間割から外す: 前の枠"]);
+    const after = (id: string) => p.writes.dailyTasks.get(id)!.after;
+    expect(after("資料作成")).toMatchObject({ scheduledTime: "16:00", timeboxEnd: "16:25", order: 0, autoStartNotified: false });
+    expect(after("メール返信")).toMatchObject({ order: 1 });
+    expect(after("前の枠").timeboxEnd).toBeUndefined();
+    // カレンダー予定(時刻だけ)は外さない
+    expect(p.writes.dailyTasks.get("会議")?.after.scheduledTime ?? "13:00").toBe("13:00");
+  });
+
+  it("重なり・知らない作業・過ぎた日は失敗、休憩帯や過ぎた時刻は警告", () => {
+    const run = (operations: unknown[], now = at("09:00")) => planProgressUpdate({ format: UPDATE_FORMAT, version: 1, operations }, st(), now).operations;
+    expect(run([{ op: "planTimebox", date: D, slots: [{ taskId: "資料作成", start: "10:00", end: "10:30" }, { taskId: "メール返信", start: "10:20", end: "10:40" }] }])[0].error).toContain("重なって");
+    expect(run([{ op: "planTimebox", date: D, slots: [{ taskId: "無い", start: "10:00", end: "10:30" }] }])[0].error).toContain("無い");
+    expect(run([{ op: "planTimebox", date: "2026-10-02", slots: [{ taskId: "資料作成", start: "10:00", end: "10:30" }] }])[0].error).toContain("過ぎた日");
+    const w = run([{ op: "planTimebox", date: D, slots: [{ taskId: "資料作成", start: "08:00", end: "08:30" }, { taskId: "メール返信", start: "12:10", end: "12:30" }] }])[0];
+    expect(w.ok).toBe(true);
+    expect(w.warnings.join("\n")).toContain("もう過ぎています");
+    expect(w.warnings.join("\n")).toContain("休憩帯(12:00〜13:00)");
   });
 });

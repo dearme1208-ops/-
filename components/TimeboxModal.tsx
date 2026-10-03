@@ -10,6 +10,10 @@ import { hmToMin, layoutTimeboxes, minToHm } from "@/lib/timebox";
 import { useWorkContext } from "@/lib/useWorkContext";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import PromptCopyButton from "@/components/ai/PromptCopyButton";
+import UpdateImporter from "@/components/ai/UpdateImporter";
+import { loadTimeboxRequest } from "@/components/ai/aiData";
+import { timeboxPrompt } from "@/lib/aiPrompts";
 
 // タイムボックス(時間割)を作る。「全部急ぎ」で全部を気にしている時間は、何も進めていないのと同じ。
 // 作業ごとに時間の枠を先に決めておき、枠の間はその1つだけ、時間が来たら途中でも止める。
@@ -254,6 +258,24 @@ export default function TimeboxModal({ today, onClose }: { today: string; onClos
           <p className="text-xs text-cream/60">
             {slots.length}枠・{slots[0].start}〜{slots[slots.length - 1].end}
           </p>
+        )}
+
+        {candidates.length > 0 && (
+          // 自分で並べる代わりに、期日・進み具合・過去の所要時間を見てClaudeに組んでもらう
+          <details className="rounded-lg border border-cream/15 p-2" data-testid="timebox-ai">
+            <summary className="cursor-pointer text-xs font-bold text-cream/80">🤖 Claudeに組んでもらう</summary>
+            <div className="mt-2 space-y-2">
+              <p className="text-[11px] leading-relaxed text-cream/60">
+                {formatDateJp(date)}の作業・期日・進み具合・過去の所要時間・休憩帯を依頼文にまとめてコピーします。Claudeとの会話に貼り、返ってきた答えを下に貼り付けてください。
+              </p>
+              <PromptCopyButton
+                label={`依頼文をコピー（${formatDateJp(date)}）`}
+                fileName={`koutei-prompt-timebox-${date}.txt`}
+                build={async () => timeboxPrompt(await loadTimeboxRequest(date))}
+              />
+              <UpdateImporter placeholder="Claudeの答え（planTimebox を含むJSON）をここに貼り付け" />
+            </div>
+          </details>
         )}
 
         <div className="flex flex-wrap justify-end gap-2">

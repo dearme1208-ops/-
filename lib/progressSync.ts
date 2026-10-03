@@ -2,7 +2,8 @@ import { db, uid } from "./db";
 import { isStageDone } from "./projectStage";
 import { computeNextDueDate } from "./todo";
 import { todayStr } from "./time";
-import type { ProjectItem, ProjectStage, TodoList, TodoTask } from "./types";
+import { hmToMin, minToHm } from "./timebox";
+import type { BreakRange, DailyTask, ProjectItem, ProjectStage, TodoList, TodoTask } from "./types";
 
 // 別のAI(Claudeなど)に案件・ToDoの進捗を登録してもらうための入出力。
 // ・書き出し(スナップショット): 今の未完了の案件・ToDoを、IDつきのJSONで渡す
@@ -183,6 +184,8 @@ export interface PlannedOperation {
   summary: string;
   error?: string;
   warnings: string[];
+  /** 確認画面に添える内訳(時間割の枠の一覧など) */
+  details?: string[];
 }
 
 export interface UpdatePlan {
@@ -194,6 +197,7 @@ export interface UpdatePlan {
     projects: Map<string, { before?: ProjectItem; after: ProjectItem }>;
     todos: Map<string, { before?: TodoTask; after: TodoTask }>;
     lists: TodoList[];
+    dailyTasks: Map<string, { before: DailyTask; after: DailyTask }>;
   };
 }
 
@@ -246,10 +250,19 @@ function optTag(o: Json, key: string, tagOptions: string[], warnings: string[]):
 
 export function planProgressUpdate(
   input: unknown,
-  state: { projects: ProjectItem[]; todoTasks: TodoTask[]; todoLists: TodoList[]; tagOptions: string[] },
+  state: {
+    projects: ProjectItem[];
+    todoTasks: TodoTask[];
+    todoLists: TodoList[];
+    tagOptions: string[];
+    /** 時間割(planTimebox)の対象になる本日以降の作業 */
+    dailyTasks?: DailyTask[];
+    /** 休憩帯(時間割が重なっていれば警告する) */
+    breaks?: BreakRange[];
+  },
   now = Date.now()
 ): UpdatePlan {
-  const writes: UpdatePlan["writes"] = { projects: new Map(), todos: new Map(), lists: [] };
+  const writes: UpdatePlan["writes"] = { projects: new Map(), todos: new Map(), lists: [], dailyTasks: new Map() };
   const plan: UpdatePlan = { operations: [], writes };
   if (!input || typeof input !== "object") return { ...plan, fatal: "JSONのオブジェクトではありません" };
   const root = input as Json;
@@ -261,6 +274,9 @@ export function planProgressUpdate(
   let projects = new Map(state.projects.map((p) => [p.id, structuredClone(p)]));
   let todos = new Map(state.todoTasks.map((t) => [t.id, structuredClone(t)]));
   let lists = state.todoLists.map((l) => ({ ...l }));
+  let daily = new Map((state.dailyTasks ?? []).map((t) => [t.id, structuredClone(t)]));
+  const originalDaily = new Map((state.dailyTasks ?? []).map((t) => [t.id, t]));
+  const touchDaily = (t: DailyTask) => writes.dailyTasks.set(t.id, { before: originalDaily.get(t.id)!, after: t });
   const originalProject = new Map(state.projects.map((p) => [p.id, p]));
   const originalTodo = new Map(state.todoTasks.map((t) => [t.id, t]));
 
@@ -378,6 +394,8 @@ export function planProgressUpdate(
       projects: structuredClone(projects),
       todos: structuredClone(todos),
       lists: structuredClone(lists),
+      daily: structuredClone(daily),
+      wd: structuredClone(writes.dailyTasks),
       wp: structuredClone(writes.projects),
       wt: structuredClone(writes.todos),
       wl: structuredClone(writes.lists),
@@ -590,6 +608,79 @@ export function planProgressUpdate(
           entry.summary = `ToDo「${parent.title}」にサブタスク「${title}」を追加${sub.dueDate ? `(期日 ${sub.dueDate})` : ""}`;
           break;
         }
+        case "planTimebox": {
+          const date = optDate(o, "date");
+          if (!date) throw new OpError(`"date" (YYYY-MM-DD) は必須です`);
+          const today = todayStr(new Date(now));
+          if (date < today) throw new OpError(`過ぎた日(${date})の時間割は作れません`);
+          if (!Array.isArray(o.slots) || o.slots.length === 0) throw new OpError(`"slots" に1つ以上の枠を入れてください`);
+          const dayTasks = [...daily.values()].filter((t) => t.date === date);
+          const byId = new Map(dayTasks.map((t) => [t.id, t]));
+          const seen = new Set<string>();
+          const slots = o.slots.map((raw, i) => {
+            if (!raw || typeof raw !== "object") throw new OpError(`slots[${i}] がオブジェクトではありません`);
+            const sl = raw as Json;
+            const taskId = str(sl, "taskId");
+            const t = taskId ? byId.get(taskId) : undefined;
+            if (!t) throw new OpError(`slots[${i}]: ${date}の作業に taskId "${taskId ?? ""}" がありません`);
+            if (t.isProvisional || t.status === "done") throw new OpError(`slots[${i}]: 「${t.name}」は終わった作業なので枠を作れません`);
+            if (seen.has(t.id)) throw new OpError(`slots[${i}]: 「${t.name}」が2回出てきます(1つの作業に枠は1つ)`);
+            seen.add(t.id);
+            const start = hmToMin(str(sl, "start") ?? "");
+            const end = hmToMin(str(sl, "end") ?? "");
+            if (start === null || end === null) throw new OpError(`slots[${i}]: "start"・"end" はHH:MM形式で指定してください`);
+            if (end - start < 5) throw new OpError(`slots[${i}]: 枠は5分以上にしてください`);
+            return { t, start, end };
+          });
+          slots.sort((a, b) => a.start - b.start);
+          for (let i = 1; i < slots.length; i++) {
+            if (slots[i].start < slots[i - 1].end) {
+              throw new OpError(`「${slots[i - 1].t.name}」と「${slots[i].t.name}」の枠が重なっています`);
+            }
+          }
+          const breaks = (state.breaks ?? [])
+            .map((b) => ({ s: hmToMin(b.start), e: hmToMin(b.end), label: `${b.start}〜${b.end}` }))
+            .filter((b): b is { s: number; e: number; label: string } => b.s !== null && b.e !== null);
+          const nowMin = date === today ? new Date(now).getHours() * 60 + new Date(now).getMinutes() : -1;
+          const details: string[] = [];
+          for (const { t, start, end } of slots) {
+            const overlap = breaks.find((b) => start < b.e && end > b.s);
+            if (overlap) warnings.push(`「${t.name}」の枠が休憩帯(${overlap.label})に重なっています`);
+            const past = end <= nowMin;
+            if (past) warnings.push(`「${t.name}」の枠はもう過ぎています(自動では始まりません)`);
+            t.scheduledTime = minToHm(start);
+            t.timeboxEnd = minToHm(end);
+            t.timeboxEndHandled = false;
+            // 計測中・一時停止中の作業には、枠の始まりで改めて「開始」を出さない
+            t.autoStartNotified = past || t.status !== "pending";
+            t.autoStartDisabled = false;
+            touchDaily(t);
+            details.push(`${minToHm(start)}〜${minToHm(end)} ${t.category} / ${t.name}`);
+          }
+          // 時間割に入れなかった作業から、前の時間割の枠を外す(カレンダー予定の時刻だけのものは残す)
+          const keepOthers = optBool(o, "keepOthers") ?? false;
+          const left = dayTasks.filter((t) => !seen.has(t.id) && t.timeboxEnd && t.status !== "done");
+          if (!keepOthers) {
+            for (const t of left) {
+              t.scheduledTime = undefined;
+              t.timeboxEnd = undefined;
+              t.timeboxEndHandled = undefined;
+              touchDaily(t);
+            }
+            if (left.length) details.push(`時間割から外す: ${left.map((t) => t.name).join("、")}`);
+          }
+          // 作業リストの並びも時間割の順にそろえる
+          const rest = dayTasks.filter((t) => !seen.has(t.id)).sort((a, b) => a.order - b.order);
+          [...slots.map((x) => x.t), ...rest].forEach((t, i) => {
+            if (t.order !== i) {
+              t.order = i;
+              touchDaily(t);
+            }
+          });
+          entry.details = details;
+          entry.summary = `${date}の時間割: ${slots.length}枠（${minToHm(slots[0].start)}〜${minToHm(slots[slots.length - 1].end)}）`;
+          break;
+        }
         default:
           throw new OpError(opName ? `知らない操作 "${opName}" です` : `"op" がありません`);
       }
@@ -599,6 +690,8 @@ export function planProgressUpdate(
       projects = saved.projects;
       todos = saved.todos;
       lists = saved.lists;
+      daily = saved.daily;
+      writes.dailyTasks = saved.wd;
       writes.projects = saved.wp;
       writes.todos = saved.wt;
       writes.lists = saved.wl;
@@ -615,8 +708,9 @@ export function planProgressUpdate(
  * (失敗した操作は作業用コピーにも当たっていない)。取り消し用の関数を返す
  */
 export async function applyProgressPlan(plan: UpdatePlan): Promise<() => Promise<void>> {
-  const { projects, todos, lists } = plan.writes;
-  await db.transaction("rw", db.projects, db.todoTasks, db.todoLists, async () => {
+  const { projects, todos, lists, dailyTasks } = plan.writes;
+  await db.transaction("rw", [db.projects, db.todoTasks, db.todoLists, db.dailyTasks], async () => {
+    for (const { before, after } of dailyTasks.values()) await db.dailyTasks.update(after.id, diff(before, after));
     for (const l of lists) await db.todoLists.add(l);
     for (const { before, after } of projects.values()) {
       if (before) await db.projects.update(after.id, diff(before, after));
@@ -628,7 +722,8 @@ export async function applyProgressPlan(plan: UpdatePlan): Promise<() => Promise
     }
   });
   return async () => {
-    await db.transaction("rw", db.projects, db.todoTasks, db.todoLists, async () => {
+    await db.transaction("rw", [db.projects, db.todoTasks, db.todoLists, db.dailyTasks], async () => {
+      for (const { before } of dailyTasks.values()) await db.dailyTasks.put(before);
       for (const { before, after } of projects.values()) {
         if (before) await db.projects.put(before);
         else await db.projects.delete(after.id);
