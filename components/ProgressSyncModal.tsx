@@ -7,6 +7,7 @@ import { shiftDateStr, todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 import PromptCopyButton from "@/components/ai/PromptCopyButton";
 import UpdateImporter from "@/components/ai/UpdateImporter";
+import LifeContextSelect from "@/components/ai/LifeContextSelect";
 import { copyText, loadSnapshot, loadSpec, loadTimeboxRequest } from "@/components/ai/aiData";
 
 // 別のAI(Claudeなど)に案件・ToDoの進捗の登録や時間割づくりを頼むための画面。
@@ -40,6 +41,7 @@ export default function ProgressSyncModal({ onClose }: { onClose: () => void }) 
               fileName={`koutei-prompt-notes-${today}.txt`}
               build={async () => notesToTodoPrompt(await loadSpec(), await loadSnapshot())}
             />
+            <LifeContextSelect />
             <div className="flex flex-wrap gap-2">
               <PromptCopyButton
                 label="⏱ 今日の時間割を組んでもらう"

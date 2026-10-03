@@ -25,7 +25,7 @@ test("時間割の画面から依頼文をコピーし、Claudeの答えを貼�
   await page.getByRole("button", { name: /依頼文をコピー/ }).click();
   await expect(page.getByText("コピーしました。")).toBeVisible();
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  expect(prompt).toContain("時間割(タイムボックス)を組むアシスタント");
+  expect(prompt).toContain("仕事の1日の時間割(タイムボックス)を組むアシスタント");
   expect(prompt).toContain('"taskId": "a"');
   expect(prompt).toContain('"plannedMinutes": 20');
   expect(prompt).toContain('"label": "定例会議"');
@@ -59,6 +59,11 @@ test("時間割の画面から依頼文をコピーし、Claudeの答えを貼�
   expect(await readOne<Daily>(page, "dailyTasks", "b")).toMatchObject({ scheduledTime: "11:30", timeboxEnd: "11:50" });
   // 時刻だけのカレンダー予定には触れない
   expect(await readOne<Daily>(page, "dailyTasks", "cal")).toMatchObject({ scheduledTime: "13:00" });
+
+  // 使い道を「家庭」にすると、家庭向けの頼み方になる(選択は覚えておく)
+  await page.getByRole("button", { name: "🏠 家庭" }).click();
+  await page.getByRole("button", { name: /依頼文をコピー/ }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("家庭での1日の時間割");
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("timebox-band")).toContainText("次の枠 09:00");

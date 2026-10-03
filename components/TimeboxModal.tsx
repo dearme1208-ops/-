@@ -12,6 +12,7 @@ import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import PromptCopyButton from "@/components/ai/PromptCopyButton";
 import UpdateImporter from "@/components/ai/UpdateImporter";
+import LifeContextSelect from "@/components/ai/LifeContextSelect";
 import { loadTimeboxRequest } from "@/components/ai/aiData";
 import { timeboxPrompt } from "@/lib/aiPrompts";
 
@@ -268,6 +269,7 @@ export default function TimeboxModal({ today, onClose }: { today: string; onClos
               <p className="text-[11px] leading-relaxed text-cream/60">
                 {formatDateJp(date)}の作業・期日・進み具合・過去の所要時間・休憩帯を依頼文にまとめてコピーします。Claudeとの会話に貼り、返ってきた答えを下に貼り付けてください。
               </p>
+              <LifeContextSelect />
               <PromptCopyButton
                 label={`依頼文をコピー（${formatDateJp(date)}）`}
                 fileName={`koutei-prompt-timebox-${date}.txt`}

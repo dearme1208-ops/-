@@ -38,8 +38,11 @@ export async function loadSnapshot(): Promise<ProgressSnapshot> {
   return buildSnapshot({ projects, todoTasks, todoLists, tagOptions });
 }
 
+/** 時間割の依頼の使い道(仕事/家庭)。工程表を仕事用と家庭用で別々に使う人のため、依頼の画面で選んで覚えておく */
+export const LIFE_CONTEXT_KEY = "ai.timeboxContext";
+
 export async function loadTimeboxRequest(date: string): Promise<TimeboxRequest> {
-  const [dailyTasks, masterTasks, records, projects, todoTasks, breaks, workStart, workEnd, gap] = await Promise.all([
+  const [dailyTasks, masterTasks, records, projects, todoTasks, breaks, workStart, workEnd, gap, context] = await Promise.all([
     db.dailyTasks.where("date").equals(date).toArray(),
     db.masterTasks.toArray(),
     db.records.toArray(),
@@ -49,6 +52,7 @@ export async function loadTimeboxRequest(date: string): Promise<TimeboxRequest> 
     setting("today.standardWorkStart", "08:00"),
     setting("today.standardWorkEnd", "17:00"),
     setting("today.timeboxGapMinutes", "5"),
+    setting(LIFE_CONTEXT_KEY, "仕事"),
   ]);
   return buildTimeboxRequest({
     date,
@@ -62,6 +66,7 @@ export async function loadTimeboxRequest(date: string): Promise<TimeboxRequest> 
     workStart,
     workEnd,
     gapMinutes: Math.max(0, Math.min(30, Number(gap) || 0)),
+    context: context === "家庭" ? "家庭" : "仕事",
   });
 }
 

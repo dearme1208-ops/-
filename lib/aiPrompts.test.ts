@@ -41,6 +41,8 @@ describe("時間割の相談データと依頼文", () => {
       gapMinutes: 5,
     });
     expect(req.nowTime).toBe("08:40");
+    expect(req.context).toBe("仕事");
+    expect(req.activeHours).toEqual({ start: "09:00", end: "18:00" });
     expect(req.fixedEvents).toEqual([{ label: "定例会議", start: "13:00" }]);
     expect(req.tasks.map((t) => t.taskId)).toEqual(["a", "b"]);
     expect(req.tasks[0]).toMatchObject({ label: "A社見積 › 見積作成", typicalMinutes: 45, spentMinutes: 10, dueDate: "2026-10-04", progressStatus: "遅れ気味" });
@@ -50,5 +52,32 @@ describe("時間割の相談データと依頼文", () => {
     expect(prompt).toContain('"op": "planTimebox"');
     expect(prompt).toContain("今は 08:40 です");
     expect(prompt).toContain('"taskId": "a"');
+    expect(prompt).toContain("仕事の1日の時間割");
+    expect(prompt).toContain("勤務時間");
+  });
+
+  it("家庭用では仕事前提の言い回しをせず、丸一日の時間帯指定は「指定なし」として生活の時間を考えてもらう", () => {
+    const req = buildTimeboxRequest({
+      date: D,
+      now: new Date(`${D}T14:27:00`),
+      dailyTasks: [daily("g", { name: "栄冠ナインでチーム作成", category: "ゲーム", status: "running" })],
+      masterTasks: [],
+      records: [],
+      projects: [],
+      todoTasks: [],
+      breaks: [],
+      workStart: "00:00",
+      workEnd: "23:59",
+      gapMinutes: 5,
+      context: "家庭",
+    });
+    expect(req.activeHours).toBeUndefined();
+    const prompt = timeboxPrompt(req);
+    expect(prompt).toContain("家庭での1日の時間割");
+    expect(prompt).toContain("深夜・早朝には置かない");
+    expect(prompt).toContain("今まさにやっている");
+    expect(prompt).not.toContain("勤務時間");
+    expect(prompt).not.toContain("メール返信");
+    expect(prompt).not.toContain("午前の早い時間");
   });
 });
