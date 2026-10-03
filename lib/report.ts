@@ -181,5 +181,7 @@ export function downloadTextFile(filename: string, content: string): void {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // すぐに解放すると、非同期の処理(読み込み等)の後に呼んだ場合にダウンロードが始まる前に
+  // URLが消え、ファイル名が失われる(「download」になる)ことがあるので少し待ってから解放する
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

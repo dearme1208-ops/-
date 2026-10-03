@@ -44,6 +44,7 @@ import WbsDialog from "@/components/sections/WbsDialog";
 import ProjectTemplateDialog from "@/components/sections/ProjectTemplateDialog";
 import RetrospectiveInput from "@/components/sections/RetrospectiveInput";
 import ProjectPPMChart from "@/components/sections/ProjectPPMChart";
+import ProgressSyncModal from "@/components/ProgressSyncModal";
 import ProjectProgressChart from "@/components/sections/ProjectProgressChart";
 import StageDueDensityModal from "@/components/sections/StageDueDensityModal";
 import WeeklyReviewModal from "@/components/WeeklyReviewModal";
@@ -130,6 +131,7 @@ export default function ProjectsSection({
   const [ganttAnchor, setGanttAnchor] = useSetting("projects.ganttAnchor", "today");
   const [showCsvToolsStr] = useSetting("csvTools.projects", "true");
   const showCsvTools = showCsvToolsStr === "true";
+  const [showProgressSync, setShowProgressSync] = useState(false);
   // 完了済み段階の表示切替。設定タブと同じキーを読み書きしているので、どちらで切り替えても
   // 状態は共通で、リロードしても保たれる。段階の確認は案件タブでするものなので、
   // 設定タブまで行かずにここで直接ひっくり返せるようにしてある
@@ -712,6 +714,18 @@ export default function ProjectsSection({
           📋 週次レビュー
         </button>
       </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        {/* 別のAIに案件・ToDoの進捗を登録してもらう入口(CSVの表示設定とは関係なく出す) */}
+        <button
+          className="btn-pill-outline text-sm"
+          onClick={() => setShowProgressSync(true)}
+          title="別のAI(Claudeなど)に案件・ToDoの進捗を登録してもらう"
+        >
+          🤖 AIと進捗をやり取り
+        </button>
+      </div>
+      {showProgressSync && <ProgressSyncModal onClose={() => setShowProgressSync(false)} />}
+
       {showCsvTools && (
         <div className="flex flex-wrap justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>

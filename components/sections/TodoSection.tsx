@@ -65,6 +65,7 @@ import PedigreeTable from "@/components/ui/PedigreeTable";
 import { showUndoToast } from "@/lib/toast";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
+import ProgressSyncModal from "@/components/ProgressSyncModal";
 
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
@@ -329,6 +330,7 @@ export default function TodoSection({
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
   const [showGuideImport, setShowGuideImport] = useState(false);
+  const [showProgressSync, setShowProgressSync] = useState(false);
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1462,8 +1464,16 @@ export default function TodoSection({
 
       {/* CSVの取り込み・書き出しはたまにしか使わないので、普段は1つのボタンに畳んでおく
           (スマホでは4つのボタンだけで画面の1/3を使い、ToDoが下に押し出されていた) */}
+      <div className="flex flex-wrap justify-end gap-2">
+        {/* 別のAIに進捗を登録してもらう入口。CSVの表示設定とは関係なく出す */}
+        <button
+          className="btn-pill-outline text-xs"
+          onClick={() => setShowProgressSync(true)}
+          title="別のAI(Claudeなど)に案件・ToDoの進捗を登録してもらう"
+        >
+          🤖 AIと進捗をやり取り
+        </button>
       {showCsvTools && (
-        <div className="flex flex-wrap justify-end gap-2">
           <button
             className="btn-pill-outline text-xs"
             onClick={() => setCsvMenuOpen((v) => !v)}
@@ -1471,8 +1481,8 @@ export default function TodoSection({
           >
             📂 取り込み・書き出し {csvMenuOpen ? "▲" : "▼"}
           </button>
-        </div>
       )}
+      </div>
       {showCsvTools && csvMenuOpen && (
         <div className="flex flex-wrap justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
@@ -2203,6 +2213,7 @@ export default function TodoSection({
 
       {showWeeklyReview && <WeeklyReviewModal onClose={() => setShowWeeklyReview(false)} />}
 
+      {showProgressSync && <ProgressSyncModal onClose={() => setShowProgressSync(false)} />}
       {showGuideImport && (
         <GuideImportDialog
           lists={lists ?? []}
