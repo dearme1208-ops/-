@@ -103,6 +103,34 @@ test("まだ何も記録していない使い始めには、バックアップ�
   await expect(page.getByText("バックアップを取っておきませんか")).toBeVisible();
 });
 
+test("完了した作業はカードごと薄くならず、完了の印が付き、開始〜終了の時刻を押すと編集が開く", async ({ page }) => {
+  await seed(page, {
+    settings: { "today.taskViewTab": "done" },
+    stores: {
+      dailyTasks: [
+        dailyTask({
+          id: "d1",
+          date: jstDate(),
+          name: "資料作成",
+          status: "done",
+          segments: [{ start: jstAt("09:00"), end: jstAt("09:30") }],
+          accumulatedMs: 30 * 60000,
+          startedAt: jstAt("09:00"),
+          endedAt: jstAt("09:30"),
+        }),
+      ],
+    },
+  });
+  const card = page.locator("[data-done='true']");
+  await expect(card).toHaveCount(1);
+  await expect(card).toHaveCSS("opacity", "1");
+  await expect(card.getByText("✅ 完了")).toBeVisible();
+  // 編集・時刻のボタンも薄くない
+  await expect(card.getByRole("button", { name: "編集" })).toHaveCSS("opacity", "1");
+  await card.getByRole("button", { name: "09:00〜09:30" }).click();
+  await expect(page.locator(".modal-scrim").first()).toBeVisible();
+});
+
 test.describe("画面の整理", () => {
   test("本日の作業: 作業リストがお気に入り・作業状況などのパネルより上にあり、そのほかの表示はたためる", async ({ page }) => {
     await page.setViewportSize(PHONE);

@@ -171,12 +171,17 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             }
           : undefined
       }
+      // 完了した作業はカード全体を薄くしない。終了時刻の修正などで後から触ることが多いのに、
+      // ボタンや時刻まで薄くなって見にくかったため。完了は左端の帯・バッジ・題名の色で示す
+      // (完了したカードは「完了」タブにしか並ばないので、ほかの作業と見分ける必要も小さい)
+      data-done={task.status === "done" ? "true" : undefined}
       className={`panel relative p-4 transition-opacity ${cardClass} ${
-        task.status === "done" ? "opacity-50" : dimmed ? "opacity-40" : ""
+        task.status !== "done" && dimmed ? "opacity-40" : ""
       } ${isDraggable ? "cursor-grab active:cursor-grabbing" : ""} ${
         draggingTaskId === task.id ? "opacity-30" : ""
       } ${draggingTaskId && draggingTaskId !== task.id && isDraggable ? "border-dashed" : ""}`}
     >
+      {task.status === "done" && <div className="absolute inset-y-3 left-0 w-1 rounded-r bg-cream/35" aria-hidden />}
       {isRunningOverrun && (
         <div className={`absolute inset-x-0 top-0 rounded-t-2xl ${themedMode ? hazardBarClass(themedMode) : "hazard-bar"}`} />
       )}
@@ -231,6 +236,9 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                 </span>
               )}
               {task.status === "paused" && <span className="text-cream/70">‖ 一時停止中</span>}
+              {task.status === "done" && (
+                <span className="rounded-full border border-cream/30 px-1.5 py-px font-bold text-cream/80">✅ 完了</span>
+              )}
               {task.category} {task.isSpontaneous && <span className="ml-1 text-alert">突発</span>}
               {isNext && task.status === "pending" && <span className="ml-2 text-cream">▶ 次の作業</span>}
             </span>
@@ -259,7 +267,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-display text-base font-bold">{task.name}</span>
+            <span className={`font-display text-base font-bold ${task.status === "done" ? "text-cream/65" : ""}`}>{task.name}</span>
             {topRank !== undefined && (
               <span className="rounded-full bg-alert/20 px-2 py-0.5 text-[10px] font-bold text-alert">
                 {RANK_MEDALS[topRank]} 集計ランキング{topRank + 1}位
@@ -559,11 +567,15 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             )}
             {task.status === "done" && (
               <div className="text-right">
-                <span className="text-xs text-cream/50">完了</span>
                 {task.startedAt && task.endedAt && (
-                  <div className="text-xs tabular-nums text-cream/40">
+                  // 完了後にいちばん直したくなるのが開始・終了の時刻なので、濃く出して押せば編集を開く
+                  <button
+                    onClick={() => setEditingTask(task)}
+                    className="rounded px-1 text-sm font-bold tabular-nums text-cream/90 underline decoration-dotted underline-offset-2 hover:bg-cream/10"
+                    title="開始・終了の時刻などを直す"
+                  >
                     {formatClock(task.startedAt)}〜{formatClock(task.endedAt)}
-                  </div>
+                  </button>
                 )}
                 {!!task.guessSeconds &&
                   (() => {
@@ -575,13 +587,13 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                     const label =
                       diffPct <= 10 ? "🎯ほぼ的中" : actualSeconds > task.guessSeconds! ? `${diffPct}%長引いた` : `${diffPct}%早く終わった`;
                     return (
-                      <div className="text-xs tabular-nums text-cream/40">
+                      <div className="text-xs tabular-nums text-cream/60">
                         予想{guessMin}分→実績{actualMin}分・{label}
                       </div>
                     );
                   })()}
                 <button
-                  className="mt-1 text-xs text-cream/40 hover:text-alert"
+                  className="mt-1 block w-full text-right text-xs text-cream/50 hover:text-alert"
                   onClick={() => setDeletingCompletedTask(task)}
                 >
                   削除
