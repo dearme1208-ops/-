@@ -875,6 +875,9 @@ export default function UnifiedBoardSection({
       completed: false,
       order: maxOrder + 1,
       createdAt: Date.now(),
+      // 最初のサブタスクを足すと、親の対応状況はサブタスクから決まるようになり、親に付けていた
+      // 対応状況が消えたように見えていた。最初の1件には親の対応状況を引き継ぐ
+      ...(siblings.length === 0 && parent.tag ? { tag: parent.tag } : {}),
     });
   }
   async function moveProject(id: string, x: number, y: number) {

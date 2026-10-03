@@ -9,7 +9,9 @@ const config: Config = {
         // 全タブ・全コンポーネントの基調色を一括反転できるようにしている(persona5/natsuyasumi用)
         ink: "rgb(var(--ink-rgb) / <alpha-value>)",
         cream: "rgb(var(--cream-rgb) / <alpha-value>)",
-        alert: "rgb(var(--accent-rgb) / <alpha-value>)",
+        // 警告(期限切れ・超過など)の色。既定はアクセント色と同じだが、アクセントが緑・青など
+        // 「良い/普通」に見える色のテーマでは赤系に差し替える(--alert-rgb、app/globals.css)
+        alert: "rgb(var(--alert-rgb) / <alpha-value>)",
         panel: "rgb(var(--panel-rgb) / <alpha-value>)",
         // VA-11 HALL-A風演出テーマ専用のネオンパレット(固定色、アクセントカラー設定とは独立)
         "v11-pink": "rgb(255 45 149 / <alpha-value>)",

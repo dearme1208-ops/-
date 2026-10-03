@@ -1544,7 +1544,8 @@ function ProjectRow({
           />
         )}
         <div className="min-w-0">
-        <div className="text-xs text-cream/50">
+        {/* 件名を主に、詳細作業名を従に。以前は件名が小さく、詳細作業名の方が大きく見えていた */}
+        <div className="text-sm font-bold text-cream">
           {hayarigamiMode && (
             <span className="mr-1.5 font-mono text-cream/45">
               {hayarigamiWordsFor(wordingEnabled).fileNoPrefix}
@@ -1655,9 +1656,9 @@ function ProjectRow({
             </span>
           )}
         </div>
-        <div className="text-sm text-cream">{project.workName}</div>
+        <div className="text-xs text-cream/60">{project.workName}</div>
         <div className={`text-xs ${overdue || dueToday ? "font-bold text-alert" : "text-cream/60"}`}>
-          期日 {project.dueDate}{" "}
+          期日 {formatDateJp(project.dueDate)}{" "}
           {project.completedAt
             ? "（完了）"
             : overdue
@@ -1921,7 +1922,8 @@ function ProjectRow({
                         }`}
                       >
                         {stageOverdue && "⚠ "}
-                        {stage.dueDate}
+                        {/* 完了日(「9/28」)と同じ短い書き方にそろえる */}
+                        期日 {formatDateJp(stage.dueDate)}
                         {stageDueToday && (
                           <span className="ml-1 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">
                             本日
@@ -1956,31 +1958,31 @@ function ProjectRow({
         </div>
       </div>
       {/* スマホ幅でも1行に詰め込まず折り返す(詰め込むと文字が縦1列に潰れて読めなくなっていた) */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 [&>button]:whitespace-nowrap">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 [&>button]:whitespace-nowrap">
         <button className="btn-pill-outline text-xs" onClick={onAddToToday}>
           本日の作業に追加
         </button>
         <button className="btn-pill-outline text-xs" onClick={onToggleComplete}>
           {project.completedAt ? "未完了に戻す" : "完了"}
         </button>
-        <button className="text-xs text-cream/60 hover:text-cream" onClick={onEdit}>
+        <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onEdit}>
           編集
         </button>
-        <button className="text-xs text-cream/60 hover:text-cream" onClick={onAnalysis} title="SWOT・BSC・3C分析">
+        <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onAnalysis} title="SWOT・BSC・3C分析">
           分析
         </button>
-        <button className="text-xs text-cream/60 hover:text-cream" onClick={onWbs} title="WBS(作業分解構成図)">
+        <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onWbs} title="WBS(作業分解構成図)">
           WBS
         </button>
         <button
-          className="text-xs text-cream/60 hover:text-cream"
+          className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
           onClick={onTemplate}
           title="この案件の段階の構成を引き継いで、同じ種類の新しい案件を作ります(過去の実績から段階ごとの目安時間も出します)"
         >
           📐 型にして作る
         </button>
         <button
-          className="text-xs text-cream/60 hover:text-cream"
+          className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
           onClick={() => {
             if (project.boardX !== undefined) removeProjectFromBoard(project.id);
             else placeProjectOnBoard(project.id);
@@ -1989,13 +1991,14 @@ function ProjectRow({
           {project.boardX !== undefined ? "ボードから外す" : "ボードに置く"}
         </button>
         <button
-          className="text-xs text-cream/60 hover:text-cream"
+          className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
           onClick={onArchive}
           title={project.archived ? "通常の一覧・ガント・カレンダー等に戻します" : "削除せずに、通常の一覧・ガント・カレンダー等から外します"}
         >
           {project.archived ? "🗄 アーカイブ解除" : "🗄 アーカイブ"}
         </button>
-        <button className="text-xs text-alert" onClick={onDelete}>
+        {/* 削除は他の操作から少し離し、押し間違えにくくする */}
+        <button className="ml-auto px-1 py-1.5 text-xs text-alert" onClick={onDelete}>
           削除
         </button>
       </div>

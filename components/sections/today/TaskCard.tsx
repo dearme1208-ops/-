@@ -175,6 +175,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
       // ボタンや時刻まで薄くなって見にくかったため。完了は左端の帯・バッジ・題名の色で示す
       // (完了したカードは「完了」タブにしか並ばないので、ほかの作業と見分ける必要も小さい)
       data-done={task.status === "done" ? "true" : undefined}
+      data-running-card={task.status === "running" ? "true" : undefined}
       className={`panel relative p-4 transition-opacity ${cardClass} ${
         task.status !== "done" && dimmed ? "opacity-40" : ""
       } ${isDraggable ? "cursor-grab active:cursor-grabbing" : ""} ${
@@ -188,7 +189,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
       {task.status !== "done" && (
         <button
           onClick={() => deleteTask(task)}
-          className="absolute right-3 top-3 text-cream/40 hover:text-alert"
+          className="absolute right-1 top-1 flex h-9 w-9 items-center justify-center text-cream/40 hover:text-alert"
           aria-label="削除"
         >
           ✕
@@ -201,8 +202,10 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
       )}
       <div className={`flex flex-wrap items-center justify-between gap-3 pr-6 ${isDraggable ? "pl-4" : ""}`}>
         <div>
-          <div className="flex items-center gap-2 text-xs text-cream/60">
-            <span className="flex items-center gap-1">
+          {/* 狭い画面で、計測中の印や危険度バッジと並んだ「業務」「突発」が1文字ずつ縦に折り返していた。
+              行ごと折り返し、言葉の途中では折り返さない */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-cream/60">
+            <span className="flex flex-wrap items-center gap-x-1 gap-y-0.5 [&>*]:whitespace-nowrap">
               {task.status === "running" && !isRunningOverrun && (
                 <span className={`flex items-center gap-1 font-bold ${va11hallaMode ? "text-v11-cyan" : "text-cream"}`}>
                   <span className={`h-2 w-2 animate-pulse rounded-full ${va11hallaMode ? "bg-v11-cyan" : "bg-alert"}`} />
@@ -239,12 +242,14 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
               {task.status === "done" && (
                 <span className="rounded-full border border-cream/30 px-1.5 py-px font-bold text-cream/80">✅ 完了</span>
               )}
-              {task.category} {task.isSpontaneous && <span className="ml-1 text-alert">突発</span>}
+              <span>{task.category}</span>
+              {task.isSpontaneous && <span className="text-alert">突発</span>}
               {isNext && task.status === "pending" && <span className="ml-2 text-cream">▶ 次の作業</span>}
             </span>
             <button
               onClick={() => toggleTaskFavorite(task)}
-              className={favoriteMasterIds.has(task.masterTaskId ?? "") ? "text-alert" : "text-cream/40 hover:text-cream"}
+              // 押せる範囲だけを広げる(見た目の位置は変えない)。小さすぎて押しにくかった
+              className={`-m-1.5 p-1.5 ${favoriteMasterIds.has(task.masterTaskId ?? "") ? "text-alert" : "text-cream/40 hover:text-cream"}`}
               aria-label={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
               title={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
             >
@@ -252,14 +257,14 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             </button>
             <button
               onClick={() => setEditingTask(task)}
-              className="text-cream/40 hover:text-cream"
+              className="-m-1.5 p-1.5 text-cream/40 hover:text-cream"
               aria-label="編集"
             >
               ✎
             </button>
             <button
               onClick={() => setSecondaryProjectsTask(task)}
-              className={(task.secondaryProjectIds?.length ?? 0) > 0 ? "text-alert" : "text-cream/40 hover:text-cream"}
+              className={`-m-1.5 p-1.5 ${(task.secondaryProjectIds?.length ?? 0) > 0 ? "text-alert" : "text-cream/40 hover:text-cream"}`}
               aria-label="追加の案件タグ"
               title="兼務・並行作業向けに、主案件以外の案件にも時間を按分できます"
             >
@@ -283,16 +288,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
               const stageCountBased = linkedStage?.targetCount != null;
               return (
                 <>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="rounded-full border border-cream/30 px-2 py-0.5 text-cream/80">
-                      案件: {linkedProject.title}
-                    </span>
-                    {(projectTotalSeconds.get(task.projectId!) ?? 0) > 0 && (
-                      <span className="font-bold tabular-nums text-cream/70">
-                        この案件の累計 {formatHms(projectTotalSeconds.get(task.projectId!)!)}
-                      </span>
-                    )}
-                  </div>
+                  {/* 案件名は「元案件」の枠1か所にまとめる(以前は「案件: ◯◯」と二重に出ていた) */}
                   <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-cream/15 bg-ink/40 px-2.5 py-1.5 text-xs">
                     <span className="text-cream/50">📁 元案件:</span>
                     <button
@@ -304,6 +300,9 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                       {linkedProject.title}
                       {linkedStage && `／${linkedStage.title}`}
                     </button>
+                    {(projectTotalSeconds.get(task.projectId!) ?? 0) > 0 && (
+                      <span className="tabular-nums text-cream/60">累計 {formatHms(projectTotalSeconds.get(task.projectId!)!)}</span>
+                    )}
                     {linkedStage ? (
                       stageDone ? (
                         <span className="text-[10px] text-cream/40">

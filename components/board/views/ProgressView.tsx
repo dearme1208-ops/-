@@ -88,7 +88,7 @@ function ProgressBar({ row }: { row: ProgressRow }) {
             left: `${pct}%`,
             width: `${shortfall}%`,
             backgroundImage:
-              "repeating-linear-gradient(135deg, rgb(var(--accent-rgb) / 0.85) 0 3px, transparent 3px 6px)",
+              "repeating-linear-gradient(135deg, rgb(var(--alert-rgb) / 0.85) 0 3px, transparent 3px 6px)",
           }}
           title={`予定より${Math.round(shortfall)}%遅れ`}
         />

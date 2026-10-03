@@ -54,7 +54,7 @@ export default function TimeboxBand({
             />
           ))}
         </span>
-        <button className="shrink-0 text-[11px] text-cream/55 underline decoration-dotted hover:text-cream" onClick={onEdit}>
+        <button className="-my-1.5 shrink-0 px-1 py-1.5 text-[11px] text-cream/55 underline decoration-dotted hover:text-cream" onClick={onEdit}>
           時間割を編集
         </button>
       </div>

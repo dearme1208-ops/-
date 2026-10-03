@@ -43,14 +43,22 @@ export function inactivityCutoff(task: DailyTask, lastEventAt: number, now: numb
   return Math.max(lastEventAt, task.segments[0]?.start ?? lastEventAt);
 }
 
-// 予定の時刻(scheduledTime)を過ぎた、自動開始すべき未着手の作業
+// 予定の時刻(scheduledTime)を過ぎた、自動開始すべき作業。
+// 未着手の作業に加え、時間割(タイムボックス)の枠を持つ一時停止中の作業も、枠の中なら再開の対象にする
+// (途中まで進めた作業に続きの枠を作ったとき、枠の始まりで続きから計測を始めるため)
 export function findDueScheduledTasks(tasks: DailyTask[], date: string, now: number): DailyTask[] {
+  const toMs = (hm: string) => {
+    const [h, m] = hm.split(":").map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? new Date(date + "T00:00:00").getTime() + (h * 60 + m) * 60000 : null;
+  };
   return tasks.filter((task) => {
-    if (task.status !== "pending" || !task.scheduledTime || task.autoStartNotified || task.autoStartDisabled) return false;
-    const [h, m] = task.scheduledTime.split(":").map(Number);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) return false;
-    const scheduledMs = new Date(date + "T00:00:00").getTime() + (h * 60 + m) * 60000;
-    return now >= scheduledMs;
+    if (!task.scheduledTime || task.autoStartNotified || task.autoStartDisabled) return false;
+    const scheduledMs = toMs(task.scheduledTime);
+    if (scheduledMs === null || now < scheduledMs) return false;
+    if (task.status === "pending") return true;
+    if (task.status !== "paused" || !task.timeboxEnd) return false;
+    const endMs = toMs(task.timeboxEnd);
+    return endMs !== null && now < endMs;
   });
 }
 

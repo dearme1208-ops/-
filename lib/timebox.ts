@@ -122,7 +122,8 @@ export function extendTimebox(
   ];
   for (const t of tasks) {
     if (t.id === target.id || t.date !== target.date || !t.scheduledTime || !t.timeboxEnd) continue;
-    if (t.status !== "pending") continue;
+    // まだ枠が始まっていない作業(未着手・一時停止中)だけをずらす。計測中・完了は動かさない
+    if (t.status !== "pending" && t.status !== "paused") continue;
     const s = hmToMin(t.scheduledTime);
     const e = hmToMin(t.timeboxEnd);
     if (s === null || e === null || s < oldEnd) continue;

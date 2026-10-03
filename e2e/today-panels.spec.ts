@@ -26,7 +26,13 @@ test("通常表示では文言付きのボタンが並び、見出しに連続�
       ],
     },
   });
-  for (const text of ["⚡ トラブル発生", "+ 突発作業を追加", "🧭 今日の段取り", "🗓 明日の下書き", "🌙 終業の振り返り", "🖼 今日の一枚"]) {
+  for (const text of ["⚡ トラブル発生", "+ 突発作業を追加", "🧭 今日の段取り", "🗓 明日の下書き", "🌙 終業の振り返り", "⏱ 時間割"]) {
+    await expect(page.getByRole("button", { name: text })).toBeVisible();
+  }
+  // たまにしか使わない操作は「その他」に畳まれている
+  await expect(page.getByRole("button", { name: "🖼 今日の一枚" })).toHaveCount(0);
+  await page.getByRole("button", { name: "その他の操作" }).click();
+  for (const text of ["🖼 今日の一枚", "予定CSVテンプレート", "予定インポート（CSV/.ics）"]) {
     await expect(page.getByRole("button", { name: text })).toBeVisible();
   }
   await expect(page.getByText(`${jstDate()} の作業リスト`)).toBeVisible();

@@ -1279,7 +1279,9 @@ export default function TodoSection({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
+      {/* 表示の切り替え(マイデイ・重要・リスト…)。スマホでは何段にも折り返してタスクが下へ押し出されて
+          いたので、狭い画面では1行の横スクロールにする */}
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap [&>*]:shrink-0 [&_button]:whitespace-nowrap">
         {!bottomViewBar &&
           (["myday", "important", "planned"] as ViewKey[]).map((v) => {
             const count = v === "myday" ? mydayCount : v === "important" ? importantCount : plannedCount;
@@ -1368,6 +1370,21 @@ export default function TodoSection({
         {!filtersOpen && !searchActive && savedViews.length > 0 && (
           <span className="text-xs text-cream/40">保存済みビュー {savedViews.length}件</span>
         )}
+        {/* 別のAIとのやり取り・CSVの取り込み/書き出しも同じ行に並べ、上部の段数を減らす */}
+        <span className="ml-auto flex gap-2 [&>button]:whitespace-nowrap">
+          <button
+            className="btn-pill-outline text-xs"
+            onClick={() => setShowProgressSync(true)}
+            title="別のAI(Claudeなど)に案件・ToDoの進捗を登録してもらう"
+          >
+            🤖 AIと進捗をやり取り
+          </button>
+          {showCsvTools && (
+            <button className="btn-pill-outline text-xs" onClick={() => setCsvMenuOpen((v) => !v)} aria-expanded={csvMenuOpen}>
+              📂 取り込み・書き出し {csvMenuOpen ? "▲" : "▼"}
+            </button>
+          )}
+        </span>
       </div>
 
       <div className={`flex-wrap items-center gap-2 ${filtersOpen || searchActive ? "flex" : "hidden"}`}>
@@ -1462,27 +1479,6 @@ export default function TodoSection({
         </div>
       )}
 
-      {/* CSVの取り込み・書き出しはたまにしか使わないので、普段は1つのボタンに畳んでおく
-          (スマホでは4つのボタンだけで画面の1/3を使い、ToDoが下に押し出されていた) */}
-      <div className="flex flex-wrap justify-end gap-2">
-        {/* 別のAIに進捗を登録してもらう入口。CSVの表示設定とは関係なく出す */}
-        <button
-          className="btn-pill-outline text-xs"
-          onClick={() => setShowProgressSync(true)}
-          title="別のAI(Claudeなど)に案件・ToDoの進捗を登録してもらう"
-        >
-          🤖 AIと進捗をやり取り
-        </button>
-      {showCsvTools && (
-          <button
-            className="btn-pill-outline text-xs"
-            onClick={() => setCsvMenuOpen((v) => !v)}
-            aria-expanded={csvMenuOpen}
-          >
-            📂 取り込み・書き出し {csvMenuOpen ? "▲" : "▼"}
-          </button>
-      )}
-      </div>
       {showCsvTools && csvMenuOpen && (
         <div className="flex flex-wrap justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
@@ -1536,11 +1532,24 @@ export default function TodoSection({
                 「タスクを追加」だけが押せれば足りるので畳んでおく */}
             {visibleTasks.length > 0 && (
               <>
+                {/* 5つの表示形式のボタンはスマホでは2段を使うので、狭い画面では選択欄にする */}
+                <select
+                  value={displayMode}
+                  onChange={(e) => setDisplayMode(e.target.value as DisplayMode)}
+                  className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream sm:hidden"
+                  aria-label="表示形式"
+                >
+                  {(["list", "kanban", "gantt", "calendar", "tree"] as DisplayMode[]).map((m) => (
+                    <option key={m} value={m}>
+                      {m === "list" ? "リスト" : m === "kanban" ? "かんばん" : m === "gantt" ? "ガント" : m === "calendar" ? "カレンダー" : "系統図"}
+                    </option>
+                  ))}
+                </select>
                 {(["list", "kanban", "gantt", "calendar", "tree"] as DisplayMode[]).map((m) => (
                   <button
                     key={m}
                     onClick={() => setDisplayMode(m)}
-                    className={displayMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    className={`${displayMode === m ? "btn-pill text-xs" : "btn-pill-outline text-xs"} hidden sm:inline-flex`}
                   >
                     {m === "list"
                       ? "リスト"
@@ -2423,6 +2432,8 @@ function SubtaskRow({
   const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
   const subImageInputRef = useRef<HTMLInputElement>(null);
   const [subImageExpanded, setSubImageExpanded] = useState(false);
+  // スマホでは添付(画像・メール)の追加ボタンを「📎」を押したときだけ出す
+  const [showAttach, setShowAttach] = useState(false);
   const subMailInputRef = useRef<HTMLInputElement>(null);
   const [subMailError, setSubMailError] = useState(false);
   return (
@@ -2462,15 +2473,28 @@ function SubtaskRow({
           }`}
         />
       </div>
-      <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
+      {/* 対応状況・添付・期日を1行に収める(スマホで2行に折り返し、サブタスク1件で3行使っていた)。
+          完了したサブタスクでは、もう触らないので出さない */}
+      <div className={`mt-1 flex-wrap items-center justify-end gap-1.5 ${sub.completed ? "hidden" : "flex"}`}>
         {subDueToday && (
           <span className="shrink-0 rounded-full bg-alert/20 px-1 py-0.5 text-[9px] font-bold text-alert">本日</span>
+        )}
+        {!sub.imageDataUrl && !sub.mailFileDataUrl && (
+          <button
+            className="shrink-0 px-0.5 text-[11px] text-cream/40 hover:text-cream/70 sm:hidden"
+            onClick={() => setShowAttach((v) => !v)}
+            aria-expanded={showAttach}
+            aria-label="画像・メールを添付"
+            title="画像・メールを添付"
+          >
+            📎
+          </button>
         )}
         <select
           key={`tagselect-${sub.id}-${sub.tag ?? ""}`}
           value={sub.tag ?? ""}
           onChange={(e) => onUpdateSubtaskTag(sub, e.target.value)}
-          className={`w-[7.5rem] shrink-0 rounded border bg-transparent px-1 py-0.5 text-xs focus:outline-none ${
+          className={`w-[5.5rem] shrink-0 rounded border bg-transparent px-1 py-0.5 text-[11px] focus:outline-none sm:w-24 ${
             sub.tag
               ? "border-cream/30 bg-cream/10 font-bold text-cream/90 focus:border-cream/50"
               : "border-transparent text-cream/30 focus:border-cream/20"
@@ -2487,7 +2511,8 @@ function SubtaskRow({
         </select>
         <button
           onClick={() => (sub.imageDataUrl ? setSubImageExpanded(true) : subImageInputRef.current?.click())}
-          className="shrink-0 text-[11px] text-cream/40 hover:text-cream/70"
+          // 付いていない添付の追加ボタンは、狭い画面では「📎」を押したときだけ出し、対応状況と期日を1行に収める
+          className={`shrink-0 text-[11px] text-cream/40 hover:text-cream/70 ${sub.imageDataUrl || showAttach ? "" : "hidden sm:inline"}`}
           title={sub.imageDataUrl ? "画像を表示" : "画像を追加"}
         >
           {sub.imageDataUrl ? "🖼️" : "📷"}
@@ -2543,7 +2568,7 @@ function SubtaskRow({
         ) : (
           <button
             onClick={() => subMailInputRef.current?.click()}
-            className="shrink-0 text-[11px] text-cream/40 hover:text-cream/70"
+            className={`shrink-0 text-[11px] text-cream/40 hover:text-cream/70 ${showAttach ? "" : "hidden sm:inline"}`}
             title="メールを添付 (.msg)"
           >
             📧
@@ -2555,7 +2580,7 @@ function SubtaskRow({
           type="date"
           defaultValue={sub.dueDate ?? ""}
           onChange={(e) => onUpdateSubtaskDueDate(sub, e.target.value)}
-          className={`w-[8.5rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[10px] focus:border-cream/20 focus:outline-none ${
+          className={`w-[6.25rem] shrink-0 rounded border border-transparent bg-transparent px-0.5 text-[10px] focus:border-cream/20 focus:outline-none sm:w-[6.75rem] ${
             subOverdue || subDueToday ? "font-bold text-alert" : "text-cream/40"
           }`}
         />
@@ -2718,7 +2743,7 @@ function TaskBlock({
         </div>
       </div>
       {subtasks.length > 0 && (
-        <div className="ml-7 space-y-1.5 border-l border-cream/10 pl-3">
+        <div className="ml-3 space-y-1.5 border-l border-cream/10 pl-2 sm:ml-7 sm:pl-3">
           <div
             className={`sticky top-0 z-10 -ml-3 flex flex-wrap items-center gap-x-3 gap-y-1 pl-3 ${
               parentRowHidden ? "rounded-b-lg bg-ink/95 py-1 shadow-md" : ""
@@ -3411,6 +3436,9 @@ function TaskDetailModal({
       completed: false,
       order: maxOrder + 1,
       createdAt: Date.now(),
+      // 最初のサブタスクを足すと、親の対応状況はサブタスクから決まるようになり、親に付けていた
+      // 対応状況が消えたように見えていた。最初の1件には親の対応状況を引き継ぐ
+      ...(subtasks.length === 0 && task.tag ? { tag: task.tag } : {}),
     });
     setNewSubtask("");
   }

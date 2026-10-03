@@ -46,6 +46,10 @@
 - 「客先確認中」「社内確認中」など**相手の返事待ち**の状況は、アプリ内で「相手待ち」として日数が数えられ、
   進捗の一覧で「停滞」とは別に扱われます。返事待ちになったら `tag` を変えてください。
 - 対応状況を変えた日時と、期日を延ばした履歴（延期の回数）は**アプリが自動で記録**します。
+- **段階のある案件・サブタスクのあるToDoの対応状況は、段階・サブタスクの対応状況から自動で決まります**
+  （未完了のものの中で一番優先度の高い対応状況）。スナップショットでは `tagAuto: true` が付きます。
+  これらの対応状況を変えたいときは、`updateStage` / `updateSubtask` で**段階・サブタスクの** `tag` を変えてください。
+  `updateProject` / `updateTodo` で `tag` を指定するとエラーになります。
 
 ### 2.4 日付
 - 日付はすべて `YYYY-MM-DD`（例 `2026-10-03`）。日本時間の日付です。
@@ -72,11 +76,12 @@
       "workName": "見積",
       "dueDate": "2026-10-20",
       "tag": "対応中",
+      "tagAuto": true,
       "createdDate": "2026-09-20",
       "completed": false,
       "stages": [
         { "id": "s1...", "title": "ヒアリング", "completed": true, "completedDate": "2026-09-25" },
-        { "id": "s2...", "title": "見積作成", "completed": false, "dueDate": "2026-10-10" },
+        { "id": "s2...", "title": "見積作成", "completed": false, "dueDate": "2026-10-10", "tag": "対応中" },
         { "id": "s3...", "title": "部品手配", "completed": false, "targetCount": 10, "completedCount": 3 }
       ]
     }
@@ -87,6 +92,7 @@
       "list": "タスク",
       "title": "B社対応",
       "tag": "客先確認中",
+      "tagAuto": true,
       "dueDate": "2026-10-08",
       "important": false,
       "recurring": false,
@@ -94,7 +100,7 @@
       "notes": "前回の経緯…",
       "subtasks": [
         { "id": "t1a...", "title": "資料送付", "completed": true, "completedDate": "2026-10-01" },
-        { "id": "t1b...", "title": "日程調整", "completed": false }
+        { "id": "t1b...", "title": "日程調整", "completed": false, "tag": "客先確認中" }
       ]
     }
   ]
@@ -166,7 +172,7 @@
 |---|---|---|
 | projectId / projectTitle | 文字列 | 対象の案件（必須） |
 | dueDate | 日付 | 期日（消すことはできない）。延ばすと延期として記録される |
-| tag | 文字列 / null | 案件の対応状況 |
+| tag | 文字列 / null | 案件の対応状況（**段階のない案件だけ**。段階のある案件は updateStage で） |
 | completed | true/false | 案件を完了にする／戻す（段階を全部終えても案件は自動では完了にならない） |
 | completedDate | 日付 | 完了日 |
 
@@ -190,7 +196,7 @@
 | completed | true/false | 完了にする／戻す（繰り返しのToDoは次回の期日へ進む） |
 | completedDate | 日付 | 完了日 |
 | dueDate | 日付 / null | 期日 |
-| tag | 文字列 / null | 対応状況 |
+| tag | 文字列 / null | 対応状況（**サブタスクのないToDoだけ**。サブタスクのあるToDoは updateSubtask で） |
 | important | true/false | 重要 |
 | action | 文字列 | 次にすべき具体的な行動（""で消す） |
 | notes | 文字列 | メモを**置き換える**（""で消す。既存のメモを消してしまうので通常は使わない） |
@@ -254,7 +260,8 @@
     { "op": "updateStage", "projectId": "k3j9...", "stageId": "s2...", "completed": true, "completedDate": "2026-10-02" },
     { "op": "updateStage", "projectId": "k3j9...", "stageId": "s3...", "completedCount": 7 },
     { "op": "updateSubtask", "todoId": "t1...", "subtaskId": "t1a...", "completed": true, "completedDate": "2026-10-03" },
-    { "op": "updateTodo", "todoId": "t1...", "tag": "客先確認中", "appendNotes": "資料送付済み。先方の返事待ち" },
+    { "op": "updateSubtask", "todoId": "t1...", "subtaskId": "t1b...", "tag": "客先確認中" },
+    { "op": "updateTodo", "todoId": "t1...", "appendNotes": "資料送付済み。先方の返事待ち" },
     { "op": "addTodo", "list": "タスク", "title": "C社提案", "dueDate": "2026-10-09", "subtasks": [{ "title": "提案書の構成" }, { "title": "見積添付" }] }
   ]
 }

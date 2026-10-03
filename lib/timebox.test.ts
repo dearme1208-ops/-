@@ -38,6 +38,14 @@ describe("タイムボックス", () => {
     expect(findEndedTimeboxes(tasks, D, t("09:25")).map((x) => x.id)).toEqual(["a"]);
   });
 
+  it("延長すると、一時停止中の作業の後ろの枠もずれる", () => {
+    const tasks = [
+      task({ id: "a", scheduledTime: "09:00", timeboxEnd: "09:25", status: "running" }),
+      task({ id: "p", scheduledTime: "09:30", timeboxEnd: "09:50", status: "paused" }),
+    ];
+    expect(extendTimebox(tasks, "a", 5).map((u) => u.id)).toEqual(["a", "p"]);
+  });
+
   it("延長すると、後ろのまだ始まっていない枠も同じだけずれる", () => {
     const tasks = [
       task({ id: "a", scheduledTime: "09:00", timeboxEnd: "09:25", status: "running", timeboxEndHandled: true }),

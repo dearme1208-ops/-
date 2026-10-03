@@ -56,7 +56,10 @@ test("仕様書と現状を書き出し、AIの返答を貼り付けて確認・
       operations: [
         { op: "updateStage", projectId: "p1", stageId: "s2", completed: true, completedDate: jstDate(-1) },
         { op: "updateSubtask", todoId: "t1", subtaskId: "t1a", completed: true },
-        { op: "updateTodo", todoId: "t1", tag: "客先確認中", appendNotes: "返事待ち" },
+        { op: "updateSubtask", todoId: "t1", subtaskId: "t1a", tag: "客先確認中" },
+        { op: "updateTodo", todoId: "t1", appendNotes: "返事待ち" },
+        // サブタスクのあるToDoの対応状況は自動で決まるので、本体への変更は受け付けない
+        { op: "updateTodo", todoId: "t1", tag: "客先確認中" },
         { op: "updateStage", projectTitle: "無い案件", stageTitle: "x", completed: true },
       ],
     }),
@@ -64,16 +67,18 @@ test("仕様書と現状を書き出し、AIの返答を貼り付けて確認・
   ].join("\n");
   await page.getByLabel("進捗の更新").fill(reply);
   await page.getByRole("button", { name: "内容を確認" }).click();
-  await expect(page.getByTestId("sync-op-ok")).toHaveCount(3);
-  await expect(page.getByTestId("sync-op-ng")).toContainText("無い案件");
+  await expect(page.getByTestId("sync-op-ok")).toHaveCount(4);
+  await expect(page.getByTestId("sync-op-ng")).toHaveCount(2);
+  await expect(page.getByTestId("sync-op-ng").filter({ hasText: "無い案件" })).toHaveCount(1);
+  await expect(page.getByTestId("sync-op-ng").filter({ hasText: "updateSubtask" })).toHaveCount(1);
   await expect(page.getByTestId("sync-plan")).toContainText("案件「A社見積」の段階「見積作成」: 完了にする");
   // 確認しただけでは何も変わっていない
   expect((await readOne<{ stages: { completed: boolean }[] }>(page, "projects", "p1"))!.stages[1].completed).toBe(false);
 
-  await page.getByRole("button", { name: "3件を反映する" }).click();
+  await page.getByRole("button", { name: "4件を反映する" }).click();
   await expect.poll(async () => (await readOne<{ stages: { completed: boolean }[] }>(page, "projects", "p1"))!.stages[1].completed).toBe(true);
-  expect(await readOne(page, "todoTasks", "t1a")).toMatchObject({ completed: true });
-  expect(await readOne(page, "todoTasks", "t1")).toMatchObject({ tag: "客先確認中", notes: `経緯\n[${jstDate()}] 返事待ち` });
+  expect(await readOne(page, "todoTasks", "t1a")).toMatchObject({ completed: true, tag: "客先確認中" });
+  expect(await readOne(page, "todoTasks", "t1")).toMatchObject({ notes: `経緯\n[${jstDate()}] 返事待ち` });
   const stage = (await readOne<{ stages: { completedAt: number }[] }>(page, "projects", "p1"))!.stages[1];
   expect(new Date(stage.completedAt).getDate()).toBe(new Date(jstAt("12:00", -1)).getDate());
 
@@ -81,7 +86,7 @@ test("仕様書と現状を書き出し、AIの返答を貼り付けて確認・
   await expect(page.getByText("直前の反映を取り消しました。")).toBeVisible();
   await expect.poll(async () => (await readOne<{ stages: { completed: boolean }[] }>(page, "projects", "p1"))!.stages[1].completed).toBe(false);
   expect(await readOne(page, "todoTasks", "t1")).toMatchObject({ notes: "経緯" });
-  expect((await readOne<{ tag?: string }>(page, "todoTasks", "t1"))!.tag).toBeUndefined();
+  expect((await readOne<{ tag?: string }>(page, "todoTasks", "t1a"))!.tag).toBeUndefined();
 });
 
 test("ToDoタブからも開け、形式の違うものは取り込まない", async ({ page }) => {

@@ -129,7 +129,8 @@ export default function GanttSection() {
   const [rangeMode, setRangeMode] = useSetting("gantt.rangeMode", "auto");
   // ガントチャートを開いた際の初期スクロール位置。「現在時刻」を基準にするか、
   // 従来通り左端(「表示開始時刻」設定・または最初の実績/体調記録の時刻)のままにするかを選べる
-  const [initialAnchor, setInitialAnchor] = useSetting("gantt.initialAnchor", "start");
+  // 既定は「現在時刻」: 左端(朝)からだと、スマホの幅では計測中の作業や午後の予定が見えなかった
+  const [initialAnchor, setInitialAnchor] = useSetting("gantt.initialAnchor", "now");
   // 開いた時・日付を切り替えた時に、一番短いバーでも重ならず見分けられる大きさまで
   // 自動でズームするかどうか。既定はオフ(従来通りDEFAULT_PX_PER_MINのまま)
   const [autoFitOnOpenStr, setAutoFitOnOpenStr] = useSetting("gantt.autoFitOnOpen", "false");
@@ -517,7 +518,11 @@ export default function GanttSection() {
       const [hh, mm] = t.scheduledTime!.split(":").map(Number);
       const startMs = new Date(`${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`).getTime();
       const startMin = (startMs - timelineBase) / 60000;
-      const durMin = Math.max(t.estimatedSeconds / 60, 1);
+      // 時間割(タイムボックス)の枠は、見込みの所要時間ではなく枠の終わりまでを描く
+      const boxEnd = t.timeboxEnd ? t.timeboxEnd.split(":").map(Number) : null;
+      const durMin = boxEnd
+        ? Math.max(1, boxEnd[0] * 60 + boxEnd[1] - (hh * 60 + mm))
+        : Math.max(t.estimatedSeconds / 60, 1);
       return { task: t, startMin, endMin: startMin + durMin };
     })
     .filter((it) => it.endMin > 0 && it.startMin < totalMinutes);
@@ -573,7 +578,8 @@ export default function GanttSection() {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (initialAnchor !== "now") {
+    // 今日以外の日は「今」が範囲外なので、左端から見せる
+    if (initialAnchor !== "now" || date !== todayStr()) {
       el.scrollLeft = 0;
       return;
     }
@@ -900,7 +906,8 @@ export default function GanttSection() {
                   key={row.key}
                   type="button"
                   onClick={() => setSelectedDetail(rowDetail)}
-                  className="flex appearance-none flex-col justify-center overflow-hidden border-0 bg-transparent p-0 text-left text-[11px] leading-tight text-cream/70"
+                  // w-full: 幅を決めないと長い作業名で列の外へ伸び、画面全体が横にはみ出していた
+                  className="flex w-full min-w-0 appearance-none flex-col justify-center overflow-hidden border-0 bg-transparent p-0 text-left text-[11px] leading-tight text-cream/70"
                   style={{ height: ROW_H }}
                   title={row.sublabel ? `${row.sublabel} / ${row.label}` : row.label}
                 >

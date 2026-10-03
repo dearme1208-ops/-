@@ -2047,13 +2047,22 @@ export default function TodaySection({
       setScheduleConflict({ task, runningTasks });
       return;
     }
-    const nowMs = Date.now();
-    await db.dailyTasks.update(task.id, {
-      status: "running",
-      segments: [{ start: nowMs }],
-      startedAt: nowMs,
-      autoStartNotified: true,
-    });
+    await startOrResumeScheduled(task.id, Date.now(), { autoStartNotified: true });
+  }
+
+  // 予定・時間割の時刻での開始。未着手なら新しく始め、一時停止中(時間割の続きの枠)なら
+  // これまでの区間を残したまま続きから計測する。画面の状態は古いことがあるのでDBから読み直す
+  async function startOrResumeScheduled(taskId: string, nowMs: number, extra: Partial<DailyTask> = {}) {
+    const latest = await db.dailyTasks.get(taskId);
+    if (!latest || latest.status === "running" || latest.status === "done") {
+      if (latest && Object.keys(extra).length) await db.dailyTasks.update(taskId, extra);
+      return;
+    }
+    if (latest.status === "paused") {
+      await db.dailyTasks.update(taskId, { status: "running", segments: [...latest.segments, { start: nowMs }], ...extra });
+    } else {
+      await db.dailyTasks.update(taskId, { status: "running", segments: [{ start: nowMs }], startedAt: nowMs, ...extra });
+    }
   }
 
   // 予定インポートの自動開始と、計測中の作業がバッティングした際の確認モーダルへの回答を反映する
@@ -2065,11 +2074,7 @@ export default function TodaySection({
     const nowMs = Date.now();
     await db.transaction("rw", db.dailyTasks, async () => {
       for (const r of runningTasks) await pauseTask(r);
-      await db.dailyTasks.update(task.id, {
-        status: "running",
-        segments: [{ start: nowMs }],
-        startedAt: nowMs,
-      });
+      await startOrResumeScheduled(task.id, nowMs);
     });
   }
 
@@ -2144,6 +2149,43 @@ export default function TodaySection({
   const [showTomorrowDraft, setShowTomorrowDraft] = useState(false);
   const [showDayPlan, setShowDayPlan] = useState(false);
   const [showTimebox, setShowTimebox] = useState(false);
+  // 計測中のカードが画面に見えている間は、画面下の「計測中の帯」を出さない(同じ内容が二重になり、
+  // 下に貼り付いた部分が大きくなってカードのボタンに重なっていた)。スクロールして見えなくなったら出す
+  const [runningCardOnScreen, setRunningCardOnScreen] = useState(false);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const visible = new Set<Element>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) visible.add(e.target);
+          else visible.delete(e.target);
+        }
+        setRunningCardOnScreen(visible.size > 0);
+      },
+      // 画面下の貼り付き部分に隠れている範囲は「見えている」に数えない
+      { rootMargin: "0px 0px -160px 0px" }
+    );
+    const observeAll = () => {
+      io.disconnect();
+      visible.clear();
+      document.querySelectorAll("[data-running-card='true']").forEach((el) => io.observe(el));
+      if (document.querySelectorAll("[data-running-card='true']").length === 0) setRunningCardOnScreen(false);
+    };
+    observeAll();
+    // DOMの変化のたびに貼り直すと重いので、1フレームにまとめる
+    let raf = 0;
+    const mo = new MutationObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(observeAll);
+    });
+    mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["data-running-card"], childList: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      io.disconnect();
+      mo.disconnect();
+    };
+  }, []);
   const [showReflection, setShowReflection] = useState(false);
   const reflectionAnsweredToday = useLiveQuery(
     async () => !!(await db.settings.get(`reflection.daily.${date}`)),
@@ -2311,7 +2353,15 @@ export default function TodaySection({
                               tierName ? `（最大警戒階級: ${tierName}）` : ""
                             }： ${names}`
                           : `⚠ 予測を超過して計測中の作業が${runningOverrunTasks.length}件あります： ${names}`;
-              return `${message}　${message}`;
+              // 切れ目なく流すため2回続けて並べる(動きを減らす設定では2つ目を隠す)
+              return (
+                <>
+                  <span>{message}</span>
+                  <span className="warning-ticker-dup" aria-hidden="true">
+                    　{message}
+                  </span>
+                </>
+              );
             })()}
           </div>
         </div>
@@ -2508,7 +2558,7 @@ export default function TodaySection({
         style={tabBarStyle as TabBarStyle}
         adaptiveEmphasis={tabBarAdaptiveEmphasis}
         running={
-          runningStrip
+          runningStrip && !runningCardOnScreen
             ? {
                 ...runningStrip,
                 onClick: () => setTaskViewTab("running"),

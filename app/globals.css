@@ -5,6 +5,9 @@
 :root {
   color-scheme: dark;
   --accent-rgb: 194 59 59;
+  /* 警告の色。アクセントが赤・橙系のテーマではアクセントと同じにし、緑・青・茶系のテーマでは
+     期限切れや超過が「良い知らせ」と同じ色に見えないよう、各テーマで赤系に差し替える */
+  --alert-rgb: var(--accent-rgb);
   /* 基調色(背景/文字/パネル)。演出テーマ選択時はhtml[data-visual-mode]側でこれらを
      丸ごと差し替えることで、コンポーネント側を一切変更せずに全タブの配色を反転できる */
   --ink-rgb: 11 11 12;
@@ -363,6 +366,7 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="zen"] {
     color-scheme: light;
     --accent-rgb: 150 92 66;
+    --alert-rgb: 180 62 50;
     --ink-rgb: 246 243 237;
     --cream-rgb: 48 44 40;
     --panel-rgb: 250 248 244;
@@ -371,6 +375,7 @@ html[data-high-contrast="true"] :focus-visible {
     html[data-visual-mode="zen"] {
       color-scheme: dark;
       --accent-rgb: 190 140 110;
+      --alert-rgb: 226 110 92;
       --ink-rgb: 20 20 22;
       --cream-rgb: 222 219 212;
       --panel-rgb: 28 28 30;
@@ -392,6 +397,7 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="adventurer"] {
     color-scheme: light;
     --accent-rgb: 176 130 40;
+    --alert-rgb: 168 40 30;
     --ink-rgb: 248 238 210;
     --cream-rgb: 58 42 20;
     --panel-rgb: 252 246 226;
@@ -402,6 +408,7 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="hub"] {
     color-scheme: dark;
     --accent-rgb: 90 140 205;
+    --alert-rgb: 232 112 96;
     --ink-rgb: 14 17 22;
     --cream-rgb: 222 227 235;
     --panel-rgb: 21 25 32;
@@ -413,6 +420,7 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="library"] {
     color-scheme: light;
     --accent-rgb: 122 74 42;
+    --alert-rgb: 170 44 34;
     --ink-rgb: 238 227 200;
     --cream-rgb: 51 38 26;
     --panel-rgb: 250 244 228;
@@ -424,6 +432,7 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="powerpro"] {
     color-scheme: light;
     --accent-rgb: 32 108 214;
+    --alert-rgb: 204 44 44;
     --ink-rgb: 246 248 252;
     --cream-rgb: 26 32 46;
     --panel-rgb: 255 255 255;
@@ -473,6 +482,7 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="home"] {
     color-scheme: dark;
     --accent-rgb: 122 180 96;
+    --alert-rgb: 236 120 94;
     --ink-rgb: 10 18 14;
     --cream-rgb: 219 230 210;
     --panel-rgb: 18 28 22;
@@ -3395,9 +3405,10 @@ html[data-high-contrast="true"] :focus-visible {
     white-space: nowrap;
     position: relative;
   }
+  /* 文章は2回続けて入っているので、半分(1回分)流したところで最初に戻すと切れ目なく流れる。
+     以前は右端の外(padding-left:100%)から流れ始めていたため、表示直後の数秒は空の帯に見えていた */
   .warning-ticker-track {
     display: inline-block;
-    padding-left: 100%;
     animation: warning-ticker-scroll 14s linear infinite;
   }
   html[data-visual-mode="persona5"] .warning-ticker-track {
@@ -3414,7 +3425,7 @@ html[data-high-contrast="true"] :focus-visible {
       transform: translateX(0);
     }
     to {
-      transform: translateX(-100%);
+      transform: translateX(-50%);
     }
   }
 
@@ -4214,4 +4225,47 @@ html[data-high-contrast="true"] :focus-visible {
     padding: 8px 10px;
   }
 
+}
+
+/* 「視差効果を減らす(動きを減らす)」を設定している人には、動きを最小限にする。
+   流れる警告の帯は止めて、全文を折り返して読めるようにする */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .warning-ticker {
+    white-space: normal;
+  }
+  .warning-ticker-track {
+    animation: none !important;
+    display: block;
+  }
+  .warning-ticker-dup {
+    display: none;
+  }
+}
+
+/* 森モードなどの「分類」タブ(上段)。スマホの幅では5つが横に並びきらず、「記録・マスタ」「設定」が
+   画面の外に隠れて、横にずらさないと気づけなかった。狭い画面では5等分にして全部を見せる */
+@media (max-width: 520px) {
+  .tab-nav-groups > div {
+    display: grid;
+    width: 100%;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0.3rem;
+  }
+  .tab-nav-groups .tab-chip {
+    white-space: normal;
+    padding: 0.4rem 0.15rem;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    text-align: center;
+    justify-content: center;
+  }
 }

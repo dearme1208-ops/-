@@ -43,7 +43,7 @@ describe("外部AIとの進捗のやり取り", () => {
     const p = plan([
       { op: "updateStage", projectTitle: "A社見積", stageTitle: "見積作成", completed: true, completedDate: "2026-10-02" },
       { op: "updateStage", projectId: "p1", stageId: "s3", completedCount: 10 },
-      { op: "updateProject", projectTitle: "A社見積", tag: "客先確認中" },
+      { op: "updateStage", projectTitle: "A社見積", stageTitle: "見積作成", tag: "客先確認中" },
       { op: "updateSubtask", todoTitle: "B社対応", subtaskTitle: "資料送付", completed: true },
       { op: "updateTodo", todoId: "t1", appendNotes: "先方から返信あり" },
     ]);
@@ -53,7 +53,7 @@ describe("外部AIとの進捗のやり取り", () => {
     expect(s2.completed).toBe(true);
     expect(new Date(s2.completedAt!).getDate()).toBe(2);
     expect(after.stages!.find((s) => s.id === "s3")).toMatchObject({ completedCount: 10, completed: true });
-    expect(after.tag).toBe("客先確認中");
+    expect(after.stages!.find((x) => x.id === "s2")!.tag).toBe("客先確認中");
     expect(after.dueDate).toBe("2026-10-20");
     expect(p.writes.todos.get("t1a")!.after.completed).toBe(true);
     expect(p.writes.todos.get("t1")!.after.notes).toBe("前回の経緯\n[2026-10-03] 先方から返信あり");
@@ -90,6 +90,21 @@ describe("外部AIとの進捗のやり取り", () => {
     expect(p.operations[5].error).toContain("知らない操作");
     expect(p.writes.projects.size).toBe(0);
     expect(p.writes.todos.size).toBe(0);
+  });
+
+  it("段階のある案件・サブタスクのあるToDoの対応状況は自動で決まるので、本体への変更はエラーにして段階・サブタスクを案内する", () => {
+    const p = plan([
+      { op: "updateProject", projectId: "p1", tag: "客先確認中" },
+      { op: "updateTodo", todoId: "t1", tag: "客先確認中" },
+      { op: "updateTodo", todoId: "t2", tag: "対応中" },
+    ]);
+    expect(p.operations.map((o) => o.ok)).toEqual([false, false, true]);
+    expect(p.operations[0].error).toContain("updateStage");
+    expect(p.operations[1].error).toContain("updateSubtask");
+    const snap = buildSnapshot({ ...state(), now: NOW });
+    expect(snap.projects[0].tagAuto).toBe(true);
+    expect(snap.todos[0].tagAuto).toBe(true);
+    expect(snap.todos[1].tagAuto).toBeUndefined();
   });
 
   it("ファイルの形式が違えば何もしない", () => {
@@ -157,5 +172,24 @@ describe("時間割(planTimebox)", () => {
     expect(w.ok).toBe(true);
     expect(w.warnings.join("\n")).toContain("もう過ぎています");
     expect(w.warnings.join("\n")).toContain("休憩帯(12:00〜13:00)");
+  });
+});
+
+describe("取り込みの取り消し", () => {
+  it("反映で変えた項目だけを戻し、反映のあとに手で直した項目と、手で足した段階は残す", async () => {
+    const { revertPatch } = await import("@/lib/progressSync");
+    const before = { id: "t", tag: undefined as string | undefined, notes: "経緯", dueDate: "2026-10-10" };
+    const after = { id: "t", tag: "客先確認中", notes: "経緯\n[10/3] 返事待ち", dueDate: "2026-10-10" };
+    // 反映後に、メモを手で書き換えた
+    const current = { ...after, notes: "手で直したメモ" };
+    expect(revertPatch(before, after, current)).toEqual({ tag: undefined });
+
+    const stage = (id: string, o: Record<string, unknown> = {}) => ({ id, title: id, completed: false, ...o });
+    const p = revertPatch(
+      { id: "p", stages: [stage("a"), stage("b")] },
+      { id: "p", stages: [stage("a", { completed: true, completedAt: 1 }), stage("b"), stage("ai追加")] },
+      { id: "p", stages: [stage("a", { completed: true, completedAt: 1 }), stage("b", { tag: "手で付けた" }), stage("ai追加"), stage("手で追加")] }
+    );
+    expect(p.stages).toEqual([stage("a", { completedAt: undefined }), stage("b", { tag: "手で付けた" }), stage("手で追加")]);
   });
 });

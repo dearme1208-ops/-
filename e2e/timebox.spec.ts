@@ -102,3 +102,30 @@ test("全部の枠が終わると、時間どおりに始めた・止めた枠�
   // 明日の枠は今日の画面では動かない
   expect((await readAll<Daily>(page, "dailyTasks")).find((t) => t.id === "t1")!.status).toBe("pending");
 });
+
+test("途中まで進めて一時停止した作業も、時間割の枠の始まりで続きから再開する", async ({ page }) => {
+  await page.clock.install({ time: jstAt("09:58") });
+  await seed(page, {
+    stores: {
+      masterTasks: [MASTER],
+      dailyTasks: [
+        dailyTask({
+          id: "a",
+          date: jstDate(),
+          name: "資料作成",
+          status: "paused",
+          scheduledTime: "10:00",
+          timeboxEnd: "10:25",
+          segments: [{ start: jstAt("09:00"), end: jstAt("09:20") }],
+          accumulatedMs: 20 * 60000,
+          startedAt: jstAt("09:00"),
+        }),
+      ],
+    },
+  });
+  await page.clock.fastForward("02:30");
+  await expect.poll(async () => (await readOne<Daily>(page, "dailyTasks", "a"))!.status).toBe("running");
+  const t = (await readOne<Daily>(page, "dailyTasks", "a"))!;
+  expect(t.segments.length).toBe(2);
+  expect(t.segments[0]).toEqual({ start: jstAt("09:00"), end: jstAt("09:20") });
+});

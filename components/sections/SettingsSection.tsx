@@ -30,6 +30,7 @@ import { CONDITION_LEVELS } from "@/lib/condition";
 import { parseCategoryRates, serializeCategoryRates } from "@/lib/cost";
 import type { BreakRange } from "@/lib/types";
 import { WEEKDAY_JP } from "@/lib/types";
+import LifeContextSelect from "@/components/ai/LifeContextSelect";
 
 export default function SettingsSection() {
   const [backupStatus, setBackupStatus] = useState("");
@@ -664,6 +665,8 @@ export default function SettingsSection() {
           枠の終わりで確認せずに止める: {timeboxAutoStop ? "ON" : "OFF"}
         </button>
         <p className="text-[11px] text-cream/45">OFFのときは「止める・5分延長・このまま続ける」を選べます。</p>
+        {/* Claudeに時間割を組んでもらうときの頼み方(仕事用と家庭用で工程表を分けて使う人向け) */}
+        <LifeContextSelect />
       </div>
 
       <div className="panel space-y-3 p-4">

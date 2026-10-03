@@ -20,7 +20,7 @@ import { CONDITION_LEVELS } from "@/lib/condition";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
 import { findMergeTargetRecord, mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
-import { formatClock, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
+import { formatClock, formatDateJp, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
@@ -118,6 +118,8 @@ export default function RecordsSection() {
   // 新しい順に一定件数だけ描き、必要な分だけ足していく
   const PAGE_SIZE = 50;
   const [shownCount, setShownCount] = useState(PAGE_SIZE);
+  // 実績の一覧で、編集欄を開いている1件(ふだんは1行の要約だけを出す)
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const visibleRecords = useMemo(() => filtered.slice(0, shownCount), [filtered, shownCount]);
   // 検索・絞り込みを変えたら先頭から見せ直す
   const filterKey = `${search}::${showExcludedOnly}`;
@@ -484,8 +486,34 @@ export default function RecordsSection() {
       )}
 
       <div className="panel divide-y divide-cream/10">
-        {visibleRecords.map((r) => (
-          <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        {visibleRecords.map((r) =>
+          // 1件ごとに全部の入力欄を開いていると、スマホでは1件で約200px・40件で8,000px以上になっていた。
+          // ふだんは1行の要約にし、押した1件だけ編集欄を開く
+          editingRecordId !== r.id ? (
+            <button
+              key={r.id}
+              onClick={() => setEditingRecordId(r.id)}
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-cream/5"
+              data-testid="record-row"
+              title="押すと編集できます"
+            >
+              <span className="w-10 shrink-0 text-xs tabular-nums text-cream/60">{formatDateJp(r.date)}</span>
+              <span className="w-[6.5rem] shrink-0 text-xs tabular-nums text-cream/60">
+                {formatClock(r.startedAt)}〜{formatClock(r.endedAt)}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs text-cream">
+                <span className="text-cream/50">{r.category} / </span>
+                {workCtx.label(r)}
+                {r.method && <span className="text-cream/45">（{r.method}）</span>}
+              </span>
+              {r.excludedFromStats && <span className="shrink-0 text-[10px] font-bold text-alert">除外中</span>}
+              <span className="shrink-0 text-xs tabular-nums text-cream/80">{formatHms(r.seconds)}</span>
+              <span className="shrink-0 text-xs text-cream/40" aria-hidden>
+                ✎
+              </span>
+            </button>
+          ) : (
+          <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 bg-cream/5 px-4 py-3" data-testid="record-editor">
             <div className="flex flex-wrap items-center gap-2">
               <input
                 key={`date-${r.date}`}
@@ -555,12 +583,16 @@ export default function RecordsSection() {
               <button className="btn-pill-outline text-xs" onClick={() => toggleExclude(r)}>
                 {r.excludedFromStats ? "集計に復活" : "集計から除外"}
               </button>
-              <button className="text-xs text-alert" onClick={() => deleteRecord(r)}>
+              <button className="px-1 py-1 text-xs text-alert" onClick={() => deleteRecord(r)}>
                 削除
+              </button>
+              <button className="btn-pill text-xs" onClick={() => setEditingRecordId(null)}>
+                閉じる
               </button>
             </div>
           </div>
-        ))}
+          )
+        )}
         {filtered.length === 0 && <p className="px-4 py-6 text-sm text-cream/50">実績データがありません。</p>}
         {filtered.length > visibleRecords.length && (
           <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-4">

@@ -5,6 +5,7 @@ import { computeGrowthStage } from "@/lib/growth";
 import { DEFAULT_IMPORT_DAYS } from "@/lib/icsImport";
 import type { ThemedMode } from "@/lib/theme";
 import { formatHms } from "@/lib/time";
+import { useSetting } from "@/lib/settings";
 import type { WeekdayAverage } from "@/lib/weekday";
 
 // 「簡易表示（アイコンのみ）」設定のON/OFFで、アイコンだけのボタンと文言付きのボタンを
@@ -75,6 +76,10 @@ export interface TodayToolbarProps {
 export default function TodayToolbar(props: TodayToolbarProps) {
   const { date, simpleButtons: simple, todayTotalSeconds, sameWeekdayAvg, voice } = props;
   const scheduleFileInputRef = useRef<HTMLInputElement>(null);
+  // たまにしか使わない操作(今日の一枚・予定の取り込み・再生成)は「その他」に畳む。
+  // スマホでは9個のボタンが作業リストの前に約260pxも並び、リストが下へ押し出されていた
+  const [moreOpenStr, setMoreOpenStr] = useSetting("today.toolbarMoreOpen", "false");
+  const moreOpen = moreOpenStr === "true";
 
   return (
     // 右のボタン群が多いので、狭い画面では折り返して段を分ける。折り返しがないと
@@ -117,16 +122,6 @@ export default function TodayToolbar(props: TodayToolbarProps) {
       <div className="flex flex-wrap gap-2">
         <ModeButton simple={simple} danger icon="⚡" label="⚡ トラブル発生" title="トラブル発生" onClick={props.onTrouble} />
         <ModeButton simple={simple} icon="➕" label="+ 突発作業を追加" title="突発作業を追加" onClick={props.onAddTask} />
-        {todayTotalSeconds > 0 && (
-          <ModeButton
-            simple={simple}
-            icon="🖼"
-            label="🖼 今日の一枚"
-            title="今日の一枚(画像で保存)"
-            ariaLabel="今日の一枚"
-            onClick={props.onDayCard}
-          />
-        )}
         <ModeButton simple={simple} icon="🧭" label="🧭 今日の段取り" title="今日の段取りを提案" onClick={props.onDayPlan} />
         <ModeButton simple={simple} icon="🗓" label="🗓 明日の下書き" title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
         <ModeButton
@@ -176,35 +171,58 @@ export default function TodayToolbar(props: TodayToolbarProps) {
                   : "🎤 音声で操作"}
             </button>
           ))}
-        {props.showScheduleCsvTools && (
-          <>
-            <button className="btn-pill-outline text-sm" onClick={props.onDownloadScheduleTemplate}>
-              予定CSVテンプレート
-            </button>
-            <button
-              className="btn-pill-outline text-sm"
-              onClick={() => scheduleFileInputRef.current?.click()}
-              title={`予定CSV、またはカレンダーの.icsファイル（今日から${DEFAULT_IMPORT_DAYS}日以内の予定）を取り込みます`}
-            >
-              予定インポート（CSV/.ics）
-            </button>
-            <input
-              ref={scheduleFileInputRef}
-              type="file"
-              accept=".csv,.ics,text/csv,text/calendar"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) props.onImportScheduleFile(file);
-                e.target.value = "";
-              }}
-            />
-          </>
-        )}
-        {props.hasTasks && (
-          <button className="btn-pill-outline text-sm" onClick={props.onRegenerate}>
-            再生成
-          </button>
+        <button
+          className={`${moreOpen ? "btn-pill" : "btn-pill-outline"} ${simple ? "px-3 py-2 text-base" : "text-sm"}`}
+          onClick={() => setMoreOpenStr(moreOpen ? "false" : "true")}
+          aria-expanded={moreOpen}
+          aria-label="その他の操作"
+          title="今日の一枚・予定の取り込み・再生成など"
+        >
+          {simple ? "⋯" : `⋯ その他 ${moreOpen ? "▲" : "▼"}`}
+        </button>
+        {moreOpen && (
+          <div className="flex w-full flex-wrap gap-2 border-t border-cream/10 pt-2" data-testid="today-toolbar-more">
+            {todayTotalSeconds > 0 && (
+              <ModeButton
+                simple={simple}
+                icon="🖼"
+                label="🖼 今日の一枚"
+                title="今日の一枚(画像で保存)"
+                ariaLabel="今日の一枚"
+                onClick={props.onDayCard}
+              />
+            )}
+            {props.showScheduleCsvTools && (
+              <>
+                <button className="btn-pill-outline text-sm" onClick={props.onDownloadScheduleTemplate}>
+                  予定CSVテンプレート
+                </button>
+                <button
+                  className="btn-pill-outline text-sm"
+                  onClick={() => scheduleFileInputRef.current?.click()}
+                  title={`予定CSV、またはカレンダーの.icsファイル（今日から${DEFAULT_IMPORT_DAYS}日以内の予定）を取り込みます`}
+                >
+                  予定インポート（CSV/.ics）
+                </button>
+                <input
+                  ref={scheduleFileInputRef}
+                  type="file"
+                  accept=".csv,.ics,text/csv,text/calendar"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) props.onImportScheduleFile(file);
+                    e.target.value = "";
+                  }}
+                />
+              </>
+            )}
+            {props.hasTasks && (
+              <button className="btn-pill-outline text-sm" onClick={props.onRegenerate}>
+                再生成
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

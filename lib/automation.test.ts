@@ -101,6 +101,15 @@ describe("findDueScheduledTasks", () => {
     ];
     expect(findDueScheduledTasks(tasks, DATE, at("10:00")).map((t) => t.id)).toEqual(["due"]);
   });
+
+  it("時間割の枠を持つ一時停止中の作業は、枠の中なら再開の対象にする(枠の外・時刻だけの予定は対象外)", () => {
+    const tasks = [
+      task({ id: "inBox", scheduledTime: "10:00", timeboxEnd: "10:30", status: "paused" }),
+      task({ id: "boxOver", scheduledTime: "09:00", timeboxEnd: "09:30", status: "paused" }),
+      task({ id: "noBox", scheduledTime: "09:00", status: "paused" }),
+    ];
+    expect(findDueScheduledTasks(tasks, DATE, at("10:05")).map((t) => t.id)).toEqual(["inBox"]);
+  });
 });
 
 describe("updateGeoArrivals", () => {

@@ -1,6 +1,6 @@
 import { db, uid } from "./db";
-import { isStageDone } from "./projectStage";
-import { computeNextDueDate } from "./todo";
+import { effectiveProjectTag, isStageDone } from "./projectStage";
+import { computeNextDueDate, effectiveTag } from "./todo";
 import { todayStr } from "./time";
 import { hmToMin, minToHm } from "./timebox";
 import type { BreakRange, DailyTask, ProjectItem, ProjectStage, TodoList, TodoTask } from "./types";
@@ -37,6 +37,8 @@ export interface SnapshotProject {
   workName: string;
   dueDate: string;
   tag?: string;
+  /** trueなら対応状況は段階から自動で決まる(案件の対応状況は変えられない。updateStageで段階の対応状況を変える) */
+  tagAuto?: boolean;
   createdDate: string;
   completed: boolean;
   stages: SnapshotStage[];
@@ -58,6 +60,8 @@ export interface SnapshotTodo {
   action?: string;
   notes?: string;
   tag?: string;
+  /** trueなら対応状況はサブタスクから自動で決まる(ToDoの対応状況は変えられない。updateSubtaskで変える) */
+  tagAuto?: boolean;
   dueDate?: string;
   startDate?: string;
   important: boolean;
@@ -121,7 +125,9 @@ export function buildSnapshot({
           category: p.category,
           workName: p.workName,
           dueDate: p.dueDate,
-          tag: p.tag,
+          // 段階のある案件の対応状況は段階から自動で決まるので、画面に出ている値(実効値)を渡す
+          tag: effectiveProjectTag(p, tagOptions),
+          tagAuto: (p.stages ?? []).length > 0 ? true : undefined,
           createdDate: todayStr(new Date(p.createdAt)),
           completed: false,
           stages: (p.stages ?? []).map((s) =>
@@ -148,7 +154,9 @@ export function buildSnapshot({
           title: t.title,
           action: t.action,
           notes: t.notes,
-          tag: t.tag,
+          // サブタスクのあるToDoの対応状況はサブタスクから自動で決まるので、画面に出ている値を渡す
+          tag: effectiveTag(t, subsByParent.get(t.id) ?? [], tagOptions),
+          tagAuto: (subsByParent.get(t.id) ?? []).length > 0 ? true : undefined,
           dueDate: t.dueDate,
           startDate: t.startDate,
           important: t.important,
@@ -413,6 +421,10 @@ export function planProgressUpdate(
             parts.push(`期日 ${p.dueDate}→${due}`);
             p.dueDate = due;
           }
+          if ("tag" in o && (p.stages ?? []).length > 0) {
+            // 段階のある案件の対応状況は段階から自動で決まり、案件に入れた値は画面に出ない
+            throw new OpError(`案件「${p.title}」は段階があるため、対応状況は段階から自動で決まります。updateStage で段階の "tag" を変えてください`);
+          }
           const tag = optTag(o, "tag", state.tagOptions, warnings);
           if (tag !== undefined && (tag ?? undefined) !== p.tag) {
             parts.push(tag ? `対応状況「${p.tag ?? "なし"}」→「${tag}」` : "対応状況を消す");
@@ -523,6 +535,10 @@ export function planProgressUpdate(
         }
         case "updateTodo": {
           const t = findTodo(o);
+          if ("tag" in o && [...todos.values()].some((x) => x.parentTaskId === t.id)) {
+            // サブタスクのあるToDoの対応状況はサブタスクから自動で決まり、ToDoに入れた値は画面に出ない
+            throw new OpError(`ToDo「${t.title}」はサブタスクがあるため、対応状況はサブタスクから自動で決まります。updateSubtask でサブタスクの "tag" を変えてください`);
+          }
           applyTodoFields(t, o, warnings, parts);
           const important = optBool(o, "important");
           if (important !== undefined && important !== t.important) {
@@ -578,6 +594,8 @@ export function planProgressUpdate(
             const sTitle = str(s as Json, "title");
             if (!sTitle) throw new OpError(`subtasks[${i}] の "title" がありません`);
             const sub: TodoTask = { id: uid(), listId, parentTaskId: t.id, title: sTitle, important: false, completed: false, order: i, createdAt: now };
+            // 親に付けた対応状況はサブタスクから決まるので、サブタスクにも付ける(画面の追加と同じ)
+            if (t.tag) sub.tag = t.tag;
             applyTodoFields(sub, s as Json, warnings, []);
             todos.set(sub.id, sub);
             touchTodo(sub);
@@ -602,6 +620,8 @@ export function planProgressUpdate(
           const siblings = [...todos.values()].filter((t) => t.parentTaskId === parent.id);
           if (siblings.some((s) => s.title === title && !s.completed)) throw new OpError(`ToDo「${parent.title}」にサブタスク「${title}」はもうあります`);
           const sub: TodoTask = { id: uid(), listId: parent.listId, parentTaskId: parent.id, title, important: false, completed: false, order: siblings.length, createdAt: now };
+          // 最初のサブタスクには親の対応状況を引き継ぐ(親の対応状況はサブタスクから決まるようになるため)
+          if (siblings.length === 0 && parent.tag) sub.tag = parent.tag;
           applyTodoFields(sub, o, warnings, []);
           todos.set(sub.id, sub);
           touchTodo(sub);
@@ -651,8 +671,8 @@ export function planProgressUpdate(
             t.scheduledTime = minToHm(start);
             t.timeboxEnd = minToHm(end);
             t.timeboxEndHandled = false;
-            // 計測中・一時停止中の作業には、枠の始まりで改めて「開始」を出さない
-            t.autoStartNotified = past || t.status !== "pending";
+            // 計測中の作業には、枠の始まりで改めて「開始」を出さない(一時停止中は枠の始まりで続きから再開する)
+            t.autoStartNotified = past || t.status === "running";
             t.autoStartDisabled = false;
             touchDaily(t);
             details.push(`${minToHm(start)}〜${minToHm(end)} ${t.category} / ${t.name}`);
@@ -721,20 +741,62 @@ export async function applyProgressPlan(plan: UpdatePlan): Promise<() => Promise
       else await db.todoTasks.add(after);
     }
   });
+  // 取り消しは「反映で変えた項目」だけを戻す。反映のあとに手で直した項目(反映した値と今の値が違う項目)は
+  // そのまま残す(以前は反映前の状態へ丸ごと戻していたため、その後の手直しまで消えていた)
   return async () => {
     await db.transaction("rw", [db.projects, db.todoTasks, db.todoLists, db.dailyTasks], async () => {
-      for (const { before } of dailyTasks.values()) await db.dailyTasks.put(before);
+      for (const { before, after } of dailyTasks.values()) {
+        const current = await db.dailyTasks.get(after.id);
+        if (current) await db.dailyTasks.update(after.id, revertPatch(before, after, current));
+      }
       for (const { before, after } of projects.values()) {
-        if (before) await db.projects.put(before);
+        const current = await db.projects.get(after.id);
+        if (!current) continue;
+        if (before) await db.projects.update(after.id, revertPatch(before, after, current));
         else await db.projects.delete(after.id);
       }
       for (const { before, after } of todos.values()) {
-        if (before) await db.todoTasks.put(before);
+        const current = await db.todoTasks.get(after.id);
+        if (!current) continue;
+        if (before) await db.todoTasks.update(after.id, revertPatch(before, after, current));
         else await db.todoTasks.delete(after.id);
       }
-      for (const l of lists) await db.todoLists.delete(l.id);
+      for (const l of lists) {
+        // 新しく作ったリストは、そのあと手でToDoを入れていなければ消す
+        if ((await db.todoTasks.where("listId").equals(l.id).count()) === 0) await db.todoLists.delete(l.id);
+      }
     });
   };
+}
+
+/**
+ * 反映で変えた項目を元に戻す変更。今の値が反映した値のままの項目だけを戻す。
+ * 段階(stages)は配列ごと比べると手直しが1つでもあると戻せないので、段階ごとに同じ考え方で戻す
+ */
+export function revertPatch<T extends object>(before: T, after: T, current: T): Partial<T> {
+  const out: Record<string, unknown> = {};
+  const b = before as Record<string, unknown>;
+  const a = after as Record<string, unknown>;
+  const c = current as Record<string, unknown>;
+  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
+  for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) {
+    if (same(b[k], a[k])) continue;
+    if (k === "stages" && Array.isArray(b[k]) && Array.isArray(a[k]) && Array.isArray(c[k])) {
+      const beforeById = new Map((b[k] as { id: string }[]).map((s) => [s.id, s]));
+      const afterById = new Map((a[k] as { id: string }[]).map((s) => [s.id, s]));
+      const stages = (c[k] as { id: string }[])
+        .filter((s) => beforeById.has(s.id) || !afterById.has(s.id) || !same(s, afterById.get(s.id)))
+        .map((s) => {
+          const was = beforeById.get(s.id);
+          const applied = afterById.get(s.id);
+          return was && applied ? { ...s, ...revertPatch(was as object, applied as object, s as object) } : s;
+        });
+      out[k] = stages;
+      continue;
+    }
+    if (same(c[k], a[k])) out[k] = b[k];
+  }
+  return out as Partial<T>;
 }
 
 /** 変わった項目だけ(消えた項目はundefinedで消す)。変更履歴の記録(lib/db.tsのフック)が正しく働くよう、全体を上書きしない */
