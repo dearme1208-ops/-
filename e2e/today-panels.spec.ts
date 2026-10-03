@@ -64,3 +64,13 @@ test("地点到着検知をONにすると、状態の帯が出る", async ({ pag
   });
   await expect(page.getByText("📍 地点到着検知中（登録地点1件。到着すると紐づく作業を自動開始）")).toBeVisible();
 });
+
+test("下部のタブ(実行中・予定・完了・ボード)は、下の「そのほかの表示」までスクロールしても画面下に固定されている", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 });
+  await seed(page, { settings: { "today.collapseExtras": "false" } });
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const tab = page.getByRole("button", { name: /予定/ }).last();
+  await expect(tab).toBeInViewport();
+  const box = await tab.boundingBox();
+  expect(box!.y + box!.height).toBeGreaterThan(700 - 120);
+});

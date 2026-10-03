@@ -2538,45 +2538,6 @@ export default function TodaySection({
         </div>
       )}
 
-      <BottomTabBar
-        items={[
-          {
-            key: "running",
-            icon: "▶",
-            label: "実行中",
-            count: taskCountsByTab.running,
-            badge: provisionalActive,
-            badgeTitle: "仮計測(未割り当て)が計測中です",
-            emphasize: runningTaskIds.size > 0,
-          },
-          { key: "pending", icon: "📋", label: "予定", count: taskCountsByTab.pending },
-          { key: "done", icon: "✅", label: "完了", count: taskCountsByTab.done },
-          { key: "board", icon: "🗂️", label: "ボード" },
-        ]}
-        activeKey={taskViewTab}
-        onSelect={(k) => setTaskViewTab(k as typeof taskViewTab)}
-        style={tabBarStyle as TabBarStyle}
-        adaptiveEmphasis={tabBarAdaptiveEmphasis}
-        running={
-          runningStrip && !runningCardOnScreen
-            ? {
-                ...runningStrip,
-                onClick: () => setTaskViewTab("running"),
-                overrunLabel: overrunLabel(wordingThemedMode),
-                overrunAnimClass: themedMode ? cardOverrunClass(themedMode) : "card-overrun",
-              }
-            : null
-        }
-        progress={
-          tabBarProgressStrip
-            ? [
-                { key: "running", ratio: taskViewTotal > 0 ? taskCountsByTab.running / taskViewTotal : 0, className: "bg-alert" },
-                { key: "pending", ratio: taskViewTotal > 0 ? taskCountsByTab.pending / taskViewTotal : 0, className: "bg-cream/40" },
-                { key: "done", ratio: taskViewTotal > 0 ? taskCountsByTab.done / taskViewTotal : 0, className: "bg-cream/15" },
-              ]
-            : undefined
-        }
-      />
 
 
       {/* 作業の開始に使うもの(テンプレート・お気に入り・提案など)と、状況の表示(作業状況・
@@ -2868,6 +2829,46 @@ export default function TodaySection({
           </>
         )}
       </div>
+
+      <BottomTabBar
+        items={[
+          {
+            key: "running",
+            icon: "▶",
+            label: "実行中",
+            count: taskCountsByTab.running,
+            badge: provisionalActive,
+            badgeTitle: "仮計測(未割り当て)が計測中です",
+            emphasize: runningTaskIds.size > 0,
+          },
+          { key: "pending", icon: "📋", label: "予定", count: taskCountsByTab.pending },
+          { key: "done", icon: "✅", label: "完了", count: taskCountsByTab.done },
+          { key: "board", icon: "🗂️", label: "ボード" },
+        ]}
+        activeKey={taskViewTab}
+        onSelect={(k) => setTaskViewTab(k as typeof taskViewTab)}
+        style={tabBarStyle as TabBarStyle}
+        adaptiveEmphasis={tabBarAdaptiveEmphasis}
+        running={
+          runningStrip && !runningCardOnScreen
+            ? {
+                ...runningStrip,
+                onClick: () => setTaskViewTab("running"),
+                overrunLabel: overrunLabel(wordingThemedMode),
+                overrunAnimClass: themedMode ? cardOverrunClass(themedMode) : "card-overrun",
+              }
+            : null
+        }
+        progress={
+          tabBarProgressStrip
+            ? [
+                { key: "running", ratio: taskViewTotal > 0 ? taskCountsByTab.running / taskViewTotal : 0, className: "bg-alert" },
+                { key: "pending", ratio: taskViewTotal > 0 ? taskCountsByTab.pending / taskViewTotal : 0, className: "bg-cream/40" },
+                { key: "done", ratio: taskViewTotal > 0 ? taskCountsByTab.done / taskViewTotal : 0, className: "bg-cream/15" },
+              ]
+            : undefined
+        }
+      />
 
       {showAddDialog && (
         <AddTaskDialog
