@@ -1,9 +1,9 @@
-import { daysBetweenDateStrs, shiftDateStr } from "./time";
-import type { MasterTask, WorkRecord } from "./types";
+import { shiftDateStr } from "./time";
+import type { WorkRecord } from "./types";
 
 // 森モード(家庭で毎日使うモード)の、記録で育つものの計算。
 // 見出しの森は時刻と季節で変わるだけだったので、ここでは実際の記録から
-// 「この4週間の木立」と「暮らしの手入れ(家事を前回からの間隔で見る)」を導く
+// 「この4週間の木立」を導く
 
 export type GroveStage = "none" | "sprout" | "young" | "tree";
 
@@ -46,54 +46,4 @@ export function groveStreak(grove: GroveDay[]): number {
   let n = 0;
   for (; i >= 0 && grove[i].stage !== "none"; i--) n++;
   return n;
-}
-
-export type CareState = "fresh" | "soon" | "due" | "overgrown";
-
-export interface CareItem {
-  masterId: string;
-  label: string;
-  category: string;
-  name: string;
-  /** 前回から何日たったか */
-  sinceDays: number;
-  /** いつもの間隔(日)。記録の日付の間隔の中央値 */
-  usualDays: number;
-  state: CareState;
-  /** 前回から ÷ いつもの間隔 */
-  ratio: number;
-}
-
-function median(xs: number[]): number {
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-
-/**
- * 暮らしの手入れ。家事は期限より「前回からの間隔」が大事なので、作業ごとに記録の日付の
- * 間隔からいつもの間隔を求め、前回からの日数と比べる。設定は要らない(3回以上記録した作業が対象)
- */
-export function buildCare(records: WorkRecord[], masters: MasterTask[], today: string, ignored: string[] = []): CareItem[] {
-  const since = shiftDateStr(today, -180);
-  const dates = new Map<string, Set<string>>();
-  for (const r of records) {
-    if (!r.masterTaskId || r.date < since || r.date > today) continue;
-    const set = dates.get(r.masterTaskId) ?? new Set<string>();
-    set.add(r.date);
-    dates.set(r.masterTaskId, set);
-  }
-  const out: CareItem[] = [];
-  for (const m of masters) {
-    if (m.archived || m.excludedFromHome || ignored.includes(m.id)) continue;
-    const ds = [...(dates.get(m.id) ?? [])].sort();
-    if (ds.length < 3) continue;
-    const gaps = ds.slice(1).map((d, i) => daysBetweenDateStrs(ds[i], d));
-    const usualDays = Math.max(1, Math.round(median(gaps)));
-    const sinceDays = daysBetweenDateStrs(ds[ds.length - 1], today);
-    const ratio = sinceDays / usualDays;
-    const state: CareState = ratio >= 1.5 ? "overgrown" : ratio >= 1 ? "due" : ratio >= 0.75 ? "soon" : "fresh";
-    out.push({ masterId: m.id, label: `${m.category} / ${m.name}`, category: m.category, name: m.name, sinceDays, usualDays, state, ratio });
-  }
-  return out.sort((a, b) => b.ratio - a.ratio);
 }

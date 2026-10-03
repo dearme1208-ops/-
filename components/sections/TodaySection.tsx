@@ -123,7 +123,7 @@ import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import { QuickStampButton, QuickStampPanel, QuickStampSheet } from "@/components/sections/today/QuickStamp";
-import { CarePanel, ForestGrove } from "@/components/sections/today/ForestPanels";
+import { ForestGrove } from "@/components/sections/today/ForestPanels";
 import { CallingCardPanel, PersonaStatsPanel } from "@/components/sections/today/PersonaPanels";
 import { addQuickStamp } from "@/lib/quickStamp";
 import { TODAY_ACTION_EVENT } from "@/lib/todayActions";
@@ -2604,9 +2604,6 @@ export default function TodaySection({
 
 
       <QuickStampPanel date={date} now={now} />
-
-      {/* 森モード(家庭で毎日使うモード): 家事を前回からの間隔で見る */}
-      {themedMode === "home" && <CarePanel today={date} onStart={addFavoriteAndStart} />}
 
       {/* 作業の開始に使うもの(テンプレート・お気に入り・提案など)と、状況の表示(作業状況・
           チャレンジ・自動配分・通知など)は、作業リストの下にまとめる。以前は作業リストの上に

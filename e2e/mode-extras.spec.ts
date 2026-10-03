@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 const mode = (m: string, extra: Record<string, string> = {}) => ({ "theme.visualMode": m, "powerpro.mainMenu": "false", ...extra });
 const todo = (id: string, title: string, dueDate?: string) => ({ id, listId: "l", title, completed: false, important: false, order: 0, createdAt: 0, dueDate });
 
-test("森: 暮らしの手入れは記録の間隔から割り出し、「始める」で計測が始まる。木立が育つ", async ({ page }) => {
+test("森: 記録した日に木が立つ(暮らしの手入れの欄は出さない)", async ({ page }) => {
   const records = ["-12", "-8", "-4"].map((d, i) => ({
     id: "r" + i, date: jstDate(Number(d)), category: "家事", name: "風呂掃除", masterTaskId: "m3", seconds: 1200,
     startedAt: jstAt("20:00", Number(d)), endedAt: jstAt("20:20", Number(d)), excludedFromStats: false,
@@ -19,11 +19,8 @@ test("森: 暮らしの手入れは記録の間隔から割り出し、「始め
     settings: mode("home"),
     stores: { masterTasks: [{ ...MASTER, id: "m3", category: "家事", name: "風呂掃除" }], records },
   });
-  const care = page.getByTestId("forest-care");
-  await expect(care).toContainText("前回から4日・いつもは4日ごと・手入れどき");
-  await care.getByRole("button", { name: "始める" }).click();
-  await expect.poll(async () => (await readAll<{ name: string; status: string }>(page, "dailyTasks")).map((t) => [t.name, t.status])).toEqual([["風呂掃除", "running"]]);
   await expect(page.getByTestId("forest-grove")).toContainText("木が3本");
+  await expect(page.getByTestId("forest-care")).toHaveCount(0);
 });
 
 test("ペルソナ風: 期日の迫る仕事が予告状になる", async ({ page }) => {
