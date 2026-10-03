@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
+import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
 import { daysBetweenDateStrs, formatMsClock, shiftDateStr, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
@@ -94,7 +94,8 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
     await db.todoTasks.update(sub.id, { completed: !sub.completed, completedAt: !sub.completed ? Date.now() : undefined });
   }
 
-  const runningDaily = (dailyTasks ?? []).find((d) => d.status === "running") ?? null;
+  // 仮計測(未計測の時間の自動計測)は作業ではないので、計測中の作業として扱わない
+  const runningDaily = (dailyTasks ?? []).find((d) => d.status === "running" && !d.isProvisional) ?? null;
   const dailyByTodoId = useMemo(() => {
     const map = new Map<string, DailyTask>();
     for (const d of dailyTasks ?? []) if (d.todoTaskId) map.set(d.todoTaskId, d);
@@ -275,6 +276,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
   }
 
   async function startTodo(t: TodoTask) {
+    await pauseRunningProvisional(today);
     if (runningDaily && runningDaily.todoTaskId !== t.id) await pauseDaily(runningDaily);
     const existing = dailyByTodoId.get(t.id);
     if (existing) {
@@ -305,6 +307,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
   }
 
   async function startProject(p: ProjectItem) {
+    await pauseRunningProvisional(today);
     if (runningDaily && runningDaily.projectId !== p.id) await pauseDaily(runningDaily);
     const existing = dailyByProjectId.get(p.id);
     if (existing) {

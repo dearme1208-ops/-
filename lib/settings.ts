@@ -54,24 +54,26 @@ export function useDraftSetting(key: string, defaultValue: string): [string, (va
   const [dbValue, setDbValue] = useSetting(key, defaultValue);
   const [draft, setDraft] = useState(dbValue);
   const keyRef = useRef(key);
-  const editedRef = useRef(false);
+  // 自分が書き込んだ値(直近のもの)。DBから届いた値がこの中にあれば自分の書き込みのechoなので
+  // 入力欄へ跳ね返さない。無ければ別の画面で書き換えられたものなので、入力欄も追従させる
+  // (本日の作業は他のタブの間も裏で動き続けるため、別の画面で直したメモを古い入力欄の内容で
+  // 上書きしてしまわないように)
+  const writtenRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (keyRef.current !== key) {
       keyRef.current = key;
-      editedRef.current = false;
+      writtenRef.current = [];
       setDraft(dbValue);
       return;
     }
-    // まだユーザーが編集していない間は、DBからの読み込み完了(初回ロード)をdraftに反映してよい。
-    // 一度でも編集した後は、自分自身の書き込みのechoでdraftを上書きしないようにする
-    if (!editedRef.current) {
-      setDraft(dbValue);
-    }
+    if (writtenRef.current.includes(dbValue)) return;
+    writtenRef.current = [];
+    setDraft(dbValue);
   }, [key, dbValue]);
 
   function setDraftValue(v: string) {
-    editedRef.current = true;
+    writtenRef.current = [...writtenRef.current.slice(-30), v];
     setDraft(v);
     setDbValue(v);
   }

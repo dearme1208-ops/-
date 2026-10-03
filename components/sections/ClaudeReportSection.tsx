@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { subDays, subMonths, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
-import { formatHms, formatDateJp } from "@/lib/time";
+import { formatHms, formatDateJp, todayStr } from "@/lib/time";
 import { useDraftSetting } from "@/lib/settings";
 import { computeTodoPeriodSummary } from "@/lib/todoTrend";
 
@@ -48,6 +48,8 @@ export default function ClaudeReportSection() {
   const periodKey = useMemo(() => {
     const range = getPeriodRange(filter);
     if (!range) return "all";
+    // 注意: このキーは世界標準時の日付で作られている(日本時間では期間の開始日の前日になる)。
+    // 書き残したメモがこのキーで保存済みなので、読めなくならないよう変えずに使い続ける
     return kind === "month" ? range.start.toISOString().slice(0, 7) : range.start.toISOString().slice(0, 10);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
@@ -92,13 +94,13 @@ export default function ClaudeReportSection() {
     // 詳細も一覧で見えるようにする(段階にはcompletedAtが無かったため以前は区別できなかった)
     const completions: CompletionEntry[] = [];
     for (const p of projects ?? []) {
-      if (p.completedAt && isDateStrInRange(new Date(p.completedAt).toISOString().slice(0, 10), range)) {
+      if (p.completedAt && isDateStrInRange(todayStr(new Date(p.completedAt)), range)) {
         const label = p.workName && p.workName !== p.title ? `${p.title}（${p.workName}）` : p.title;
         const suppressed = !!p.autoCompletedByImport || (titleCounts.get(p.title) ?? 0) >= DUPLICATE_TITLE_THRESHOLD;
         completions.push({ key: `project-${p.id}`, label, completedAt: p.completedAt, kind: "project", suppressed });
       }
       for (const s of p.stages ?? []) {
-        if (s.completedAt && isDateStrInRange(new Date(s.completedAt).toISOString().slice(0, 10), range)) {
+        if (s.completedAt && isDateStrInRange(todayStr(new Date(s.completedAt)), range)) {
           completions.push({ key: `stage-${s.id}`, label: `${p.title} - ${s.title}`, completedAt: s.completedAt, kind: "stage" });
         }
       }
@@ -270,7 +272,7 @@ export default function ClaudeReportSection() {
                     </span>
                     {c.label}
                   </span>
-                  <span className="shrink-0 text-cream/40">{formatDateJp(new Date(c.completedAt).toISOString().slice(0, 10))}</span>
+                  <span className="shrink-0 text-cream/40">{formatDateJp(todayStr(new Date(c.completedAt)))}</span>
                 </div>
               ))}
               {summary.completions.length > 8 && (

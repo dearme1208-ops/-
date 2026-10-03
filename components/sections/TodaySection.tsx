@@ -154,6 +154,10 @@ export default function TodaySection({
   const [dailyJournal, setDailyJournal] = useDraftSetting(`journal.daily.${date}`, "");
   const [now, setNow] = useState(() => Date.now());
   const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
+  // この画面は裏で動き続けて日をまたぐことがあるので、日付が変わったらテンプレートの曜日も今日に合わせ直す
+  useEffect(() => {
+    setWeekday(jsWeekdayToApp(new Date()) ?? 1);
+  }, [date]);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [scheduleImportErrors, setScheduleImportErrors] = useState<string[]>([]);
   const [scheduleImportResult, setScheduleImportResult] = useState("");
@@ -427,10 +431,12 @@ export default function TodaySection({
     setNotifPermission(getNotificationPermission());
   }, []);
 
+  // 画面に出ている間は1秒ごと(経過時間の表示のため)。裏で動いている間は表示が要らないので、
+  // 予定の時刻・時間割・休憩などの見張りに足りる5秒ごとにして、描き直しの負担(電池)を減らす
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setNow(Date.now()), background ? 5000 : 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [background]);
 
   // マウス/キーボード操作を監視し、放置検知（未計測の自動打ち切り）の起点として使う
   useEffect(() => {

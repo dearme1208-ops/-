@@ -74,6 +74,8 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
   const periodKey = useMemo(() => {
     const range = getPeriodRange(filter);
     if (!range) return "all";
+    // 注意: このキーは世界標準時の日付で作られている(日本時間では期間の開始日の前日になる)。
+    // 書き残したメモがこのキーで保存済みなので、読めなくならないよう変えずに使い続ける
     return kind === "month" ? range.start.toISOString().slice(0, 7) : range.start.toISOString().slice(0, 10);
   }, [kind]);
   const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, "");
@@ -96,7 +98,7 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
     if (!records || !masterTasks) return null;
     const range = getPeriodRange(filter);
     const rangeLabel = range
-      ? `${range.start.toISOString().slice(0, 10)} 〜 ${range.end.toISOString().slice(0, 10)}`
+      ? `${todayStr(range.start)} 〜 ${todayStr(range.end)}`
       : "累計";
     const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));
     // サブタスクから本日の作業に追加した作業は、作業名に親タスク名を添える

@@ -2,7 +2,7 @@ import { parseCompose, dueLabel } from "./claudeCompose";
 import { db, uid } from "./db";
 import { findOrCreateMasterTask } from "./master";
 import { addQuickStamp } from "./quickStamp";
-import { finishDailyTask, segmentsAccumulatedMs } from "./tasks";
+import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "./tasks";
 import { formatMsClock, todayStr } from "./time";
 import type { DailyTask } from "./types";
 
@@ -67,15 +67,23 @@ export async function runCommand(input: string, now: number = Date.now()): Promi
     }
     case "start": {
       if (!arg) return ["使い方: start <番号|名前>"];
-      let target = pick(tasks.filter((t) => t.status !== "done"), arg) ?? pick(tasks, arg);
+      let target = pick(tasks.filter((t) => t.status !== "done"), arg);
+      // 完了済みの作業を名前で指定した場合は、記録を書き換えないよう同じ作業を新しく始め直す
+      const doneMatch = target ? undefined : pick(tasks, arg);
       for (const r of running) if (r.id !== target?.id) await pause(r, now);
+      await pauseRunningProvisional(today, now);
       if (target) {
         if (target.status === "running") return [`もう計測中です: ${target.name}`];
-        const segments = target.status === "done" ? [{ start: now }] : [...target.segments, { start: now }];
-        await db.dailyTasks.update(target.id, { status: "running", segments, ...(target.status === "pending" ? { startedAt: now } : {}) });
+        await db.dailyTasks.update(target.id, {
+          status: "running",
+          segments: [...target.segments, { start: now }],
+          ...(target.status === "pending" ? { startedAt: now } : {}),
+        });
         return [`▶ 開始: ${target.category}/${target.name}`];
       }
-      const masters = await db.masterTasks.filter((m) => !m.archived && (m.name === arg || m.name.includes(arg))).toArray();
+      const masters = doneMatch?.masterTaskId
+        ? await db.masterTasks.where("id").equals(doneMatch.masterTaskId).toArray()
+        : await db.masterTasks.filter((m) => !m.archived && (m.name === arg || m.name.includes(arg))).toArray();
       const master = masters.find((m) => m.name === arg) ?? masters[0] ?? (await findOrCreateMasterTask("その他", arg, 0));
       const order = tasks.length ? Math.max(...tasks.map((t) => t.order)) + 1 : 0;
       target = {
@@ -92,6 +100,8 @@ export async function runCommand(input: string, now: number = Date.now()): Promi
         accumulatedMs: 0,
         startedAt: now,
         isSpontaneous: true,
+        // 案件・段階・ToDoから追加した作業を始め直す時は、その紐付けも引き継ぐ
+        ...(doneMatch ? { projectId: doneMatch.projectId, stageId: doneMatch.stageId, todoTaskId: doneMatch.todoTaskId } : {}),
       };
       await db.dailyTasks.add(target);
       return [`▶ 開始: ${master.category}/${master.name}${masters.length ? "" : "(新しい作業として登録)"}`];

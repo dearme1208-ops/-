@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
+import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
 import { daysBetweenDateStrs, formatMsClock, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem, TodoTask } from "@/lib/types";
@@ -28,7 +28,8 @@ export default function ZenSection() {
     return () => clearInterval(id);
   }, []);
 
-  const runningDaily = (dailyTasks ?? []).find((d) => d.status === "running") ?? null;
+  // 仮計測(未計測の時間の自動計測)は作業ではないので、ここでは「今やっていること」に数えない
+  const runningDaily = (dailyTasks ?? []).find((d) => d.status === "running" && !d.isProvisional) ?? null;
 
   const activeTodos = useMemo(() => (todos ?? []).filter((t) => !t.completed && !t.parentTaskId), [todos]);
   const activeProjects = useMemo(() => (projects ?? []).filter((p) => !p.completedAt), [projects]);
@@ -111,6 +112,7 @@ export default function ZenSection() {
 
   async function start() {
     if (!picked) return;
+    await pauseRunningProvisional(today);
     if (picked.kind === "todo") await startTodo(picked.item);
     else await startProject(picked.item);
   }

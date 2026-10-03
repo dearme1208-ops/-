@@ -6,7 +6,7 @@ import TerminalCommandLine from "@/components/sections/TerminalCommandLine";
 import { db, uid } from "@/lib/db";
 import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
+import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatClock, formatHms, formatMsClock, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage, TERMINAL_STAGES } from "@/lib/growth";
@@ -118,7 +118,8 @@ export default function TerminalDashboardSection() {
     };
   }, []);
 
-  const runningDaily = (dailyTasks ?? []).find((d) => d.status === "running") ?? null;
+  // 仮計測(未計測の時間の自動計測)は作業ではないので、計測中の作業として扱わない
+  const runningDaily = (dailyTasks ?? []).find((d) => d.status === "running" && !d.isProvisional) ?? null;
   const totalMsToday = (dailyTasks ?? []).reduce((sum, d) => sum + segmentsAccumulatedMs(d, now), 0);
   const doneToday = (dailyTasks ?? []).filter((d) => d.status === "done");
   // クイックスタートの「完了した業務」欄用: 同じ作業を今日中に何度も完了していても
@@ -191,6 +192,7 @@ export default function TerminalDashboardSection() {
     links?: DailyTaskLinks;
   }) {
     if (runningDaily && runningDaily.masterTaskId !== source.masterTaskId) await pauseDaily(runningDaily);
+    await pauseRunningProvisional(today);
     if (source.masterTaskId) {
       const existing = (dailyTasks ?? []).find(
         (d) => d.masterTaskId === source.masterTaskId && (d.status === "running" || d.status === "paused")
@@ -244,6 +246,7 @@ export default function TerminalDashboardSection() {
     const name = newTaskName.trim();
     if (!category || !name) return;
     if (runningDaily) await pauseDaily(runningDaily);
+    await pauseRunningProvisional(today);
     const master = await findOrCreateMasterTask(category, name, 0);
     const task: DailyTask = {
       id: uid(),

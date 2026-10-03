@@ -42,6 +42,11 @@ describe("話し言葉の入力を受け取る", () => {
     expect(parseCompose("30分会議の準備", T)).toMatchObject({ title: "30分会議の準備", estimateMin: undefined });
   });
 
+  it("空白なしの@分類も受け取り、メールアドレスは分類にしない", () => {
+    expect(parseCompose("見積書を送る@営業", T)).toMatchObject({ title: "見積書を送る", category: "営業" });
+    expect(parseCompose("taro@example.com に返信", T)).toMatchObject({ title: "taro@example.com に返信", category: undefined });
+  });
+
   it("1.5時間 → 90分", () => {
     expect(parseCompose("設計レビュー 1.5時間", T).estimateMin).toBe(90);
   });

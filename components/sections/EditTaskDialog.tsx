@@ -66,12 +66,12 @@ export default function EditTaskDialog({
   const [troubleDetailOptionsJson] = useSetting("trouble.detailOptions", JSON.stringify(DEFAULT_TROUBLE_DETAIL_OPTIONS));
   const troubleDetailOptions = useMemo(() => parsePresetList(troubleDetailOptionsJson), [troubleDetailOptionsJson]);
 
-  function useStartTime(hm: string) {
+  function applyStartTime(hm: string) {
     setStartTime(hm);
     setStartTouched(true);
     setPreciseStart(null);
   }
-  function usePreviousEndAsStart(endedAt: number) {
+  function applyPreviousEndAsStart(endedAt: number) {
     setStartTime(formatClock(endedAt));
     setStartTouched(true);
     setPreciseStart(endedAt);
@@ -174,7 +174,7 @@ export default function EditTaskDialog({
               <input
                 type="time"
                 value={startTime}
-                onChange={(e) => useStartTime(e.target.value)}
+                onChange={(e) => applyStartTime(e.target.value)}
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
               {previousTaskEndedAt != null && (
@@ -182,7 +182,7 @@ export default function EditTaskDialog({
                   type="button"
                   className="btn-pill-outline text-xs"
                   title="直前に完了した作業の終了時刻を開始時刻として使います"
-                  onClick={() => usePreviousEndAsStart(previousTaskEndedAt)}
+                  onClick={() => applyPreviousEndAsStart(previousTaskEndedAt)}
                 >
                   前の作業の終了({formatClock(previousTaskEndedAt)})を使う
                 </button>
@@ -237,7 +237,7 @@ export default function EditTaskDialog({
               <input
                 type="time"
                 value={startTime}
-                onChange={(e) => useStartTime(e.target.value)}
+                onChange={(e) => applyStartTime(e.target.value)}
                 className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
               {previousTaskEndedAt != null && (
@@ -245,7 +245,7 @@ export default function EditTaskDialog({
                   type="button"
                   className="btn-pill-outline text-xs"
                   title="直前に完了した作業の終了時刻を開始時刻として使います"
-                  onClick={() => usePreviousEndAsStart(previousTaskEndedAt)}
+                  onClick={() => applyPreviousEndAsStart(previousTaskEndedAt)}
                 >
                   前の作業の終了({formatClock(previousTaskEndedAt)})を使う
                 </button>

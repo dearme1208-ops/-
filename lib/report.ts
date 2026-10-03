@@ -75,7 +75,7 @@ export function generateReportText(
 ): string {
   const range = getPeriodRange(filter);
   const rangeLabel = range
-    ? `${range.start.toISOString().slice(0, 10)} 〜 ${range.end.toISOString().slice(0, 10)}`
+    ? `${todayStr(range.start)} 〜 ${todayStr(range.end)}`
     : "累計";
 
   const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));

@@ -265,6 +265,20 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   return true;
 }
 
+/**
+ * 計測中の仮計測(未計測の時間を自動で測っているもの)を一時停止する。
+ * 本日の作業以外の画面(禅・Claude・ターミナルなど)から作業を始めた時に、仮計測と二重に
+ * 計測しないよう呼ぶ。止めた仮計測は本日の作業で、あとから作業に割り当てられる
+ */
+export async function pauseRunningProvisional(date: string, at: number = Date.now()): Promise<void> {
+  const running = await db.dailyTasks.where("date").equals(date).filter((t) => !!t.isProvisional && t.status === "running").toArray();
+  for (const t of running) {
+    const segments = t.segments.map((s, i) => (i === t.segments.length - 1 && s.end === undefined ? { ...s, end: at } : s));
+    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? at) - s.start), 0);
+    await db.dailyTasks.update(t.id, { segments, status: "paused", accumulatedMs, stoppedAt: at });
+  }
+}
+
 // 計測できずに後からまとめて手入力する実績を1件追加する(実績編集の「過去の実績を追加」、打刻からの記録)。
 // 同日・同じ作業の実績が既にあれば、通常の作業完了時と同じルールで合算する(区分・作業名の統一、時間の合算)。
 // 追加・合算した実績のIDを返す

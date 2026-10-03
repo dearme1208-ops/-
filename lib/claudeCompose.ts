@@ -106,7 +106,8 @@ export function parseCompose(raw: string, today: string): ComposeResult {
   let estimateMin: number | undefined;
   let important = false;
 
-  const tag = /\s[@＠](\S+)/.exec(text);
+  // 「見積書@営業」のように空白なしで書いても受け取る。英数字の直後の@(メールアドレス)は分類にしない
+  const tag = /(?<![A-Za-z0-9._%+-])[@＠]([^\s@＠]+)/.exec(text);
   if (tag) {
     category = tag[1];
     text = text.replace(tag[0], " ");

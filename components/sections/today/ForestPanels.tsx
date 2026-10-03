@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { buildCare, buildGrove, groveStreak, type CareItem, type GroveDay } from "@/lib/forestLife";
 import { useSetting } from "@/lib/settings";
+import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { shiftDateStr } from "@/lib/time";
 
 // 森モードの「この4週間の木立」と「暮らしの手入れ」(lib/forestLife.ts)
@@ -37,7 +38,10 @@ function Tree({ x, base, day, isToday }: { x: number; base: number; day: GroveDa
 }
 
 export function ForestGrove({ today }: { today: string }) {
-  const records = useLiveQuery(() => db.records.where("date").aboveOrEqual(shiftDateStr(today, -27)).toArray(), [today]);
+  // 「茂みへ隠す」で隠した作業の記録は、木立にも数えない(森モードの他の集計と同じ)
+  const records = useHomeFilteredRecords(
+    useLiveQuery(() => db.records.where("date").aboveOrEqual(shiftDateStr(today, -27)).toArray(), [today])
+  );
   const grove = useMemo(() => buildGrove(records ?? [], today), [records, today]);
   const streak = groveStreak(grove);
   const trees = grove.filter((d) => d.stage !== "none").length;

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { formatHms, todayStr } from "@/lib/time";
+import { formatHms, shiftDateStr, todayStr } from "@/lib/time";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeStreakDays } from "@/lib/streak";
 import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
@@ -77,9 +77,7 @@ export default function MainMenuSection({ onEnter }: { onEnter: (tab: TabKey) =>
   // 要注意リストタブと同じ「想定から離れている」という観点をひとつの数字にしたもの
   const attentionCount = useMemo(() => {
     const est = new Map(masters.map((m) => [m.id, m.estimatedSeconds]));
-    const from = new Date(today + "T00:00:00");
-    from.setDate(from.getDate() - 30);
-    const fromStr = from.toISOString().slice(0, 10);
+    const fromStr = shiftDateStr(today, -30);
     return records.filter((r) => {
       if (r.excludedFromStats || r.date < fromStr) return false;
       const e = r.masterTaskId ? est.get(r.masterTaskId) ?? 0 : 0;
