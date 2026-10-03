@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export default function Modal({
   title,
@@ -17,7 +18,9 @@ export default function Modal({
   size?: "md" | "lg" | "xl";
 }) {
   const maxWidthClass = size === "xl" ? "max-w-6xl" : size === "lg" ? "max-w-2xl" : "max-w-md";
-  return (
+  // 本日の作業は他のタブを見ている間も裏で動き続け(app/page.tsx)、予定の時刻などで
+  // 確認のダイアログを出す。裏に隠した画面の中にあっても見えるよう、ダイアログは画面の直下に出す
+  const node = (
     <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className={`panel flex max-h-[90vh] w-full ${maxWidthClass} flex-col p-5`}>
         <div className="mb-3 flex shrink-0 items-center justify-between">
@@ -33,4 +36,5 @@ export default function Modal({
       </div>
     </div>
   );
+  return typeof document === "undefined" ? node : createPortal(node, document.body);
 }

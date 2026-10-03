@@ -72,10 +72,10 @@ test("本日の作業を独自画面に差し替えるモード(禅など)でも
   await page.getByLabel("打刻の一言").fill("資料");
   await page.getByRole("button", { name: "残す", exact: true }).click();
   await dock.getByRole("button", { name: "未記録の打刻 1" }).click();
-  await page.getByTestId("quick-stamp-panel").getByRole("button", { name: "実績にする" }).click();
+  await page.locator(".modal-scrim").getByTestId("quick-stamp-panel").getByRole("button", { name: "実績にする" }).click();
   await page.getByLabel("終了時刻").fill("10:30");
   await page.getByRole("button", { name: "記録する" }).click();
-  await expect(page.getByTestId("quick-stamp-panel")).toContainText("✓ 業務 / 資料作成");
+  await expect(page.locator(".modal-scrim").getByTestId("quick-stamp-panel")).toContainText("✓ 業務 / 資料作成");
   const records = await readAll<{ seconds: number }>(page, "records");
   expect(records.map((r) => r.seconds)).toEqual([30 * 60]);
 });

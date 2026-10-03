@@ -94,6 +94,22 @@ const TABS: TabDef[] = TAB_ORDER.map((key) => ({ key, label: PLAIN_TAB_LABELS[ke
 // これより多くのタブが並ぶモードだけ、タブを分類ごとの2段にまとめる
 const GROUP_TABS_MIN_COUNT = 10;
 
+// 本日の作業を独自の画面に差し替えるモードで、本日の作業の操作をまとめたボタンの呼び名
+const TOOLS_LABEL_BY_MODE: Record<string, string> = {
+  adventurer: "道具袋",
+  library: "司書",
+  mountain: "装備",
+  powerpro: "作戦",
+  lobotomy: "指令",
+  hayarigami: "手帳",
+  natsuyasumi: "もちもの",
+  terminal: "tools",
+  zen: "道具",
+  claude: "道具",
+  hub: "道具",
+  origin: "マクロ",
+};
+
 export default function HomePage() {
   const [active, setActive] = useState("today");
   const [showCloseCheck, setShowCloseCheck] = useState(false);
@@ -280,6 +296,25 @@ export default function HomePage() {
           )}
         </>
       )}
+      {/* 本日の作業は、他のタブ・メニュー画面・独自の画面に差し替えるモードの間も裏で動かし続ける。
+          予定の時刻の自動開始・時間割の終わり・休憩の強制停止・未計測の自動計測・位置情報・通知は
+          この画面の中にあり、以前は「今日」を開いている間しか動いていなかった(戻った時刻に遅れて
+          開始され、記録の時刻がずれていた) */}
+      <div hidden={!todaySectionShown}>
+        <TodaySection
+          background={!todaySectionShown}
+          onOpenTodoDetail={(taskId) => {
+            setPendingTodoDetailId(taskId);
+            setActive("todo");
+          }}
+          onOpenProjectEdit={(projectId) => {
+            setPendingProjectEditId(projectId);
+            setActive("projects");
+          }}
+          onOpenMemo={() => setActive("memo")}
+          onOpenTodoTab={() => setActive("todo")}
+        />
+      </div>
       {!showMenu && (
       <>
       {active === "today" && mode === "claude" && <ClaudeWorkspaceSection onOpenInsights={() => setActive("aggregation")} />}
@@ -306,32 +341,6 @@ export default function HomePage() {
       {active === "today" && mode === "lobotomy" && <LobotomySection />}
       {active === "today" && mode === "library" && <LibrarySection />}
       {active === "today" && mode === "origin" && <OriginSheetSection onOpenTodo={() => setActive("todo")} />}
-      {active === "today" &&
-        mode !== "claude" &&
-        mode !== "zen" &&
-        mode !== "terminal" &&
-        mode !== "adventurer" &&
-        mode !== "hub" &&
-        mode !== "powerpro" &&
-        mode !== "mountain" &&
-        mode !== "hayarigami" &&
-        mode !== "lobotomy" &&
-        mode !== "natsuyasumi" &&
-        mode !== "origin" &&
-        mode !== "library" && (
-        <TodaySection
-          onOpenTodoDetail={(taskId) => {
-            setPendingTodoDetailId(taskId);
-            setActive("todo");
-          }}
-          onOpenProjectEdit={(projectId) => {
-            setPendingProjectEditId(projectId);
-            setActive("projects");
-          }}
-          onOpenMemo={() => setActive("memo")}
-          onOpenTodoTab={() => setActive("todo")}
-        />
-      )}
       {active === "todo" && (
         <TodoSection
           initialDetailTaskId={pendingTodoDetailId}
@@ -432,7 +441,7 @@ export default function HomePage() {
           </div>
         </Modal>
       )}
-      {showStampDock && <QuickStampDock />}
+      {showStampDock && <QuickStampDock toolsLabel={TOOLS_LABEL_BY_MODE[mode] ?? "道具"} />}
     </div>
   );
 }

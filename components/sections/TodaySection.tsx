@@ -124,6 +124,7 @@ import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import { QuickStampButton, QuickStampPanel, QuickStampSheet } from "@/components/sections/today/QuickStamp";
 import { addQuickStamp } from "@/lib/quickStamp";
+import { TODAY_ACTION_EVENT } from "@/lib/todayActions";
 import type { QuickStamp } from "@/lib/types";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
@@ -133,11 +134,18 @@ export default function TodaySection({
   onOpenProjectEdit,
   onOpenMemo,
   onOpenTodoTab,
+  background = false,
 }: {
   onOpenTodoDetail: (taskId: string) => void;
   onOpenProjectEdit: (projectId: string) => void;
   onOpenMemo?: () => void;
   onOpenTodoTab?: () => void;
+  /**
+   * 画面には出さず裏で動かしている時はtrue。予定の時刻の自動開始・時間割の終わり・休憩の強制停止・
+   * 未計測の自動計測・位置情報・通知は、この画面の中にあるため、他のタブを見ている間や本日の作業を
+   * 独自の画面に差し替えるモードでも止まらないよう、app/page.tsxが常に裏で置いておく
+   */
+  background?: boolean;
 }) {
   const date = todayStr();
   // 構造化されたタスクとは別の、自由記述の日次ジャーナル。日付ごとに保存する
@@ -1008,8 +1016,9 @@ export default function TodaySection({
 
   // ホーム画面ショートカット(manifestのshortcuts、/?quickstart=1〜4)からの起動を検知する。
   // URLのクエリはその場で消し、実際の処理はtasks/allMasterTasksの読み込みを待ってから行う
-  // ホーム画面ショートカット(/?stamp=1)からの打刻
+  // ホーム画面ショートカット(/?stamp=1)からの打刻。裏で動いている時は、表に出ている打刻ボタンが受け取る
   useEffect(() => {
+    if (background) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("stamp") !== "1") return;
     window.history.replaceState({}, "", window.location.pathname);
@@ -1033,6 +1042,28 @@ export default function TodaySection({
     handleQuickStart(slot);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingQuickSlot, tasks, allMasterTasks]);
+
+  // 裏で動いている時は画面の中の知らせが見えないので、同じ文をトーストでも出す
+  useEffect(() => {
+    if (quickActionMessage && background) showUndoToast(quickActionMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickActionMessage]);
+
+  // 本日の作業を独自の画面に差し替えるモードの「道具袋」(components/TodayToolsDock.tsx)から、
+  // この画面の操作(トラブル・突発作業・段取り・時間割・明日の下書き・振り返り)を呼び出す
+  useEffect(() => {
+    function onAction(e: Event) {
+      const kind = (e as CustomEvent<string>).detail;
+      if (kind === "trouble") startTrouble();
+      else if (kind === "add") setShowAddDialog(true);
+      else if (kind === "dayPlan") setShowDayPlan(true);
+      else if (kind === "timebox") setShowTimebox(true);
+      else if (kind === "tomorrow") setShowTomorrowDraft(true);
+      else if (kind === "reflection") setShowReflection(true);
+    }
+    window.addEventListener(TODAY_ACTION_EVENT, onAction);
+    return () => window.removeEventListener(TODAY_ACTION_EVENT, onAction);
+  });
 
   useEffect(() => {
     if (!quickActionMessage) return;
