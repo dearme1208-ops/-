@@ -2058,7 +2058,11 @@ export default function TodaySection({
   // ユーザーに委ねる）。既に計測中の作業がある場合は、強制的に止めて差し込むのではなく、
   // 停止して開始するかどうかを確認する
   async function autoStartScheduledTask(task: DailyTask) {
-    const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
+    // 画面の状態(tasks)は直前に始めた作業がまだ反映されていないことがあり、それだと計測中の作業を
+    // 見落として二重に計測を始めてしまうので、DBから読み直して判断する
+    const runningTasks = (await db.dailyTasks.where("date").equals(task.date).toArray()).filter(
+      (t) => t.status === "running" && t.id !== task.id
+    );
     notify("予定の時刻になりました", `${task.category} / ${workLabel(task)}`, `schedule-${task.id}`);
     if (runningTasks.length > 0) {
       await db.dailyTasks.update(task.id, { autoStartNotified: true });

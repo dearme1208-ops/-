@@ -60,6 +60,7 @@ const OvertimeSection = dynamic(() => import("@/components/sections/OvertimeSect
 const YearlyChartSection = dynamic(() => import("@/components/sections/YearlyChartSection"), { ssr: false });
 const MandalaSection = dynamic(() => import("@/components/sections/MandalaSection"), { ssr: false });
 const MemoSection = dynamic(() => import("@/components/sections/MemoSection"), { ssr: false });
+const QuickStampDock = dynamic(() => import("@/components/QuickStampDock"), { ssr: false });
 const UnifiedBoardSection = dynamic(() => import("@/components/sections/UnifiedBoardSection"), { ssr: false });
 const OriginSheetSection = dynamic(() => import("@/components/sections/OriginSheetSection"), { ssr: false });
 const ObservatorySection = dynamic(() => import("@/components/sections/ObservatorySection"), { ssr: false });
@@ -123,6 +124,18 @@ export default function HomePage() {
   // メニューを出せるモードで、設定がONのときだけ
   const useMainMenu = menuSkinFor(mode) !== null && mainMenuStr === "true";
   const showMenu = useMainMenu && menuOpen;
+  // 本日の作業(TodaySection)をそのまま使うモード。それ以外のモードは本日の作業を独自の画面に差し替える
+  const todaySectionShown = !showMenu && active === "today" && ["off", "va11halla", "persona5", "home"].includes(mode);
+  // 本日の作業には下部タブの左に打刻ボタンがある。本日の作業を独自の画面に差し替えるモードでは、
+  // その「今日」の画面の右下に出す(他のタブでは一覧の操作ボタンに重なるので出さない)
+  const showStampDock = !showMenu && active === "today" && !todaySectionShown;
+  // ホーム画面ショートカットの打刻(/?stamp=1)は、メニュー画面を飛ばして「今日」を開き、
+  // そこにある打刻ボタンの持ち主(本日の作業 or 右下のボタン)に受け取らせる
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("stamp") !== "1") return;
+    setMenuOpen(false);
+    setActive("today");
+  }, []);
 
   // 統合ボードのタブに、開かなくても分かるよう「期限切れ・本日期日」件数のバッジを出す。
   // ボードに置いてある(boardXが設定された)ToDo・案件だけを対象にする(タブを開いた時に
@@ -419,6 +432,7 @@ export default function HomePage() {
           </div>
         </Modal>
       )}
+      {showStampDock && <QuickStampDock />}
     </div>
   );
 }

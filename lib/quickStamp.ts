@@ -14,14 +14,27 @@ export async function addQuickStamp(at: number = Date.now(), note?: string): Pro
 
 export interface StampSpan {
   stamp: QuickStamp;
-  /** 次の打刻の時刻。最後の打刻なら undefined */
+  /** 区間の終わり(次の打刻、またはその前に計測を始めた時刻)。どちらも無ければ undefined */
   nextAt?: number;
+  /** 区間の終わりが、計測の開始で決まったか */
+  endedByMeasure?: boolean;
 }
 
-/** 打刻を時刻順に並べ、それぞれ「次の打刻まで」の区間にする */
-export function stampSpans(stamps: QuickStamp[]): StampSpan[] {
+/**
+ * 打刻を時刻順に並べ、それぞれ「次の打刻まで」の区間にする。
+ * 打刻の後で作業の計測を始めていれば、そこで区間を終える(計測した時間を二重に記録しないように)。
+ * measureStarts はその日の計測の開始時刻
+ */
+export function stampSpans(stamps: QuickStamp[], measureStarts: number[] = []): StampSpan[] {
   const sorted = [...stamps].sort((a, b) => a.at - b.at);
-  return sorted.map((stamp, i) => ({ stamp, nextAt: sorted[i + 1]?.at }));
+  return sorted.map((stamp, i) => {
+    const nextStamp = sorted[i + 1]?.at;
+    const firstMeasure = measureStarts.filter((t) => t > stamp.at).reduce<number | undefined>((m, t) => (m === undefined || t < m ? t : m), undefined);
+    if (firstMeasure !== undefined && (nextStamp === undefined || firstMeasure < nextStamp)) {
+      return { stamp, nextAt: firstMeasure, endedByMeasure: true };
+    }
+    return { stamp, nextAt: nextStamp };
+  });
 }
 
 /** よく使う一言(新しい順・重複なし)。打刻直後の候補に出す */

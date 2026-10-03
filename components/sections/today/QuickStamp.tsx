@@ -106,8 +106,19 @@ function minutesLabel(ms: number): string {
 
 export function QuickStampPanel({ date, now }: { date: string; now: number }) {
   const stamps = useLiveQuery(() => db.quickStamps.where("date").equals(date).toArray(), [date]);
+  // その日に計測を始めた時刻。打刻の後で計測を始めていれば、打刻の区間はそこまでにする
+  const measureStarts = useLiveQuery(async () => {
+    const [tasks, records] = await Promise.all([
+      db.dailyTasks.where("date").equals(date).toArray(),
+      db.records.where("date").equals(date).toArray(),
+    ]);
+    return [
+      ...tasks.flatMap((t) => (t.isProvisional ? [] : t.segments.map((seg) => seg.start))),
+      ...records.flatMap((r) => (r.segments?.length ? r.segments.map((seg) => seg.start) : [r.startedAt])),
+    ];
+  }, [date]);
   const [converting, setConverting] = useState<StampSpan | null>(null);
-  const spans = useMemo(() => stampSpans(stamps ?? []), [stamps]);
+  const spans = useMemo(() => stampSpans(stamps ?? [], measureStarts ?? []), [stamps, measureStarts]);
   if (spans.length === 0) return null;
   const isToday = date === todayStr();
   const pending = spans.filter((s) => !s.stamp.recordId && !s.stamp.skipped).length;
@@ -135,6 +146,7 @@ export function QuickStampPanel({ date, now }: { date: string; now: number }) {
               <span className="shrink-0 font-bold tabular-nums">
                 {formatClock(stamp.at)}〜{nextAt ? formatClock(nextAt) : isToday ? "今" : ""}
               </span>
+              {span.endedByMeasure && <span className="shrink-0 text-[10px] text-cream/45">(計測開始まで)</span>}
               {end !== undefined && <span className="shrink-0 text-xs tabular-nums text-cream/50">{minutesLabel(end - stamp.at)}</span>}
               <span className="min-w-0 flex-1 truncate">
                 {done ? `✓ ${stamp.recordLabel ?? "記録済み"}` : stamp.skipped ? "記録しない" : stamp.note || <span className="text-cream/40">(一言なし)</span>}

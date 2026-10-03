@@ -138,7 +138,7 @@ export default function BottomTabBar({
     ) : null;
 
   return (
-    <div className="sticky bottom-2 z-10 pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <div className="sticky bottom-2 z-[45] pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
       {above}
       {running && (
         <RunningStrip running={running} />

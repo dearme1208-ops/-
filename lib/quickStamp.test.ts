@@ -14,6 +14,15 @@ describe("打刻", () => {
     ]);
   });
 
+  it("打刻の後で計測を始めていれば、そこで区間を終える", () => {
+    const spans = stampSpans([s("a", 100), s("b", 300)], [50, 150, 250, 400]);
+    expect(spans.map((x) => [x.stamp.id, x.nextAt, !!x.endedByMeasure])).toEqual([
+      ["a", 150, true],
+      ["b", 400, true],
+    ]);
+    expect(stampSpans([s("a", 100), s("b", 300)], [350])[0]).toMatchObject({ nextAt: 300 });
+  });
+
   it("一言の候補は新しい順で重複なし、空の一言は除く", () => {
     expect(recentStampNotes([s("1", 1, "資料"), s("2", 2, "昼"), s("3", 3, "資料"), s("4", 4, " "), s("5", 5)])).toEqual(["資料", "昼"]);
   });

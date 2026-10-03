@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MASTER, jstAt, readAll, seed } from "./helpers";
+import { MASTER, dailyTask, jstAt, readAll, seed } from "./helpers";
 
 // 📍打刻: 忙しくて計測を押せない時に時刻だけ残し、後で実績に変える
 
@@ -63,4 +63,39 @@ test("ホーム画面ショートカット(/?stamp=1)で開くと打刻される
   await page.goto("/?stamp=1");
   await expect(page.getByTestId("quick-stamp-sheet")).toBeVisible();
   await expect(page.getByTestId("quick-stamp-panel")).toContainText("10:00〜今");
+});
+
+test("本日の作業を独自画面に差し替えるモード(禅など)でも、右下のボタンから打刻して実績にできる", async ({ page }) => {
+  await seed(page, { settings: { "theme.visualMode": "zen" }, stores: { masterTasks: [MASTER] } });
+  const dock = page.getByTestId("quick-stamp-dock");
+  await dock.getByRole("button", { name: "打刻(今の時刻を残す)" }).click();
+  await page.getByLabel("打刻の一言").fill("資料");
+  await page.getByRole("button", { name: "残す", exact: true }).click();
+  await dock.getByRole("button", { name: "未記録の打刻 1" }).click();
+  await page.getByTestId("quick-stamp-panel").getByRole("button", { name: "実績にする" }).click();
+  await page.getByLabel("終了時刻").fill("10:30");
+  await page.getByRole("button", { name: "記録する" }).click();
+  await expect(page.getByTestId("quick-stamp-panel")).toContainText("✓ 業務 / 資料作成");
+  const records = await readAll<{ seconds: number }>(page, "records");
+  expect(records.map((r) => r.seconds)).toEqual([30 * 60]);
+});
+
+test("打刻の後で計測を始めた作業があれば、打刻の区間はその開始時刻までになる", async ({ page }) => {
+  const date = new Date(jstAt("10:00") + 9 * 3600_000).toISOString().slice(0, 10);
+  await page.clock.install({ time: jstAt("12:00") });
+  await seed(page, {
+    stores: {
+      quickStamps: [{ id: "s1", date, at: jstAt("10:00"), note: "電話" }],
+      dailyTasks: [dailyTask({ id: "t1", date, status: "running", segments: [{ start: jstAt("10:45") }] })],
+    },
+  });
+  await expect(page.getByTestId("quick-stamp-panel")).toContainText("10:00〜10:45");
+  await expect(page.getByTestId("quick-stamp-panel")).toContainText("計測開始まで");
+});
+
+test("メニュー画面から始まるモードでも、ショートカット(/?stamp=1)なら今日を開いて打刻する", async ({ page }) => {
+  await seed(page, { settings: { "theme.visualMode": "va11halla", "powerpro.mainMenu": "true" } });
+  await page.goto("/?stamp=1");
+  await expect(page.getByTestId("quick-stamp-sheet")).toBeVisible();
+  expect(await readAll(page, "quickStamps")).toHaveLength(1);
 });

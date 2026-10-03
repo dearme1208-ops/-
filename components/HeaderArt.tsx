@@ -569,7 +569,7 @@ function ClaudeArt() {
 // 高さも他テーマのh-24/h-28より低くし、ヘッダーの存在感自体を薄くする
 function ZenArt() {
   return (
-    <svg viewBox="0 0 1200 80" preserveAspectRatio="none" className="h-10 w-full sm:h-12" role="img" aria-label="静かな余白のイラスト">
+    <svg viewBox="0 0 1200 80" preserveAspectRatio="none" className="h-16 w-full sm:h-16" role="img" aria-label="静かな余白のイラスト">
       <defs>
         <linearGradient id="zenWash" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor="rgb(var(--panel-rgb))" />
