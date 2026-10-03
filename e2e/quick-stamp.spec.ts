@@ -1,0 +1,66 @@
+import { expect, test } from "@playwright/test";
+import { MASTER, jstAt, readAll, seed } from "./helpers";
+
+// 📍打刻: 忙しくて計測を押せない時に時刻だけ残し、後で実績に変える
+
+test.beforeEach(async ({ page }) => {
+  await page.clock.install({ time: jstAt("10:00") });
+});
+
+test("打刻ボタンで時刻と一言を残し、次の打刻までを実績にできる", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await seed(page, { stores: { masterTasks: [MASTER] } });
+
+  // 1回目: 押して一言を入れる
+  await page.getByRole("button", { name: "打刻(今の時刻を残す)" }).click();
+  await expect(page.getByTestId("quick-stamp-sheet")).toContainText("10:00 を打刻しました");
+  await page.getByLabel("打刻の一言").fill("資料");
+  await page.getByRole("button", { name: "残す", exact: true }).click();
+  await expect(page.getByTestId("quick-stamp-sheet")).toHaveCount(0);
+
+  // 2回目: 40分後に押すだけ(一言なし)。一言の候補に前回の「資料」が出る
+  await page.clock.fastForward("40:00");
+  await page.getByRole("button", { name: "打刻(今の時刻を残す)" }).click();
+  await expect(page.getByTestId("quick-stamp-sheet").getByRole("button", { name: "資料" })).toBeVisible();
+  await page.getByTestId("quick-stamp-sheet").getByRole("button", { name: "閉じる" }).click();
+
+  const panel = page.getByTestId("quick-stamp-panel");
+  await expect(panel).toContainText("未記録 2件");
+  await expect(panel).toContainText("10:00〜10:40");
+  await expect(panel).toContainText("40分");
+
+  // 1件目を実績に。一言「資料」から作業マスタ「資料作成」が候補として選ばれている
+  await panel.getByRole("button", { name: "実績にする" }).first().click();
+  await expect(page.getByPlaceholder("詳細作業名")).toHaveValue("資料作成");
+  await page.getByRole("button", { name: "記録する" }).click();
+  await expect(panel).toContainText("✓ 業務 / 資料作成");
+  await expect(panel).toContainText("未記録 1件");
+
+  const records = await readAll<{ name: string; seconds: number; startedAt: number }>(page, "records");
+  expect(records).toHaveLength(1);
+  expect(records[0].name).toBe("資料作成");
+  expect(records[0].seconds).toBe(40 * 60);
+  expect(records[0].startedAt).toBe(jstAt("10:00"));
+
+  // 2件目は記録しない
+  await panel.getByRole("button", { name: "記録しない" }).click();
+  await expect(panel).toContainText("すべて記録済み");
+});
+
+test("押し間違えた打刻はその場で取り消せる。設定でボタンを隠せる", async ({ page }) => {
+  await seed(page);
+  await page.getByRole("button", { name: "打刻(今の時刻を残す)" }).click();
+  await page.getByRole("button", { name: "取り消す" }).click();
+  await expect(page.getByTestId("quick-stamp-panel")).toHaveCount(0);
+  expect(await readAll(page, "quickStamps")).toHaveLength(0);
+
+  await seed(page, { settings: { "today.quickStampButton": "false" } });
+  await expect(page.getByRole("button", { name: "打刻(今の時刻を残す)" })).toHaveCount(0);
+});
+
+test("ホーム画面ショートカット(/?stamp=1)で開くと打刻される", async ({ page }) => {
+  await seed(page);
+  await page.goto("/?stamp=1");
+  await expect(page.getByTestId("quick-stamp-sheet")).toBeVisible();
+  await expect(page.getByTestId("quick-stamp-panel")).toContainText("10:00〜今");
+});

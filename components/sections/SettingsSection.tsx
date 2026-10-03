@@ -139,6 +139,8 @@ export default function SettingsSection() {
   const tabBarProgressStrip = tabBarProgressStripStr === "true";
   const [tabBarAdaptiveEmphasisStr, setTabBarAdaptiveEmphasisStr] = useSetting("ui.bottomTabBarAdaptiveEmphasis", "false");
   const tabBarAdaptiveEmphasis = tabBarAdaptiveEmphasisStr === "true";
+  const [quickStampButtonStr, setQuickStampButtonStr] = useSetting("today.quickStampButton", "true");
+  const quickStampButton = quickStampButtonStr === "true";
   const [todoBottomViewBarStr, setTodoBottomViewBarStr] = useSetting("todo.bottomViewBar", "false");
   const todoBottomViewBar = todoBottomViewBarStr === "true";
   const [growthStageEnabledStr, setGrowthStageEnabledStr] = useSetting("today.growthStageEnabled", "true");
@@ -1693,6 +1695,12 @@ export default function SettingsSection() {
             onClick={() => setTodoBottomViewBarStr(todoBottomViewBar ? "false" : "true")}
           >
             ToDoタブも下部固定表示にする: {todoBottomViewBar ? "ON" : "OFF"}
+          </button>
+          <button
+            className={quickStampButton ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setQuickStampButtonStr(quickStampButton ? "false" : "true")}
+          >
+            📍打刻ボタンを表示: {quickStampButton ? "ON" : "OFF"}
           </button>
         </div>
         <p className="text-xs text-cream/50">

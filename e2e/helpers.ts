@@ -17,6 +17,7 @@ export const STORES = [
   "memoNotes",
   "geoPlaces",
   "templateItems",
+  "quickStamps",
 ] as const;
 
 export const BASE_SETTINGS: Record<string, string> = {

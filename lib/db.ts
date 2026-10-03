@@ -22,6 +22,7 @@ import type {
   BoardShape,
   BoardStamp,
   WbsNode,
+  QuickStamp,
 } from "./types";
 
 export class KouteiDB extends Dexie {
@@ -46,6 +47,7 @@ export class KouteiDB extends Dexie {
   boardShapes!: Table<BoardShape, string>;
   boardStamps!: Table<BoardStamp, string>;
   wbsNodes!: Table<WbsNode, string>;
+  quickStamps!: Table<QuickStamp, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -262,6 +264,31 @@ export class KouteiDB extends Dexie {
       boardShapes: "id, boardId, order",
       boardStamps: "id, boardId, order",
       wbsNodes: "id, projectId, parentId, order",
+    });
+    // 打刻(QuickStamp)用のテーブルを追加
+    this.version(15).stores({
+      masterTasks: "id, category, name, isFavorite",
+      templateItems: "id, weekday, order",
+      dailyTasks: "id, date, status, order",
+      records: "id, date, category, name, masterTaskId, excludedFromStats",
+      settings: "key",
+      projects: "id, dueDate, createdAt",
+      todoLists: "id, order",
+      todoTasks: "id, listId, parentTaskId, dueDate, completed, myDayDate, order",
+      conditionLogs: "id, date, loggedAt",
+      geoPlaces: "id, createdAt",
+      weatherForecasts: "id, placeId, date",
+      weatherPlaces: "id, createdAt",
+      mandalaCharts: "id, createdAt",
+      memoBoards: "id, order",
+      memoNotes: "id, boardId, order",
+      memoStrokes: "id, boardId, createdAt",
+      memoConnectors: "id, boardId, fromNoteId, toNoteId",
+      clients: "id, order",
+      boardShapes: "id, boardId, order",
+      boardStamps: "id, boardId, order",
+      wbsNodes: "id, projectId, parentId, order",
+      quickStamps: "id, date, at",
     });
   }
 }

@@ -96,6 +96,8 @@ export default function BottomTabBar({
   adaptiveEmphasis,
   progress,
   running,
+  leading,
+  above,
 }: {
   items: BottomTabBarItem[];
   activeKey: string;
@@ -104,6 +106,10 @@ export default function BottomTabBar({
   adaptiveEmphasis?: boolean;
   progress?: BottomTabBarProgressSegment[];
   running?: BottomTabBarRunning | null;
+  /** タブの左に並べる操作ボタン(本日の作業の📍打刻など) */
+  leading?: ReactNode;
+  /** タブバーの上に出す一時的な表示(打刻直後の一言入力など) */
+  above?: ReactNode;
 }) {
   const activeIndex = Math.max(
     0,
@@ -112,7 +118,7 @@ export default function BottomTabBar({
   const showProgress = !!progress && progress.some((p) => p.ratio > 0);
   // 5つ以上並ぶと(ToDoのマイデイ〜返事待ち)、スマホの幅では横1行に収まらず最後のタブが画面の外に
   // はみ出していた。その場合、狭い画面ではアイコンを上・名前を下の2段に積んで全部を収める
-  const stacked = items.length >= 5;
+  const stacked = items.length + (leading ? 1 : 0) >= 5;
   const stackClass = stacked
     ? "flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 text-[11px] leading-tight sm:flex-row sm:gap-1 sm:px-2 sm:py-2 sm:text-sm"
     : "";
@@ -133,6 +139,7 @@ export default function BottomTabBar({
 
   return (
     <div className="sticky bottom-2 z-10 pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      {above}
       {running && (
         <RunningStrip running={running} />
       )}
@@ -146,6 +153,9 @@ export default function BottomTabBar({
         </div>
       )}
 
+      <div className={leading ? "flex items-stretch gap-1.5" : ""}>
+      {leading}
+      <div className={leading ? "min-w-0 flex-1" : ""}>
       {style === "segment" && (
         <div className="panel relative flex items-center gap-0 p-1.5 shadow-lg backdrop-blur">
           <div
@@ -311,6 +321,8 @@ export default function BottomTabBar({
           })}
         </div>
       )}
+      </div>
+      </div>
     </div>
   );
 }

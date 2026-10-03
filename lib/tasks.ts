@@ -265,6 +265,50 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   return true;
 }
 
+// 計測できずに後からまとめて手入力する実績を1件追加する(実績編集の「過去の実績を追加」、打刻からの記録)。
+// 同日・同じ作業の実績が既にあれば、通常の作業完了時と同じルールで合算する(区分・作業名の統一、時間の合算)。
+// 追加・合算した実績のIDを返す
+export async function addManualRecord(
+  date: string,
+  category: string,
+  name: string,
+  startedAt: number,
+  endedAt: number
+): Promise<string> {
+  const master = await findOrCreateMasterTask(category, name, 0);
+  const seconds = Math.round((endedAt - startedAt) / 1000);
+  const segments = [{ start: startedAt, end: endedAt }];
+
+  // 案件・ToDo・手段の付いていない同日の実績にだけ合算する(本日の作業の完了時と同じ規則)
+  const existing = await findMergeTargetRecord(date, master.id, {});
+  let id: string;
+  if (existing) {
+    id = existing.id;
+    await db.records.update(existing.id, {
+      seconds: existing.seconds + seconds,
+      startedAt: Math.min(existing.startedAt, startedAt),
+      endedAt: Math.max(existing.endedAt, endedAt),
+      segments: mergeRecordSegments(existing, segments),
+    });
+  } else {
+    id = uid();
+    await db.records.add({
+      id,
+      date,
+      category: master.category,
+      name: master.name,
+      masterTaskId: master.id,
+      seconds,
+      startedAt,
+      endedAt,
+      excludedFromStats: false,
+      segments,
+    });
+  }
+  await recomputeEstimateFromRecords(master.id);
+  return id;
+}
+
 // 完了済みの作業の開始・終了時刻を編集したとき、合算先の実績(WorkRecord)の開始・終了時刻を
 // 追従させる。実績は同日・同じ帰属先の複数の完了分を合算しているため、編集した作業が
 // 実績の端(最も早い開始/最も遅い終了)を決めていた場合は、他の完了分と新しい時刻から

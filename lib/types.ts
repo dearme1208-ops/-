@@ -277,6 +277,18 @@ export interface ProjectItem {
 // 開始日・終了日・進捗率・先行タスク(依存関係)まで持たせた、より本格的な工程管理のための構造。
 // 表示上のWBS番号(1 / 1.1 / 1.1.2 …)は保存せず、常にその時点の並び順・階層から
 // 計算して出す(並び替え・削除のたびに手で振り直す必要が無いようにするため)
+// 打刻(📍)。忙しくて計測の開始・完了を押せない時に、ボタン1回で「この時刻に何をしていたか」の目印だけ残す。
+// 次の打刻までを1区間とみなし、後で落ち着いた時に実績(WorkRecord)へ変える
+export interface QuickStamp {
+  id: string;
+  date: string; // YYYY-MM-DD
+  at: number; // 打刻した時刻
+  note?: string; // 一言(任意)。例:「資料」「昼」「電話」
+  recordId?: string; // 実績に変えた場合、その実績のID
+  recordLabel?: string; // 実績に変えた時の「区分 / 作業名」(表示用)
+  skipped?: boolean; // 「記録しない」にした(休憩・移動など)
+}
+
 export interface WbsNode {
   id: string;
   projectId: string; // 属する案件(ProjectItem.id)

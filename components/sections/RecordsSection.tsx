@@ -19,7 +19,7 @@ import { REFLECTION_KEY_PREFIX, reflectionEntriesFromSettings } from "@/lib/refl
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { findMergeTargetRecord, mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
+import { addManualRecord, findMergeTargetRecord, mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
 import { formatClock, formatDateJp, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -238,39 +238,6 @@ export default function RecordsSection() {
     setImportStatus(`${fullRecords.length}件を取り込みました。`);
   }
 
-  // 計測できずに後日まとめて手入力する過去の実績を1件追加する。同日・同じ作業の実績が
-  // 既にあれば、通常の作業完了時と同じルールで合算する(区分・作業名の統一、時間の合算)
-  async function addPastRecord(date: string, category: string, name: string, startedAt: number, endedAt: number) {
-    const master = await findOrCreateMasterTask(category, name, 0);
-    const seconds = Math.round((endedAt - startedAt) / 1000);
-    const segments = [{ start: startedAt, end: endedAt }];
-
-    // 案件・ToDo・手段の付いていない同日の実績にだけ合算する(本日の作業の完了時と同じ規則)
-    const existing = await findMergeTargetRecord(date, master.id, {});
-
-    if (existing) {
-      await db.records.update(existing.id, {
-        seconds: existing.seconds + seconds,
-        startedAt: Math.min(existing.startedAt, startedAt),
-        endedAt: Math.max(existing.endedAt, endedAt),
-        segments: mergeRecordSegments(existing, segments),
-      });
-    } else {
-      await db.records.add({
-        id: uid(),
-        date,
-        category,
-        name,
-        masterTaskId: master.id,
-        seconds,
-        startedAt,
-        endedAt,
-        excludedFromStats: false,
-        segments,
-      });
-    }
-    await recomputeEstimateFromRecords(master.id);
-  }
 
   return (
     <div className="space-y-4">
@@ -615,7 +582,7 @@ export default function RecordsSection() {
       {showAddRecord && (
         <AddRecordDialog
           onSave={async (date, category, name, startedAt, endedAt) => {
-            await addPastRecord(date, category, name, startedAt, endedAt);
+            await addManualRecord(date, category, name, startedAt, endedAt);
             setShowAddRecord(false);
           }}
           onClose={() => setShowAddRecord(false)}

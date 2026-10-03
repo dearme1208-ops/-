@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
@@ -122,6 +122,9 @@ import EndOfDayReflectionModal from "@/components/EndOfDayReflectionModal";
 import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
+import { QuickStampButton, QuickStampPanel, QuickStampSheet } from "@/components/sections/today/QuickStamp";
+import { addQuickStamp } from "@/lib/quickStamp";
+import type { QuickStamp } from "@/lib/types";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
 
@@ -182,6 +185,13 @@ export default function TodaySection({
   // からタイミングよく最新値を読みたいため(stateだとクロージャが古い値を掴む恐れがある)
   const handsFreeActiveRef = useRef(false);
   const [pendingQuickSlot, setPendingQuickSlot] = useState<number | null>(null);
+  // 打刻(📍)。押した直後だけ一言入力を出す
+  const [quickStampButtonStr] = useSetting("today.quickStampButton", "true");
+  const [justStamped, setJustStamped] = useState<QuickStamp | null>(null);
+  const closeStampSheet = useCallback(() => setJustStamped(null), []);
+  async function stampNow() {
+    setJustStamped(await addQuickStamp());
+  }
   const [quickActionMessage, setQuickActionMessage] = useState<string | null>(null);
   const [quickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
   const quickStartEnabled = quickStartEnabledStr === "true";
@@ -998,6 +1008,14 @@ export default function TodaySection({
 
   // ホーム画面ショートカット(manifestのshortcuts、/?quickstart=1〜4)からの起動を検知する。
   // URLのクエリはその場で消し、実際の処理はtasks/allMasterTasksの読み込みを待ってから行う
+  // ホーム画面ショートカット(/?stamp=1)からの打刻
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("stamp") !== "1") return;
+    window.history.replaceState({}, "", window.location.pathname);
+    addQuickStamp().then(setJustStamped);
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const slotStr = params.get("quickstart");
@@ -2539,6 +2557,7 @@ export default function TodaySection({
       )}
 
 
+      <QuickStampPanel date={date} now={now} />
 
       {/* 作業の開始に使うもの(テンプレート・お気に入り・提案など)と、状況の表示(作業状況・
           チャレンジ・自動配分・通知など)は、作業リストの下にまとめる。以前は作業リストの上に
@@ -2849,6 +2868,8 @@ export default function TodaySection({
         onSelect={(k) => setTaskViewTab(k as typeof taskViewTab)}
         style={tabBarStyle as TabBarStyle}
         adaptiveEmphasis={tabBarAdaptiveEmphasis}
+        leading={quickStampButtonStr === "true" ? <QuickStampButton onStamp={stampNow} /> : undefined}
+        above={justStamped ? <QuickStampSheet key={justStamped.id} stamp={justStamped} onClose={closeStampSheet} /> : undefined}
         running={
           runningStrip && !runningCardOnScreen
             ? {
