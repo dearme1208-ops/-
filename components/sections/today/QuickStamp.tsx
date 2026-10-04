@@ -116,6 +116,7 @@ export function QuickStampPanel({ date, now }: { date: string; now: number }) {
       .filter((t) => !t.isProvisional && !fromStamps.has(t.id))
       .flatMap((t) => t.segments.map((seg) => ({ start: seg.start, end: seg.end })));
   }, [tasks, stamps]);
+  const taskById = useMemo(() => new Map((tasks ?? []).map((t) => [t.id, t])), [tasks]);
   const [converting, setConverting] = useState<StampSpan | null>(null);
   const spans = useMemo(() => stampSpans(stamps ?? [], measured, now), [stamps, measured, now]);
   if (spans.length === 0) return null;
@@ -133,8 +134,14 @@ export function QuickStampPanel({ date, now }: { date: string; now: number }) {
       <ul className="space-y-1.5">
         {spans.map((span) => {
           const { stamp, nextAt } = span;
-          const end = nextAt ?? (isToday ? now : undefined);
           const done = !!stamp.recordId;
+          // 実績にした打刻は、作った作業の時刻と時間をそのまま見せる(打刻の区間で計算し直すと、
+          // 「14:14〜今 2時間1分」のように、実績の「14:14〜15:57 1時間43分」と食い違って見えていた)
+          const made = done ? taskById.get(stamp.recordId!) : undefined;
+          const from = made ? made.startedAt ?? made.segments[0]?.start ?? stamp.at : done ? stamp.at : span.fromAt;
+          const to = made ? made.endedAt ?? made.segments[made.segments.length - 1]?.end : nextAt ?? (!done && isToday ? now : undefined);
+          const toLabel = made || nextAt || done ? (to !== undefined ? formatClock(to) : "") : isToday ? "今" : "";
+          const durationMs = made ? made.accumulatedMs : to !== undefined ? to - from : undefined;
           return (
             <li
               key={stamp.id}
@@ -143,11 +150,11 @@ export function QuickStampPanel({ date, now }: { date: string; now: number }) {
               }`}
             >
               <span className="shrink-0 font-bold tabular-nums">
-                {formatClock(done ? stamp.at : span.fromAt)}〜{nextAt ? formatClock(nextAt) : isToday ? "今" : ""}
+                {formatClock(from)}〜{toLabel}
               </span>
               {span.startedFromMeasure && !done && <span className="shrink-0 text-[10px] text-cream/45">(前の作業の終わりから)</span>}
               {span.endedByMeasure && !done && <span className="shrink-0 text-[10px] text-cream/45">(計測開始まで)</span>}
-              {end !== undefined && <span className="shrink-0 text-xs tabular-nums text-cream/50">{minutesLabel(end - (done ? stamp.at : span.fromAt))}</span>}
+              {durationMs !== undefined && <span className="shrink-0 text-xs tabular-nums text-cream/50">{minutesLabel(durationMs)}</span>}
               <span className="min-w-0 flex-1 truncate">
                 {done ? `✓ ${stamp.recordLabel ?? "記録済み"}` : stamp.skipped ? "記録しない" : stamp.note || <span className="text-cream/40">(一言なし)</span>}
               </span>

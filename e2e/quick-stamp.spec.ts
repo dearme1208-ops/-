@@ -157,3 +157,20 @@ test("直前の作業が終わってから打刻するまでの時間も、打�
   const made = (await readAll<{ id: string; segments: { start: number }[] }>(page, "dailyTasks")).find((d) => d.id !== "nte");
   expect(made!.segments[0].start).toBe(jstAt("13:54"));
 });
+
+test("実績にした打刻は、作った作業の時刻と時間を出す(「〜今」や打刻からの経過時間にしない)", async ({ page }) => {
+  await page.clock.install({ time: jstAt("16:16") });
+  await seed(page, {
+    stores: {
+      masterTasks: [MASTER],
+      dailyTasks: [
+        dailyTask({ id: "made", date: jstDate(), category: "睡眠", name: "静養", status: "done", segments: [{ start: jstAt("14:14"), end: jstAt("15:57") }], accumulatedMs: 103 * 60_000, startedAt: jstAt("14:14"), endedAt: jstAt("15:57") }),
+      ],
+      quickStamps: [{ id: "s", date: jstDate(), at: jstAt("14:14"), recordId: "made", recordLabel: "睡眠 / 静養" }],
+    },
+  });
+  const panel = page.getByTestId("quick-stamp-panel");
+  await expect(panel).toContainText("14:14〜15:57");
+  await expect(panel).toContainText("1時間43分");
+  await expect(panel).not.toContainText("〜今");
+});
