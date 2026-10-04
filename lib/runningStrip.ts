@@ -76,7 +76,8 @@ export function useRunningTaskStrip(): RunningStripInfo | null {
   }
 
   return {
-    name: workCtx.label(primary),
+    // 手段(Excel・マクロなど)を入れてあれば、何をどのやり方でしているかまで帯で見せる
+    name: primary.method?.trim() ? `${workCtx.label(primary)}（${primary.method.trim()}）` : workCtx.label(primary),
     category: primary.category,
     elapsedLabel: formatHms(Math.floor(segmentsAccumulatedMs(primary, now) / 1000)),
     extraCount: running.length - 1,

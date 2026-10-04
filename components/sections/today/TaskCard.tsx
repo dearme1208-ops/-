@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { db } from "@/lib/db";
 import { cardOverrunClass, cardRunningClass, emphasisTextClass, getRiskTier, hazardBarClass, overrunLabel, riskBadgeClasses, riskBadgeLabel, runningLabel } from "@/lib/theme";
 import { baseAccumulatedMs, segmentsAccumulatedMs } from "@/lib/tasks";
@@ -64,6 +65,73 @@ export interface TaskCardContext {
   setSecondaryProjectsTask: (task: DailyTask | null) => void;
   onOpenTodoDetail: (taskId: string) => void;
   onOpenProjectEdit: (projectId: string) => void;
+  /** 過去に使った手段(Excel・マクロ・Claudeなど)の候補。手段の入力欄に出す */
+  methodSuggestions: string[];
+}
+
+// 手段(この作業をどんなやり方でしているか: Excel・マクロ・Claudeなど)の行。計測中・一時停止中・予定の
+// カードではその場で入れたり変えたりできる。実績を手段ごとに比べられるよう、計測中に明示しておく。
+// 完了した作業は、実績の合算先が手段で変わるため、ここでは表示だけにして変更は「編集」から行う
+function MethodRow({ task, suggestions }: { task: DailyTask; suggestions: string[] }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(task.method ?? "");
+  const method = task.method?.trim();
+  const editable = task.status !== "done";
+  if (!editable && !method) return null;
+  if (editing) {
+    const listId = `method-list-${task.id}`;
+    const save = async () => {
+      await db.dailyTasks.update(task.id, { method: draft.trim() || undefined });
+      setEditing(false);
+    };
+    return (
+      <form
+        className="flex items-center gap-1.5 text-xs"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        <span className="shrink-0 text-cream/60">🛠 手段</span>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          list={listId}
+          placeholder="例: Excel、マクロ、Claude"
+          aria-label="手段"
+          className="min-w-0 flex-1 rounded border border-cream/25 bg-ink px-2 py-1 text-xs text-cream"
+        />
+        <datalist id={listId}>
+          {suggestions.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+        <button type="submit" className="btn-pill shrink-0 px-2.5 py-1 text-xs">
+          保存
+        </button>
+        <button type="button" className="shrink-0 px-1 text-cream/50" onClick={() => setEditing(false)} aria-label="やめる">
+          ✕
+        </button>
+      </form>
+    );
+  }
+  if (!editable) {
+    return <p className="text-xs text-cream/70">🛠 手段: {method}</p>;
+  }
+  return (
+    <button
+      type="button"
+      className={`-m-1 self-start p-1 text-left text-xs ${method ? "text-cream/80" : task.status === "running" ? "text-cream/60 underline decoration-dotted" : "text-cream/45 underline decoration-dotted"}`}
+      onClick={() => {
+        setDraft(task.method ?? "");
+        setEditing(true);
+      }}
+      data-testid="task-method"
+    >
+      🛠 {method ? `手段: ${method}` : "手段を入れる"}
+    </button>
+  );
 }
 
 // 本日の作業タブの作業カード1枚(状態・経過・予測・紐づく案件/ToDo・操作ボタン)
@@ -397,6 +465,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
               </button>
             </div>
           )}
+          <MethodRow task={task} suggestions={ctx.methodSuggestions} />
           <div className="text-xs text-cream/50">
             {predictedSecondsForTask > 0 ? (
               <span className="font-bold text-cream/70">予測 {formatMsClock(predMs)}</span>

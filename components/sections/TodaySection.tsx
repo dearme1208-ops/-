@@ -2341,6 +2341,7 @@ export default function TodaySection({
   // 個々のタスクカードの描画をmapのコールバックから関数として切り出したもの
   // 作業カード(TaskCard)に渡す、タブ全体で共有している状態と操作
   const taskCardCtx: TaskCardContext = {
+    methodSuggestions,
     now,
     themedMode,
     va11hallaMode,

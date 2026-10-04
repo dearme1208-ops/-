@@ -98,3 +98,20 @@ test("未着手の作業はドラッグで並べ替えられる", async ({ page 
     .poll(async () => (await readAll<Daily>(page, "dailyTasks")).sort((x, y) => x.order - y.order).map((t) => t.name))
     .toEqual(["作業C", "作業A", "作業B"]);
 });
+
+test("計測中のカードで手段を入れられ、完了するとその手段で実績に残る", async ({ page }) => {
+  await page.clock.install({ time: jstAt("10:00") });
+  await seed(page, {
+    stores: {
+      masterTasks: [MASTER],
+      dailyTasks: [dailyTask({ id: "r", date: jstDate(), status: "running", segments: [{ start: jstAt("09:30") }], startedAt: jstAt("09:30") })],
+    },
+  });
+  await page.getByTestId("task-method").first().click();
+  await page.getByLabel("手段").fill("Excel");
+  await page.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByTestId("task-method").first()).toHaveText("🛠 手段: Excel");
+  expect((await readOne<{ method: string }>(page, "dailyTasks", "r"))?.method).toBe("Excel");
+  await page.locator("button", { hasText: /^終了$/ }).first().click();
+  await expect.poll(async () => (await readAll<{ method?: string }>(page, "records")).map((r) => r.method)).toEqual(["Excel"]);
+});
