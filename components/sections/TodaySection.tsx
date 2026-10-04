@@ -1497,7 +1497,12 @@ export default function TodaySection({
       if (segmentsChanged) {
         taskUpdates.segments = segments;
         taskUpdates.startedAt = segments[0].start;
-        taskUpdates.accumulatedMs = segments.reduce((sum, s) => sum + (s.end !== undefined ? s.end - s.start : 0), 0);
+        // 合計は「今の合計 + 開始を動かした分」で求める。区間を足し直すと、完了後に「続きから」再開した作業で
+        // 前回の完了時に織り込んだ「時間を加算」の分が消えていた。最初の区間が計測中なら、その経過は
+        // 都度数えるので合計は変えない
+        if (task.segments[0].end !== undefined) {
+          taskUpdates.accumulatedMs = task.accumulatedMs + (task.segments[0].start - segments[0].start);
+        }
       }
       await db.dailyTasks.update(task.id, taskUpdates);
       return;
@@ -1527,9 +1532,11 @@ export default function TodaySection({
       alert("開始・終了時刻の範囲が不正です(途中の一時停止区間と矛盾しています)");
       return;
     }
-    const newAccumulatedMs = segmentsChanged
-      ? segments.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0)
-      : task.accumulatedMs;
+    // 合計は「今の合計 + 区間の長さが変わった分」で求める。区間を足し直すと、完了時に合計へ織り込んだ
+    // 「時間を加算」の分が消え、終了を延ばしたのに実績が減る(例: 30分+加算10分で40分の作業の終了を
+    // 5分延ばすと35分になっていた)
+    const segSum = (list: typeof segments) => list.reduce((sum, s) => sum + ((s.end ?? Date.now()) - s.start), 0);
+    const newAccumulatedMs = segmentsChanged ? task.accumulatedMs + (segSum(segments) - segSum(task.segments)) : task.accumulatedMs;
     const newSeconds = segmentsChanged ? Math.round(newAccumulatedMs / 1000) : (actualSeconds ?? oldSeconds);
     const delta = newSeconds - oldSeconds;
 
@@ -1771,9 +1778,8 @@ export default function TodaySection({
     const startMs = timeToMsOfDay(date, range.start);
     const endMs = timeToMsOfDay(date, range.end);
     const segments = [...task.segments, { start: startMs, end: endMs }].sort((a, b) => a.start - b.start);
-    const accumulatedMs = segments
-      .filter((s): s is { start: number; end: number } => s.end !== undefined)
-      .reduce((sum, s) => sum + (s.end - s.start), 0);
+    // 合計は今の合計に休憩帯の長さを足す(区間を足し直すと、合計に織り込み済みの「時間を加算」の分が消える)
+    const accumulatedMs = task.accumulatedMs + Math.max(0, endMs - startMs);
     await db.dailyTasks.update(task.id, { segments, accumulatedMs });
     setBreakAssignRange(null);
   }

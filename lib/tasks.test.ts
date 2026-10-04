@@ -232,3 +232,16 @@ describe("作業マスタの照合", () => {
     expect(groups.map((g) => g.tasks.map((t) => t.id))).toEqual([["a", "b"]]);
   });
 });
+
+describe("実績側の時刻編集を本日の作業へ反映(syncDailyTaskBoundaryFromRecord)", () => {
+  it("終了時刻を延ばしても、完了時に織り込んだ「時間を加算」の分は残る", async () => {
+    const { syncDailyTaskBoundaryFromRecord } = await import("./tasks");
+    // 30分計測 + 10分加算 → 合計40分で完了
+    const { daily } = await finish(task({ id: "s1", segments: [{ start: T0, end: T0 + 30 * MIN }], status: "paused", accumulatedMs: 30 * MIN, manualAdjustmentMs: 10 * MIN }));
+    expect(daily.accumulatedMs).toBe(40 * MIN);
+    await syncDailyTaskBoundaryFromRecord({ date: DATE, masterTaskId: "m1" }, "end", T0 + 35 * MIN);
+    const d = (await db.dailyTasks.get("s1"))!;
+    expect(d.accumulatedMs).toBe(45 * MIN);
+    expect(d.recordedMs).toBe(45 * MIN);
+  });
+});

@@ -418,7 +418,10 @@ export async function syncDailyTaskBoundaryFromRecord(
       : [edge === "start" ? { start: newTime, end: target.endedAt ?? newTime } : { start: target.startedAt ?? newTime, end: newTime }];
   if (segments.some((s) => s.end !== undefined && s.end <= s.start)) return;
 
-  const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? newTime) - s.start), 0);
+  // 合計は今の合計に区間の長さが変わった分を足す(区間を足し直すと、完了時に織り込んだ「時間を加算」の分が消える)
+  const segSum = (list: TimeSegment[]) => list.reduce((sum, s) => sum + ((s.end ?? newTime) - s.start), 0);
+  const accumulatedMs =
+    target.segments.length > 0 ? target.accumulatedMs + (segSum(segments) - segSum(target.segments)) : segSum(segments);
   await db.dailyTasks.update(target.id, {
     ...(edge === "start" ? { startedAt: newTime } : { endedAt: newTime }),
     segments,
