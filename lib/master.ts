@@ -176,12 +176,21 @@ export async function bulkFindOrCreateMasterTasks(
   const existing = await db.masterTasks.toArray();
   const map = new Map<string, MasterTask>();
   for (const t of existing) map.set(`${t.category}::${t.name}`, t);
+  // 全角/半角・空白・大文字小文字の違いだけのものは同じマスタとみなす(findOrCreateMasterTaskと同じ)
+  const normKey = (category: string, name: string) => `${normalizeMasterKey(category)}::${normalizeMasterKey(name)}`;
+  const norm = new Map<string, MasterTask>();
+  for (const t of existing) if (!norm.has(normKey(t.category, t.name))) norm.set(normKey(t.category, t.name), t);
 
   const now = Date.now();
   const toCreate: MasterTask[] = [];
   for (const { category, name } of pairs) {
     const key = `${category}::${name}`;
     if (map.has(key)) continue;
+    const similar = norm.get(normKey(category, name));
+    if (similar) {
+      map.set(key, similar);
+      continue;
+    }
     const task: MasterTask = {
       id: uid(),
       category,
@@ -193,6 +202,7 @@ export async function bulkFindOrCreateMasterTasks(
       updatedAt: now,
     };
     map.set(key, task);
+    norm.set(normKey(category, name), task);
     toCreate.push(task);
   }
   if (toCreate.length > 0) {
@@ -250,6 +260,12 @@ export async function upsertMasterTasksFromCsv(
       if (!existing) {
         existing = await db.masterTasks
           .filter((t) => t.category === row.category && t.name === row.name)
+          .first();
+      }
+      if (!existing) {
+        const key = `${normalizeMasterKey(row.category)}::${normalizeMasterKey(row.name)}`;
+        existing = await db.masterTasks
+          .filter((t) => `${normalizeMasterKey(t.category)}::${normalizeMasterKey(t.name)}` === key)
           .first();
       }
 

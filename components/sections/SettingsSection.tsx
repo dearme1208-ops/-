@@ -499,7 +499,15 @@ export default function SettingsSection() {
     ) {
       return;
     }
-    const { restoredRows, skippedTables } = await importBackup(data);
+    let result: Awaited<ReturnType<typeof importBackup>>;
+    try {
+      result = await importBackup(data);
+    } catch (e) {
+      // 復元は1つの処理としてまとめて行うので、途中で失敗しても今のデータはそのまま残る
+      setBackupStatus(`復元できませんでした（今のデータは変わっていません）: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    const { restoredRows, skippedTables } = result;
     const skippedNote =
       skippedTables.length > 0
         ? `（このアプリが対応していない${skippedTables.length}種類のデータは復元できませんでした。アプリを最新にしてからやり直してください）`

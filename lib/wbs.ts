@@ -1,4 +1,4 @@
-import { csvEscape, parseCsvLine } from "./csv";
+import { csvEscape, csvLines, csvDate, parseCsvLine } from "./csv";
 import { db, uid } from "./db";
 import type { WbsNode } from "./types";
 
@@ -213,7 +213,7 @@ function parentCodeOf(code: string): string | undefined {
 }
 
 export function parseWbsCsv(text: string): ParsedWbsResult {
-  const lines = text.split(/\r\n|\n/).filter((l) => l.trim() !== "");
+  const lines = csvLines(text);
   const errors: string[] = [];
   if (lines.length === 0) return { rows: [], errors: ["空のファイルです"] };
 
@@ -257,8 +257,8 @@ export function parseWbsCsv(text: string): ParsedWbsResult {
       code,
       parentCode: parentCodeOf(code),
       title,
-      startDate: startCol !== -1 ? cols[startCol]?.trim() || undefined : undefined,
-      endDate: endCol !== -1 ? cols[endCol]?.trim() || undefined : undefined,
+      startDate: startCol !== -1 ? csvDate(cols[startCol]) : undefined,
+      endDate: endCol !== -1 ? csvDate(cols[endCol]) : undefined,
       progress: Number.isFinite(progressRaw) ? Math.max(0, Math.min(100, progressRaw)) : 0,
       predecessorCodes,
       assignee: assigneeCol !== -1 ? cols[assigneeCol]?.trim() || undefined : undefined,

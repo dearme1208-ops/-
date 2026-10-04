@@ -12,7 +12,7 @@ import {
   recomputeEstimatesForMasterTasks,
 } from "@/lib/master";
 import { setManualOverride, clearManualOverride } from "@/lib/outliers";
-import { recordsToCsv, parseRecordsCsv } from "@/lib/csv";
+import { recordsToCsv, parseRecordsCsv, readTextFile } from "@/lib/csv";
 import { JOURNAL_KEY_PREFIX, journalEntriesFromSettings, journalEntriesToCsv } from "@/lib/journal";
 import { collectMethodSuggestions } from "@/lib/method";
 import { REFLECTION_KEY_PREFIX, reflectionEntriesFromSettings } from "@/lib/reflection";
@@ -218,7 +218,7 @@ export default function RecordsSection() {
 
   async function importCsv(file: File) {
     setImportStatus("読み込み中...");
-    const text = await file.text();
+    const text = await readTextFile(file);
     const { records: parsed, errors } = parseRecordsCsv(text);
     setImportErrors(errors);
     if (parsed.length === 0) {

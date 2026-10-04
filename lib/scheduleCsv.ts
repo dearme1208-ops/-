@@ -1,4 +1,4 @@
-import { csvEscape, parseCsvLine } from "./csv";
+import { csvEscape, csvLines, normalizeCsvDate, parseCsvLine } from "./csv";
 
 const HEADERS = ["date", "category", "name", "startTime", "endTime", "notes"] as const;
 
@@ -28,7 +28,7 @@ export interface ParsedScheduleCsvResult {
 const TIME_RE = /^\d{1,2}:\d{2}$/;
 
 export function parseScheduleCsv(text: string): ParsedScheduleCsvResult {
-  const lines = text.split(/\r\n|\n/).filter((l) => l.trim() !== "");
+  const lines = csvLines(text);
   const errors: string[] = [];
   if (lines.length === 0) return { rows: [], errors: ["空のファイルです"] };
 
@@ -48,14 +48,17 @@ export function parseScheduleCsv(text: string): ParsedScheduleCsvResult {
   const rows: ScheduleRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]);
-    const date = col(cols, "date");
+    const dateRaw = col(cols, "date");
+    const date = dateRaw ? normalizeCsvDate(dateRaw) ?? dateRaw : dateRaw;
     const name = col(cols, "name");
-    const startTime = col(cols, "startTime");
+    // Excelで開くと「09:00」が「9:00」になる。時刻は文字列のまま並べ比べるので2桁にそろえる
+    const pad = (t: string | undefined) => (t && TIME_RE.test(t) ? t.padStart(5, "0") : t);
+    const startTime = pad(col(cols, "startTime"));
     if (!date || !name || !startTime || !TIME_RE.test(startTime)) {
       errors.push(`${i + 1}行目: date・name・startTime(HH:MM)が不正なためスキップしました`);
       continue;
     }
-    const endTime = col(cols, "endTime");
+    const endTime = pad(col(cols, "endTime"));
     rows.push({
       date,
       category: col(cols, "category") || "予定",

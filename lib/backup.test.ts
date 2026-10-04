@@ -37,3 +37,19 @@ describe("バックアップの書き出し→復元", () => {
     expect(p.stages![0].tagChangedAt).toBeUndefined();
   });
 });
+
+describe("壊れたバックアップの復元", () => {
+  it("中身が配列でないテーブルは、今のデータを消さずに飛ばす", async () => {
+    await db.records.put({ id: "keep", date: "2026-09-29", category: "業務", name: "x", masterTaskId: "m", seconds: 1, startedAt: 0, endedAt: 1, excludedFromStats: false });
+    const { skippedTables } = await importBackup({ app: "koutei-hyo", version: 2, exportedAt: "", tables: { records: {} as unknown as unknown[] } });
+    expect(skippedTables).toEqual(["records"]);
+    expect(await db.records.get("keep")).toBeTruthy();
+  });
+
+  it("途中で失敗したら、どのテーブルも書き換えない", async () => {
+    await db.records.put({ id: "keep", date: "2026-09-29", category: "業務", name: "x", masterTaskId: "m", seconds: 1, startedAt: 0, endedAt: 1, excludedFromStats: false });
+    const dup = { id: "m1", category: "a", name: "b", estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 };
+    await expect(importBackup({ app: "koutei-hyo", version: 2, exportedAt: "", tables: { records: [], masterTasks: [dup, dup] } })).rejects.toBeTruthy();
+    expect(await db.records.get("keep")).toBeTruthy();
+  });
+});

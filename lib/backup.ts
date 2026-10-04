@@ -39,13 +39,16 @@ export async function importBackup(
 ): Promise<{ restoredTables: number; restoredRows: number; skippedTables: string[] }> {
   const known = new Set(db.tables.map((t) => t.name));
   const fileTableNames = Object.keys(data.tables ?? {});
-  const names = fileTableNames.filter((name) => known.has(name));
-  const skippedTables = fileTableNames.filter((name) => !known.has(name));
+  // 中身が配列でないテーブルは壊れているとみなして触れない(以前は空として扱い、
+  // そのテーブルの今のデータを消してしまっていた)
+  const valid = (name: string) => known.has(name) && Array.isArray(data.tables[name]);
+  const names = fileTableNames.filter(valid);
+  const skippedTables = fileTableNames.filter((name) => !valid(name));
   let restoredTables = 0;
   let restoredRows = 0;
   await db.transaction("rw", db.tables, async () => {
     for (const name of names) {
-      const rows = data.tables[name];
+      const rows = data.tables[name] as unknown[];
       const table = db.table(name);
       await table.clear();
       if (rows && rows.length > 0) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { readTextFile } from "@/lib/csv";
 import { useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -117,7 +118,7 @@ export default function TemplateSection() {
   }
 
   async function importCsv(file: File) {
-    const text = await file.text();
+    const text = await readTextFile(file);
     const { rows, errors } = parseTemplateCsv(text);
     setImportErrors(errors);
     if (rows.length === 0) {

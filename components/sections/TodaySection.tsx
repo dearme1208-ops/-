@@ -1,5 +1,6 @@
 "use client";
 
+import { readTextFile } from "@/lib/csv";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
@@ -2167,7 +2168,7 @@ export default function TodaySection({
   // カレンダーがそのまま書き出せる形式で、解析はブラウザ内で完結する。
   // どちらも同じ ScheduleRow に落としてから取り込むので、以降の扱いは共通
   async function importScheduleFile(file: File) {
-    const text = await file.text();
+    const text = await readTextFile(file);
     const isIcs = /\.ics$/i.test(file.name) || /BEGIN:VCALENDAR/i.test(text.slice(0, 200));
 
     let rows;

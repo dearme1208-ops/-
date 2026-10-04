@@ -1,5 +1,5 @@
 import type { ProjectItem, ProjectStage } from "./types";
-import { csvEscape, parseCsvLine } from "./csv";
+import { csvEscape, csvLines, normalizeCsvDate, parseCsvLine } from "./csv";
 import { todayStr } from "./time";
 
 const HEADERS = ["id", "title", "group", "category", "workName", "dueDate", "createdDate", "completed", "stages"] as const;
@@ -76,7 +76,7 @@ function parseStagesCell(cell: string): ParsedProjectStage[] {
     .map((entry) => {
       const [titleRaw, dueDateRaw, targetCountRaw] = entry.split(":");
       const title = (titleRaw ?? "").trim();
-      const dueDate = (dueDateRaw ?? "").trim() || undefined;
+      const dueDate = (dueDateRaw ?? "").trim() ? normalizeCsvDate(dueDateRaw.trim()) ?? dueDateRaw.trim() : undefined;
       const targetCountStr = (targetCountRaw ?? "").trim();
       const targetCountNum = targetCountStr ? Number(targetCountStr) : NaN;
       return { title, dueDate, targetCount: Number.isFinite(targetCountNum) ? targetCountNum : undefined };
@@ -90,7 +90,7 @@ export interface ParsedProjectsCsvResult {
 }
 
 export function parseProjectsCsv(text: string): ParsedProjectsCsvResult {
-  const lines = text.split(/\r\n|\n/).filter((l) => l.trim() !== "");
+  const lines = csvLines(text);
   const errors: string[] = [];
   if (lines.length === 0) return { rows: [], errors: ["空のファイルです"] };
 
@@ -113,7 +113,8 @@ export function parseProjectsCsv(text: string): ParsedProjectsCsvResult {
     const title = cols[idx("title")]?.trim();
     const category = cols[idx("category")]?.trim();
     const workName = cols[idx("workName")]?.trim();
-    const dueDate = cols[idx("dueDate")]?.trim();
+    const dueDateRaw = cols[idx("dueDate")]?.trim();
+    const dueDate = dueDateRaw ? normalizeCsvDate(dueDateRaw) ?? dueDateRaw : dueDateRaw;
     if (!title || !category || !workName || !dueDate) {
       errors.push(`${i + 1}行目: title・category・workName・dueDateが空のためスキップしました`);
       continue;
@@ -126,7 +127,7 @@ export function parseProjectsCsv(text: string): ParsedProjectsCsvResult {
       workName,
       dueDate,
       createdDate: createdCol !== -1 ? cols[createdCol]?.trim() || undefined : undefined,
-      completed: completedCol !== -1 ? cols[completedCol]?.trim() === "true" : false,
+      completed: completedCol !== -1 ? /^true$/i.test(cols[completedCol]?.trim() ?? "") : false,
       stages: stagesCol !== -1 && cols[stagesCol]?.trim() ? parseStagesCell(cols[stagesCol]) : undefined,
     });
   }

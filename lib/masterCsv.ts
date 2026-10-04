@@ -1,5 +1,5 @@
 import type { MasterTask } from "./types";
-import { csvEscape, parseCsvLine } from "./csv";
+import { csvEscape, csvLines, parseCsvLine } from "./csv";
 import { formatHms, parseHmsToSeconds } from "./time";
 
 const HEADERS = ["id", "category", "name", "estimatedSeconds", "isFavorite"] as const;
@@ -43,7 +43,7 @@ export interface ParsedMasterCsvResult {
 }
 
 export function parseMasterCsv(text: string): ParsedMasterCsvResult {
-  const lines = text.split(/\r\n|\n/).filter((l) => l.trim() !== "");
+  const lines = csvLines(text);
   const errors: string[] = [];
   if (lines.length === 0) return { rows: [], errors: ["空のファイルです"] };
 
@@ -70,7 +70,7 @@ export function parseMasterCsv(text: string): ParsedMasterCsvResult {
     const estimatedSeconds = estimatedRaw.includes(":")
       ? parseHmsToSeconds(estimatedRaw)
       : Number(estimatedRaw);
-    if (Number.isNaN(estimatedSeconds)) {
+    if (!Number.isFinite(estimatedSeconds) || estimatedSeconds < 0) {
       errors.push(`${i + 1}行目: 想定時間の形式が不正です（hh:mm:ss または秒数）`);
       continue;
     }
@@ -79,7 +79,7 @@ export function parseMasterCsv(text: string): ParsedMasterCsvResult {
       category,
       name,
       estimatedSeconds,
-      isFavorite: favCol !== -1 ? cols[favCol]?.trim() === "true" : false,
+      isFavorite: favCol !== -1 ? /^true$/i.test(cols[favCol]?.trim() ?? "") : false,
     });
   }
   return { rows, errors };

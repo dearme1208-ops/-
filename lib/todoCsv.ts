@@ -1,5 +1,5 @@
 import type { RecurrenceOrdinal, RecurrenceRule, RecurrenceType, TodoTask, TodoList } from "./types";
-import { csvEscape, parseCsvLine } from "./csv";
+import { csvEscape, csvLines, csvDate, parseCsvLine } from "./csv";
 
 const HEADERS = [
   "id",
@@ -119,7 +119,7 @@ export interface ParsedTodoCsvResult {
 }
 
 export function parseTodoCsv(text: string): ParsedTodoCsvResult {
-  const lines = text.split(/\r\n|\n/).filter((l) => l.trim() !== "");
+  const lines = csvLines(text);
   const errors: string[] = [];
   if (lines.length === 0) return { rows: [], errors: ["空のファイルです"] };
 
@@ -171,10 +171,10 @@ export function parseTodoCsv(text: string): ParsedTodoCsvResult {
       tag: col(cols, "tag") || undefined,
       category: col(cols, "category") || undefined,
       customer: col(cols, "customer") || undefined,
-      startDate: col(cols, "startDate") || undefined,
-      dueDate: col(cols, "dueDate") || undefined,
-      important: col(cols, "important") === "true",
-      completed: col(cols, "completed") === "true",
+      startDate: csvDate(col(cols, "startDate")),
+      dueDate: csvDate(col(cols, "dueDate")),
+      important: /^true$/i.test(col(cols, "important") ?? ""),
+      completed: /^true$/i.test(col(cols, "completed") ?? ""),
       notes: col(cols, "notes") || undefined,
       recurrence,
     });

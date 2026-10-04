@@ -173,7 +173,10 @@ export function generateReportText(
 }
 
 export function downloadTextFile(filename: string, content: string): void {
-  downloadBlob(filename, new Blob([content], { type: "text/plain;charset=utf-8" }));
+  // CSVは先頭にBOMを付ける。付けないとExcelで開いた時に日本語がすべて文字化けする
+  // (取り込み側は readTextFile/csvLines でBOMを取り除くので、書き出し→取り込みはそのまま通る)
+  const csv = /\.csv$/i.test(filename);
+  downloadBlob(filename, new Blob([csv ? "\uFEFF" + content : content], { type: csv ? "text/csv;charset=utf-8" : "text/plain;charset=utf-8" }));
 }
 
 /** 任意の中身(Excelファイルなど)をファイルとして保存させる */

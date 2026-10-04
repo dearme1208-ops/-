@@ -1,5 +1,6 @@
 "use client";
 
+import { readTextFile } from "@/lib/csv";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
@@ -241,7 +242,7 @@ export default function WbsDialog({ project, onClose }: { project: ProjectItem; 
     downloadTextFile("wbs_template.csv", wbsCsvTemplate());
   }
   async function pickImportFile(file: File) {
-    const text = await file.text();
+    const text = await readTextFile(file);
     setImportResult("");
     setPendingImport(parseWbsCsv(text));
   }

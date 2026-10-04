@@ -1,5 +1,6 @@
 "use client";
 
+import { readTextFile } from "@/lib/csv";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -1202,7 +1203,7 @@ export default function TodoSection({
   }
 
   async function importCsv(file: File) {
-    const text = await file.text();
+    const text = await readTextFile(file);
     const { rows, errors } = parseTodoCsv(text);
     setImportErrors(errors);
     if (rows.length === 0) {

@@ -1,6 +1,6 @@
 import type { TemplateItem, Weekday } from "./types";
 import { WEEKDAY_LABELS } from "./types";
-import { csvEscape, parseCsvLine } from "./csv";
+import { csvEscape, csvLines, parseCsvLine } from "./csv";
 import { formatHms, parseHmsToSeconds } from "./time";
 
 const HEADERS = ["id", "weekday", "order", "category", "name", "estimatedSeconds"] as const;
@@ -52,7 +52,7 @@ function parseWeekday(raw: string): Weekday | null {
 }
 
 export function parseTemplateCsv(text: string): ParsedTemplateCsvResult {
-  const lines = text.split(/\r\n|\n/).filter((l) => l.trim() !== "");
+  const lines = csvLines(text);
   const errors: string[] = [];
   if (lines.length === 0) return { rows: [], errors: ["空のファイルです"] };
 
