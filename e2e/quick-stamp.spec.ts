@@ -33,8 +33,11 @@ test("打刻ボタンで時刻と一言を残し、次の打刻までを実績�
   await panel.getByRole("button", { name: "実績にする" }).first().click();
   await expect(page.getByPlaceholder("詳細作業名")).toHaveValue("資料作成");
   await page.getByRole("button", { name: "記録する" }).click();
-  await expect(panel).toContainText("✓ 業務 / 資料作成");
+  // 実績にした打刻はふだん欄に出さない(「完了」に作業として並ぶ)。見たい時だけ開ける
+  await expect(panel).not.toContainText("✓ 業務 / 資料作成");
   await expect(panel).toContainText("未記録 1件");
+  await panel.getByRole("button", { name: "片付いた打刻 1件も表示" }).click();
+  await expect(panel).toContainText("✓ 業務 / 資料作成");
 
   const records = await readAll<{ name: string; seconds: number; startedAt: number }>(page, "records");
   expect(records).toHaveLength(1);
@@ -46,7 +49,8 @@ test("打刻ボタンで時刻と一言を残し、次の打刻までを実績�
 
   // 2件目は記録しない
   await panel.getByRole("button", { name: "記録しない" }).click();
-  await expect(panel).toContainText("すべて記録済み");
+  // すべて片付いたら欄ごと出さない
+  await expect(panel).toHaveCount(0);
 });
 
 test("押し間違えた打刻はその場で取り消せる。設定でボタンを隠せる", async ({ page }) => {
@@ -77,7 +81,8 @@ test("本日の作業を独自画面に差し替えるモード(禅など)でも
   await page.locator(".modal-scrim").getByTestId("quick-stamp-panel").getByRole("button", { name: "実績にする" }).click();
   await page.getByLabel("終了時刻").fill("10:30");
   await page.getByRole("button", { name: "記録する" }).click();
-  await expect(page.locator(".modal-scrim").getByTestId("quick-stamp-panel")).toContainText("✓ 業務 / 資料作成");
+  // 片付いた打刻だけになると一覧は空になる。実績が作られていることを確かめる
+  await expect(page.locator(".modal-scrim").getByTestId("quick-stamp-panel")).toHaveCount(0);
   const records = await readAll<{ seconds: number }>(page, "records");
   // 開始は打刻した瞬間(秒まで)、終了は入力した10:30
   expect(records).toHaveLength(1);
@@ -123,7 +128,9 @@ test("打刻を実績にすると、本日の作業の「完了」に並ぶ。�
   await expect(page.getByPlaceholder("詳細作業名")).toHaveValue("風呂掃除");
   await page.getByRole("button", { name: "記録する" }).click();
 
-  await expect(page.getByTestId("quick-stamp-panel")).toContainText("✓ 家事 / 風呂掃除");
+  // 実績にした打刻は欄から消え(残りは8:30の1件)、作業として「完了」に並ぶ
+  await expect(page.getByTestId("quick-stamp-panel")).toContainText("未記録 1件");
+  await expect(page.getByTestId("quick-stamp-panel")).not.toContainText("風呂掃除");
   const daily = await readAll<{ name: string; status: string; segments: { start: number; end: number }[] }>(page, "dailyTasks");
   expect(daily).toEqual([expect.objectContaining({ name: "風呂掃除", status: "done" })]);
   expect(daily[0].segments).toEqual([{ start: jstAt("08:00"), end: jstAt("08:30") }]);
@@ -151,9 +158,7 @@ test("直前の作業が終わってから打刻するまでの時間も、打�
   await page.getByPlaceholder("業務区分（大項目）").fill("業務");
   await page.getByPlaceholder("詳細作業名").fill("資料作成");
   await page.getByRole("button", { name: "記録する" }).click();
-  await expect(panel).toContainText("✓ 業務 / 資料作成");
-  // 実績にした打刻には「計測開始まで」などの注記を出さない
-  await expect(panel).not.toContainText("計測開始まで");
+  await expect(panel).toHaveCount(0);
   const made = (await readAll<{ id: string; segments: { start: number }[] }>(page, "dailyTasks")).find((d) => d.id !== "nte");
   expect(made!.segments[0].start).toBe(jstAt("13:54"));
 });
@@ -166,11 +171,15 @@ test("実績にした打刻は、作った作業の時刻と時間を出す(「�
       dailyTasks: [
         dailyTask({ id: "made", date: jstDate(), category: "睡眠", name: "静養", status: "done", segments: [{ start: jstAt("14:14"), end: jstAt("15:57") }], accumulatedMs: 103 * 60_000, startedAt: jstAt("14:14"), endedAt: jstAt("15:57") }),
       ],
-      quickStamps: [{ id: "s", date: jstDate(), at: jstAt("14:14"), recordId: "made", recordLabel: "睡眠 / 静養" }],
+      quickStamps: [
+        { id: "s", date: jstDate(), at: jstAt("14:14"), recordId: "made", recordLabel: "睡眠 / 静養" },
+        { id: "p", date: jstDate(), at: jstAt("16:10") },
+      ],
     },
   });
   const panel = page.getByTestId("quick-stamp-panel");
+  await panel.getByRole("button", { name: "片付いた打刻 1件も表示" }).click();
   await expect(panel).toContainText("14:14〜15:57");
   await expect(panel).toContainText("1時間43分");
-  await expect(panel).not.toContainText("〜今");
+  await expect(panel.locator("li").filter({ hasText: "睡眠 / 静養" })).not.toContainText("〜今");
 });

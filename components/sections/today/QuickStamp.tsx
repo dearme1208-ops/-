@@ -119,20 +119,30 @@ export function QuickStampPanel({ date, now }: { date: string; now: number }) {
   const taskById = useMemo(() => new Map((tasks ?? []).map((t) => [t.id, t])), [tasks]);
   const [converting, setConverting] = useState<StampSpan | null>(null);
   const spans = useMemo(() => stampSpans(stamps ?? [], measured, now), [stamps, measured, now]);
-  if (spans.length === 0) return null;
+  // 実績にした打刻・記録しないにした打刻は、もう片付いたもの(実績にしたものは「完了」に作業として並ぶ)。
+  // ふだんはまだ実績にしていない打刻だけを出し、片付いたものは見たい時だけ開く。全部片付いたら欄ごと出さない
+  const [showResolved, setShowResolved] = useState(false);
   const isToday = date === todayStr();
   const pending = spans.filter((s) => !s.stamp.recordId && !s.stamp.skipped).length;
+  const resolved = spans.length - pending;
+  if (pending === 0) return null;
+  const visibleSpans = showResolved ? spans : spans.filter((s) => !s.stamp.recordId && !s.stamp.skipped);
 
   return (
     <div className="panel space-y-2 p-3" data-testid="quick-stamp-panel">
       <div className="flex items-baseline gap-2">
         <span className="text-sm font-bold text-cream">📍 打刻</span>
         <span className="text-xs text-cream/50">
-          {pending > 0 ? `未記録 ${pending}件。落ち着いたら実績にしましょう` : "すべて記録済み"}
+          未記録 {pending}件。落ち着いたら実績にしましょう
         </span>
+        {resolved > 0 && (
+          <button className="ml-auto shrink-0 text-[11px] text-cream/45 underline decoration-dotted" onClick={() => setShowResolved((v) => !v)}>
+            {showResolved ? "片付いた打刻を隠す" : `片付いた打刻 ${resolved}件も表示`}
+          </button>
+        )}
       </div>
       <ul className="space-y-1.5">
-        {spans.map((span) => {
+        {visibleSpans.map((span) => {
           const { stamp, nextAt } = span;
           const done = !!stamp.recordId;
           // 実績にした打刻は、作った作業の時刻と時間をそのまま見せる(打刻の区間で計算し直すと、
