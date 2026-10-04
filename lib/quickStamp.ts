@@ -15,26 +15,64 @@ export async function addQuickStamp(at: number = Date.now(), note?: string): Pro
 
 export interface StampSpan {
   stamp: QuickStamp;
+  /**
+   * 区間の始まり。ふつうは打刻した時刻だが、直前に計測していた作業が終わってから打刻するまでの
+   * 間に何も記録が無ければ、その作業が終わった時刻から始める(作業を終えてから打刻を押すまでの
+   * 時間も、この打刻の作業をしていたとみなす)
+   */
+  fromAt: number;
+  /** 始まりを、直前の作業が終わった時刻にさかのぼらせたか */
+  startedFromMeasure?: boolean;
   /** 区間の終わり(次の打刻、またはその前に計測を始めた時刻)。どちらも無ければ undefined */
   nextAt?: number;
   /** 区間の終わりが、計測の開始で決まったか */
   endedByMeasure?: boolean;
 }
 
+export interface MeasuredSegment {
+  start: number;
+  /** 計測中なら undefined */
+  end?: number;
+}
+
+/** 直前の作業の終わりまでさかのぼるのは、この時間以内の空白だけ(寝ていた間などまで含めないように) */
+export const STAMP_BACKFILL_MAX_MS = 3 * 3600_000;
+
 /**
  * 打刻を時刻順に並べ、それぞれ「次の打刻まで」の区間にする。
  * 打刻の後で作業の計測を始めていれば、そこで区間を終える(計測した時間を二重に記録しないように)。
- * measureStarts はその日の計測の開始時刻
+ * 打刻の前に計測していた作業が終わっていて、その間に記録が無ければ、始まりをその終わりまでさかのぼる。
+ * measured はその日の計測の区間(打刻から作った作業は含めない)
  */
-export function stampSpans(stamps: QuickStamp[], measureStarts: number[] = []): StampSpan[] {
+export function stampSpans(stamps: QuickStamp[], measured: MeasuredSegment[] = [], now: number = Date.now()): StampSpan[] {
   const sorted = [...stamps].sort((a, b) => a.at - b.at);
   return sorted.map((stamp, i) => {
+    const prevAt = sorted[i - 1]?.at ?? -Infinity;
     const nextStamp = sorted[i + 1]?.at;
-    const firstMeasure = measureStarts.filter((t) => t > stamp.at).reduce<number | undefined>((m, t) => (m === undefined || t < m ? t : m), undefined);
-    if (firstMeasure !== undefined && (nextStamp === undefined || firstMeasure < nextStamp)) {
-      return { stamp, nextAt: firstMeasure, endedByMeasure: true };
+
+    let fromAt = stamp.at;
+    let startedFromMeasure = false;
+    const measuringNow = measured.some((m) => m.start < stamp.at && (m.end ?? now) > stamp.at);
+    if (!measuringNow) {
+      const lastEnd = measured
+        .map((m) => m.end)
+        .filter((e): e is number => e !== undefined && e > prevAt && e < stamp.at && stamp.at - e <= STAMP_BACKFILL_MAX_MS)
+        .reduce<number | undefined>((mx, e) => (mx === undefined || e > mx ? e : mx), undefined);
+      if (lastEnd !== undefined) {
+        fromAt = lastEnd;
+        startedFromMeasure = true;
+      }
     }
-    return { stamp, nextAt: nextStamp };
+
+    const firstMeasure = measured
+      .map((m) => m.start)
+      .filter((t) => t > stamp.at)
+      .reduce<number | undefined>((m, t) => (m === undefined || t < m ? t : m), undefined);
+    const base = { stamp, fromAt, ...(startedFromMeasure ? { startedFromMeasure } : {}) };
+    if (firstMeasure !== undefined && (nextStamp === undefined || firstMeasure < nextStamp)) {
+      return { ...base, nextAt: firstMeasure, endedByMeasure: true };
+    }
+    return { ...base, nextAt: nextStamp };
   });
 }
 

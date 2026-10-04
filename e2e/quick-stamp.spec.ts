@@ -40,7 +40,9 @@ test("打刻ボタンで時刻と一言を残し、次の打刻までを実績�
   expect(records).toHaveLength(1);
   expect(records[0].name).toBe("資料作成");
   expect(records[0].seconds).toBe(40 * 60);
-  expect(records[0].startedAt).toBe(jstAt("10:00"));
+  // 打刻した時刻を秒まで含めてそのまま使う(押した瞬間なので、10:00ちょうどから数秒以内)
+  expect(records[0].startedAt - jstAt("10:00")).toBeGreaterThanOrEqual(0);
+  expect(records[0].startedAt - jstAt("10:00")).toBeLessThan(60_000);
 
   // 2件目は記録しない
   await panel.getByRole("button", { name: "記録しない" }).click();
@@ -77,7 +79,9 @@ test("本日の作業を独自画面に差し替えるモード(禅など)でも
   await page.getByRole("button", { name: "記録する" }).click();
   await expect(page.locator(".modal-scrim").getByTestId("quick-stamp-panel")).toContainText("✓ 業務 / 資料作成");
   const records = await readAll<{ seconds: number }>(page, "records");
-  expect(records.map((r) => r.seconds)).toEqual([30 * 60]);
+  // 開始は打刻した瞬間(秒まで)、終了は入力した10:30
+  expect(records).toHaveLength(1);
+  expect(Math.abs(records[0].seconds - 30 * 60)).toBeLessThan(60);
 });
 
 test("打刻の後で計測を始めた作業があれば、打刻の区間はその開始時刻までになる", async ({ page }) => {
@@ -128,4 +132,28 @@ test("打刻を実績にすると、本日の作業の「完了」に並ぶ。�
   // 本日の作業の「完了」タブに並んでいる
   await page.getByRole("button", { name: /完了/ }).filter({ hasText: "(1)" }).first().click();
   await expect(page.getByText("風呂掃除").first()).toBeVisible();
+});
+
+test("直前の作業が終わってから打刻するまでの時間も、打刻の区間に入る(13:54に終わり14:14に打刻 → 13:54から)", async ({ page }) => {
+  await page.clock.install({ time: jstAt("14:20") });
+  await seed(page, {
+    stores: {
+      masterTasks: [MASTER],
+      dailyTasks: [dailyTask({ id: "nte", date: jstDate(), status: "done", segments: [{ start: jstAt("13:30"), end: jstAt("13:54") }], accumulatedMs: 24 * 60_000 })],
+      quickStamps: [{ id: "s", date: jstDate(), at: jstAt("14:14") + 23_000 }],
+    },
+  });
+  const panel = page.getByTestId("quick-stamp-panel");
+  await expect(panel).toContainText("13:54〜今");
+  await expect(panel).toContainText("前の作業の終わりから");
+  await panel.getByRole("button", { name: "実績にする" }).click();
+  await expect(page.getByLabel("開始時刻")).toHaveValue("13:54");
+  await page.getByPlaceholder("業務区分（大項目）").fill("業務");
+  await page.getByPlaceholder("詳細作業名").fill("資料作成");
+  await page.getByRole("button", { name: "記録する" }).click();
+  await expect(panel).toContainText("✓ 業務 / 資料作成");
+  // 実績にした打刻には「計測開始まで」などの注記を出さない
+  await expect(panel).not.toContainText("計測開始まで");
+  const made = (await readAll<{ id: string; segments: { start: number }[] }>(page, "dailyTasks")).find((d) => d.id !== "nte");
+  expect(made!.segments[0].start).toBe(jstAt("13:54"));
 });
