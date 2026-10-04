@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "./db";
-import { addProvisionalTaskIfIdle, findMergeTargetRecord, finishDailyTask } from "./tasks";
+import { addProvisionalTaskIfIdle, findMergeTargetRecord, finishDailyTask, pauseDailyTask } from "./tasks";
 import type { DailyTask, WorkRecord } from "./types";
 
 const DATE = "2026-09-29";
@@ -185,5 +185,50 @@ describe("同時に操作された場合", () => {
     await db.dailyTasks.put(task({ id: "r" }));
     const added = await addProvisionalTaskIfIdle({ id: "p", date: DATE, category: "未分類", name: "仮計測中", estimatedSeconds: 0, status: "running", segments: [{ start: T0 }], accumulatedMs: 0, isSpontaneous: true, isProvisional: true });
     expect(added).toBe(false);
+  });
+});
+
+describe("一時停止(pauseDailyTask)", () => {
+  it("合計は、それまでの合計に今閉じた区間を足す", async () => {
+    const t = task({ id: "p1", segments: [{ start: T0, end: T0 + 10 * MIN }, { start: T0 + 20 * MIN }], accumulatedMs: 10 * MIN });
+    await db.dailyTasks.put(t);
+    await pauseDailyTask(t, T0 + 35 * MIN);
+    const d = (await db.dailyTasks.get("p1"))!;
+    expect(d.status).toBe("paused");
+    expect(d.accumulatedMs).toBe(25 * MIN);
+    expect(d.segments[1].end).toBe(T0 + 35 * MIN);
+  });
+
+  it("完了後に「続きから」再開して一時停止しても、前回の完了時に足した「時間を加算」の分が消えない", async () => {
+    // 30分計測 + 10分を加算して完了 → 合計40分
+    const { daily } = await finish(task({ id: "p2", segments: [{ start: T0, end: T0 + 30 * MIN }], status: "paused", accumulatedMs: 30 * MIN, manualAdjustmentMs: 10 * MIN }));
+    expect(daily.accumulatedMs).toBe(40 * MIN);
+    // 続きから再開して5分で一時停止 → 45分
+    const resumed = { ...daily, status: "running" as const, segments: [...daily.segments, { start: T0 + 60 * MIN }] };
+    await db.dailyTasks.put(resumed);
+    await pauseDailyTask(resumed, T0 + 65 * MIN);
+    expect((await db.dailyTasks.get("p2"))!.accumulatedMs).toBe(45 * MIN);
+  });
+
+  it("計測中でなければ何もしない", async () => {
+    const t = task({ id: "p3", status: "paused", segments: [{ start: T0, end: T0 + MIN }], accumulatedMs: MIN });
+    await db.dailyTasks.put(t);
+    await pauseDailyTask(t, T0 + 99 * MIN);
+    expect((await db.dailyTasks.get("p3"))!.accumulatedMs).toBe(MIN);
+  });
+});
+
+describe("作業マスタの照合", () => {
+  it("全角/半角・空白・大文字小文字の違いだけなら同じマスタを使う", async () => {
+    const { findOrCreateMasterTask, normalizeMasterKey, findDuplicateMasterGroups } = await import("./master");
+    expect(normalizeMasterKey(" ＮＴＥ　 ")).toBe("nte");
+    await db.masterTasks.put({ id: "g1", category: "ゲーム", name: "NTE", estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 });
+    const m = await findOrCreateMasterTask("ゲーム ", "ＮＴＥ");
+    expect(m.id).toBe("g1");
+    const groups = findDuplicateMasterGroups([
+      { id: "a", category: "ゲーム", name: "NTE", estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 },
+      { id: "b", category: "ゲーム", name: "ｎｔｅ", estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 },
+    ]);
+    expect(groups.map((g) => g.tasks.map((t) => t.id))).toEqual([["a", "b"]]);
   });
 });

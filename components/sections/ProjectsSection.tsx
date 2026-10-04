@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { upsertProjectsFromCsv, recordBelongsToProject } from "@/lib/projects";
-import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
+import { computeRemainingEstimatedSeconds, pauseDailyTask } from "@/lib/tasks";
 import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
 import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
@@ -451,11 +451,7 @@ export default function ProjectsSection({
       // 既に計測中の作業があれば、他のテーマ画面の「すぐ開始」系操作と同じく先に一時停止してから始める
       const running = todayTasks.find((t) => t.status === "running");
       if (running) {
-        const segments = running.segments.map((s, i) =>
-          i === running.segments.length - 1 && s.end === undefined ? { ...s, end: nowMs } : s
-        );
-        const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? nowMs) - s.start), 0);
-        await db.dailyTasks.update(running.id, { segments, status: "paused", accumulatedMs, stoppedAt: nowMs });
+        await pauseDailyTask(running, nowMs);
       }
     }
     const task: DailyTask = {

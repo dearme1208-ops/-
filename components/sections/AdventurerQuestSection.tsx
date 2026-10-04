@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
+import { finishDailyTask, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { formatHms, formatMsClock, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage, ADVENTURER_STAGES } from "@/lib/growth";
@@ -129,12 +129,7 @@ export default function AdventurerQuestSection() {
   const gold = doneToday.length * 30 + Math.floor(totalSeconds / 60);
 
   async function pauseDaily(daily: DailyTask) {
-    const closeAt = Date.now();
-    const segments = daily.segments.map((s, i) =>
-      i === daily.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(daily.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
+    await pauseDailyTask(daily);
   }
 
   async function startExisting(task: DailyTask) {

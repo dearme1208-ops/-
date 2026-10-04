@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db";
+import { normalizeMasterKey } from "@/lib/master";
 import type { MasterTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
@@ -34,6 +37,14 @@ export default function CategoryWorkNameDialog({
   const [category, setCategory] = useState(defaultCategory ?? "");
   const [workName, setWorkName] = useState(defaultWorkName ?? "");
   const [toggle, setToggle] = useState(defaultToggle);
+
+  // 自由入力の候補(既存の業務区分・作業名)。表記の揺れによる重複登録を防ぐ
+  const masters = useLiveQuery(() => db.masterTasks.filter((m) => !m.archived).toArray(), []);
+  const categoryOptions = useMemo(() => [...new Set((masters ?? []).map((m) => m.category))].sort((a, b) => a.localeCompare(b, "ja")), [masters]);
+  const nameOptions = useMemo(() => {
+    const cat = normalizeMasterKey(category);
+    return [...new Set((masters ?? []).filter((m) => !cat || normalizeMasterKey(m.category) === cat).map((m) => m.name))].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [masters, category]);
 
   function confirmFree() {
     if (!category.trim() || !workName.trim()) return;
@@ -77,14 +88,26 @@ export default function CategoryWorkNameDialog({
             placeholder="業務区分（大項目）"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
+            list="cwn-categories"
             className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
+          <datalist id="cwn-categories">
+            {categoryOptions.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
           <input
             placeholder="詳細作業名"
             value={workName}
             onChange={(e) => setWorkName(e.target.value)}
+            list="cwn-names"
             className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
+          <datalist id="cwn-names">
+            {nameOptions.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
           <button className="btn-pill text-sm" onClick={confirmFree} disabled={!category.trim() || !workName.trim()}>
             {confirmLabel}
           </button>

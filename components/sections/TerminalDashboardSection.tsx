@@ -6,7 +6,7 @@ import TerminalCommandLine from "@/components/sections/TerminalCommandLine";
 import { db, uid } from "@/lib/db";
 import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "@/lib/tasks";
+import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { formatClock, formatHms, formatMsClock, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage, TERMINAL_STAGES } from "@/lib/growth";
@@ -174,12 +174,7 @@ export default function TerminalDashboardSection() {
   const maxBucketMs = Math.max(1, ...hourlyBuckets);
 
   async function pauseDaily(daily: DailyTask) {
-    const closeAt = Date.now();
-    const segments = daily.segments.map((s, i) =>
-      i === daily.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(daily.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
+    await pauseDailyTask(daily);
   }
 
   // お気に入り・完了した業務の再開、いずれも「同じマスタ作業が既に実行中/一時停止中なら

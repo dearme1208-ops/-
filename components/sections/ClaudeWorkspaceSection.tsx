@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "@/lib/tasks";
+import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
 import { daysBetweenDateStrs, formatMsClock, shiftDateStr, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
@@ -267,12 +267,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
   }
 
   async function pauseDaily(daily: DailyTask) {
-    const closeAt = Date.now();
-    const segments = daily.segments.map((s, i) =>
-      i === daily.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(daily.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
+    await pauseDailyTask(daily);
   }
 
   async function startTodo(t: TodoTask) {

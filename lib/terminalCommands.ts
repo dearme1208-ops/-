@@ -2,7 +2,7 @@ import { parseCompose, dueLabel } from "./claudeCompose";
 import { db, uid } from "./db";
 import { findOrCreateMasterTask } from "./master";
 import { addQuickStamp } from "./quickStamp";
-import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "./tasks";
+import { finishDailyTask, pauseDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "./tasks";
 import { formatMsClock, todayStr } from "./time";
 import type { DailyTask } from "./types";
 
@@ -20,9 +20,7 @@ export const COMMAND_HELP = [
 ];
 
 async function pause(task: DailyTask, at: number): Promise<void> {
-  const segments = task.segments.map((s, i) => (i === task.segments.length - 1 && s.end === undefined ? { ...s, end: at } : s));
-  const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? at) - s.start), 0);
-  await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs, stoppedAt: at });
+  await pauseDailyTask(task, at);
 }
 
 function pick(tasks: DailyTask[], arg: string): DailyTask | undefined {

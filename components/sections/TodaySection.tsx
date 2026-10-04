@@ -27,6 +27,7 @@ import {
   importScheduleRows,
   segmentsAccumulatedMs,
   updateRecordBoundsAfterEdit,
+  pauseDailyTask,
   type FinishDailyTaskOptions,
 } from "@/lib/tasks";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
@@ -54,6 +55,7 @@ import {
   formatMsClock,
   jsWeekdayToApp,
   todayStr,
+  formatHms,
 } from "@/lib/time";
 import { getNotificationPermission, notify, requestNotificationPermission } from "@/lib/notifications";
 import type {
@@ -1678,7 +1680,10 @@ export default function TodaySection({
   }
 
   async function deleteTask(task: DailyTask) {
-    if (!confirm(`「${workLabel(task)}」を本日の作業リストから削除しますか?`)) return;
+    // 計測した時間がある(一時停止中・計測中)作業は、削除するとその時間も実績に残らないので、そう伝える
+    const measuredMs = segmentsAccumulatedMs(task, Date.now());
+    const lost = measuredMs >= 60_000 ? `\n計測した ${formatHms(Math.round(measuredMs / 1000))} は実績に残りません(残す場合は「終了」してください)。` : "";
+    if (!confirm(`「${workLabel(task)}」を本日の作業リストから削除しますか?${lost}`)) return;
     await db.dailyTasks.delete(task.id);
   }
 
@@ -1701,9 +1706,23 @@ export default function TodaySection({
       if (remaining <= 0) {
         await db.records.delete(existing.id);
       } else {
-        // 合算元のうちどの区間がこの作業分だったか厳密には切り分けられないため、
-        // segmentsは破棄する(定時以降の判定はstartedAt〜endedAtの近似に戻る)
-        await db.records.update(existing.id, { seconds: remaining, segments: undefined });
+        // この作業の計測区間は分かっているので、実績の区間からそれだけを取り除く(以前は区間を丸ごと
+        // 捨てていたため、同じ日に同じ作業を何度もした日は、定時以降の集計などが開始〜終了の近似になっていた)。
+        // 取り除けない(区間が一致しない)時だけ、従来どおり区間を捨てる
+        const mine = new Set(task.segments.filter((sg) => sg.end !== undefined).map((sg) => `${sg.start}-${sg.end}`));
+        const rest = existing.segments?.filter((sg) => !mine.has(`${sg.start}-${sg.end}`));
+        const removedAll = !!existing.segments && rest !== undefined && existing.segments.length - rest.length === mine.size && rest.length > 0;
+        await db.records.update(
+          existing.id,
+          removedAll
+            ? {
+                seconds: remaining,
+                segments: rest,
+                startedAt: Math.min(...rest!.map((sg) => sg.start)),
+                endedAt: Math.max(...rest!.map((sg) => sg.end ?? sg.start)),
+              }
+            : { seconds: remaining, segments: undefined }
+        );
       }
     }
 
@@ -1742,12 +1761,7 @@ export default function TodaySection({
   }
 
   async function pauseTask(task: DailyTask) {
-    const nowMs = Date.now();
-    const segments = task.segments.map((s, i) =>
-      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: nowMs } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? nowMs) - s.start), 0);
-    await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs, stoppedAt: nowMs });
+    await pauseDailyTask(task);
   }
 
   // 強制ストップされた休憩帯を、「実は移動やミーティングで作業していた」として後から
@@ -2947,6 +2961,7 @@ export default function TodaySection({
           doneTasks={doneTodayUnique}
           methodSuggestions={methodSuggestions}
           onRequestConflictStart={requestStartNew}
+          gateStart={gateFirstStart}
           onAdded={(status) => setTaskViewTab(status)}
           onSelectCompleted={(task) => {
             setShowAddDialog(false);

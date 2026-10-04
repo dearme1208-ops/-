@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
+import { finishDailyTask, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { formatHms, todayStr } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { useSetting } from "@/lib/settings";
@@ -191,12 +191,7 @@ export default function LobotomySection() {
 
   // ---- 操作 ----
   async function pauseTask(task: DailyTask) {
-    const closeAt = Date.now();
-    const segments = task.segments.map((s, i) =>
-      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
+    await pauseDailyTask(task);
   }
 
   // 作業種別を選んで着手する。選んだ種別によって、その作業の想定時間が実際に書き換わる

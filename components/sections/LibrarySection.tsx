@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { computeRemainingEstimatedSeconds, finishDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
+import { computeRemainingEstimatedSeconds, finishDailyTask, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { formatHms, todayStr } from "@/lib/time";
 import { useVisualMode } from "@/lib/theme";
 import {
@@ -129,12 +129,7 @@ export default function LibrarySection() {
 
   // ---- 操作 ----
   async function restTask(task: DailyTask) {
-    const closeAt = Date.now();
-    const segments = task.segments.map((s, i) =>
-      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
+    await pauseDailyTask(task);
   }
   async function borrow(task: DailyTask) {
     if (running && running.id !== task.id) await restTask(running);

@@ -14,7 +14,8 @@ export interface DuplicateMasterGroup {
 export function findDuplicateMasterGroups(tasks: MasterTask[]): DuplicateMasterGroup[] {
   const map = new Map<string, MasterTask[]>();
   for (const t of tasks) {
-    const key = `${t.category.trim()}::${t.name.trim()}`;
+    // 全角/半角・空白・大文字小文字の違いだけのものも同じとみなす(normalizeMasterKey)
+    const key = `${normalizeMasterKey(t.category)}::${normalizeMasterKey(t.name)}`;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(t);
   }
@@ -79,6 +80,14 @@ export async function mergeMasterTasks(
   return result;
 }
 
+/**
+ * 作業マスタの照合に使う正規化。全角/半角(ＮＴＥ と NTE)、前後や途中の空白の違い、英字の大文字小文字を同じとみなす
+ * (自由入力で表記が少し違うだけの重複マスタができ、集計が分かれてしまうのを防ぐ)
+ */
+export function normalizeMasterKey(s: string): string {
+  return s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 export async function findOrCreateMasterTask(
   category: string,
   name: string,
@@ -86,9 +95,11 @@ export async function findOrCreateMasterTask(
 ): Promise<MasterTask> {
   const cat = category.trim();
   const nm = name.trim();
-  const existing = await db.masterTasks
-    .filter((t) => t.category === cat && t.name === nm)
-    .first();
+  const existing =
+    (await db.masterTasks.filter((t) => t.category === cat && t.name === nm).first()) ??
+    (await db.masterTasks
+      .filter((t) => normalizeMasterKey(t.category) === normalizeMasterKey(cat) && normalizeMasterKey(t.name) === normalizeMasterKey(nm))
+      .first());
   if (existing) return existing;
 
   const now = Date.now();

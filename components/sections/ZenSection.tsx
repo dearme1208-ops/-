@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs } from "@/lib/tasks";
+import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
 import { daysBetweenDateStrs, formatMsClock, todayStr } from "@/lib/time";
 import type { DailyTask, ProjectItem, TodoTask } from "@/lib/types";
@@ -119,12 +119,7 @@ export default function ZenSection() {
 
   async function pause() {
     if (!runningDaily) return;
-    const closeAt = Date.now();
-    const segments = runningDaily.segments.map((s, i) =>
-      i === runningDaily.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(runningDaily.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
+    await pauseDailyTask(runningDaily);
   }
 
   async function complete() {

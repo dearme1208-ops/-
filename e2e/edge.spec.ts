@@ -137,4 +137,8 @@ test("同じ作業を2回完了して実績が1件に合算されたあと、片
   await page.locator("button", { hasText: "削除する" }).first().click();
   await expect.poll(async () => (await readAll<Daily>(page, "dailyTasks")).map((t) => t.id)).toEqual(["d1"]);
   await expect.poll(async () => (await readAll<Rec>(page, "records")).map((r) => Math.round(r.seconds / 60))).toEqual([30]);
+  // 残った実績の時間帯は、消した作業(09:40〜10:00)の区間を除いた 09:00〜09:30 のまま(以前は区間ごと捨てていた)
+  const [rec] = await readAll<Rec & { segments?: { start: number; end: number }[]; startedAt: number; endedAt: number }>(page, "records");
+  expect(rec.segments).toEqual([{ start: jstAt("09:00"), end: jstAt("09:30") }]);
+  expect([rec.startedAt, rec.endedAt]).toEqual([jstAt("09:00"), jstAt("09:30")]);
 });

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
-import { findOrCreateMasterTask } from "@/lib/master";
+import { findOrCreateMasterTask, normalizeMasterKey } from "@/lib/master";
 import { useSetting } from "@/lib/settings";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { formatClock, formatHms, parseHmsToSeconds } from "@/lib/time";
@@ -62,7 +62,10 @@ export default function AddTaskDialog({
   onAdded,
   onSelectCompleted,
   onClose,
+  gateStart,
 }: {
+  /** すぐ開始する時に挟む確認(1日の最初の開始なら体調を聞く)。本日の作業のほかの開始操作と揃える */
+  gateStart?: (action: () => Promise<void>) => Promise<void>;
   date: string;
   provisionalRunning: boolean;
   lastStopTime?: number | null;
@@ -117,6 +120,27 @@ export default function AddTaskDialog({
   );
   const favorites = useHomeFilteredMasterTasks(favoritesRaw);
 
+  // 自由入力の候補。既存の業務区分と、選んだ区分(無ければ全体)の作業名を出し、表記の揺れによる重複登録を防ぐ
+  const allMastersRaw = useLiveQuery(() => db.masterTasks.toArray(), []);
+  const allMasters = useHomeFilteredMasterTasks(allMastersRaw);
+  const categoryOptions = useMemo(
+    () => [...new Set((allMasters ?? []).filter((m) => !m.archived).map((m) => m.category))].sort((a, b) => a.localeCompare(b, "ja")),
+    [allMasters]
+  );
+  const nameOptions = useMemo(() => {
+    const cat = normalizeMasterKey(category);
+    return [...new Set((allMasters ?? []).filter((m) => !m.archived && (!cat || normalizeMasterKey(m.category) === cat)).map((m) => m.name))].sort((a, b) =>
+      a.localeCompare(b, "ja")
+    );
+  }, [allMasters, category]);
+  // 同じ作業名(表記の違いを除く)が別の区分にある時は知らせる(例: 睡眠/静養 と 休憩/静養)
+  const sameNameElsewhere = useMemo(() => {
+    const nm = normalizeMasterKey(name);
+    const cat = normalizeMasterKey(category);
+    if (!nm) return [];
+    return (allMasters ?? []).filter((m) => !m.archived && normalizeMasterKey(m.name) === nm && normalizeMasterKey(m.category) !== cat).slice(0, 4);
+  }, [allMasters, name, category]);
+
   async function insertTask(
     taskCategory: string,
     taskName: string,
@@ -132,6 +156,7 @@ export default function AddTaskDialog({
       onClose();
       return;
     }
+    const add = async () => {
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
     const task: DailyTask = {
       id: uid(),
@@ -151,7 +176,10 @@ export default function AddTaskDialog({
     };
     await db.dailyTasks.add(task);
     onAdded?.(startAt !== undefined ? "running" : "pending");
+    };
     onClose();
+    if (startAt !== undefined && gateStart) await gateStart(add);
+    else await add();
   }
 
   async function submitMasterTask(master: MasterTask, startAt: number | undefined) {
@@ -276,8 +304,14 @@ export default function AddTaskDialog({
           placeholder="例: 資料作成"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
+          list="add-task-categories"
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
+        <datalist id="add-task-categories">
+          {categoryOptions.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
       </div>
       <div>
         <label className="mb-1 block text-xs text-cream/60">詳細作業名</label>
@@ -286,11 +320,29 @@ export default function AddTaskDialog({
             placeholder="例: 見積書の作成"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            list="add-task-names"
             className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
+          <datalist id="add-task-names">
+            {nameOptions.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
           <VoiceInputButton onResult={(text) => setName((v) => (v ? `${v} ${text}` : text))} />
         </div>
       </div>
+      {sameNameElsewhere.length > 0 && (
+        <div className="rounded-lg border border-cream/20 p-2 text-xs text-cream/75" data-testid="same-name-hint">
+          <p>同じ作業名が、別の業務区分で登録されています。同じ作業なら、こちらを選ぶと集計が分かれません。</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {sameNameElsewhere.map((m) => (
+              <button key={m.id} type="button" className="btn-pill-outline px-2.5 py-1 text-xs" onClick={() => setCategory(m.category)}>
+                {m.category} / {m.name} を使う
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {methodField}
       {estimateField}
     </div>

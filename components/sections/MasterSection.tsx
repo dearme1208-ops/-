@@ -9,6 +9,7 @@ import {
   recoverOrphanedMasterHistory,
   findDuplicateMasterGroups,
   mergeMasterTasks,
+  normalizeMasterKey,
 } from "@/lib/master";
 import { recomputeOutliersForAll, clearManualOverride } from "@/lib/outliers";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
@@ -333,7 +334,9 @@ export default function MasterSection() {
     if (!category || !name) return;
     // 同じ区分/作業名の生きているマスタが既にある場合、黙って重複を増やさず先に警告する。
     // 気付かず複数回登録すると、実績・想定時間がマスタごとにバラバラに積まれてしまうため
-    const existing = (tasks ?? []).find((t) => t.category === category && t.name === name);
+    const existing = (tasks ?? []).find(
+      (t) => normalizeMasterKey(t.category) === normalizeMasterKey(category) && normalizeMasterKey(t.name) === normalizeMasterKey(name)
+    );
     if (existing) {
       setDuplicateWarning(existing);
       return;

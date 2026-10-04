@@ -9,7 +9,7 @@ import { db, uid } from "@/lib/db";
 import { todoLabel } from "@/lib/todoLabel";
 import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib/time";
-import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask } from "@/lib/tasks";
+import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask, pauseDailyTask } from "@/lib/tasks";
 import { completeTodoTask, DEFAULT_TAG_PRESETS, effectiveTag, normalizeUrl, parsePresetList } from "@/lib/todo";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { openMailAttachment, readFileAsDataUrl } from "@/lib/mailImport";
@@ -738,12 +738,7 @@ export default function UnifiedBoardSection({
     await db.dailyTasks.update(id, { boardX: x, boardY: y });
   }
   async function pauseTask(task: DailyTask) {
-    const closeAt = Date.now();
-    const segments = task.segments.map((s, i) =>
-      i === task.segments.length - 1 && s.end === undefined ? { ...s, end: closeAt } : s
-    );
-    const accumulatedMs = segments.reduce((sum, s) => sum + ((s.end ?? closeAt) - s.start), 0);
-    await db.dailyTasks.update(task.id, { segments, status: "paused", accumulatedMs, stoppedAt: closeAt });
+    await pauseDailyTask(task);
   }
   async function startTask(task: DailyTask) {
     const running = tasks.find((t) => t.status === "running" && t.id !== task.id);
