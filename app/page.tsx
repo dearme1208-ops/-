@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import SectionBoundary from "@/components/SectionBoundary";
 import dynamic from "next/dynamic";
 import { useLiveQuery } from "dexie-react-hooks";
 import TabNav, { TabDef } from "@/components/TabNav";
@@ -310,6 +311,7 @@ export default function HomePage() {
           この画面の中にあり、以前は「今日」を開いている間しか動いていなかった(戻った時刻に遅れて
           開始され、記録の時刻がずれていた) */}
       <div hidden={!todaySectionShown}>
+        <SectionBoundary label="本日の作業">
         <TodaySection
           background={!todaySectionShown}
           onOpenTodoDetail={(taskId) => {
@@ -323,9 +325,12 @@ export default function HomePage() {
           onOpenMemo={() => setActive("memo")}
           onOpenTodoTab={() => setActive("todo")}
         />
+        </SectionBoundary>
       </div>
       {!showMenu && (
-      <>
+      // タブごとに失敗を受け止める(読み込みの失敗・1画面の不具合でアプリ全体と裏の自動処理を止めない)。
+      // タブを切り替えると受け止めた状態もリセットされる
+      <SectionBoundary key={active}>
       {active === "today" && mode === "claude" && <ClaudeWorkspaceSection onOpenInsights={() => setActive("aggregation")} />}
       {active === "today" && mode === "natsuyasumi" && (
         <div className="space-y-4">
@@ -458,7 +463,7 @@ export default function HomePage() {
       {active === "records" && <RecordsSection />}
       {active === "appearance" && <AppearanceSection />}
       {active === "settings" && <SettingsSection />}
-      </>
+      </SectionBoundary>
       )}
 
       {showCloseCheck && (
