@@ -13,6 +13,7 @@ export default function CategoryWorkNameDialog({
   defaultWorkName,
   toggleLabel,
   defaultToggle = false,
+  initialMode = "free",
   onConfirm,
   onClose,
 }: {
@@ -24,10 +25,12 @@ export default function CategoryWorkNameDialog({
   // 省略時はチェックボックス自体を出さない
   toggleLabel?: string;
   defaultToggle?: boolean;
+  /** 最初に開く入力方法。「作業マスタから選択」ボタンから開く場合は"master"にして、すぐ一覧を出す */
+  initialMode?: "free" | "master";
   onConfirm: (category: string, workName: string, toggle: boolean) => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<"free" | "master">("free");
+  const [mode, setMode] = useState<"free" | "master">(initialMode);
   const [category, setCategory] = useState(defaultCategory ?? "");
   const [workName, setWorkName] = useState(defaultWorkName ?? "");
   const [toggle, setToggle] = useState(defaultToggle);

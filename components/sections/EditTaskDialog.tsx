@@ -316,6 +316,7 @@ export default function EditTaskDialog({
       {showMasterPicker && (
         <CategoryWorkNameDialog
           title="作業マスタから選択"
+          initialMode="master"
           confirmLabel="この内容を使う"
           defaultCategory={category}
           defaultWorkName={name}

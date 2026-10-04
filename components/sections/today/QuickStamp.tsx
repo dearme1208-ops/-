@@ -306,6 +306,7 @@ function ConvertStampDialog({ span, defaultEnd, onClose }: { span: StampSpan; de
                     key={`${c.category}/${c.name}`}
                     className={`${on ? "btn-pill" : "btn-pill-outline"} px-2.5 py-1 text-xs`}
                     onClick={() => {
+                      pickedRef.current = true;
                       setCategory(c.category);
                       setName(c.name);
                     }}
@@ -321,13 +322,19 @@ function ConvertStampDialog({ span, defaultEnd, onClose }: { span: StampSpan; de
           <input
             placeholder="業務区分（大項目）"
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              pickedRef.current = true;
+              setCategory(e.target.value);
+            }}
             className="min-w-0 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
           <input
             placeholder="詳細作業名"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              pickedRef.current = true;
+              setName(e.target.value);
+            }}
             className="min-w-0 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
         </div>
@@ -343,10 +350,12 @@ function ConvertStampDialog({ span, defaultEnd, onClose }: { span: StampSpan; de
       {picking && (
         <CategoryWorkNameDialog
           title="作業マスタから選択"
+          initialMode="master"
           confirmLabel="この内容を使う"
           defaultCategory={category}
           defaultWorkName={name}
           onConfirm={(c, n) => {
+            pickedRef.current = true;
             setCategory(c);
             setName(n);
             setPicking(false);

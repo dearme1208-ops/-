@@ -1,7 +1,8 @@
 import { db, uid } from "./db";
-import { addManualRecord } from "./tasks";
+import { findOrCreateMasterTask } from "./master";
+import { finishDailyTask } from "./tasks";
 import { todayStr } from "./time";
-import type { QuickStamp } from "./types";
+import type { DailyTask, QuickStamp } from "./types";
 
 // 打刻(📍)。計測の開始・完了を押す余裕がない時に、ボタン1回で時刻だけ残しておき、
 // 落ち着いてから「打刻から次の打刻まで」を実績に変える
@@ -48,7 +49,11 @@ export function recentStampNotes(stamps: QuickStamp[], limit = 6): string[] {
   return out;
 }
 
-/** 打刻の区間を実績に変える。実績のIDを打刻に残し、二重に記録しないようにする */
+/**
+ * 打刻の区間を実績に変える。実績だけを足すのではなく、その区間を計測した作業として本日の作業に置き、
+ * 通常の「完了」と同じ処理で完了にする(本日の作業の「完了」に並び、実績・想定時間の学習・
+ * 完了の知らせも普段どおりになる)。作業のIDを打刻に残し、二重に記録しないようにする
+ */
 export async function convertStampToRecord(
   stamp: QuickStamp,
   category: string,
@@ -56,6 +61,28 @@ export async function convertStampToRecord(
   startedAt: number,
   endedAt: number
 ): Promise<void> {
-  const recordId = await addManualRecord(stamp.date, category, name, startedAt, endedAt);
-  await db.quickStamps.update(stamp.id, { recordId, recordLabel: `${category} / ${name}`, skipped: false });
+  const master = await findOrCreateMasterTask(category, name, 0);
+  const segments = [{ start: startedAt, end: endedAt }];
+  const order = await db.dailyTasks.where("date").equals(stamp.date).count();
+  // 計測中として置くと、完了にするまでの一瞬に自動の処理(予測超過の確認など)が反応するので、
+  // 区間を閉じた一時停止の状態で置いてから完了にする
+  const task: DailyTask = {
+    id: uid(),
+    date: stamp.date,
+    order,
+    masterTaskId: master.id,
+    category: master.category,
+    name: master.name,
+    estimatedSeconds: master.estimatedSeconds,
+    hasPlan: false,
+    status: "paused",
+    segments,
+    accumulatedMs: endedAt - startedAt,
+    startedAt,
+    stoppedAt: endedAt,
+    isSpontaneous: true,
+  };
+  await db.dailyTasks.add(task);
+  await finishDailyTask(task, { segments, startedAt, endAtMs: endedAt });
+  await db.quickStamps.update(stamp.id, { recordId: task.id, recordLabel: `${master.category} / ${master.name}`, skipped: false });
 }

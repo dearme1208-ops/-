@@ -284,7 +284,7 @@ export interface QuickStamp {
   date: string; // YYYY-MM-DD
   at: number; // 打刻した時刻
   note?: string; // 一言(任意)。例:「資料」「昼」「電話」
-  recordId?: string; // 実績に変えた場合、その実績のID
+  recordId?: string; // 実績に変えた場合、その作業(本日の作業の完了済みの作業)のID
   recordLabel?: string; // 実績に変えた時の「区分 / 作業名」(表示用)
   skipped?: boolean; // 「記録しない」にした(休憩・移動など)
 }

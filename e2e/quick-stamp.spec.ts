@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MASTER, dailyTask, jstAt, readAll, seed } from "./helpers";
+import { MASTER, dailyTask, jstAt, jstDate, readAll, seed } from "./helpers";
 
 // 📍打刻: 忙しくて計測を押せない時に時刻だけ残し、後で実績に変える
 
@@ -98,4 +98,34 @@ test("メニュー画面から始まるモードでも、ショートカット(/
   await page.goto("/?stamp=1");
   await expect(page.getByTestId("quick-stamp-sheet")).toBeVisible();
   expect(await readAll(page, "quickStamps")).toHaveLength(1);
+});
+
+test("打刻を実績にすると、本日の作業の「完了」に並ぶ。「作業マスタから探す」はマスタの一覧から開き、選ぶと入る", async ({ page }) => {
+  await seed(page, {
+    stores: {
+      masterTasks: [MASTER, { ...MASTER, id: "m9", category: "家事", name: "風呂掃除" }],
+      quickStamps: [
+        { id: "s1", date: jstDate(), at: jstAt("08:00") },
+        { id: "s2", date: jstDate(), at: jstAt("08:30") },
+      ],
+    },
+  });
+  await page.getByTestId("quick-stamp-panel").getByRole("button", { name: "実績にする" }).first().click();
+  await page.getByRole("button", { name: "作業マスタから探す" }).click();
+  // 自由入力ではなく、最初からマスタの一覧が出ている
+  const picker = page.locator(".modal-scrim").last();
+  await picker.getByRole("button", { name: /風呂掃除/ }).click();
+  await expect(page.getByPlaceholder("業務区分（大項目）")).toHaveValue("家事");
+  await expect(page.getByPlaceholder("詳細作業名")).toHaveValue("風呂掃除");
+  await page.getByRole("button", { name: "記録する" }).click();
+
+  await expect(page.getByTestId("quick-stamp-panel")).toContainText("✓ 家事 / 風呂掃除");
+  const daily = await readAll<{ name: string; status: string; segments: { start: number; end: number }[] }>(page, "dailyTasks");
+  expect(daily).toEqual([expect.objectContaining({ name: "風呂掃除", status: "done" })]);
+  expect(daily[0].segments).toEqual([{ start: jstAt("08:00"), end: jstAt("08:30") }]);
+  const records = await readAll<{ name: string; seconds: number }>(page, "records");
+  expect(records).toEqual([expect.objectContaining({ name: "風呂掃除", seconds: 1800 })]);
+  // 本日の作業の「完了」タブに並んでいる
+  await page.getByRole("button", { name: /完了/ }).filter({ hasText: "(1)" }).first().click();
+  await expect(page.getByText("風呂掃除").first()).toBeVisible();
 });
