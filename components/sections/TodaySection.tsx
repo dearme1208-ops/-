@@ -126,7 +126,6 @@ import BreakChecklistDialog from "@/components/sections/BreakChecklistDialog";
 import BreakAssignDialog from "@/components/sections/BreakAssignDialog";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import { QuickStampButton, QuickStampPanel, QuickStampSheet } from "@/components/sections/today/QuickStamp";
-import { ForestGrove } from "@/components/sections/today/ForestPanels";
 import { CallingCardPanel, PersonaStatsPanel } from "@/components/sections/today/PersonaPanels";
 import { addQuickStamp } from "@/lib/quickStamp";
 import { TODAY_ACTION_EVENT } from "@/lib/todayActions";
@@ -2644,7 +2643,6 @@ export default function TodaySection({
         </button>
         {!extrasCollapsed && (
           <>
-            {themedMode === "home" && <ForestGrove today={date} />}
             {themedMode === "persona5" && <PersonaStatsPanel today={date} />}
             {(!tasks || tasks.length === 0) && (
               <div className="panel p-5">

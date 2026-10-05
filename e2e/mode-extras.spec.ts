@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { MASTER, dailyTask, jstAt, jstDate, readAll, readOne, seed } from "./helpers";
 
-// 各演出モードに足した機能(lib/modeExtras.ts・forestLife.ts・persona.ts・terminalCommands.ts)
+// 各演出モードに足した機能(lib/modeExtras.ts・persona.ts・terminalCommands.ts)
 
 test.beforeEach(async ({ page }) => {
   await page.clock.install({ time: jstAt("14:00") });
@@ -10,16 +10,17 @@ test.beforeEach(async ({ page }) => {
 const mode = (m: string, extra: Record<string, string> = {}) => ({ "theme.visualMode": m, "powerpro.mainMenu": "false", ...extra });
 const todo = (id: string, title: string, dueDate?: string) => ({ id, listId: "l", title, completed: false, important: false, order: 0, createdAt: 0, dueDate });
 
-test("森: 記録した日に木が立つ(暮らしの手入れの欄は出さない)", async ({ page }) => {
-  const records = ["-12", "-8", "-4"].map((d, i) => ({
-    id: "r" + i, date: jstDate(Number(d)), category: "家事", name: "風呂掃除", masterTaskId: "m3", seconds: 1200,
-    startedAt: jstAt("20:00", Number(d)), endedAt: jstAt("20:20", Number(d)), excludedFromStats: false,
-  }));
+test("森: 「この4週間の木立」と暮らしの手入れの欄は出さない", async ({ page }) => {
+  const records = [{
+    id: "r0", date: jstDate(-1), category: "家事", name: "風呂掃除", masterTaskId: "m3", seconds: 1200,
+    startedAt: jstAt("20:00", -1), endedAt: jstAt("20:20", -1), excludedFromStats: false,
+  }];
   await seed(page, {
     settings: mode("home"),
     stores: { masterTasks: [{ ...MASTER, id: "m3", category: "家事", name: "風呂掃除" }], records },
   });
-  await expect(page.getByTestId("forest-grove")).toContainText("木が3本");
+  await expect(page.getByText("そのほかの表示").first()).toBeVisible();
+  await expect(page.getByText("この4週間の木立")).toHaveCount(0);
   await expect(page.getByTestId("forest-care")).toHaveCount(0);
 });
 
