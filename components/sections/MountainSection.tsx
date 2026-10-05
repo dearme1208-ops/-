@@ -518,7 +518,9 @@ function LegRow({
           {/* コースタイムに対する行動時間のバー。100%の位置に基準線を引く */}
           <div className="relative mt-1 h-1.5 overflow-hidden rounded-full bg-cream/8">
             <div
-              className={`h-full rounded-full ${over ? "bg-alert" : "bg-cream/55"}`}
+              // 計測中(=いま登っている区間)の帯は、完了した区間よりも目立つ色で伸びていくようにする。
+              // 以前は灰色で、終わった区間(橙)より目立たず、どこを登っているのか分かりにくかった
+              className={`h-full rounded-full ${over ? "bg-alert" : running ? "bg-[rgb(var(--accent-rgb))] mtn-leg-live" : done ? "bg-cream/40" : "bg-cream/55"}`}
               style={{ width: `${Math.min(100, (pct / 1.5) * 100)}%` }}
             />
             <span className="absolute inset-y-0 w-px bg-cream/40" style={{ left: `${(1 / 1.5) * 100}%` }} />

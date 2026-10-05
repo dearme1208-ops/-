@@ -4007,6 +4007,12 @@ html[data-high-contrast="true"] :focus-visible {
       box-shadow: inset 0 0 0 2px var(--origin-green);
     }
   }
+  /* 左の固定列(.origin-fixed)は背景を親から受け継ぐが、間の行(.origin-row)が透明だったため
+     固定列も透明になり、横にスクロールすると下に潜った時間軸の帯が「終了」「想定」の文字に
+     透けて重なっていた。行にも作業の地色を受け継がせて、固定列を不透明にする */
+  .origin-pair > .origin-row {
+    background: inherit;
+  }
   .origin-row-actual .origin-cell {
     border-bottom-color: rgb(var(--cream-rgb) / 0.18);
   }
@@ -4592,3 +4598,22 @@ html[data-high-contrast="true"] :focus-visible {
   }
 }
 
+/* 登山モード: いま登っている区間の帯。先端がゆっくり明滅して「進んでいる」ことを伝える */
+.mtn-leg-live {
+  background-image: linear-gradient(90deg, transparent 0 70%, rgb(255 255 255 / 0.45) 100%);
+  animation: mtn-leg-live 2.4s ease-in-out infinite;
+}
+@keyframes mtn-leg-live {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mtn-leg-live {
+    animation: none;
+  }
+}

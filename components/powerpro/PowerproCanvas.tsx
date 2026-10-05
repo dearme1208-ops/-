@@ -141,7 +141,8 @@ export function Stadium({
   const { wrapRef, canvasRef } = useMeasuredCanvas(
     // ゲージを絵の中に重ねるのをやめ、下の計器盤へ出した。
     // そのぶん縦を伸ばして、選手の足元まで隠れずに見えるようにしている
-    (w) => Math.round(Math.max(230, Math.min(320, w * 0.72))),
+    // スマホ幅では、絵の下にある計測中の練習が最初の画面に入らなかったので、狭い画面だけ低くする
+    (w) => Math.round(w < 500 ? Math.max(190, w * 0.54) : Math.max(230, Math.min(320, w * 0.72))),
     (ctx, width, height) =>
       paintStadium(ctx, {
         width,
