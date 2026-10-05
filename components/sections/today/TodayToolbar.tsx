@@ -17,6 +17,7 @@ function ModeButton({
   title,
   ariaLabel,
   danger,
+  compact,
   onClick,
 }: {
   simple: boolean;
@@ -29,15 +30,17 @@ function ModeButton({
   /** 簡易表示の読み上げ名。省略時はtitle */
   ariaLabel?: string;
   danger?: boolean;
+  /** 2段目の補助の操作。小さめにして、狭い画面では1行の横スクロールに収める */
+  compact?: boolean;
   onClick: () => void;
 }) {
   const base = danger ? "btn-pill-danger" : "btn-pill-outline";
   return simple ? (
-    <button className={`${base} px-3 py-2 text-base`} onClick={onClick} title={title} aria-label={ariaLabel ?? title}>
+    <button className={`${base} shrink-0 px-3 py-2 text-base`} onClick={onClick} title={title} aria-label={ariaLabel ?? title}>
       {icon}
     </button>
   ) : (
-    <button className={`${base} text-sm`} onClick={onClick}>
+    <button className={`${base} shrink-0 whitespace-nowrap ${compact ? "px-3 py-1.5 text-xs" : "text-sm"}`} onClick={onClick}>
       {label}
     </button>
   );
@@ -119,14 +122,21 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-2">
+      {/* よく使う2つ(トラブル・突発作業)を1段目に大きく、ほかの補助の操作は2段目に小さく並べる。
+          スマホで7つのボタンが4段も並び、計測中の作業が画面の外へ押し出されていた。
+          2段目は狭い画面では1行の横スクロールにする(右端が少し切れて、続きがあると分かる) */}
+      <div className="flex w-full flex-col gap-2 sm:w-auto">
+      <div className="flex gap-2">
         <ModeButton simple={simple} danger icon="⚡" label="⚡ トラブル発生" title="トラブル発生" onClick={props.onTrouble} />
         <ModeButton simple={simple} icon="➕" label="+ 突発作業を追加" title="突発作業を追加" onClick={props.onAddTask} />
-        <ModeButton simple={simple} icon="🧭" label="🧭 今日の段取り" title="今日の段取りを提案" onClick={props.onDayPlan} />
-        <ModeButton simple={simple} icon="🗓" label="🗓 明日の下書き" title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
+      </div>
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible" data-testid="today-toolbar-sub">
+        <ModeButton simple={simple} compact icon="🧭" label="🧭 今日の段取り" title="今日の段取りを提案" onClick={props.onDayPlan} />
+        <ModeButton simple={simple} compact icon="🗓" label="🗓 明日の下書き" title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
         <ModeButton
           simple={simple}
           icon="⏱"
+          compact
           label="⏱ 時間割"
           title="作業ごとに時間の枠を決める(タイムボックス)"
           ariaLabel="時間割を作る"
@@ -134,6 +144,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
         />
         <ModeButton
           simple={simple}
+          compact
           icon={props.reflectionAnsweredToday ? "🌙✓" : "🌙"}
           label={`🌙 ${props.reflectionAnsweredToday ? "振り返り済み" : "終業の振り返り"}`}
           title={props.reflectionAnsweredToday ? "終業の振り返り(回答済み)" : "終業の振り返り"}
@@ -158,7 +169,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
             </button>
           ) : (
             <button
-              className={voice.listening ? "btn-pill-danger text-sm" : "btn-pill-outline text-sm"}
+              className={`${voice.listening ? "btn-pill-danger" : "btn-pill-outline"} shrink-0 whitespace-nowrap px-3 py-1.5 text-xs`}
               onClick={voice.onToggle}
               title={`「〇〇を開始」「終了」のように話しかけて操作できます${voice.handsFree ? " / ハンズフリーモードON(連続で聞き取り、結果を読み上げます)" : ""}`}
             >
@@ -172,7 +183,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
             </button>
           ))}
         <button
-          className={`${moreOpen ? "btn-pill" : "btn-pill-outline"} ${simple ? "px-3 py-2 text-base" : "text-sm"}`}
+          className={`${moreOpen ? "btn-pill" : "btn-pill-outline"} shrink-0 whitespace-nowrap ${simple ? "px-3 py-2 text-base" : "px-3 py-1.5 text-xs"}`}
           onClick={() => setMoreOpenStr(moreOpen ? "false" : "true")}
           aria-expanded={moreOpen}
           aria-label="その他の操作"
@@ -180,6 +191,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
         >
           {simple ? "⋯" : `⋯ その他 ${moreOpen ? "▲" : "▼"}`}
         </button>
+      </div>
         {moreOpen && (
           <div className="flex w-full flex-wrap gap-2 border-t border-cream/10 pt-2" data-testid="today-toolbar-more">
             {todayTotalSeconds > 0 && (

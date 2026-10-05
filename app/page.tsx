@@ -22,6 +22,7 @@ import ConfettiHost from "@/components/ui/ConfettiHost";
 import CompletionPopupHost from "@/components/ui/CompletionPopupHost";
 import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
+import RunningNowPill from "@/components/RunningNowPill";
 import TodoReminderModal from "@/components/TodoReminderModal";
 import TodoReminderPopup from "@/components/TodoReminderPopup";
 import OnboardingGuide from "@/components/OnboardingGuide";
@@ -497,6 +498,7 @@ export default function HomePage() {
         </Modal>
       )}
       {showStampDock && <QuickStampDock toolsLabel={TOOLS_LABEL_BY_MODE[mode] ?? "道具"} />}
+      {showStampDock && <RunningNowPill />}
     </div>
   );
 }

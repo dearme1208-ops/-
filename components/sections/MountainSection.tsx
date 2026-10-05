@@ -493,7 +493,10 @@ function LegRow({
   const running = leg.status === "running";
   const pct = leg.courseTimeSeconds > 0 ? Math.min(1.5, leg.actualSeconds / leg.courseTimeSeconds) : 0;
   return (
-    <div className={`px-3 py-2.5 ${running ? "card-running-mtn bg-alert/8" : over && !done ? "bg-alert/6" : ""}`}>
+    <div
+      className={`px-3 py-2.5 ${running ? "card-running-mtn bg-alert/8" : over && !done ? "bg-alert/6" : ""}`}
+      data-running-card={running ? "" : undefined}
+    >
       <div className="flex items-start gap-2">
         {/* 高度の刻み。上に行くほど山頂に近い並びにする */}
         <div className="flex w-6 shrink-0 flex-col items-center pt-0.5">

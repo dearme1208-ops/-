@@ -786,7 +786,14 @@ function SheetRowPair({
     .join(" ");
 
   return (
-    <div className={pairClass} onClick={onSelect} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onSelect()}>
+    <div
+      className={pairClass}
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onSelect()}
+      data-running-card={row.running ? "" : undefined}
+    >
       {/* 予定行 */}
       <div className="origin-row">
         <div className="origin-fixed">

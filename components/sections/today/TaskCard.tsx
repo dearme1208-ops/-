@@ -340,7 +340,12 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`font-display text-base font-bold ${task.status === "done" ? "text-cream/65" : ""}`}>{task.name}</span>
+            {/* 計測中の作業は、何を計っているかが一目で分かるよう名前を一回り大きくする */}
+            <span
+              className={`font-display font-bold ${task.status === "running" ? "text-xl leading-snug" : "text-base"} ${task.status === "done" ? "text-cream/65" : ""}`}
+            >
+              {task.name}
+            </span>
             {topRank !== undefined && (
               <span className="rounded-full bg-alert/20 px-2 py-0.5 text-[10px] font-bold text-alert">
                 {RANK_MEDALS[topRank]} 集計ランキング{topRank + 1}位

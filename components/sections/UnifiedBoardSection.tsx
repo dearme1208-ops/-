@@ -579,8 +579,11 @@ export default function UnifiedBoardSection({
     ...(todos ?? []).map((t) => (t.boardX ?? 0) + CARD_WIDTH),
     ...projects.map((p) => (p.boardX ?? 0) + CARD_WIDTH)
   );
+  // スマホ幅では40%まで縮めると、カードの字も「開始」ボタンも小さすぎて読めず押せなかった。
+  // 狭い画面では70%を下限にし、収まらない分は横にスクロールして見る
+  const minFit = viewportWidth > 0 && viewportWidth < 640 ? 0.7 : 0.4;
   const fitZoom =
-    viewportWidth > 0 ? Math.min(1, Math.max(0.4, clampMemoZoom(viewportWidth / (contentRight + 24)))) : 1;
+    viewportWidth > 0 ? Math.min(1, Math.max(minFit, clampMemoZoom(viewportWidth / (contentRight + 24)))) : 1;
   const zoom = zoomStr === "" ? fitZoom : clampMemoZoom(Number(zoomStr) || 1);
 
   // 盤面をスクロールしてToDo・案件のカードの上端(題名)が見えなくなると、サブタスク・段階だけが
@@ -4522,6 +4525,7 @@ function TaskCard({
       }
       onPointerDownCapture={strip ? undefined : onFocus}
       onClick={strip ? undefined : (e) => onSelect(e.shiftKey)}
+      data-running-card={running ? "" : undefined}
     >
       {/* ハブモードの負荷ヒートマップ。超過度合いが大きいほど濃い赤に近づく色温度で
           強調する。負のz-indexで、カード自体の地色の上・中身の文字の下に敷く */}

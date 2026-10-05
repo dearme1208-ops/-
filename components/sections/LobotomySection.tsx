@@ -361,7 +361,7 @@ export default function LobotomySection() {
                   businessIcon={iconFor(selectedTask.category, selectedTask.name)}
                   className="shrink-0 border border-cream/20"
                 />
-                <div className="min-w-0 flex-1 space-y-1">
+                <div className="min-w-0 flex-1 space-y-1" data-running-card={selectedTask.status === "running" ? "" : undefined}>
                   <p className="font-mono text-[10px] tracking-widest text-cream/45">
                     {W.subjectLabel} {selectedAbnormality.subjectNumber}
                   </p>

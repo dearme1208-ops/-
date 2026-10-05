@@ -11,11 +11,18 @@ export default function ToastHost() {
   if (items.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4">
+    // 画面下には打刻ボタン・計測中の帯・本日の作業の切り替えなど、モードによって高さの違う
+    // 固定の操作が並び、どの高さに出しても何かに重なっていた。画面の上に出す
+    <div
+      className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4"
+      style={{ top: "calc(env(safe-area-inset-top) + 0.75rem)" }}
+      role="status"
+      aria-live="polite"
+    >
       {items.map((t) => (
         <div
           key={t.id}
-          className="panel pointer-events-auto flex items-center gap-3 rounded-full px-4 py-2 text-sm shadow-panel"
+          className="panel toast-in pointer-events-auto flex max-w-full items-center gap-3 rounded-full px-4 py-2 text-sm shadow-panel"
         >
           <span className="text-cream/80">{t.message}</span>
           {t.onUndo && (

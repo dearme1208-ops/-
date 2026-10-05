@@ -610,7 +610,7 @@ export default function HayarigamiSection() {
         {/* ── 中央: 計測 または 資料画面 ── */}
         <div className="relative z-10 min-h-[6.5rem] flex-1 overflow-y-auto px-3">
           {screen === "main" && (
-            <div className="flex min-h-full flex-col items-center justify-center gap-0.5 py-2 text-center">
+            <div className="flex min-h-full flex-col items-center justify-center gap-0.5 py-2 text-center" data-running-card={running ? "" : undefined}>
               {running ? (
                 <>
                   <p

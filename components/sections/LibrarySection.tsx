@@ -200,12 +200,16 @@ export default function LibrarySection() {
     <div className="space-y-3">
       {/* ══ 閲覧室 ══ */}
       <div className="overflow-hidden border border-cream/25 bg-panel">
-        <ReadingRoom
-          phase={room.phase}
-          lampsLit={tasks.filter((t) => t.status !== "done").length}
-          overdue={summary.overdueCount}
-          seed={today}
-        />
+        {/* スマホでは閲覧室と書見台の2枚の絵が縦に並び、貸出中(計測中)の本の操作が画面の外に出ていた。
+            狭い画面では絵の高さを抑える(窓と灯りの帯が残るように上下を切る) */}
+        <div className="library-hero">
+          <ReadingRoom
+            phase={room.phase}
+            lampsLit={tasks.filter((t) => t.status !== "done").length}
+            overdue={summary.overdueCount}
+            seed={today}
+          />
+        </div>
         <div className="border-t border-cream/15 px-3 py-2">
           <div className="flex items-baseline justify-between gap-2">
             <h2 className="font-display text-sm tracking-[0.2em] text-cream/85">{W.roomTitle}</h2>
@@ -249,6 +253,7 @@ export default function LibrarySection() {
       {panel === "desk" && (
         <div className="space-y-2">
           <div className="overflow-hidden border border-cream/25 bg-panel">
+            <div className="library-hero">
             <OpenBook
               title={running ? workCtx.label(running) : W.deskIdle}
               progress={runningLoan?.progress ?? 0}
@@ -256,7 +261,8 @@ export default function LibrarySection() {
               idle={!running}
               seed={running ? `${running.category}/${running.name}` : today}
             />
-            <div className="border-t border-cream/15 px-3 py-2">
+            </div>
+            <div className="border-t border-cream/15 px-3 py-2" data-running-card={running ? "" : undefined}>
               {running && runningLoan ? (
                 <>
                   <p className="font-mono text-[10px] tracking-widest text-cream/45">

@@ -424,7 +424,7 @@ export default function TerminalDashboardSection() {
 
       {/* --- 現在実行中の作業。LIVEランプは他テーマのような柔らかい呼吸ではなく硬い点滅にする --- */}
       {runningDaily ? (
-        <div className="panel space-y-1 p-4 ring-1 ring-alert/50">
+        <div className="panel space-y-1 p-4 ring-1 ring-alert/50" data-running-card>
           <div className="flex items-center gap-2 text-xs text-alert">
             <span className="term-blink inline-flex h-2 w-2 rounded-full bg-alert" aria-hidden="true" />
             ● LIVE

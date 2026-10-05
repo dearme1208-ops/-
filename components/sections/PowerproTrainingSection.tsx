@@ -409,7 +409,7 @@ export default function PowerproTrainingSection() {
 
       {/* ══ 練習中 ══ */}
       {panel === "training" && running && runningCommand && (
-        <div className="overflow-hidden rounded-2xl" style={{ ...card, border: goldEdge }}>
+        <div className="overflow-hidden rounded-2xl" style={{ ...card, border: goldEdge }} data-running-card>
           <div
             className="flex items-center gap-2 px-3.5 py-2"
             style={{ background: "linear-gradient(180deg, #1B2540 0%, #0C1220 100%)" }}

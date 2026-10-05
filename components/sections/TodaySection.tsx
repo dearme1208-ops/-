@@ -2720,9 +2720,13 @@ export default function TodaySection({
                       ))}
                     </div>
                     {quickStartEnabled && (
-                      <p className="mt-2 text-[10px] text-cream/40">
+                      // 毎日目に入る場所に長い説明が出っぱなしだったので、知りたい時だけ開く形にする
+                      <details className="mt-2 text-[10px] text-cream/40">
+                        <summary className="cursor-pointer select-none text-[11px] text-cream/50">① 〜 ④ の番号ボタンについて</summary>
+                        <p className="mt-1">
                         番号を押すと、ホーム画面に追加したこのアプリのアイコンを長押しして出てくる「クイック起動①〜④」ショートカットにその作業を割り当てられます。ショートカットをタップすると、計測中なら終了・一時停止中なら再開・それ以外なら新規開始、とワンタップで切り替わります(対応はAndroidのChrome/Edge等。iOS Safariのホーム画面追加ではショートカットメニュー自体が利用できません)。設定画面でOFFにできます。
-                      </p>
+                        </p>
+                      </details>
                     )}
                   </>
                 )}
@@ -2812,7 +2816,9 @@ export default function TodaySection({
                 standardWorkEnd={standardWorkEnd}
               />
             )}
-            {showDailyChallenge && <DailyChallengePanel />}
+            {/* 裏で動いている間(独自の画面に差し替えるモード)は出さない。出すと、そのモードの画面にある
+                チャレンジ欄と二重に達成を祝い、通知が2つ並んでいた */}
+            {showDailyChallenge && !background && <DailyChallengePanel />}
             <TodayHintPanel />
             <BackupNudge />
             <TodayMemoPanel onOpenMemo={onOpenMemo} />

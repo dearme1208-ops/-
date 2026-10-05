@@ -411,7 +411,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
       <Composer today={today} words={W} recentTags={recentTags} onSubmit={submitCompose} />
 
       {runningDaily && (
-        <div className="claude-card claude-card-working" data-testid="claude-working">
+        <div className="claude-card claude-card-working" data-testid="claude-working" data-running-card>
           <WorkingLine verbs={W.workingVerbs} seed={runningDaily.id.charCodeAt(0)} />
           <div className="mt-1.5 flex items-baseline justify-between gap-3">
             <p className="min-w-0 flex-1 truncate text-[16px] font-medium text-cream">{workCtx.label(runningDaily)}</p>

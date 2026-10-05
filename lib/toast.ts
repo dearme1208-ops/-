@@ -25,6 +25,8 @@ export function subscribeToasts(listener: Listener): () => void {
 }
 
 export function showUndoToast(message: string, onUndo?: () => void, durationMs = 6000) {
+  // 同じ知らせが既に出ていれば重ねて出さない(複数の画面が同じ出来事に反応した時に2つ並ばないように)
+  if (!onUndo && toasts.some((t) => t.message === message && !t.onUndo)) return;
   const id = crypto.randomUUID();
   toasts = [...toasts, { id, message, onUndo, durationMs }];
   emit();

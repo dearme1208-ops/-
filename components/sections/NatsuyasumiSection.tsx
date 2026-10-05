@@ -257,7 +257,7 @@ export default function NatsuyasumiSection() {
 
           {/* ══ いま やっていること ══ */}
           {running && (
-            <div className={`${card} overflow-hidden`}>
+            <div className={`${card} overflow-hidden`} data-running-card>
               <div className="flex items-center gap-2 bg-[rgb(var(--nat-sun-rgb)/0.22)] px-4 py-1.5">
                 <span className="nat-firefly inline-flex h-1.5 w-1.5 rounded-full bg-[rgb(var(--nat-sun-rgb))]" aria-hidden />
                 <span className="text-[11px] font-bold tracking-wider text-cream/80">{W.runningLabel}</span>

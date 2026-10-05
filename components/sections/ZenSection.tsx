@@ -151,6 +151,9 @@ export default function ZenSection() {
 
   return (
     <div className="zen-stage">
+      {/* 円相は、名前・時間・ボタンをちょうど内側に収める大きさで、それらの真ん中に置く。
+          以前は画面全体の真ん中に置いていたため、円の線がボタンや文字の上を横切っていた */}
+      <div className="zen-circle">
       <div className="zen-enso" aria-hidden="true">
         <svg viewBox="0 0 240 240" className="h-full w-full">
           <circle
@@ -168,7 +171,7 @@ export default function ZenSection() {
         </svg>
       </div>
 
-      <div className="zen-content">
+      <div className="zen-content" data-running-card>
         {title ? (
           <>
             {category && <p className="zen-category">{category}</p>}
@@ -199,6 +202,7 @@ export default function ZenSection() {
             <p className="zen-meta">静かな時間です。</p>
           </>
         )}
+      </div>
       </div>
 
       <div className="zen-footer">

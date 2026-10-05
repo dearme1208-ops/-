@@ -513,7 +513,7 @@ function BattleScreen({
   const isOverrun = hasEstimate && elapsedSec > task.estimatedSeconds;
 
   return (
-    <div className={`panel adv-battle-screen space-y-4 p-5 ${isBoss ? "adv-boss-frame" : ""}`}>
+    <div className={`panel adv-battle-screen space-y-4 p-5 ${isBoss ? "adv-boss-frame" : ""}`} data-running-card>
       <div className="flex items-center justify-between gap-2">
         <button type="button" className="text-xs text-cream/50 hover:text-cream" onClick={onBack}>
           ← 地図にもどる
