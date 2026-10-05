@@ -130,3 +130,36 @@ test("依頼文をワンタップでコピーでき、コピーできない環�
   const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "ファイルで保存（.txt）" }).click()]);
   expect(dl.suggestedFilename()).toMatch(/^koutei-prompt-notes-.*\.txt$/);
 });
+
+test("今の案件・ToDoを、頼みごと抜きの一覧としてそのままコピー・保存できる(データは変わらない)", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.clock.install({ time: jstAt("10:00") });
+  await seed(page, {
+    stores: {
+      todoLists: lists,
+      todoTasks: [
+        { id: "t1", listId: "l1", title: "B社対応", important: true, completed: false, order: 0, createdAt: 0, dueDate: jstDate(2) },
+        { id: "t1a", listId: "l1", parentTaskId: "t1", title: "資料送付", important: false, completed: false, order: 0, createdAt: 0 },
+      ],
+      projects: [{ id: "p1", title: "A社の見積", category: "営業", workName: "見積", dueDate: jstDate(5), createdAt: 0, stages: [] }],
+    },
+  });
+  await page.locator(".tab-chip", { hasText: "ToDo" }).first().click();
+  await page.getByRole("button", { name: "🤖 AIと進捗をやり取り" }).click();
+  const box = page.getByTestId("plain-list");
+  await box.getByRole("button", { name: "📋 一覧をコピー" }).click();
+  await expect(box.getByText("コピーしました。")).toBeVisible();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("# 案件・ToDoの一覧");
+  expect(copied).toContain("### A社の見積");
+  expect(copied).toContain(`- 期日 ${jstDate(5)}（あと5日）`);
+  expect(copied).toMatch(/- \[ \] B社対応（★重要・期日 .*（あと2日））/);
+  expect(copied).toContain("  - [ ] 資料送付");
+  // 頼みごとや仕様書・IDは入れない
+  expect(copied).not.toContain("アシスタント");
+  expect(copied).not.toContain("koutei-");
+  expect(copied).not.toContain('"id"');
+
+  const [dl] = await Promise.all([page.waitForEvent("download"), box.getByRole("button", { name: "⬇ 一覧を保存（.md）" }).click()]);
+  expect(dl.suggestedFilename()).toMatch(/^koutei-list-.*\.md$/);
+});

@@ -9,6 +9,7 @@ import PromptCopyButton from "@/components/ai/PromptCopyButton";
 import UpdateImporter from "@/components/ai/UpdateImporter";
 import LifeContextSelect from "@/components/ai/LifeContextSelect";
 import { copyText, loadSnapshot, loadSpec, loadTimeboxRequest } from "@/components/ai/aiData";
+import { snapshotToPlainList } from "@/lib/plainList";
 
 // 別のAI(Claudeなど)に案件・ToDoの進捗の登録や時間割づくりを頼むための画面。
 // ①依頼文(頼み方+データ)をワンタップでコピーしてClaudeに貼る ②返ってきた更新を確認して反映する。
@@ -27,6 +28,28 @@ export default function ProgressSyncModal({ onClose }: { onClose: () => void }) 
           ① 頼みたいことのボタンで依頼文をコピーし、Claudeとの会話に貼り付けます（仕様と今の案件・ToDoが入っています）。
           ② Claudeが返した答えを下に貼り付け、確認してから反映します。書かれた操作以外には触れず、反映後も取り消せます。
         </p>
+
+        <section className="space-y-2 rounded-lg border border-cream/15 p-3" data-testid="plain-list">
+          <h4 className="text-xs font-bold text-cream/80">📋 今の案件・ToDoをそのまま渡す</h4>
+          <p className="text-[11px] leading-relaxed text-cream/60">
+            頼みごとや仕様は付けず、登録してある未完了の案件・ToDo（段階・サブタスク・期日・対応状況・メモ）を読みやすい一覧にするだけです。
+            AIとの会話に貼って、整理や相談の材料にしてください。アプリのデータは何も変わりません。
+          </p>
+          <div className="flex flex-wrap items-start gap-2">
+            <PromptCopyButton
+              label="📋 一覧をコピー"
+              className="btn-pill text-xs"
+              fileName={`koutei-list-${today}.md`}
+              build={async () => snapshotToPlainList(await loadSnapshot())}
+            />
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={async () => downloadTextFile(`koutei-list-${today}.md`, snapshotToPlainList(await loadSnapshot()))}
+            >
+              ⬇ 一覧を保存（.md）
+            </button>
+          </div>
+        </section>
 
         <section className="space-y-2">
           <h4 className="text-xs font-bold text-cream/80">① 依頼文をコピーしてClaudeに貼る</h4>
