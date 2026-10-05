@@ -291,6 +291,28 @@ export async function pauseRunningProvisional(date: string, at: number = Date.no
   for (const t of running) await pauseDailyTask(t, at);
 }
 
+/**
+ * 作業の実測は同時に1つだけにする。計測中の作業(仮計測を除く)が2つ以上あれば、
+ * いちばん後から計測を始めたものだけを残し、ほかはその開始時刻で一時停止する
+ * (時間が重なって二重に数えないよう、止める時刻は今ではなく後の作業の開始時刻)。
+ * 作業を始める入口は本日の作業・お気に入り・予定・各モードの画面などに多数あるため、
+ * 入口ごとではなく、計測中の作業が2つになったのを見つけた時点でここでまとめて直す。
+ * 仮計測は本日の作業で合算・破棄を選ぶ仕組みが別にあるので、ここでは触れない。
+ * 一時停止した作業を返す
+ */
+export async function enforceSingleRunning(date: string): Promise<DailyTask[]> {
+  return db.transaction("rw", db.dailyTasks, async () => {
+    const openStart = (t: DailyTask) => t.segments.find((s) => s.end === undefined)?.start ?? 0;
+    const running = (await db.dailyTasks.where("date").equals(date).toArray())
+      .filter((t) => t.status === "running" && !t.isProvisional)
+      .sort((a, b) => openStart(b) - openStart(a) || b.order - a.order);
+    if (running.length < 2) return [];
+    const [keep, ...others] = running;
+    for (const t of others) await pauseDailyTask(t, openStart(keep));
+    return others;
+  });
+}
+
 // 計測できずに後からまとめて手入力する実績を1件追加する(実績編集の「過去の実績を追加」、打刻からの記録)。
 // 同日・同じ作業の実績が既にあれば、通常の作業完了時と同じルールで合算する(区分・作業名の統一、時間の合算)。
 // 追加・合算した実績のIDを返す

@@ -245,3 +245,30 @@ describe("実績側の時刻編集を本日の作業へ反映(syncDailyTaskBound
     expect(d.recordedMs).toBe(45 * MIN);
   });
 });
+
+describe("作業の実測は同時に1つだけ(enforceSingleRunning)", () => {
+  it("後から始めた作業だけを残し、先の作業は後の作業の開始時刻で一時停止する", async () => {
+    const { enforceSingleRunning } = await import("./tasks");
+    await db.dailyTasks.bulkPut([
+      task({ id: "a", order: 0, segments: [{ start: T0 }] }),
+      task({ id: "b", order: 1, segments: [{ start: T0 + 20 * MIN }] }),
+      task({ id: "prov", order: 2, isProvisional: true, segments: [{ start: T0 + 30 * MIN }] }),
+    ]);
+    const paused = await enforceSingleRunning(DATE);
+    expect(paused.map((t) => t.id)).toEqual(["a"]);
+    const a = (await db.dailyTasks.get("a"))!;
+    expect(a.status).toBe("paused");
+    expect(a.segments[0].end).toBe(T0 + 20 * MIN);
+    expect(a.accumulatedMs).toBe(20 * MIN);
+    expect((await db.dailyTasks.get("b"))!.status).toBe("running");
+    // 仮計測は別の仕組みで扱うので触れない
+    expect((await db.dailyTasks.get("prov"))!.status).toBe("running");
+  });
+
+  it("計測中が1つなら何もしない", async () => {
+    const { enforceSingleRunning } = await import("./tasks");
+    await db.dailyTasks.put(task({ id: "a" }));
+    expect(await enforceSingleRunning(DATE)).toEqual([]);
+    expect((await db.dailyTasks.get("a"))!.status).toBe("running");
+  });
+});

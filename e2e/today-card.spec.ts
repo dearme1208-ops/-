@@ -115,3 +115,19 @@ test("計測中のカードで手段を入れられ、完了するとその手�
   await page.locator("button", { hasText: /^終了$/ }).first().click();
   await expect.poll(async () => (await readAll<{ method?: string }>(page, "records")).map((r) => r.method)).toEqual(["Excel"]);
 });
+
+test("作業の実測は同時に1つだけ: 計測中が2つになったら、後から始めた方だけが残る", async ({ page }) => {
+  await seed(page, {
+    stores: {
+      masterTasks: [MASTER],
+      dailyTasks: [
+        dailyTask({ id: "a", date: jstDate(), order: 0, status: "running", segments: [{ start: jstAt("09:00") }], startedAt: jstAt("09:00") }),
+        dailyTask({ id: "b", date: jstDate(), order: 1, status: "running", segments: [{ start: jstAt("09:40") }], startedAt: jstAt("09:40") }),
+      ],
+    },
+  });
+  await expect.poll(async () => (await readOne<Daily>(page, "dailyTasks", "a"))?.status).toBe("paused");
+  const a = await readOne<{ segments: { start: number; end?: number }[] }>(page, "dailyTasks", "a");
+  expect(a?.segments[0].end).toBe(jstAt("09:40"));
+  expect((await readOne<Daily>(page, "dailyTasks", "b"))?.status).toBe("running");
+});

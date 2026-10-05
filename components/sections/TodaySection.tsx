@@ -29,6 +29,7 @@ import {
   segmentsAccumulatedMs,
   updateRecordBoundsAfterEdit,
   pauseDailyTask,
+  enforceSingleRunning,
   type FinishDailyTaskOptions,
 } from "@/lib/tasks";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
@@ -332,6 +333,12 @@ export default function TodaySection({
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
     [date]
   );
+  // 作業の実測は同時に1つだけ。どの入口から始めても、計測中が2つになったら後から始めた方だけを残す
+  const runningRealCount = (tasks ?? []).filter((t) => t.status === "running" && !t.isProvisional).length;
+  useEffect(() => {
+    if (runningRealCount < 2) return;
+    enforceSingleRunning(date).catch((e) => console.error("計測中の作業の整理に失敗しました", e));
+  }, [runningRealCount, date, tasks]);
   const favoritesRaw = useLiveQuery(
     () => db.masterTasks.filter((t) => t.isFavorite && !t.archived).toArray(),
     []
