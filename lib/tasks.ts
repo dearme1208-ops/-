@@ -292,24 +292,37 @@ export async function pauseRunningProvisional(date: string, at: number = Date.no
 }
 
 /**
- * 作業の実測は同時に1つだけにする。計測中の作業(仮計測を除く)が2つ以上あれば、
- * いちばん後から計測を始めたものだけを残し、ほかはその開始時刻で一時停止する
- * (時間が重なって二重に数えないよう、止める時刻は今ではなく後の作業の開始時刻)。
- * 作業を始める入口は本日の作業・お気に入り・予定・各モードの画面などに多数あるため、
- * 入口ごとではなく、計測中の作業が2つになったのを見つけた時点でここでまとめて直す。
- * 仮計測は本日の作業で合算・破棄を選ぶ仕組みが別にあるので、ここでは触れない。
+ * 作業の実測は同時に1つだけにする。作業を始める入口は本日の作業・お気に入り・予定・
+ * 時間割・ショートカット・各モードの画面などに多数あるため、入口ごとではなく、
+ * 計測中の作業が2つ以上になったのを見つけた時点でここでまとめて直す。
+ *  - 今日の作業(仮計測を含む)は、いちばん後から計測を始めたものだけを残し、ほかはその
+ *    開始時刻で一時停止する(止める時刻を今にすると時間が重なって二重に数えるため)。
+ *    仮計測が止まった場合は、本日の作業であとから作業に割り当てられる
+ *  - 前日以前から計測中のまま残っている作業(睡眠など)は、今日の作業を計測し始めた時刻で
+ *    一時停止する。仮計測が始まっただけでは止めない(夜中の未計測で睡眠が切れないように)
  * 一時停止した作業を返す
  */
-export async function enforceSingleRunning(date: string): Promise<DailyTask[]> {
+export async function enforceSingleRunning(today: string): Promise<DailyTask[]> {
   return db.transaction("rw", db.dailyTasks, async () => {
     const openStart = (t: DailyTask) => t.segments.find((s) => s.end === undefined)?.start ?? 0;
-    const running = (await db.dailyTasks.where("date").equals(date).toArray())
-      .filter((t) => t.status === "running" && !t.isProvisional)
-      .sort((a, b) => openStart(b) - openStart(a) || b.order - a.order);
-    if (running.length < 2) return [];
-    const [keep, ...others] = running;
-    for (const t of others) await pauseDailyTask(t, openStart(keep));
-    return others;
+    const running = await db.dailyTasks.where("status").equals("running").toArray();
+    const todays = running
+      .filter((t) => t.date === today)
+      // 同じ時刻なら仮計測より本来の作業を残す
+      .sort((a, b) => openStart(b) - openStart(a) || Number(!!a.isProvisional) - Number(!!b.isProvisional) || b.order - a.order);
+    const paused: DailyTask[] = [];
+    const [keep, ...others] = todays;
+    for (const t of others) {
+      await pauseDailyTask(t, openStart(keep));
+      paused.push(t);
+    }
+    if (keep && !keep.isProvisional) {
+      for (const t of running.filter((r) => r.date < today)) {
+        await pauseDailyTask(t, openStart(keep));
+        paused.push(t);
+      }
+    }
+    return paused;
   });
 }
 
@@ -470,7 +483,26 @@ export async function findOrphanedDailyTasks(todayDateStr: string): Promise<Dail
 // 使われず実際の最後の一時停止時刻がそのままendedAtになる(finishDailyTask参照)
 export async function finishOrphanedDailyTask(task: DailyTask): Promise<void> {
   const dayEndMs = new Date(task.date + "T23:59:59").getTime();
+  if (task.status === "paused") {
+    // 今日の作業を始めた時に自動で一時停止された(=区間が翌日以降まで延びている)作業を、
+    // 元の日の24:00で打ち切る。延びていた分は合計からも差し引く
+    const segments = task.segments
+      .filter((s) => s.start < dayEndMs)
+      .map((s) => (s.end !== undefined && s.end > dayEndMs ? { ...s, end: dayEndMs } : s));
+    const len = (list: TimeSegment[]) => list.reduce((sum, s) => sum + ((s.end ?? s.start) - s.start), 0);
+    const accumulatedMs = Math.max(0, task.accumulatedMs - (len(task.segments) - len(segments)));
+    const trimmed = { ...task, segments, accumulatedMs, stoppedAt: Math.min(task.stoppedAt ?? dayEndMs, dayEndMs) };
+    await db.dailyTasks.update(task.id, { segments, accumulatedMs, stoppedAt: trimmed.stoppedAt });
+    await finishDailyTask(trimmed);
+    return;
+  }
   await finishDailyTask(task, dayEndMs);
+}
+
+/** 一時停止中の区間が元の日の24:00を越えて延びているか(24:00で打ち切る選択肢を出すかどうか) */
+export function extendsPastDayEnd(task: DailyTask): boolean {
+  const dayEndMs = new Date(task.date + "T23:59:59").getTime();
+  return task.segments.some((s) => (s.end ?? 0) > dayEndMs);
 }
 
 // 放置されていた「計測中」の作業を、確認している「今この瞬間」まで計測して元の日(task.date)の

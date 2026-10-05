@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import {
   baseAccumulatedMs,
   discardOrphanedDailyTask,
+  extendsPastDayEnd,
   findOrphanedDailyTasks,
   finishOrphanedDailyTask,
   finishOrphanedDailyTaskAsIs,
@@ -79,6 +80,16 @@ export default function OrphanTaskModal() {
               <div className="text-xs tabular-nums text-cream/60">経過 {formatHms(Math.round(elapsedMs / 1000))}</div>
               <div className="mt-2 flex flex-wrap justify-end gap-2">
                 {task.status === "paused" ? (
+                  <>
+                  {extendsPastDayEnd(task) && (
+                    <button
+                      className="btn-pill-outline text-xs"
+                      onClick={() => finishOrphanedDailyTask(task)}
+                      title="今日の作業を始めた時に自動で一時停止した作業を、元の日の24:00までの分だけで完了にします"
+                    >
+                      終了する（{formatDateJp(task.date)} 24:00で打ち切り）
+                    </button>
+                  )}
                   <button
                     className="btn-pill-outline text-xs"
                     onClick={() => finishOrphanedDailyTaskAsIs(task)}
@@ -86,6 +97,7 @@ export default function OrphanTaskModal() {
                   >
                     そのまま完了する（{formatDateJp(task.date)}実績として）
                   </button>
+                  </>
                 ) : (
                   <>
                     <button className="btn-pill-outline text-xs" onClick={() => finishOrphanedDailyTask(task)}>
