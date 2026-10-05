@@ -28,14 +28,14 @@ export async function loadBreaks() {
   return parseBreakRanges(await setting("today.provisionalBreakRanges", "[]"));
 }
 
-export async function loadSnapshot(): Promise<ProgressSnapshot> {
+export async function loadSnapshot({ includeCompleted = false }: { includeCompleted?: boolean } = {}): Promise<ProgressSnapshot> {
   const [projects, todoTasks, todoLists, tagOptions] = await Promise.all([
     db.projects.toArray(),
     db.todoTasks.toArray(),
     db.todoLists.toArray(),
     loadTagOptions(),
   ]);
-  return buildSnapshot({ projects, todoTasks, todoLists, tagOptions });
+  return buildSnapshot({ projects, todoTasks, todoLists, tagOptions, includeCompleted });
 }
 
 /** 時間割の依頼の使い道(仕事/家庭)。工程表を仕事用と家庭用で別々に使う人のため、依頼の画面で選んで覚えておく */

@@ -17,6 +17,8 @@ import { snapshotToPlainList } from "@/lib/plainList";
 
 export default function ProgressSyncModal({ onClose }: { onClose: () => void }) {
   const [message, setMessage] = useState("");
+  const [includeCompleted, setIncludeCompleted] = useState(false);
+  const plainList = async () => snapshotToPlainList(await loadSnapshot({ includeCompleted }), { includeCompleted });
   const today = todayStr();
   const tomorrow = shiftDateStr(today, 1);
   const snapshotText = async () => JSON.stringify(await loadSnapshot(), null, 2);
@@ -32,19 +34,28 @@ export default function ProgressSyncModal({ onClose }: { onClose: () => void }) 
         <section className="space-y-2 rounded-lg border border-cream/15 p-3" data-testid="plain-list">
           <h4 className="text-xs font-bold text-cream/80">📋 今の案件・ToDoをそのまま渡す</h4>
           <p className="text-[11px] leading-relaxed text-cream/60">
-            頼みごとや仕様は付けず、登録してある未完了の案件・ToDo（段階・サブタスク・期日・対応状況・メモ）を読みやすい一覧にするだけです。
+            頼みごとや仕様は付けず、登録してある案件・ToDo（段階・サブタスク・期日・対応状況・メモ）を読みやすい一覧にするだけです。
             AIとの会話に貼って、整理や相談の材料にしてください。アプリのデータは何も変わりません。
           </p>
+          <label className="flex items-center gap-1.5 text-xs text-cream/75">
+            <input
+              type="checkbox"
+              checked={includeCompleted}
+              onChange={(e) => setIncludeCompleted(e.target.checked)}
+              className="h-4 w-4 accent-cream"
+            />
+            完了済みの案件・ToDoも含める（未完了の後ろに、完了日の新しい順で並べます）
+          </label>
           <div className="flex flex-wrap items-start gap-2">
             <PromptCopyButton
               label="📋 一覧をコピー"
               className="btn-pill text-xs"
               fileName={`koutei-list-${today}.md`}
-              build={async () => snapshotToPlainList(await loadSnapshot())}
+              build={plainList}
             />
             <button
               className="btn-pill-outline text-xs"
-              onClick={async () => downloadTextFile(`koutei-list-${today}.md`, snapshotToPlainList(await loadSnapshot()))}
+              onClick={async () => downloadTextFile(`koutei-list-${today}${includeCompleted ? "-all" : ""}.md`, await plainList())}
             >
               ⬇ 一覧を保存（.md）
             </button>

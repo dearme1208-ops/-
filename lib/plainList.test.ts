@@ -34,3 +34,37 @@ describe("案件・ToDoをそのまま渡す一覧", () => {
     expect(text).not.toContain("済んだこと");
   });
 });
+
+describe("完了済みも含める", () => {
+  it("未完了の後ろに、完了した案件・ToDoを完了日の新しい順で並べる。含めない時は出さない", () => {
+    const now = new Date("2026-10-05T10:00:00").getTime();
+    const day = (d: string) => new Date(`${d}T12:00:00`).getTime();
+    const projects = [
+      { id: "p1", title: "進行中の案件", createdAt: now, stages: [] },
+      { id: "p2", title: "先月終えた案件", completedAt: day("2026-09-10"), createdAt: now, stages: [] },
+      { id: "p3", title: "昨日終えた案件", completedAt: day("2026-10-04"), archived: true, createdAt: now, stages: [] },
+    ] as unknown as ProjectItem[];
+    const todoLists = [{ id: "l", title: "仕事", order: 0, createdAt: 0 }] as TodoList[];
+    const todoTasks = [
+      { id: "t1", listId: "l", title: "やること", completed: false, important: false, order: 0, createdAt: 0 },
+      { id: "t2", listId: "l", title: "済んだこと", completed: true, completedAt: day("2026-10-02"), important: false, order: 1, createdAt: 0, projectId: "p1" },
+    ] as unknown as TodoTask[];
+    const build = (includeCompleted: boolean) =>
+      snapshotToPlainList(buildSnapshot({ projects, todoTasks, todoLists, tagOptions: [], now, includeCompleted }), { includeCompleted });
+
+    const open = build(false);
+    expect(open).not.toContain("終えた案件");
+    expect(open).not.toContain("済んだこと");
+
+    const all = build(true);
+    expect(all).toContain("（2026-10-05 時点・完了済みを含む）");
+    expect(all).toContain("## 進行中の案件（1件）");
+    expect(all).toContain("## 完了した案件（2件）");
+    expect(all.indexOf("昨日終えた案件")).toBeLessThan(all.indexOf("先月終えた案件"));
+    expect(all).toContain("- 完了 2026-10-04");
+    expect(all).toContain("## 未完了のToDo（1件）");
+    expect(all).toContain("## 完了したToDo（1件）");
+    expect(all).toContain("- [x] 済んだこと（完了 2026-10-02・案件「進行中の案件」）");
+    expect(all).toContain("- 関連するToDo: 済んだこと（完了）");
+  });
+});

@@ -140,6 +140,7 @@ test("今の案件・ToDoを、頼みごと抜きの一覧としてそのまま�
       todoTasks: [
         { id: "t1", listId: "l1", title: "B社対応", important: true, completed: false, order: 0, createdAt: 0, dueDate: jstDate(2) },
         { id: "t1a", listId: "l1", parentTaskId: "t1", title: "資料送付", important: false, completed: false, order: 0, createdAt: 0 },
+        { id: "t2", listId: "l1", title: "先週済ませた電話", important: false, completed: true, completedAt: jstAt("15:00", -3), order: 1, createdAt: 0 },
       ],
       projects: [{ id: "p1", title: "A社の見積", category: "営業", workName: "見積", dueDate: jstDate(5), createdAt: 0, stages: [] }],
     },
@@ -160,6 +161,16 @@ test("今の案件・ToDoを、頼みごと抜きの一覧としてそのまま�
   expect(copied).not.toContain("koutei-");
   expect(copied).not.toContain('"id"');
 
+  expect(copied).not.toContain("先週済ませた電話");
+
+  // 完了済みも含める
+  await box.getByLabel(/完了済みの案件・ToDoも含める/).check();
+  await box.getByRole("button", { name: "📋 一覧をコピー" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("## 完了したToDo（1件）");
+  const all = await page.evaluate(() => navigator.clipboard.readText());
+  expect(all).toContain(`- [x] 先週済ませた電話（完了 ${jstDate(-3)}）`);
+  expect(all).toContain("## 未完了のToDo（1件）");
+
   const [dl] = await Promise.all([page.waitForEvent("download"), box.getByRole("button", { name: "⬇ 一覧を保存（.md）" }).click()]);
-  expect(dl.suggestedFilename()).toMatch(/^koutei-list-.*\.md$/);
+  expect(dl.suggestedFilename()).toMatch(/^koutei-list-.*-all\.md$/);
 });

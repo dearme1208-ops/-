@@ -41,6 +41,8 @@ export interface SnapshotProject {
   tagAuto?: boolean;
   createdDate: string;
   completed: boolean;
+  /** 完了した日(完了済みも含めて書き出した時だけ) */
+  completedDate?: string;
   stages: SnapshotStage[];
 }
 
@@ -67,6 +69,8 @@ export interface SnapshotTodo {
   important: boolean;
   recurring: boolean;
   completed: boolean;
+  /** 完了した日(完了済みも含めて書き出した時だけ) */
+  completedDate?: string;
   projectId?: string;
   subtasks: SnapshotSubtask[];
 }
@@ -88,19 +92,25 @@ function clean<T extends object>(o: T): T {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== "")) as T;
 }
 
-/** 未完了(アーカイブ済みを除く)の案件とToDoのスナップショット */
+/**
+ * 未完了(アーカイブ済みを除く)の案件とToDoのスナップショット。
+ * includeCompleted のときは完了済み(アーカイブ済みを含む)も入れる(「そのまま渡す一覧」用。
+ * 進捗のやり取りでは使わない)
+ */
 export function buildSnapshot({
   projects,
   todoTasks,
   todoLists,
   tagOptions,
   now = Date.now(),
+  includeCompleted = false,
 }: {
   projects: ProjectItem[];
   todoTasks: TodoTask[];
   todoLists: TodoList[];
   tagOptions: string[];
   now?: number;
+  includeCompleted?: boolean;
 }): ProgressSnapshot {
   const listTitle = new Map(todoLists.map((l) => [l.id, l.title]));
   const subsByParent = new Map<string, TodoTask[]>();
@@ -116,7 +126,7 @@ export function buildSnapshot({
     tagOptions,
     todoLists: [...todoLists].sort((a, b) => a.order - b.order).map((l) => l.title),
     projects: projects
-      .filter((p) => !p.completedAt && !p.archived)
+      .filter((p) => includeCompleted || (!p.completedAt && !p.archived))
       .map((p) =>
         clean({
           id: p.id,
@@ -129,7 +139,8 @@ export function buildSnapshot({
           tag: effectiveProjectTag(p, tagOptions),
           tagAuto: (p.stages ?? []).length > 0 ? true : undefined,
           createdDate: todayStr(new Date(p.createdAt)),
-          completed: false,
+          completed: !!p.completedAt,
+          completedDate: dateOf(p.completedAt),
           stages: (p.stages ?? []).map((s) =>
             clean({
               id: s.id,
@@ -145,7 +156,7 @@ export function buildSnapshot({
         })
       ),
     todos: todoTasks
-      .filter((t) => !t.parentTaskId && !t.completed && !t.archived)
+      .filter((t) => !t.parentTaskId && (includeCompleted || (!t.completed && !t.archived)))
       .sort((a, b) => (listTitle.get(a.listId) ?? "").localeCompare(listTitle.get(b.listId) ?? "") || a.order - b.order)
       .map((t) =>
         clean({
@@ -161,7 +172,8 @@ export function buildSnapshot({
           startDate: t.startDate,
           important: t.important,
           recurring: !!t.recurrence,
-          completed: false,
+          completed: t.completed,
+          completedDate: t.completed ? dateOf(t.completedAt) : undefined,
           projectId: t.projectId,
           subtasks: (subsByParent.get(t.id) ?? [])
             .sort((a, b) => a.order - b.order)

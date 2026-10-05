@@ -24,59 +24,89 @@ function subtaskLine(s: SnapshotSubtask, today: string): string {
   return `  - [${s.completed ? "x" : " "}] ${md(s.title)}${meta ? `（${meta}）` : ""}`;
 }
 
-export function snapshotToPlainList(snap: ProgressSnapshot): string {
+type Snap = ProgressSnapshot;
+
+function projectBlock(lines: string[], p: Snap["projects"][number], snap: Snap) {
   const today = snap.today;
-  const lines: string[] = [`# 案件・ToDoの一覧（${today} 時点・未完了のもの）`, ""];
-  const projectTitle = new Map(snap.projects.map((p) => [p.id, p.title]));
-
-  lines.push(`## 案件（${snap.projects.length}件）`, "");
-  if (snap.projects.length === 0) lines.push("なし", "");
-  const projects = [...snap.projects].sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
-  for (const p of projects) {
-    lines.push(`### ${md(p.title)}`);
-    const meta = [
-      p.groupName && `- グループ: ${md(p.groupName)}`,
-      (p.category || p.workName) && `- 区分・作業: ${[p.category, p.workName].filter(Boolean).join(" / ")}`,
-      `- ${due(p.dueDate, today) ?? "期日なし"}`,
-      p.tag && `- 対応状況: ${p.tag}`,
-      `- 登録日: ${p.createdDate}`,
-    ].filter(Boolean) as string[];
-    lines.push(...meta);
-    if (p.stages.length > 0) {
-      const done = p.stages.filter((s) => s.completed).length;
-      lines.push(`- 段階（${done}/${p.stages.length} 完了）`);
-      for (const s of p.stages) {
-        const count = s.targetCount ? `${s.completedCount ?? 0}/${s.targetCount}件` : undefined;
-        const m = joinMeta([s.completed ? (s.completedDate ? `完了 ${s.completedDate}` : "完了") : due(s.dueDate, today), !s.completed && s.tag, count]);
-        lines.push(`  - [${s.completed ? "x" : " "}] ${md(s.title)}${m ? `（${m}）` : ""}`);
-      }
+  lines.push(`### ${md(p.title)}`);
+  const meta = [
+    p.groupName && `- グループ: ${md(p.groupName)}`,
+    (p.category || p.workName) && `- 区分・作業: ${[p.category, p.workName].filter(Boolean).join(" / ")}`,
+    p.completed
+      ? `- 完了${p.completedDate ? ` ${p.completedDate}` : ""}${p.dueDate ? `（期日 ${p.dueDate}）` : ""}`
+      : `- ${due(p.dueDate, today) ?? "期日なし"}`,
+    !p.completed && p.tag && `- 対応状況: ${p.tag}`,
+    `- 登録日: ${p.createdDate}`,
+  ].filter(Boolean) as string[];
+  lines.push(...meta);
+  if (p.stages.length > 0) {
+    const done = p.stages.filter((s) => s.completed).length;
+    lines.push(`- 段階（${done}/${p.stages.length} 完了）`);
+    for (const s of p.stages) {
+      const count = s.targetCount ? `${s.completedCount ?? 0}/${s.targetCount}件` : undefined;
+      const m = joinMeta([s.completed ? (s.completedDate ? `完了 ${s.completedDate}` : "完了") : due(s.dueDate, today), !s.completed && s.tag, count]);
+      lines.push(`  - [${s.completed ? "x" : " "}] ${md(s.title)}${m ? `（${m}）` : ""}`);
     }
-    const related = snap.todos.filter((t) => t.projectId === p.id);
-    if (related.length > 0) lines.push(`- 関連するToDo: ${related.map((t) => md(t.title)).join("、")}`);
-    lines.push("");
   }
+  const related = snap.todos.filter((t) => t.projectId === p.id);
+  if (related.length > 0) lines.push(`- 関連するToDo: ${related.map((t) => `${md(t.title)}${t.completed ? "（完了）" : ""}`).join("、")}`);
+  lines.push("");
+}
 
-  lines.push(`## ToDo（${snap.todos.length}件）`, "");
-  if (snap.todos.length === 0) lines.push("なし", "");
-  const lists = [...new Set(snap.todos.map((t) => t.list))];
+function todoBlocks(lines: string[], todos: Snap["todos"], snap: Snap) {
+  const today = snap.today;
+  const projectTitle = new Map(snap.projects.map((p) => [p.id, p.title]));
+  const lists = [...new Set(todos.map((t) => t.list))];
   for (const list of lists) {
     lines.push(`### ${list || "（リストなし）"}`);
-    for (const t of snap.todos.filter((x) => x.list === list)) {
+    for (const t of todos.filter((x) => x.list === list)) {
       const meta = joinMeta([
         t.important && "★重要",
-        due(t.dueDate, today),
-        t.startDate && t.startDate > today && `${t.startDate}から`,
-        t.tag,
+        t.completed ? `完了${t.completedDate ? ` ${t.completedDate}` : ""}` : due(t.dueDate, today),
+        !t.completed && t.startDate && t.startDate > today && `${t.startDate}から`,
+        !t.completed && t.tag,
         t.recurring && "繰り返し",
         t.projectId && projectTitle.has(t.projectId) && `案件「${md(projectTitle.get(t.projectId)!)}」`,
       ]);
-      lines.push(`- [ ] ${md(t.title)}${meta ? `（${meta}）` : ""}`);
-      if (t.action) lines.push(`  - 次の一手: ${md(t.action)}`);
+      lines.push(`- [${t.completed ? "x" : " "}] ${md(t.title)}${meta ? `（${meta}）` : ""}`);
+      if (t.action && !t.completed) lines.push(`  - 次の一手: ${md(t.action)}`);
       if (t.notes) lines.push(`  - メモ: ${md(t.notes)}`);
       for (const s of t.subtasks) lines.push(subtaskLine(s, today));
     }
     lines.push("");
   }
-  return lines.join("\n").trimEnd() + "\n";
 }
 
+/** 完了日の新しい順 */
+const byCompletedDesc = (a: { completedDate?: string }, b: { completedDate?: string }) =>
+  (b.completedDate ?? "").localeCompare(a.completedDate ?? "");
+
+/**
+ * includeCompleted のときは、未完了の後ろに「完了した案件」「完了したToDo」を完了日の新しい順で続ける
+ * (スナップショットも includeCompleted で作ったものを渡す)
+ */
+export function snapshotToPlainList(snap: Snap, { includeCompleted = false }: { includeCompleted?: boolean } = {}): string {
+  const lines: string[] = [`# 案件・ToDoの一覧（${snap.today} 時点・${includeCompleted ? "完了済みを含む" : "未完了のもの"}）`, ""];
+  const openProjects = snap.projects.filter((p) => !p.completed).sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
+  const openTodos = snap.todos.filter((t) => !t.completed);
+
+  lines.push(`## ${includeCompleted ? "進行中の案件" : "案件"}（${openProjects.length}件）`, "");
+  if (openProjects.length === 0) lines.push("なし", "");
+  for (const p of openProjects) projectBlock(lines, p, snap);
+
+  lines.push(`## ${includeCompleted ? "未完了のToDo" : "ToDo"}（${openTodos.length}件）`, "");
+  if (openTodos.length === 0) lines.push("なし", "");
+  todoBlocks(lines, openTodos, snap);
+
+  if (includeCompleted) {
+    const doneProjects = snap.projects.filter((p) => p.completed).sort(byCompletedDesc);
+    const doneTodos = snap.todos.filter((t) => t.completed).sort(byCompletedDesc);
+    lines.push(`## 完了した案件（${doneProjects.length}件）`, "");
+    if (doneProjects.length === 0) lines.push("なし", "");
+    for (const p of doneProjects) projectBlock(lines, p, snap);
+    lines.push(`## 完了したToDo（${doneTodos.length}件）`, "");
+    if (doneTodos.length === 0) lines.push("なし", "");
+    todoBlocks(lines, doneTodos, snap);
+  }
+  return lines.join("\n").trimEnd() + "\n";
+}
