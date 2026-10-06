@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { subscribeCompletionPopup, type CompletionInfo } from "@/lib/completionPopup";
 import { formatHms } from "@/lib/time";
 import { completionLabel, useVisualMode } from "@/lib/theme";
+import { buzz } from "@/lib/haptics";
 
 const DISPLAY_MS = 4500;
 // 「元に戻す」を押せるよう、取り消せる完了は少し長く出しておく
@@ -20,10 +21,11 @@ export default function CompletionPopupHost() {
   useEffect(
     () =>
       subscribeCompletionPopup((info) => {
+        buzz([12, 60, 12]);
         setItems((prev) => [...prev, info]);
         setTimeout(() => {
           setItems((prev) => prev.filter((i) => i.id !== info.id));
-        }, info.undo ? DISPLAY_MS_UNDO : DISPLAY_MS);
+        }, info.undo || info.next ? DISPLAY_MS_UNDO : DISPLAY_MS);
       }),
     []
   );
@@ -67,6 +69,19 @@ function CompletionCard({
             <span className={`tabular-nums ${overSeconds > 0 ? "text-alert" : "text-cream/50"}`}>{compareLabel}</span>
           )}
         </div>
+        {item.next && (
+          <button
+            className="btn-pill mt-2 flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs"
+            onClick={async () => {
+              onClose();
+              await item.next?.start();
+            }}
+            data-testid="completion-next"
+          >
+            <span className="min-w-0 truncate">▶ 次：{item.next.name}</span>
+            <span className="shrink-0 text-[10px] font-normal opacity-75">{item.next.hint}</span>
+          </button>
+        )}
         {item.undo && (
           <button
             className="btn-pill-outline mt-2 px-3 py-1 text-xs"

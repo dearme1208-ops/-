@@ -41,6 +41,9 @@ export interface BottomTabBarRunning {
   overrunLabel?: string;
   /** 超過時のテーマに応じた光彩アニメーションのクラス名(例: card-overrun-forest)。省略時は既定の光彩 */
   overrunAnimClass?: string;
+  /** 帯からそのまま一時停止・完了する(親指の届く画面下で止められるように)。無ければボタンを出さない */
+  onPause?: () => void;
+  onFinish?: () => void;
 }
 
 function RunningStrip({ running }: { running: BottomTabBarRunning }) {
@@ -74,10 +77,46 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
   const className = `panel mb-1 flex w-full items-center gap-2 px-3 py-1.5 shadow-lg backdrop-blur ${
     overrun ? `border-alert ring-2 ring-alert/70 bg-alert/[0.06] ${running.overrunAnimClass ?? "card-overrun"}` : ""
   }`;
+  const actions = (running.onPause || running.onFinish) && (
+    <span className="flex shrink-0 items-center gap-1">
+      {running.onPause && (
+        <button
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-cream/25 text-sm text-cream hover:bg-cream/10"
+          onClick={running.onPause}
+          aria-label="一時停止"
+          title="一時停止"
+        >
+          ⏸
+        </button>
+      )}
+      {running.onFinish && (
+        <button
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgb(var(--accent-rgb))] text-sm font-bold text-ink"
+          onClick={running.onFinish}
+          aria-label="完了"
+          title="完了"
+        >
+          ✓
+        </button>
+      )}
+    </span>
+  );
   if (!running.onClick) {
     return (
       <div className={className} title={title} aria-label={title}>
         {inner}
+        {actions}
+      </div>
+    );
+  }
+  if (actions) {
+    // 帯の文字の部分は押すと実行中タブへ、右端の⏸・✓はその場で操作する
+    return (
+      <div className={`${className} pr-1.5`} data-testid="running-strip">
+        <button className="flex min-w-0 flex-1 items-center gap-2" onClick={running.onClick} title={title} aria-label={title}>
+          {inner}
+        </button>
+        {actions}
       </div>
     );
   }

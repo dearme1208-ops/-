@@ -271,9 +271,55 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
       estimatedSeconds: task.estimatedSeconds,
       // 押し間違えた「終了」を、完了前の状態(計測中なら計測中のまま)へ戻す
       undo: before ? () => undoFinishDailyTask(before, finalMasterId, recordBefore, createdRecordId) : undefined,
+      // 次にやる作業をそのまま始められるようにする(トラブル対応など、終えると元の作業へ自動で
+      // 戻るものは出さない)
+      next: task.resumeTaskIds?.length ? undefined : await pickNextDailyTask(task.date, task.id),
     });
   }
   return true;
+}
+
+/**
+ * 作業を終えた直後に「次はこれ」として出す作業を選ぶ。ほかに計測中の作業があれば出さない。
+ *  1. 予定の時刻が今から90分以内の作業(近い順)
+ *  2. 未着手の作業(並び順)
+ *  3. 一時停止中の作業(最後に止めたもの)
+ */
+export async function pickNextDailyTask(
+  date: string,
+  finishedId: string,
+  nowMs: number = Date.now()
+): Promise<{ id: string; name: string; hint: string; start: () => Promise<void> } | undefined> {
+  const all = await db.dailyTasks.where("date").equals(date).toArray();
+  if (all.some((t) => t.status === "running" && t.id !== finishedId && !t.isProvisional)) return undefined;
+  const open = all.filter((t) => t.id !== finishedId && !t.isProvisional && !t.isTrouble);
+  const now = new Date(nowMs);
+  const nowHm = now.getHours() * 60 + now.getMinutes();
+  const hm = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
+  const pending = open.filter((t) => t.status === "pending");
+  const scheduled = pending
+    .filter((t) => t.scheduledTime && hm(t.scheduledTime) - nowHm <= 90 && hm(t.scheduledTime) - nowHm >= -30)
+    .sort((a, b) => hm(a.scheduledTime!) - hm(b.scheduledTime!))[0];
+  // 予定の時刻がまだ先の作業は「次」にしない(その時刻になれば自動で始まる)
+  const firstPending = pending.filter((t) => !t.scheduledTime || hm(t.scheduledTime) <= nowHm + 90).sort((a, b) => a.order - b.order)[0];
+  const lastPaused = open.filter((t) => t.status === "paused").sort((a, b) => (b.stoppedAt ?? 0) - (a.stoppedAt ?? 0))[0];
+  const next = scheduled ?? firstPending ?? lastPaused;
+  if (!next) return undefined;
+  const hint = next === scheduled ? `予定 ${next.scheduledTime}` : next.status === "paused" ? "続きから" : "次の作業";
+  return { id: next.id, name: next.name, hint, start: () => startDailyTaskNow(next.id) };
+}
+
+/** 未着手なら今から始め、一時停止中なら続きから再開する(「次はこれ」から1タップで始める用) */
+export async function startDailyTaskNow(id: string, nowMs: number = Date.now()): Promise<void> {
+  await db.transaction("rw", db.dailyTasks, async () => {
+    const t = await db.dailyTasks.get(id);
+    if (!t || t.status === "running" || t.status === "done") return;
+    await db.dailyTasks.update(id, {
+      status: "running",
+      segments: [...t.segments, { start: nowMs }],
+      startedAt: t.startedAt ?? nowMs,
+    });
+  });
 }
 
 /**

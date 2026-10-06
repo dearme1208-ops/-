@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import { buzz } from "@/lib/haptics";
 import { cardOverrunClass, cardRunningClass, emphasisTextClass, getRiskTier, hazardBarClass, overrunLabel, riskBadgeClasses, riskBadgeLabel, runningLabel } from "@/lib/theme";
 import { baseAccumulatedMs, segmentsAccumulatedMs } from "@/lib/tasks";
 import { CONDITION_LEVELS } from "@/lib/condition";
@@ -586,17 +588,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                 >
                   時間を加算
                 </button>
-                <button className="btn-pill text-xs" disabled={controlsDisabled} onClick={() => finishTask(task)}>
-                  終了
-                </button>
-                <button
-                  className="btn-pill-outline text-xs"
-                  disabled={controlsDisabled}
-                  onClick={() => setFinishAtTask(task)}
-                  title="止め忘れていた場合、実際に終わった時刻を指定して終了します"
-                >
-                  🕐 時刻を指定して終了
-                </button>
+                <FinishButton task={task} disabled={controlsDisabled} finishTask={finishTask} setFinishAtTask={setFinishAtTask} />
               </>
             )}
             {task.status === "paused" && (
@@ -729,3 +721,99 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
       </div>
     </div>
   );}
+
+// 「終了」と、止め忘れた時の「少し前に終わってた」。
+// 終了を長押し、または「⏪」を押すと「5分前・10分前・15分前・最後の打刻・時刻を指定」が並び、
+// 時刻を打ち込まずに2タップで、実際に終わった時刻で終えられる
+function FinishButton({
+  task,
+  disabled,
+  finishTask,
+  setFinishAtTask,
+}: {
+  task: DailyTask;
+  disabled: boolean;
+  finishTask: (task: DailyTask, endAtOverride?: number) => Promise<void>;
+  setFinishAtTask: (task: DailyTask | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
+  const openStart = task.segments.find((s) => s.end === undefined)?.start ?? 0;
+  // 計測を始めた後の打刻のうち最後のもの(「ここで終わった」と打刻しておいた時刻)
+  const lastStamp = useLiveQuery(
+    async () =>
+      open
+        ? await db.quickStamps
+            .where("date")
+            .equals(task.date)
+            .filter((s) => s.at > openStart && s.at < Date.now())
+            .sortBy("at")
+            .then((list) => list[list.length - 1])
+        : undefined,
+    [open, task.date, openStart]
+  );
+  const now = Date.now();
+  const options = [5, 10, 15]
+    .map((m) => ({ label: `${m}分前`, at: now - m * 60_000 }))
+    .filter((o) => o.at > openStart);
+
+  return (
+    <>
+      <button
+        className="btn-pill text-xs"
+        disabled={disabled}
+        onPointerDown={() => {
+          longPressed.current = false;
+          pressTimer.current = setTimeout(() => {
+            longPressed.current = true;
+            setOpen(true);
+            buzz(15);
+          }, 500);
+        }}
+        onPointerUp={() => pressTimer.current && clearTimeout(pressTimer.current)}
+        onPointerLeave={() => pressTimer.current && clearTimeout(pressTimer.current)}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={() => {
+          if (longPressed.current) return;
+          finishTask(task);
+        }}
+      >
+        終了
+      </button>
+      <button
+        className={`${open ? "btn-pill" : "btn-pill-outline"} text-xs`}
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title="止め忘れていた時に、実際に終わった時刻で終了します(終了の長押しでも開きます)"
+      >
+        ⏪ 少し前に終わってた
+      </button>
+      {open && (
+        <div className="flex w-full flex-wrap justify-end gap-1.5" data-testid="finish-earlier">
+          {options.map((o) => (
+            <button key={o.label} className="btn-pill-outline px-3 py-1 text-xs" onClick={() => finishTask(task, o.at)}>
+              {o.label}（{formatClock(o.at)}）
+            </button>
+          ))}
+          {lastStamp && (
+            <button className="btn-pill-outline px-3 py-1 text-xs" onClick={() => finishTask(task, lastStamp.at)}>
+              📍 打刻の{formatClock(lastStamp.at)}
+            </button>
+          )}
+          <button
+            className="btn-pill-outline px-3 py-1 text-xs"
+            onClick={() => {
+              setOpen(false);
+              setFinishAtTask(task);
+            }}
+          >
+            🕐 時刻を指定…
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+

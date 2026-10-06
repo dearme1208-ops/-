@@ -73,6 +73,7 @@ import type {
 } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import { showUndoToast } from "@/lib/toast";
+import { buzz } from "@/lib/haptics";
 
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
@@ -339,6 +340,15 @@ export default function TodaySection({
   useEffect(() => {
     if (!allRunning || allRunning.length < 2) return;
     enforceSingleRunning(todayStr()).catch((e) => console.error("計測中の作業の整理に失敗しました", e));
+  }, [allRunning]);
+  // 計測が新しく始まったら軽く振動させる(どの画面・どのモードから始めても同じ手応えにする)
+  const runningIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!allRunning) return;
+    const ids = new Set(allRunning.filter((t) => !t.isProvisional).map((t) => t.id));
+    const prev = runningIdsRef.current;
+    if (prev && [...ids].some((id) => !prev.has(id))) buzz(15);
+    runningIdsRef.current = ids;
   }, [allRunning]);
   const favoritesRaw = useLiveQuery(
     () => db.masterTasks.filter((t) => t.isFavorite && !t.archived).toArray(),
@@ -1695,11 +1705,19 @@ export default function TodaySection({
   }
 
   async function deleteTask(task: DailyTask) {
-    // 計測した時間がある(一時停止中・計測中)作業は、削除するとその時間も実績に残らないので、そう伝える
-    const measuredMs = segmentsAccumulatedMs(task, Date.now());
-    const lost = measuredMs >= 60_000 ? `\n計測した ${formatHms(Math.round(measuredMs / 1000))} は実績に残りません(残す場合は「終了」してください)。` : "";
-    if (!confirm(`「${workLabel(task)}」を本日の作業リストから削除しますか?${lost}`)) return;
+    // 確認を挟む代わりに、すぐ消して「元に戻す」を出す(押し間違えても戻せ、毎回の確認の手間もない)。
+    // 計測した時間がある作業は、消すとその時間が実績に残らないことも一言添える
+    const snapshot = (await db.dailyTasks.get(task.id)) ?? task;
+    const measuredMs = segmentsAccumulatedMs(snapshot, Date.now());
     await db.dailyTasks.delete(task.id);
+    const lost = measuredMs >= 60_000 ? `（計測した${formatHms(Math.round(measuredMs / 1000))}も消えました）` : "";
+    showUndoToast(
+      `「${workLabel(task)}」を削除しました${lost}`,
+      async () => {
+        await db.dailyTasks.put(snapshot);
+      },
+      8000
+    );
   }
 
   // 完了済みの作業を、本日の作業リストから削除する(必要に応じて紐づく実績・作業マスタも
@@ -2964,6 +2982,14 @@ export default function TodaySection({
             ? {
                 ...runningStrip,
                 onClick: () => setTaskViewTab("running"),
+                onPause: () => {
+                  const t = tasks?.find((x) => x.id === runningStrip.taskId);
+                  if (t) pauseTask(t);
+                },
+                onFinish: () => {
+                  const t = tasks?.find((x) => x.id === runningStrip.taskId);
+                  if (t) finishTask(t);
+                },
                 overrunLabel: overrunLabel(wordingThemedMode),
                 overrunAnimClass: themedMode ? cardOverrunClass(themedMode) : "card-overrun",
               }

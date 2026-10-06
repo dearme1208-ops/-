@@ -22,6 +22,8 @@ import ConfettiHost from "@/components/ui/ConfettiHost";
 import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import RunningNowPill from "@/components/RunningNowPill";
+import RunningNotifier from "@/components/RunningNotifier";
+import { setHapticsEnabled } from "@/lib/haptics";
 import TodoReminderModal from "@/components/TodoReminderModal";
 import TodoReminderPopup from "@/components/TodoReminderPopup";
 import OnboardingGuide from "@/components/OnboardingGuide";
@@ -147,6 +149,9 @@ export default function HomePage() {
   // 設定のキーは育成選手モード専用だった頃のまま。名前を変えると、以前OFFにした人の
   // 設定が読めなくなってメニューが勝手に復活してしまうので、キーはそのままにしてある
   const [mainMenuStr] = useSetting("powerpro.mainMenu", "true");
+  // 操作時の振動(lib/haptics.ts)。設定の値をモジュールに伝えておく
+  const [hapticsStr] = useSetting("ui.haptics", "true");
+  useEffect(() => setHapticsEnabled(hapticsStr === "true"), [hapticsStr]);
   // メニューを出せるモードで、設定がONのときだけ
   const useMainMenu = menuSkinFor(mode) !== null && mainMenuStr === "true";
   const showMenu = useMainMenu && menuOpen;
@@ -267,6 +272,7 @@ export default function HomePage() {
         }}
       />
       <OrphanTaskModal />
+      <RunningNotifier />
       <TodoReminderModal
         onViewDetail={(taskId) => {
           setPendingTodoDetailId(taskId);

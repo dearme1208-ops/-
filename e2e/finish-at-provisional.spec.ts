@@ -13,7 +13,8 @@ const forgotten = () =>
   dailyTask({ id: "a", date: jstDate(), estimatedSeconds: 6 * 3600, status: "running", segments: [{ start: jstAt("09:00") }], startedAt: jstAt("09:00") });
 
 async function finishForgottenAt(page: import("@playwright/test").Page, hm: string) {
-  await clickButton(page, "時刻を指定して終了");
+  await clickButton(page, "⏪ 少し前に終わってた");
+  await clickButton(page, "🕐 時刻を指定…");
   await page.locator(".modal-scrim input[type=time]").first().fill(hm);
   await clickButton(page, "この時刻で終了");
 }

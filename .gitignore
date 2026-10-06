@@ -37,3 +37,5 @@ public/swe-worker-*.js
 # playwright
 /test-results/
 /playwright-report/
+public/worker-*.js
+public/worker-*.js.map

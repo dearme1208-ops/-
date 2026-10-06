@@ -15,6 +15,8 @@ import { useWorkContext } from "./useWorkContext";
 // 止め忘れはたいてい最長のものなので、そちらを見せた方が気付ける
 // (1件しか動いていない通常のケースではどちらを選んでも同じ)。
 export interface RunningStripInfo {
+  /** 帯に出している作業のID(帯から一時停止・完了するため) */
+  taskId: string;
   /** 作業名(案件・サブタスクから追加した作業は「案件名 › 作業名」) */
   name: string;
   /** 業務区分 */
@@ -76,6 +78,7 @@ export function useRunningTaskStrip(): RunningStripInfo | null {
   }
 
   return {
+    taskId: primary.id,
     // 手段(Excel・マクロなど)を入れてあれば、何をどのやり方でしているかまで帯で見せる
     name: primary.method?.trim() ? `${workCtx.label(primary)}（${primary.method.trim()}）` : workCtx.label(primary),
     category: primary.category,

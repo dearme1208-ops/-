@@ -69,7 +69,8 @@ test("止め忘れた作業は、終了時刻を指定して完了できる", as
   await clickButton(page, /^開始$/);
   await page.clock.fastForward("30:00");
   await openTaskTab(page, "実行中");
-  await clickButton(page, "時刻を指定して終了");
+  await clickButton(page, "⏪ 少し前に終わってた");
+  await clickButton(page, "🕐 時刻を指定…");
   await clickButton(page, "15分前");
   await clickButton(page, "この時刻で終了");
   const d = (await readOne<Daily>(page, "dailyTasks", "d1"))!;
