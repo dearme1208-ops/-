@@ -7,7 +7,8 @@ import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
 import { findOrCreateMasterTask, normalizeMasterKey } from "@/lib/master";
 import { useSetting } from "@/lib/settings";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
-import { formatClock, formatHms, parseHmsToSeconds } from "@/lib/time";
+import { formatClock, formatHms, parseHmsToSeconds, shiftDateStr } from "@/lib/time";
+import { pickUsualMasters } from "@/lib/usualTasks";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import type { DailyTaskLinks } from "@/lib/workContext";
 import Modal from "@/components/ui/Modal";
@@ -130,6 +131,29 @@ export default function AddTaskDialog({
   // 自由入力の候補。既存の業務区分と、選んだ区分(無ければ全体)の作業名を出し、表記の揺れによる重複登録を防ぐ
   const allMastersRaw = useLiveQuery(() => db.masterTasks.toArray(), []);
   const allMasters = useHomeFilteredMasterTasks(allMastersRaw);
+  // 「いつもの」: 今の時間帯・平日/休日によくやる作業を、追加画面の一番上に出す(lib/usualTasks.ts)
+  const recentRecords = useLiveQuery(() => db.records.where("date").aboveOrEqual(shiftDateStr(date, -60)).toArray(), [date]);
+  const runningMasterIds = useLiveQuery(
+    async () => new Set((await db.dailyTasks.where("date").equals(date).toArray()).filter((t) => t.status === "running").map((t) => t.masterTaskId ?? "")),
+    [date]
+  );
+  const usualMasters = useMemo(
+    () => pickUsualMasters(recentRecords ?? [], allMasters ?? [], new Date(), { exclude: runningMasterIds ?? new Set() }),
+    [recentRecords, allMasters, runningMasterIds]
+  );
+  const usualRow = usualMasters.length > 0 && (
+    <div className="mb-3" data-testid="usual-tasks">
+      <p className="mb-1 text-[11px] text-cream/50">いつもこの時間にやっている作業（押すとすぐ開始）</p>
+      <div className="flex flex-wrap gap-1.5">
+        {usualMasters.map((m) => (
+          <button key={m.id} className="btn-pill px-3 py-1.5 text-xs" onClick={() => submitMasterTask(m, Date.now())}>
+            ▶ {m.name}
+            <span className="ml-1 text-[10px] font-normal opacity-70">{m.category}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
   const categoryOptions = useMemo(
     () => [...new Set((allMasters ?? []).filter((m) => !m.archived).map((m) => m.category))].sort((a, b) => a.localeCompare(b, "ja")),
     [allMasters]
@@ -365,6 +389,7 @@ export default function AddTaskDialog({
   if (style === "menu") {
     return (
       <Modal title="突発作業を追加" onClose={onClose}>
+        {usualRow}
         {pane === "menu" && (
           <div className="space-y-2">
             <p className="text-xs text-cream/50">どこから追加しますか</p>
@@ -465,6 +490,7 @@ export default function AddTaskDialog({
   if (style === "single") {
     return (
       <Modal title="突発作業を追加" onClose={onClose}>
+        {usualRow}
         {planCheckbox}
         <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
         {methodField}
@@ -510,6 +536,7 @@ export default function AddTaskDialog({
   // ------------------------------------------------------------
   return (
     <Modal title="突発作業を追加" onClose={onClose}>
+        {usualRow}
       <div className="mb-3 flex gap-2">
         <button
           className={mode === "master" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}

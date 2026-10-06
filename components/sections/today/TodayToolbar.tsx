@@ -70,6 +70,9 @@ export interface TodayToolbarProps {
   onTomorrowDraft: () => void;
   onTimebox: () => void;
   onReflection: () => void;
+  onDayGaps: () => void;
+  /** 埋めた方がよい所(記録のない時間・長すぎる計測)の数 */
+  dayGapCount: number;
   onDownloadScheduleTemplate: () => void;
   onImportScheduleFile: (file: File) => void;
   onRegenerate: () => void;
@@ -150,6 +153,15 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           title={props.reflectionAnsweredToday ? "終業の振り返り(回答済み)" : "終業の振り返り"}
           ariaLabel="終業の振り返り"
           onClick={props.onReflection}
+        />
+        <ModeButton
+          simple={simple}
+          compact
+          icon={props.dayGapCount > 0 ? `🧩${props.dayGapCount}` : "🧩"}
+          label={`🧩 抜けを埋める${props.dayGapCount > 0 ? `（${props.dayGapCount}）` : ""}`}
+          title="今日の記録の抜け・長すぎる計測・未記録の打刻を1画面で埋める"
+          ariaLabel="今日の抜けを埋める"
+          onClick={props.onDayGaps}
         />
         {voice.available &&
           (simple ? (

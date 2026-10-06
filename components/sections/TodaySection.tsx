@@ -74,6 +74,7 @@ import type {
 import { WEEKDAY_LABELS } from "@/lib/types";
 import { showUndoToast } from "@/lib/toast";
 import { buzz } from "@/lib/haptics";
+import { usePanelUsage } from "@/lib/panelUsage";
 
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
@@ -87,6 +88,8 @@ import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
+import DayGapsModal, { useDayGapCount } from "@/components/DayGapsModal";
+import ChorePanel from "@/components/sections/today/ChorePanel";
 import TodayHintPanel from "@/components/TodayHintPanel";
 import BackupNudge from "@/components/BackupNudge";
 import DayCardModal from "@/components/DayCardModal";
@@ -1088,6 +1091,7 @@ export default function TodaySection({
       else if (kind === "timebox") setShowTimebox(true);
       else if (kind === "tomorrow") setShowTomorrowDraft(true);
       else if (kind === "reflection") setShowReflection(true);
+      else if (kind === "dayGaps") setShowDayGaps(true);
     }
     window.addEventListener(TODAY_ACTION_EVENT, onAction);
     return () => window.removeEventListener(TODAY_ACTION_EVENT, onAction);
@@ -2301,6 +2305,33 @@ export default function TodaySection({
     };
   }, []);
   const [showReflection, setShowReflection] = useState(false);
+  const [showDayGaps, setShowDayGaps] = useState(false);
+  const dayGapCount = useDayGapCount(date, now);
+  // 使っていない表示をそっと畳む(lib/panelUsage.ts)。どのパネルを触ったかは、パネルに付けた
+  // data-panel-id を、画面のどこかを押した時に見て覚える
+  const PANEL_LABELS: Record<string, string> = {
+    favorites: "お気に入り",
+    doneRestart: "完了した業務から再開",
+    nextMove: "今この一手",
+    suggested: "そろそろこの作業では?",
+    condition: "体調",
+    status: "本日の作業状況",
+    challenge: "デイリーチャレンジ",
+    autoAllocate: "自動配分",
+  };
+  const { isFolded: isPanelFolded, touch: touchPanel } = usePanelUsage(Object.keys(PANEL_LABELS), now);
+  const foldedPanels = Object.entries(PANEL_LABELS)
+    .filter(([id]) => isPanelFolded(id))
+    .map(([id, label]) => ({ id, label }));
+  useEffect(() => {
+    if (background) return;
+    const onDown = (e: PointerEvent) => {
+      const id = (e.target as HTMLElement | null)?.closest?.("[data-panel-id]")?.getAttribute("data-panel-id");
+      if (id) touchPanel(id);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [background, touchPanel]);
   const reflectionAnsweredToday = useLiveQuery(
     async () => !!(await db.settings.get(`reflection.daily.${date}`)),
     [date]
@@ -2524,6 +2555,8 @@ export default function TodaySection({
         onTomorrowDraft={() => setShowTomorrowDraft(true)}
         onTimebox={() => setShowTimebox(true)}
         onReflection={() => setShowReflection(true)}
+        onDayGaps={() => setShowDayGaps(true)}
+        dayGapCount={dayGapCount}
         onDownloadScheduleTemplate={downloadScheduleTemplate}
         onImportScheduleFile={importScheduleFile}
         onRegenerate={requestGenerateFromTemplate}
@@ -2676,6 +2709,7 @@ export default function TodaySection({
         </button>
         {!extrasCollapsed && (
           <>
+            {themedMode === "home" && !background && <ChorePanel today={date} onStart={addFavoriteAndStart} />}
             {themedMode === "persona5" && <PersonaStatsPanel today={date} />}
             {(!tasks || tasks.length === 0) && (
               <div className="panel p-5">
@@ -2699,8 +2733,8 @@ export default function TodaySection({
               </div>
             )}
 
-            {favorites && favorites.length > 0 && (
-              <div className="panel p-4">
+            {!isPanelFolded("favorites") && favorites && favorites.length > 0 && (
+              <div data-panel-id="favorites" className="panel p-4">
                 <button
                   className="flex w-full items-center justify-between text-left"
                   onClick={() => setFavoritesCollapsedStr(favoritesCollapsed ? "false" : "true")}
@@ -2758,8 +2792,8 @@ export default function TodaySection({
               </div>
             )}
 
-            {doneTodayUnique.length > 0 && (
-              <div className="panel p-4">
+            {!isPanelFolded("doneRestart") && doneTodayUnique.length > 0 && (
+              <div data-panel-id="doneRestart" className="panel p-4">
                 <h3 className="font-display text-sm font-bold text-cream/80">✅ 完了した業務から再開</h3>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {doneTodayUnique.map((d) => (
@@ -2776,8 +2810,8 @@ export default function TodaySection({
             )}
 
 
-            {showNextMovePick && nextTaskPick && (
-              <div className="panel flex flex-wrap items-center justify-between gap-2 border border-alert/40 bg-alert/5 p-4">
+            {!isPanelFolded("nextMove") && showNextMovePick && nextTaskPick && (
+              <div data-panel-id="nextMove" className="panel flex flex-wrap items-center justify-between gap-2 border border-alert/40 bg-alert/5 p-4">
                 <div>
                   <h3 className="font-display text-sm font-bold text-alert">🎯 今この一手</h3>
                   <p className="text-xs text-cream/50">{nextTaskPick.reason}</p>
@@ -2791,8 +2825,8 @@ export default function TodaySection({
               </div>
             )}
 
-            {showSuggestedTask && suggestedTask && (
-              <div className="panel flex flex-wrap items-center justify-between gap-2 p-4">
+            {!isPanelFolded("suggested") && showSuggestedTask && suggestedTask && (
+              <div data-panel-id="suggested" className="panel flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <h3 className="font-display text-sm font-bold text-cream/80">💡 そろそろこの作業では?</h3>
                   <p className="text-xs text-cream/50">
@@ -2808,8 +2842,8 @@ export default function TodaySection({
               </div>
             )}
 
-            {conditionEnabled && (
-              <div className="panel p-4">
+            {!isPanelFolded("condition") && conditionEnabled && (
+              <div data-panel-id="condition" className="panel p-4">
                 <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
                 <div className="flex flex-wrap gap-2">
                   {CONDITION_LEVELS.map((c) => (
@@ -2832,18 +2866,24 @@ export default function TodaySection({
             )}
 
             <TodayHandoffPanel today={date} />
-            {showStatusPanel && (
-              <TodayStatusPanel
-                tasks={tasks ?? []}
-                conditionLogs={conditionLogs ?? []}
-                now={now}
-                standardWorkStart={standardWorkStart}
-                standardWorkEnd={standardWorkEnd}
-              />
+            {!isPanelFolded("status") && showStatusPanel && (
+              <div data-panel-id="status">
+                <TodayStatusPanel
+                  tasks={tasks ?? []}
+                  conditionLogs={conditionLogs ?? []}
+                  now={now}
+                  standardWorkStart={standardWorkStart}
+                  standardWorkEnd={standardWorkEnd}
+                />
+              </div>
             )}
             {/* 裏で動いている間(独自の画面に差し替えるモード)は出さない。出すと、そのモードの画面にある
                 チャレンジ欄と二重に達成を祝い、通知が2つ並んでいた */}
-            {showDailyChallenge && !background && <DailyChallengePanel />}
+            {!isPanelFolded("challenge") && showDailyChallenge && !background && (
+              <div data-panel-id="challenge">
+                <DailyChallengePanel />
+              </div>
+            )}
             <TodayHintPanel />
             <BackupNudge />
             <TodayMemoPanel onOpenMemo={onOpenMemo} />
@@ -2875,16 +2915,33 @@ export default function TodaySection({
                 </div>
               </div>
             )}
-            {showAutoAllocate && (
-              <AutoAllocatePanel
-                mode={autoAllocateMode as AutoAllocateMode}
-                onModeChange={setAutoAllocateMode}
-                standardWorkEnd={standardWorkEnd}
-                allocation={effectiveAllocation}
-                manualComputed={!!manualAllocation}
-                manualComputedAt={manualAllocationAt}
-                onRunManual={runManualAllocation}
-              />
+            {!isPanelFolded("autoAllocate") && showAutoAllocate && (
+              <div data-panel-id="autoAllocate">
+                <AutoAllocatePanel
+                  mode={autoAllocateMode as AutoAllocateMode}
+                  onModeChange={setAutoAllocateMode}
+                  standardWorkEnd={standardWorkEnd}
+                  allocation={effectiveAllocation}
+                  manualComputed={!!manualAllocation}
+                  manualComputedAt={manualAllocationAt}
+                  onRunManual={runManualAllocation}
+                />
+              </div>
+            )}
+            {foldedPanels.length > 0 && (
+              <details className="panel p-3 text-xs text-cream/60" data-testid="folded-panels">
+                <summary className="cursor-pointer select-none">
+                  しばらく使っていない表示（{foldedPanels.length}）
+                </summary>
+                <p className="mt-1 text-[11px] text-cream/45">30日以上触っていないので畳んでいます。押すと元の場所に戻ります。</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {foldedPanels.map((p) => (
+                    <button key={p.id} className="btn-pill-outline px-3 py-1 text-xs" onClick={() => touchPanel(p.id)}>
+                      {p.label}を戻す
+                    </button>
+                  ))}
+                </div>
+              </details>
             )}
             {notifPermission !== "granted" && notifPermission !== "unsupported" && (
               <div className="panel flex items-center justify-between p-4">
@@ -3065,6 +3122,18 @@ export default function TodaySection({
           existingCount={templateConfirm.existingCount}
           onConfirm={confirmGenerateFromTemplate}
           onClose={() => setTemplateConfirm(null)}
+        />
+      )}
+
+      {showDayGaps && (
+        <DayGapsModal
+          date={date}
+          now={now}
+          onEditTask={(t) => {
+            setShowDayGaps(false);
+            setEditingTask(t);
+          }}
+          onClose={() => setShowDayGaps(false)}
         />
       )}
 

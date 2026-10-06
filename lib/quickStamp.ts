@@ -99,14 +99,29 @@ export async function convertStampToRecord(
   startedAt: number,
   endedAt: number
 ): Promise<void> {
+  const { taskId, label } = await recordSpanAsTask(stamp.date, category, name, startedAt, endedAt);
+  await db.quickStamps.update(stamp.id, { recordId: taskId, recordLabel: label, skipped: false });
+}
+
+/**
+ * 後から分かった時間帯(打刻の区間・記録の抜け)を、その区間を計測した作業として本日の作業に置き、
+ * 通常の「完了」と同じ処理で完了にする。作った作業のIDと「区分 / 作業名」を返す
+ */
+export async function recordSpanAsTask(
+  date: string,
+  category: string,
+  name: string,
+  startedAt: number,
+  endedAt: number
+): Promise<{ taskId: string; label: string }> {
   const master = await findOrCreateMasterTask(category, name, 0);
   const segments = [{ start: startedAt, end: endedAt }];
-  const order = await db.dailyTasks.where("date").equals(stamp.date).count();
+  const order = await db.dailyTasks.where("date").equals(date).count();
   // 計測中として置くと、完了にするまでの一瞬に自動の処理(予測超過の確認など)が反応するので、
   // 区間を閉じた一時停止の状態で置いてから完了にする
   const task: DailyTask = {
     id: uid(),
-    date: stamp.date,
+    date,
     order,
     masterTaskId: master.id,
     category: master.category,
@@ -122,5 +137,5 @@ export async function convertStampToRecord(
   };
   await db.dailyTasks.add(task);
   await finishDailyTask(task, { segments, startedAt, endAtMs: endedAt });
-  await db.quickStamps.update(stamp.id, { recordId: task.id, recordLabel: `${master.category} / ${master.name}`, skipped: false });
+  return { taskId: task.id, label: `${master.category} / ${master.name}` };
 }

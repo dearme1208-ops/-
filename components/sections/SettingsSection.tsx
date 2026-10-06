@@ -117,6 +117,9 @@ export default function SettingsSection() {
   const [showNextMovePickStr, setShowNextMovePickStr] = useSetting("today.showNextMovePick", "true");
   const showNextMovePick = showNextMovePickStr === "true";
   const [showDailyChallengeStr, setShowDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
+  const [hapticsStr, setHapticsStr] = useSetting("ui.haptics", "true");
+  const [runningNotificationStr, setRunningNotificationStr] = useSetting("today.runningNotification", "true");
+  const [autoFoldPanelsStr, setAutoFoldPanelsStr] = useSetting("ui.autoFoldPanels", "true");
   const showDailyChallenge = showDailyChallengeStr === "true";
   const [showTodayHintStr, setShowTodayHintStr] = useSetting("today.showHint", "true");
   const showTodayHint = showTodayHintStr === "true";
@@ -1288,6 +1291,27 @@ export default function SettingsSection() {
             onClick={() => setShowDailyChallengeStr(showDailyChallenge ? "false" : "true")}
           >
             デイリーチャレンジ: {showDailyChallenge ? "ON" : "OFF"}
+          </button>
+          <button
+            className={hapticsStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setHapticsStr(hapticsStr === "true" ? "false" : "true")}
+            title="計測の開始・完了の時に、端末を軽く振動させます(対応する端末のみ)"
+          >
+            操作時の振動: {hapticsStr === "true" ? "ON" : "OFF"}
+          </button>
+          <button
+            className={runningNotificationStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setRunningNotificationStr(runningNotificationStr === "true" ? "false" : "true")}
+            title="アプリを閉じている間、計測中の作業を通知に出します。Androidでは通知から一時停止・完了できます(通知の許可が必要)"
+          >
+            計測中を通知に出す: {runningNotificationStr === "true" ? "ON" : "OFF"}
+          </button>
+          <button
+            className={autoFoldPanelsStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setAutoFoldPanelsStr(autoFoldPanelsStr === "true" ? "false" : "true")}
+            title="30日以上触っていない表示を「しばらく使っていない表示」にまとめます"
+          >
+            使っていない表示を畳む: {autoFoldPanelsStr === "true" ? "ON" : "OFF"}
           </button>
           <button
             className={showTodayHint ? "btn-pill text-xs" : "btn-pill-outline text-xs"}

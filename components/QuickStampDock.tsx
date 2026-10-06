@@ -21,6 +21,7 @@ const TOOLS: { kind: TodayAction; icon: string; label: string }[] = [
   { kind: "timebox", icon: "⏱", label: "時間割" },
   { kind: "tomorrow", icon: "🗓", label: "明日の下書き" },
   { kind: "reflection", icon: "🌙", label: "終業の振り返り" },
+  { kind: "dayGaps", icon: "🧩", label: "今日の抜けを埋める" },
 ];
 
 // 本日の作業を独自の画面に差し替えるモードでは、本日の作業にある操作(突発作業・トラブル・
