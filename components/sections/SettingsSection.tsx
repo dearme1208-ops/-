@@ -123,6 +123,7 @@ export default function SettingsSection() {
   const [runningNotificationStr, setRunningNotificationStr] = useSetting("today.runningNotification", "true");
   const [autoFoldPanelsStr, setAutoFoldPanelsStr] = useSetting("ui.autoFoldPanels", "true");
   const [textScale, setTextScale] = useSetting("ui.textScale", "normal");
+  const [showWeeklySummaryStr, setShowWeeklySummaryStr] = useSetting("today.showWeeklySummary", "true");
   const showDailyChallenge = showDailyChallengeStr === "true";
   const [showTodayHintStr, setShowTodayHintStr] = useSetting("today.showHint", "true");
   const showTodayHint = showTodayHintStr === "true";
@@ -1383,6 +1384,13 @@ export default function SettingsSection() {
             title="30日以上触っていない表示を「しばらく使っていない表示」にまとめます"
           >
             使っていない表示を畳む: {autoFoldPanelsStr === "true" ? "ON" : "OFF"}
+          </button>
+          <button
+            className={showWeeklySummaryStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowWeeklySummaryStr(showWeeklySummaryStr === "true" ? "false" : "true")}
+            title="金〜日に今週、月曜に先週のまとめを本日の作業に出します"
+          >
+            今週のまとめ: {showWeeklySummaryStr === "true" ? "ON" : "OFF"}
           </button>
           <span className="flex flex-wrap items-center gap-1 text-xs text-cream/60" data-testid="text-scale">
             文字の大きさ:

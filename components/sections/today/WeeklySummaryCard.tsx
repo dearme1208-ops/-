@@ -12,6 +12,7 @@ import { buildWeeklySummary, summaryWeek } from "@/lib/weeklySummary";
 export default function WeeklySummaryCard({ today }: { today: string }) {
   const week = summaryWeek(today);
   const [dismissed, setDismissed] = useSetting("today.weeklySummaryDismissed", "");
+  const [enabledStr] = useSetting("today.showWeeklySummary", "true");
   const from = week?.weekStart ?? today;
   const records = useHomeFilteredRecords(useLiveQuery(() => db.records.where("date").aboveOrEqual(from).toArray(), [from]));
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").aboveOrEqual(from).toArray(), [from]);
@@ -24,7 +25,7 @@ export default function WeeklySummaryCard({ today }: { today: string }) {
         : null,
     [week?.weekStart, week?.label, records, dailyTasks, todos, projects]
   );
-  if (!week || !s || dismissed === week.weekStart || s.totalSeconds === 0) return null;
+  if (enabledStr !== "true" || !week || !s || dismissed === week.weekStart || s.totalSeconds === 0) return null;
 
   return (
     <section className="panel space-y-3 p-4" data-testid="weekly-summary">

@@ -33,6 +33,8 @@ export const BASE_SETTINGS: Record<string, string> = {
   "ui.groupTabs": "false",
   // 「新しくできること」の案内は、それを確かめるテストでだけ出す
   "ui.whatsNewSeen": "2026-10-07",
+  // 「今週のまとめ」は金〜月にだけ出るので、実行する曜日でほかのテストの画面が変わらないよう既定では切る
+  "today.showWeeklySummary": "false",
 };
 
 export async function seed(
