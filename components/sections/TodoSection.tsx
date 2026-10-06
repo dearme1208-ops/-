@@ -39,6 +39,7 @@ import {
   formatDateTimeJp,
   fromDatetimeLocalValue,
   toDatetimeLocalValue,
+  shiftDateStr,
 } from "@/lib/time";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
@@ -3124,10 +3125,70 @@ function TaskRow({
           🗂
         </button>
       )}
+      {!task.completed && <QuickDueButton task={task} />}
       <button onClick={onToggleImportant} aria-label="重要" className="shrink-0 text-lg">
         {task.important ? <span className="text-alert">★</span> : <span className="text-cream/30">☆</span>}
       </button>
     </div>
+  );
+}
+
+// 期日をワンタップで動かす(詳細を開いて日付を入れ直さなくてよい)。
+// 「今日・明日・来週月曜・期日なし」を出し、選んだら「元に戻す」付きで知らせる
+function QuickDueButton({ task }: { task: TodoTask }) {
+  const [open, setOpen] = useState(false);
+  const today = todayStr();
+  const d = new Date(`${today}T00:00:00`);
+  const toNextMonday = ((8 - d.getDay()) % 7) || 7;
+  const options: { label: string; value: string | undefined }[] = [
+    { label: "今日", value: today },
+    { label: "明日", value: shiftDateStr(today, 1) },
+    { label: "来週月曜", value: shiftDateStr(today, toNextMonday) },
+    { label: "期日なし", value: undefined },
+  ];
+  async function setDue(value: string | undefined) {
+    setOpen(false);
+    const before = task.dueDate;
+    if (before === value) return;
+    await db.todoTasks.update(task.id, { dueDate: value });
+    showUndoToast(
+      value ? `「${task.title}」の期日を${formatDateJp(value)}にしました` : `「${task.title}」の期日を外しました`,
+      () => void db.todoTasks.update(task.id, { dueDate: before })
+    );
+  }
+  return (
+    <span className="relative shrink-0">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-label="期日を動かす"
+        aria-expanded={open}
+        title="期日を今日・明日・来週月曜などへ動かす"
+        className={`text-base ${open ? "text-cream" : "text-cream/30 hover:text-cream/70"}`}
+      >
+        ⏩
+      </button>
+      {open && (
+        <span
+          className="panel absolute right-0 top-full z-30 mt-1 flex w-max flex-col gap-1 p-1.5 shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+          data-testid="quick-due"
+        >
+          {options.map((o) => (
+            <button
+              key={o.label}
+              className={`rounded-md px-3 py-1.5 text-left text-xs hover:bg-cream/10 ${task.dueDate === o.value ? "font-bold text-cream" : "text-cream/80"}`}
+              onClick={() => setDue(o.value)}
+            >
+              {o.label}
+              {o.value && <span className="ml-2 text-[10px] text-cream/45">{formatDateJp(o.value)}</span>}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 

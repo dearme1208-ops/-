@@ -7,6 +7,8 @@ import type { ThemedMode } from "@/lib/theme";
 import { formatHms } from "@/lib/time";
 import { useSetting } from "@/lib/settings";
 import type { WeekdayAverage } from "@/lib/weekday";
+import { openQuickCapture } from "@/lib/quickCapture";
+import { openHistory, openSearch } from "@/lib/globalPanels";
 
 // 「簡易表示（アイコンのみ）」設定のON/OFFで、アイコンだけのボタンと文言付きのボタンを
 // 出し分ける。ボタンを1つ足すたびに両方の形を書かなくて済むよう、ここにまとめている
@@ -134,6 +136,8 @@ export default function TodayToolbar(props: TodayToolbarProps) {
         <ModeButton simple={simple} icon="➕" label="+ 突発作業を追加" title="突発作業を追加" onClick={props.onAddTask} />
       </div>
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible" data-testid="today-toolbar-sub">
+        <ModeButton simple={simple} compact icon="✏️" label="✏️ ひとこと" title="思いついたことを1行で入れる(キーボードの / でも開きます)" ariaLabel="ひとこと入力" onClick={() => openQuickCapture()} />
+        <ModeButton simple={simple} compact icon="🔍" label="🔍 さがす" title="ToDo・案件・実績・メモをまとめて探す" ariaLabel="さがす" onClick={() => openSearch()} />
         <ModeButton simple={simple} compact icon="🧭" label="🧭 今日の段取り" title="今日の段取りを提案" onClick={props.onDayPlan} />
         <ModeButton simple={simple} compact icon="🗓" label="🗓 明日の下書き" title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
         <ModeButton
@@ -163,6 +167,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           ariaLabel="今日の抜けを埋める"
           onClick={props.onDayGaps}
         />
+        <ModeButton simple={simple} compact icon="🕘" label="🕘 操作の履歴" title="さっきの操作を一覧から戻す" ariaLabel="操作の履歴" onClick={() => openHistory()} />
         {voice.available &&
           (simple ? (
             <button

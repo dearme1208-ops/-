@@ -15,6 +15,8 @@ import { QuickStampPanel, QuickStampSheet } from "@/components/sections/today/Qu
 // 押せるようにする、画面右下の小さなボタン。本日の作業には下部タブの左に打刻ボタンがあるが、
 // 差し替えるモードでは打刻できなかった。未記録の打刻はここから一覧を開いて実績にできる
 const TOOLS: { kind: TodayAction; icon: string; label: string }[] = [
+  { kind: "capture", icon: "✏️", label: "ひとこと入力" },
+  { kind: "search", icon: "🔍", label: "さがす" },
   { kind: "add", icon: "+", label: "突発作業を追加" },
   { kind: "trouble", icon: "⚡", label: "トラブル発生" },
   { kind: "dayPlan", icon: "🧭", label: "今日の段取り" },
@@ -22,6 +24,7 @@ const TOOLS: { kind: TodayAction; icon: string; label: string }[] = [
   { kind: "tomorrow", icon: "🗓", label: "明日の下書き" },
   { kind: "reflection", icon: "🌙", label: "終業の振り返り" },
   { kind: "dayGaps", icon: "🧩", label: "今日の抜けを埋める" },
+  { kind: "history", icon: "🕘", label: "操作の履歴" },
 ];
 
 // 本日の作業を独自の画面に差し替えるモードでは、本日の作業にある操作(突発作業・トラブル・

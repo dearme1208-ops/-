@@ -75,6 +75,8 @@ import { WEEKDAY_LABELS } from "@/lib/types";
 import { showUndoToast } from "@/lib/toast";
 import { buzz } from "@/lib/haptics";
 import { usePanelUsage } from "@/lib/panelUsage";
+import { openQuickCapture } from "@/lib/quickCapture";
+import { openHistory, openSearch } from "@/lib/globalPanels";
 
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
@@ -90,6 +92,7 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
 import DayGapsModal, { useDayGapCount } from "@/components/DayGapsModal";
 import ChorePanel from "@/components/sections/today/ChorePanel";
+import WeeklySummaryCard from "@/components/sections/today/WeeklySummaryCard";
 import TodayHintPanel from "@/components/TodayHintPanel";
 import BackupNudge from "@/components/BackupNudge";
 import DayCardModal from "@/components/DayCardModal";
@@ -1092,6 +1095,9 @@ export default function TodaySection({
       else if (kind === "tomorrow") setShowTomorrowDraft(true);
       else if (kind === "reflection") setShowReflection(true);
       else if (kind === "dayGaps") setShowDayGaps(true);
+      else if (kind === "capture") openQuickCapture();
+      else if (kind === "search") openSearch();
+      else if (kind === "history") openHistory();
     }
     window.addEventListener(TODAY_ACTION_EVENT, onAction);
     return () => window.removeEventListener(TODAY_ACTION_EVENT, onAction);
@@ -2470,7 +2476,9 @@ export default function TodaySection({
           aria-hidden="true"
         />
       )}
-      {themedMode && runningOverrunTasks.length > 0 && (
+      {/* 実行中タブでは、すぐ下の計測中のカードが同じことを(赤い帯・超過の時間で)出しているので重ねて出さない。
+          ほかのタブを見ている時だけ、超過に気づけるよう流す */}
+      {themedMode && runningOverrunTasks.length > 0 && taskViewTab !== "running" && (
         <div
           className={`warning-ticker panel px-3 py-2 text-xs font-bold ${
             va11hallaMode ? "border border-v11-pink/60 bg-v11-pink/10 text-v11-pink" : `border border-alert/60 bg-alert/10 ${emphasisTextClass(themedMode)}`
@@ -2709,6 +2717,7 @@ export default function TodaySection({
         </button>
         {!extrasCollapsed && (
           <>
+            {!background && <WeeklySummaryCard today={date} />}
             {themedMode === "home" && !background && <ChorePanel today={date} onStart={addFavoriteAndStart} />}
             {themedMode === "persona5" && <PersonaStatsPanel today={date} />}
             {(!tasks || tasks.length === 0) && (

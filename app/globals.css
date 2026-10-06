@@ -4617,3 +4617,15 @@ html[data-high-contrast="true"] :focus-visible {
     animation: none;
   }
 }
+
+/* 文字の大きさ・詰まり具合(設定 ui.textScale)。余白も rem なので、文字と一緒に広がる/詰まる */
+html[data-text-scale="large"] {
+  font-size: 112.5%;
+}
+html[data-text-scale="xlarge"] {
+  font-size: 125%;
+}
+html[data-text-scale="compact"] {
+  font-size: 93.75%;
+}
+

@@ -31,6 +31,8 @@ export const BASE_SETTINGS: Record<string, string> = {
   // 既存のテストはタブが1列に並ぶ前提で書いているので、2段のまとめ表示は
   // それを確かめるテスト(forest-tabs.spec.ts)でだけONにする
   "ui.groupTabs": "false",
+  // 「新しくできること」の案内は、それを確かめるテストでだけ出す
+  "ui.whatsNewSeen": "2026-10-07",
 };
 
 export async function seed(

@@ -23,6 +23,9 @@ import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import RunningNowPill from "@/components/RunningNowPill";
 import RunningNotifier from "@/components/RunningNotifier";
+import QuickCaptureHost from "@/components/QuickCaptureHost";
+import GlobalPanelsHost from "@/components/GlobalPanelsHost";
+import WhatsNewModal from "@/components/WhatsNewModal";
 import { setHapticsEnabled } from "@/lib/haptics";
 import TodoReminderModal from "@/components/TodoReminderModal";
 import TodoReminderPopup from "@/components/TodoReminderPopup";
@@ -152,6 +155,11 @@ export default function HomePage() {
   // 操作時の振動(lib/haptics.ts)。設定の値をモジュールに伝えておく
   const [hapticsStr] = useSetting("ui.haptics", "true");
   useEffect(() => setHapticsEnabled(hapticsStr === "true"), [hapticsStr]);
+  // 文字の大きさ・詰まり具合(大きめ/標準/ぎっしり)。画面全体の基準の文字サイズを変える
+  const [textScale] = useSetting("ui.textScale", "normal");
+  useEffect(() => {
+    document.documentElement.dataset.textScale = textScale;
+  }, [textScale]);
   // メニューを出せるモードで、設定がONのときだけ
   const useMainMenu = menuSkinFor(mode) !== null && mainMenuStr === "true";
   const showMenu = useMainMenu && menuOpen;
@@ -273,6 +281,19 @@ export default function HomePage() {
       />
       <OrphanTaskModal />
       <RunningNotifier />
+      <QuickCaptureHost />
+      <WhatsNewModal />
+      <GlobalPanelsHost
+        onOpenTodo={(id) => {
+          setPendingTodoDetailId(id);
+          setActive("todo");
+        }}
+        onOpenProject={(id) => {
+          setPendingProjectEditId(id);
+          setActive("projects");
+        }}
+        onOpenTab={(tab) => setActive(tab)}
+      />
       <TodoReminderModal
         onViewDetail={(taskId) => {
           setPendingTodoDetailId(taskId);

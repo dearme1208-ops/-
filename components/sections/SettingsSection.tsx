@@ -11,6 +11,7 @@ import { DEFAULT_WAITING_NUDGE_DAYS, DEFAULT_WAITING_TAGS } from "@/lib/changeTr
 import { parseWaitingTags } from "@/lib/waiting";
 import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
 import { importBackup, type BackupFile } from "@/lib/backup";
+import Modal from "@/components/ui/Modal";
 import { downloadBackupFile, shareBackupFile } from "@/lib/backupFile";
 import {
   chooseAutoBackupFolder,
@@ -39,6 +40,7 @@ export default function SettingsSection() {
   // 最後にバックアップしてからの日数。自動バックアップが使えない環境でも
   // 「長らく取っていない」ことだけは気付けるようにするための表示
   const [staleBackupDays, setStaleBackupDays] = useState<number | null>(null);
+  const [showMigration, setShowMigration] = useState(false);
   const autoBackupSupported = isAutoBackupSupported();
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [archiveBeforeMonth, setArchiveBeforeMonth] = useState(() => todayStr().slice(0, 7));
@@ -120,6 +122,7 @@ export default function SettingsSection() {
   const [hapticsStr, setHapticsStr] = useSetting("ui.haptics", "true");
   const [runningNotificationStr, setRunningNotificationStr] = useSetting("today.runningNotification", "true");
   const [autoFoldPanelsStr, setAutoFoldPanelsStr] = useSetting("ui.autoFoldPanels", "true");
+  const [textScale, setTextScale] = useSetting("ui.textScale", "normal");
   const showDailyChallenge = showDailyChallengeStr === "true";
   const [showTodayHintStr, setShowTodayHintStr] = useSetting("today.showHint", "true");
   const showTodayHint = showTodayHintStr === "true";
@@ -610,6 +613,74 @@ export default function SettingsSection() {
   return (
     <div className="space-y-4" ref={panelsRef}>
       <h2 className="font-display text-lg font-bold">設定</h2>
+
+      {/* データはこの端末の中にしかないので、最後に控えを取った日を設定の一番上に出し、
+          機種変更・2台目への引き継ぎを手順どおりに進められる入口を置く */}
+      <div
+        className={`panel flex flex-wrap items-center justify-between gap-2 p-3 text-sm ${
+          staleBackupDays === null || staleBackupDays >= 14 ? "border border-alert/50" : ""
+        }`}
+        data-testid="backup-status"
+      >
+        <span className={staleBackupDays === null || staleBackupDays >= 14 ? "font-bold text-alert" : "text-cream/80"}>
+          💾 最後の控え:{" "}
+          {staleBackupDays === null ? "まだありません" : staleBackupDays === 0 ? "今日" : `${staleBackupDays}日前`}
+        </span>
+        <span className="flex flex-wrap gap-2">
+          <button className="btn-pill-outline px-3 py-1 text-xs" onClick={downloadBackup}>
+            今すぐ控えを取る
+          </button>
+          <button className="btn-pill px-3 py-1 text-xs" onClick={() => setShowMigration(true)}>
+            📦 機種変更・引き継ぎ
+          </button>
+        </span>
+      </div>
+      {showMigration && (
+        <Modal title="📦 機種変更・2台目への引き継ぎ" onClose={() => setShowMigration(false)}>
+          <ol className="space-y-3 text-sm" data-testid="migration-guide">
+            <li className="rounded-lg border border-cream/15 p-3">
+              <div className="font-bold text-cream">① いまの端末で、引き継ぎ用ファイルを作る</div>
+              <p className="mt-1 text-xs text-cream/65">
+                すべての記録・ToDo・案件・設定が1つのファイルに入ります。共有できる端末では、そのまま新しい端末へ送れます(AirDrop・近くのデバイス・メールなど)。
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button className="btn-pill px-3 py-1.5 text-xs" onClick={shareBackup}>
+                  📤 ファイルを作って送る
+                </button>
+                <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={downloadBackup}>
+                  ⬇ ファイルを保存する
+                </button>
+              </div>
+              {backupStatus && <p className="mt-1 text-xs text-cream/70">{backupStatus}</p>}
+            </li>
+            <li className="rounded-lg border border-cream/15 p-3">
+              <div className="font-bold text-cream">② 新しい端末で工程表を開く</div>
+              <p className="mt-1 text-xs text-cream/65">
+                同じアドレスをブラウザで開き、必要ならホーム画面に追加します。送ったファイルは「ファイル」アプリやダウンロードに入っています。
+              </p>
+            </li>
+            <li className="rounded-lg border border-cream/15 p-3">
+              <div className="font-bold text-cream">③ 新しい端末で、そのファイルを読み込む</div>
+              <p className="mt-1 text-xs text-cream/65">
+                新しい端末の「設定 → 📦 機種変更・引き継ぎ」で下のボタンを押し、ファイルを選びます。新しい端末の中身は、ファイルの内容に置き換わります。
+              </p>
+              <label className="btn-pill-outline mt-2 cursor-pointer px-3 py-1.5 text-xs">
+                📥 ファイルを読み込む（新しい端末で）
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) restoreBackup(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </li>
+          </ol>
+        </Modal>
+      )}
 
       {/* 設定は30項目以上あって縦に1万px近くなるため、目的の項目まで辿り着くための
           検索と目次を先頭に置く。各項目は下のパネルの直接の子として並んでいるので、
@@ -1313,6 +1384,21 @@ export default function SettingsSection() {
           >
             使っていない表示を畳む: {autoFoldPanelsStr === "true" ? "ON" : "OFF"}
           </button>
+          <span className="flex flex-wrap items-center gap-1 text-xs text-cream/60" data-testid="text-scale">
+            文字の大きさ:
+            {(
+              [
+                ["compact", "ぎっしり"],
+                ["normal", "標準"],
+                ["large", "大きめ"],
+                ["xlarge", "特大"],
+              ] as const
+            ).map(([v, label]) => (
+              <button key={v} className={textScale === v ? "btn-pill px-3 py-1 text-xs" : "btn-pill-outline px-3 py-1 text-xs"} onClick={() => setTextScale(v)}>
+                {label}
+              </button>
+            ))}
+          </span>
           <button
             className={showTodayHint ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowTodayHintStr(showTodayHint ? "false" : "true")}

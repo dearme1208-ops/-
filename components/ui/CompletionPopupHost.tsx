@@ -5,6 +5,7 @@ import { subscribeCompletionPopup, type CompletionInfo } from "@/lib/completionP
 import { formatHms } from "@/lib/time";
 import { completionLabel, useVisualMode } from "@/lib/theme";
 import { buzz } from "@/lib/haptics";
+import { recordHistory } from "@/lib/toast";
 
 const DISPLAY_MS = 4500;
 // 「元に戻す」を押せるよう、取り消せる完了は少し長く出しておく
@@ -22,6 +23,18 @@ export default function CompletionPopupHost() {
     () =>
       subscribeCompletionPopup((info) => {
         buzz([12, 60, 12]);
+        if (info.undo) {
+          // 完了の取り消しは操作の履歴からもできるように(お知らせのボタンと合わせて1回だけ効く)
+          let done = false;
+          const original = info.undo;
+          const once = async () => {
+            if (done) return;
+            done = true;
+            await original();
+          };
+          info.undo = once;
+          recordHistory(`「${info.name}」を完了`, once);
+        }
         setItems((prev) => [...prev, info]);
         setTimeout(() => {
           setItems((prev) => prev.filter((i) => i.id !== info.id));
