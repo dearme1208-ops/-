@@ -236,7 +236,7 @@ export default function TodaySection({
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
-    { category: string; name: string; estimatedSeconds: number; masterTaskId: string | undefined; links?: DailyTaskLinks } | null
+    { category: string; name: string; estimatedSeconds: number; masterTaskId: string | undefined; links?: DailyTaskLinks & Pick<DailyTask, "hasPlan"> } | null
   >(null);
   // 完了済みの作業を再開する際、「続きから開始」か「新しく開始」かを選ばせるための対象タスク
   const [restartChoice, setRestartChoice] = useState<DailyTask | null>(null);
@@ -1349,7 +1349,7 @@ export default function TodaySection({
     estimatedSeconds: number,
     masterTaskId: string | undefined,
     startAt: number,
-    links?: DailyTaskLinks
+    links?: DailyTaskLinks & Pick<DailyTask, "hasPlan">
   ) {
     const doInsert = async () => {
       const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
@@ -1419,7 +1419,7 @@ export default function TodaySection({
     name: string,
     estimatedSeconds: number,
     masterTaskId: string | undefined,
-    links?: DailyTaskLinks
+    links?: DailyTaskLinks & Pick<DailyTask, "hasPlan">
   ) {
     if (provisionalActive) {
       setPendingStart({ category, name, estimatedSeconds, masterTaskId, links });

@@ -136,3 +136,47 @@ test("別のモード(ターミナル)のコマンドで作業を始めても、
   await expect.poll(async () => (await runningOf(page)).map((d) => d.name)).toEqual(["電話対応"]);
   expect((await readOne<Daily>(page, "dailyTasks", "a"))?.status).toBe("paused");
 });
+
+test.describe("仮計測中に突発作業を追加して開始する", () => {
+  const setup = async (page: Page) => {
+    await page.clock.install({ time: jstAt("10:00") });
+    await seed(page, { settings: { "today.provisionalEnabled": "true", "today.taskViewTab": "running" }, stores: { masterTasks: [MASTER], dailyTasks: [prov("09:40")] } });
+    await page.getByRole("button", { name: "+ 突発作業を追加" }).click();
+    // 仮計測の割り当て欄にも「自由入力」があるので、後から開いた追加画面の方を押す
+    await page.getByRole("button", { name: "自由入力" }).last().click();
+    await page.getByPlaceholder("例: 資料作成").fill("総務");
+    await page.getByPlaceholder("例: 見積書の作成").fill("電話対応");
+    await page.getByPlaceholder("例: Excel、マクロ、クエリ、Claude").fill("電話");
+    await page.getByRole("button", { name: "追加してすぐ開始" }).click();
+    await expect(page.getByText("未計測(仮計測)が計測中です")).toBeVisible();
+    await expectSingle(page);
+  };
+  const added = async (page: Page) => (await readAll<Daily & { method?: string; category: string }>(page, "dailyTasks")).find((t) => t.name === "電話対応");
+
+  test("「合算する」: 仮計測の開始時刻から計測し、仮計測は消え、手段も引き継ぐ", async ({ page }) => {
+    await setup(page);
+    await clickButton(page, /今回の作業に合算する/);
+    await expect.poll(async () => (await added(page))?.status).toBe("running");
+    const t = (await added(page))!;
+    expect(t.segments[0].start).toBe(jstAt("09:40"));
+    expect(t.method).toBe("電話");
+    expect(await readOne<Daily>(page, "dailyTasks", "p")).toBeUndefined();
+    await expectSingle(page);
+  });
+
+  test("「自動計測をやめる」: 今から計測し、仮計測分は記録しない", async ({ page }) => {
+    await setup(page);
+    await clickButton(page, /自動計測をやめる/);
+    await expect.poll(async () => (await added(page))?.status).toBe("running");
+    expect((await added(page))!.segments[0].start).toBeGreaterThanOrEqual(jstAt("10:00"));
+    expect(await readOne<Daily>(page, "dailyTasks", "p")).toBeUndefined();
+    expect(await readAll(page, "records")).toHaveLength(0);
+  });
+
+  test("「キャンセル」: 何も追加せず、仮計測はそのまま続く", async ({ page }) => {
+    await setup(page);
+    await clickButton(page, "キャンセル");
+    expect(await added(page)).toBeUndefined();
+    expect((await readOne<Daily>(page, "dailyTasks", "p"))?.status).toBe("running");
+  });
+});

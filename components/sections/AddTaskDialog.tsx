@@ -9,6 +9,7 @@ import { useSetting } from "@/lib/settings";
 import { computeRemainingEstimatedSeconds } from "@/lib/tasks";
 import { formatClock, formatHms, parseHmsToSeconds } from "@/lib/time";
 import type { DailyTask, MasterTask } from "@/lib/types";
+import type { DailyTaskLinks } from "@/lib/workContext";
 import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import VoiceInputButton from "@/components/ui/VoiceInputButton";
@@ -73,7 +74,13 @@ export default function AddTaskDialog({
   doneTasks: DailyTask[];
   // 過去に使われた手段の候補(頻度順)。入力欄のdatalistに使う
   methodSuggestions?: string[];
-  onRequestConflictStart: (category: string, name: string, estimatedSeconds: number, masterTaskId: string | undefined) => void;
+  onRequestConflictStart: (
+    category: string,
+    name: string,
+    estimatedSeconds: number,
+    masterTaskId: string | undefined,
+    links?: DailyTaskLinks & Pick<DailyTask, "hasPlan">
+  ) => void;
   // 実際に追加できた時に、その作業が実行中("running")・未着手("pending")のどちらとして
   // 追加されたかを渡す(未計測との競合で呼び出し元に処理を委ねた場合は呼ばれない。
   // その場合はrequestStartNew側で別途「実行中」への切り替えが行われる)
@@ -152,7 +159,11 @@ export default function AddTaskDialog({
     // 未計測(仮計測)が既に計測中の状態ですぐ開始しようとした場合、二重計測になって
     // しまうため、ここでは追加せず、呼び出し元（本日タブ）に判断を委ねる
     if (startAt !== undefined && provisionalRunning) {
-      onRequestConflictStart(taskCategory, taskName, estimatedSeconds, masterTaskId);
+      // 入力した手段・見積もりの有無も引き継ぐ(以前は仮計測との確認を挟むと手段が消えていた)
+      onRequestConflictStart(taskCategory, taskName, hasPlan ? estimatedSeconds : 0, masterTaskId, {
+        ...(method.trim() ? { method: method.trim() } : {}),
+        hasPlan,
+      });
       onClose();
       return;
     }
