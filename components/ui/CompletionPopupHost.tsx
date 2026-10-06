@@ -6,6 +6,8 @@ import { formatHms } from "@/lib/time";
 import { completionLabel, useVisualMode } from "@/lib/theme";
 
 const DISPLAY_MS = 4500;
+// 「元に戻す」を押せるよう、取り消せる完了は少し長く出しておく
+const DISPLAY_MS_UNDO = 7000;
 
 // 作業を完了するたびに、「何を・どれだけ完了したか」を右上にカード状のポップアップで
 // 可視化する。トースト(toast.ts/ToastHost)が「元に戻す」向けの細いピルなのに対し、
@@ -21,15 +23,17 @@ export default function CompletionPopupHost() {
         setItems((prev) => [...prev, info]);
         setTimeout(() => {
           setItems((prev) => prev.filter((i) => i.id !== info.id));
-        }, DISPLAY_MS);
+        }, info.undo ? DISPLAY_MS_UNDO : DISPLAY_MS);
       }),
     []
   );
 
   if (items.length === 0) return null;
 
+  // 置き場所はToastHostの列の中(通知と同じ列に縦に積む。別々に固定すると、完了と
+  // デイリーチャレンジ達成のように同時に出るものが画面の上で重なっていた)
   return (
-    <div className="pointer-events-none fixed right-3 top-3 z-50 flex w-72 max-w-[calc(100vw-1.5rem)] flex-col gap-2 sm:right-6 sm:top-6">
+    <div className="flex w-72 max-w-full flex-col gap-2">
       {items.map((item) => (
         <CompletionCard key={item.id} item={item} mode={wordingThemedMode} onClose={() => setItems((prev) => prev.filter((i) => i.id !== item.id))} />
       ))}
@@ -63,6 +67,17 @@ function CompletionCard({
             <span className={`tabular-nums ${overSeconds > 0 ? "text-alert" : "text-cream/50"}`}>{compareLabel}</span>
           )}
         </div>
+        {item.undo && (
+          <button
+            className="btn-pill-outline mt-2 px-3 py-1 text-xs"
+            onClick={async () => {
+              onClose();
+              await item.undo?.();
+            }}
+          >
+            ↩ 元に戻す（完了を取り消す）
+          </button>
+        )}
       </div>
       <button className="shrink-0 text-cream/40 hover:text-cream" onClick={onClose} aria-label="閉じる">
         ×

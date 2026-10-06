@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MASTER, dailyTask, jstAt, jstDate, readOne, seed } from "./helpers";
+import { MASTER, dailyTask, jstAt, jstDate, readAll, readOne, seed } from "./helpers";
 
 // 各モードの使い勝手の底上げ(計測中の作業の小窓・ツールバーの段組み・円相の配置)を固定する
 
@@ -53,4 +53,32 @@ test("禅: 円相の線が名前・時間・ボタンに重ならない(ボタ�
       expect(Math.hypot(x - cx, y - cy)).toBeLessThan(r - 4);
     }
   }
+});
+
+test.describe("完了の「元に戻す」", () => {
+  test("押し間違えた「終了」を元に戻すと、計測中に戻り、作った実績も消える", async ({ page }) => {
+    await page.clock.install({ time: jstAt("10:00") });
+    await seed(page, { settings: { "today.taskViewTab": "running" }, stores: { masterTasks: [MASTER], dailyTasks: [running()] } });
+    await page.getByRole("button", { name: "終了", exact: true }).first().click();
+    await expect.poll(async () => (await readOne<{ status: string }>(page, "dailyTasks", "a"))?.status).toBe("done");
+    await expect.poll(async () => (await readAll(page, "records")).length).toBe(1);
+    await page.getByRole("button", { name: /元に戻す（完了を取り消す）/ }).click();
+    await expect.poll(async () => (await readOne<{ status: string }>(page, "dailyTasks", "a"))?.status).toBe("running");
+    expect(await readAll(page, "records")).toHaveLength(0);
+  });
+
+  test("同じ作業の実績に合算した完了を戻すと、実績は合算前の時間に戻る", async ({ page }) => {
+    await page.clock.install({ time: jstAt("10:00") });
+    const rec = { id: "r1", date: jstDate(), category: "業務", name: "資料作成", masterTaskId: "m1", seconds: 600, startedAt: jstAt("08:00"), endedAt: jstAt("08:10"), excludedFromStats: false, method: "" };
+    await seed(page, {
+      settings: { "theme.visualMode": "terminal", "powerpro.mainMenu": "false" },
+      stores: { masterTasks: [MASTER], dailyTasks: [running()], records: [rec] },
+    });
+    // どのモードの完了ボタンからでも戻せる(ターミナルモードの「完了にする」)
+    await page.getByRole("button", { name: "完了にする" }).first().click();
+    await expect.poll(async () => (await readOne<{ seconds: number }>(page, "records", "r1"))?.seconds).toBeGreaterThanOrEqual(600 + 30 * 60);
+    await page.getByRole("button", { name: /元に戻す（完了を取り消す）/ }).click();
+    await expect.poll(async () => (await readOne<{ seconds: number }>(page, "records", "r1"))?.seconds).toBe(600);
+    expect((await readOne<{ status: string }>(page, "dailyTasks", "a"))?.status).toBe("running");
+  });
 });

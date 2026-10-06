@@ -9,6 +9,8 @@ export interface CompletionInfo {
   name: string;
   seconds: number;
   estimatedSeconds: number;
+  /** 完了を取り消す(完了前の状態へ戻す)。押し間違えた「終了」をすぐ戻せるようにする */
+  undo?: () => Promise<void>;
 }
 
 type Listener = (info: CompletionInfo) => void;

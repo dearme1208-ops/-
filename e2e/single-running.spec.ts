@@ -148,14 +148,14 @@ test.describe("仮計測中に突発作業を追加して開始する", () => {
     await page.getByPlaceholder("例: 見積書の作成").fill("電話対応");
     await page.getByPlaceholder("例: Excel、マクロ、クエリ、Claude").fill("電話");
     await page.getByRole("button", { name: "追加してすぐ開始" }).click();
-    await expect(page.getByText("未計測(仮計測)が計測中です")).toBeVisible();
+    await expect(page.getByText(/から、記録のない時間が続いています/)).toBeVisible();
     await expectSingle(page);
   };
   const added = async (page: Page) => (await readAll<Daily & { method?: string; category: string }>(page, "dailyTasks")).find((t) => t.name === "電話対応");
 
   test("「合算する」: 仮計測の開始時刻から計測し、仮計測は消え、手段も引き継ぐ", async ({ page }) => {
     await setup(page);
-    await clickButton(page, /今回の作業に合算する/);
+    await clickButton(page, /から「電話対応」をしていた/);
     await expect.poll(async () => (await added(page))?.status).toBe("running");
     const t = (await added(page))!;
     expect(t.segments[0].start).toBe(jstAt("09:40"));
@@ -164,18 +164,18 @@ test.describe("仮計測中に突発作業を追加して開始する", () => {
     await expectSingle(page);
   });
 
-  test("「自動計測をやめる」: 今から計測し、仮計測分は記録しない", async ({ page }) => {
+  test("「今から始める」: 今から計測し、仮計測分は記録しない", async ({ page }) => {
     await setup(page);
-    await clickButton(page, /自動計測をやめる/);
+    await clickButton(page, /^今から始める/);
     await expect.poll(async () => (await added(page))?.status).toBe("running");
     expect((await added(page))!.segments[0].start).toBeGreaterThanOrEqual(jstAt("10:00"));
     expect(await readOne<Daily>(page, "dailyTasks", "p")).toBeUndefined();
     expect(await readAll(page, "records")).toHaveLength(0);
   });
 
-  test("「キャンセル」: 何も追加せず、仮計測はそのまま続く", async ({ page }) => {
+  test("「やめる」: 何も追加せず、仮計測はそのまま続く", async ({ page }) => {
     await setup(page);
-    await clickButton(page, "キャンセル");
+    await clickButton(page, "やめる（何もしない）");
     expect(await added(page)).toBeUndefined();
     expect((await readOne<Daily>(page, "dailyTasks", "p"))?.status).toBe("running");
   });

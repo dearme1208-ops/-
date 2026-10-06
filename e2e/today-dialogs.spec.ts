@@ -38,8 +38,8 @@ test("仮計測中に新しい作業をすぐ開始しようとすると確認�
   await page.getByPlaceholder("例: 資料作成").fill("総務");
   await page.getByPlaceholder("例: 見積書の作成").fill("来客対応");
   await clickButton(page, "追加してすぐ開始");
-  await expect(page.getByText("未計測(仮計測)が計測中です")).toBeVisible();
-  await clickButton(page, "今回の作業に合算する");
+  await expect(page.getByText("09:45から、記録のない時間が続いています")).toBeVisible();
+  await clickButton(page, /から「来客対応」をしていた/);
   const tasks = await readAll<Daily>(page, "dailyTasks");
   expect(tasks.some((t) => t.isProvisional)).toBe(false);
   const started = tasks.find((t) => t.name === "来客対応")!;

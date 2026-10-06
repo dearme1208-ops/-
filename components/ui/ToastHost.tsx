@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { subscribeToasts, dismissToast, type ToastItem } from "@/lib/toast";
+import CompletionPopupHost from "./CompletionPopupHost";
 
 export default function ToastHost() {
   const [items, setItems] = useState<ToastItem[]>([]);
 
   useEffect(() => subscribeToasts(setItems), []);
-
-  if (items.length === 0) return null;
 
   return (
     // 画面下には打刻ボタン・計測中の帯・本日の作業の切り替えなど、モードによって高さの違う
@@ -19,6 +18,8 @@ export default function ToastHost() {
       role="status"
       aria-live="polite"
     >
+      {/* 完了のお知らせ(元に戻す付き)を先頭に、その下に通知を積む */}
+      <CompletionPopupHost />
       {items.map((t) => (
         <div
           key={t.id}

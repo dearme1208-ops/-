@@ -2117,6 +2117,13 @@ export default function TodaySection({
       await db.dailyTasks.add(task);
     });
     setTaskViewTab("running");
+    // 押した後に何が起きて、どうすれば元に戻れるのかを一言で伝える
+    const back = runningTasks.filter((t) => !t.isProvisional);
+    showUndoToast(
+      back.length > 0
+        ? `⚡ トラブル対応を計り始めました。終わったら「終了」で「${workLabel(back[0])}」に戻ります`
+        : "⚡ トラブル対応を計り始めました。終わったら「終了」を押してください"
+    );
   }
 
   // 予定インポートで登録した作業(scheduledTime)がその時刻になったら、計測中の作業を
@@ -3039,6 +3046,7 @@ export default function TodaySection({
         <ProvisionalConflictDialog
           provisionalTask={provisionalTask}
           variant="start"
+          targetName={pendingStart.name}
           onMerge={resolvePendingStartMerge}
           onDiscard={resolvePendingStartDiscard}
           onClose={() => setPendingStart(null)}
@@ -3066,6 +3074,7 @@ export default function TodaySection({
         <ProvisionalConflictDialog
           provisionalTask={provisionalTask}
           variant="continue"
+          targetName={pendingContinue ? workLabel(pendingContinue) : undefined}
           onMerge={resolvePendingContinueMerge}
           onDiscard={resolvePendingContinueDiscard}
           onClose={() => setPendingContinue(null)}

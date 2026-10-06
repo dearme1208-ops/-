@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { WEEKDAY_LABELS, type DailyTask, type Weekday } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import { formatClock } from "@/lib/time";
 import { useWorkContext } from "@/lib/useWorkContext";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 
@@ -47,39 +48,46 @@ export function TemplateConfirmDialog({
   );
 }
 
-// 未計測(仮計測)が計測中のまま、新しい作業の開始/完了済み作業の再開をしようとした場合の確認
+// 未計測(仮計測)が計測中のまま、新しい作業の開始/完了済み作業の再開をしようとした場合の確認。
+// 「未計測」「二重に計測」のような仕組みの言葉ではなく、「◯時◯分から何をしていたか」を
+// 具体的な時刻・長さ・作業名で聞き、選んだ結果がそのまま思い浮かぶ文言にする
 export function ProvisionalConflictDialog({
   provisionalTask,
   variant,
+  targetName,
   onMerge,
   onDiscard,
   onClose,
 }: {
   provisionalTask: DailyTask;
   variant: "start" | "continue";
+  /** これから始める(続ける)作業の名前 */
+  targetName?: string;
   onMerge: () => void;
   onDiscard: () => void;
   onClose: () => void;
 }) {
+  const from = provisionalTask.startedAt ?? provisionalTask.segments[0]?.start ?? Date.now();
+  const fromLabel = formatClock(from);
+  const minutes = Math.max(0, Math.round((Date.now() - from) / 60000));
+  const what = targetName ? `「${targetName}」` : "この作業";
   return (
-    <Modal title="未計測(仮計測)が計測中です" onClose={onClose}>
-      <p className="mb-4 text-sm text-cream/80">
-        「{provisionalTask.category} / {provisionalTask.name}」として未計測の自動計測が現在進行中です。
-        {variant === "start"
-          ? "このまま新しい作業を開始すると二重に計測されてしまいます。どうしますか？"
-          : "このまま作業を続けると二重に計測されてしまいます。どうしますか？"}
+    <Modal title={`${fromLabel}から、記録のない時間が続いています`} onClose={onClose}>
+      <p className="mb-4 text-sm leading-relaxed text-cream/80">
+        {fromLabel}から今までの<b className="text-cream">{minutes}分</b>は、何の作業か決まっていない時間として仮に計っています。
+        {variant === "start" ? `${what}を始める前に、この${minutes}分をどうするか選んでください。` : `${what}を続ける前に、この${minutes}分をどうするか選んでください。`}
       </p>
       <div className="flex flex-col gap-2">
-        <button className="btn-pill text-sm" onClick={onMerge}>
-          今回の作業に合算する（未計測の開始時刻から続けて計測）
+        <button className="btn-pill flex flex-col items-center gap-0.5 py-2.5 text-sm" onClick={onMerge}>
+          {fromLabel}から{what}をしていた
+          <span className="block text-[11px] font-normal opacity-75">この{minutes}分も{what}の時間に入れる</span>
         </button>
-        <button className="btn-pill-outline text-sm" onClick={onDiscard}>
-          {variant === "start"
-            ? "自動計測をやめる（未計測分は記録せず、今から計測開始）"
-            : "自動計測をやめる（未計測分は記録せず、今から計測継続）"}
+        <button className="btn-pill-outline flex flex-col items-center gap-0.5 py-2.5 text-sm" onClick={onDiscard}>
+          今から{variant === "start" ? "始める" : "続ける"}
+          <span className="block text-[11px] font-normal opacity-75">{fromLabel}〜今の{minutes}分は記録しない</span>
         </button>
         <button className="text-xs text-cream/50" onClick={onClose}>
-          キャンセル
+          やめる（何もしない）
         </button>
       </div>
     </Modal>

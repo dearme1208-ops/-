@@ -185,9 +185,12 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   // 並行して2回走ると実績が二重に加算されていた。DB上の最新の状態を確かめてから
   // 完了にする処理を1つのトランザクションで行い、先に完了済みになっていれば何もしない
   // (呼び出し側が完了済みの作業を渡した場合は、意図した再確定として通常どおり処理する)
+  // 「元に戻す」で完了前の状態へ戻すため、書き換える前の作業を控えておく
+  let taskBefore: DailyTask | undefined;
   const claimed = await db.transaction("rw", db.dailyTasks, async () => {
     const current = await db.dailyTasks.get(task.id);
     if (current && current.status === "done" && task.status !== "done") return false;
+    taskBefore = current;
     await db.dailyTasks.update(task.id, {
       segments,
       status: "done",
@@ -207,21 +210,6 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   });
   if (!claimed) return false;
 
-  // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
-  // 可視化する対象ではないため、ポップアップは出さない
-  if (!task.isProvisional) {
-    // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」で出す(lib/workContext.ts)
-    const project = task.projectId ? await db.projects.get(task.projectId) : undefined;
-    const todo = task.todoTaskId ? await db.todoTasks.get(task.todoTaskId) : undefined;
-    const parentTodo = todo?.parentTaskId ? await db.todoTasks.get(todo.parentTaskId) : undefined;
-    fireCompletionPopup({
-      category: task.category,
-      name: workNameWithContext(task, buildWorkContextSources(project ? [project] : [], [todo, parentTodo].filter((t): t is TodoTask => !!t))),
-      seconds: Math.round(accumulatedMs / 1000),
-      estimatedSeconds: task.estimatedSeconds,
-    });
-  }
-
   let masterTaskId = task.masterTaskId;
   if (!masterTaskId) {
     const master = await findOrCreateMasterTask(task.category, task.name, task.estimatedSeconds);
@@ -229,6 +217,9 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   }
 
   const existing = await findMergeTargetRecord(task.date, masterTaskId, task);
+  // 「元に戻す」用: 合算先の実績の元の値、または新しく作った実績のID
+  const recordBefore = existing ? { ...existing } : undefined;
+  let createdRecordId: string | undefined;
 
   if (existing) {
     await db.records.update(existing.id, {
@@ -241,8 +232,9 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
       segments: mergeRecordSegments(existing, segments),
     });
   } else {
+    createdRecordId = uid();
     await db.records.add({
-      id: uid(),
+      id: createdRecordId,
       date: task.date,
       category: task.category,
       name: task.name,
@@ -262,7 +254,47 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
   }
 
   await recomputeEstimateFromRecords(masterTaskId);
+
+  // 仮計測(まだ何の作業か確定していない未計測時間)は「完了した作業」として
+  // 可視化する対象ではないため、ポップアップは出さない
+  if (!task.isProvisional) {
+    // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」で出す(lib/workContext.ts)
+    const project = task.projectId ? await db.projects.get(task.projectId) : undefined;
+    const todo = task.todoTaskId ? await db.todoTasks.get(task.todoTaskId) : undefined;
+    const parentTodo = todo?.parentTaskId ? await db.todoTasks.get(todo.parentTaskId) : undefined;
+    const finalMasterId = masterTaskId;
+    const before = taskBefore;
+    fireCompletionPopup({
+      category: task.category,
+      name: workNameWithContext(task, buildWorkContextSources(project ? [project] : [], [todo, parentTodo].filter((t): t is TodoTask => !!t))),
+      seconds: Math.round(accumulatedMs / 1000),
+      estimatedSeconds: task.estimatedSeconds,
+      // 押し間違えた「終了」を、完了前の状態(計測中なら計測中のまま)へ戻す
+      undo: before ? () => undoFinishDailyTask(before, finalMasterId, recordBefore, createdRecordId) : undefined,
+    });
+  }
   return true;
+}
+
+/**
+ * 完了を取り消して、完了前の状態へ戻す(完了ポップアップの「元に戻す」)。
+ * 作業は完了前の状態(計測中・一時停止中)に戻し、実績は合算前の値に戻すか、
+ * この完了で新しく作ったものなら消す。想定時間も実績から計算し直す。
+ * 計測中に戻した作業は区間が開いたままなので、完了していた間の時間も計測に含まれる
+ * (押し間違いをすぐ戻す使い方を想定しているため)
+ */
+export async function undoFinishDailyTask(
+  taskBefore: DailyTask,
+  masterTaskId: string,
+  recordBefore: WorkRecord | undefined,
+  createdRecordId: string | undefined
+): Promise<void> {
+  await db.transaction("rw", db.dailyTasks, db.records, async () => {
+    await db.dailyTasks.put(taskBefore);
+    if (recordBefore) await db.records.put(recordBefore);
+    else if (createdRecordId) await db.records.delete(createdRecordId);
+  });
+  await recomputeEstimateFromRecords(masterTaskId);
 }
 
 /**
