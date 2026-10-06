@@ -109,10 +109,14 @@ export default function CompletedTasksGantt({
           </button>
         </div>
       </div>
-      <p className="text-[10px] text-cream/40">
-        バーの端をドラッグで開始/終了を調整、バー本体のドラッグで全体を前後に移動できます。軽くタップすると詳細な時刻編集を開きます。
-        {isToday && "赤い縦線が現在時刻の位置です。開いた時点でこの位置が画面中央に来るようスクロールしています。"}
-      </p>
+      {/* 毎回目に入る場所に長い使い方が出ていたので、知りたい時だけ開く */}
+      <details className="text-[10px] text-cream/40">
+        <summary className="cursor-pointer select-none text-[11px] text-cream/50">使い方</summary>
+        <p className="mt-1">
+          バーの端をドラッグで開始/終了を調整、バー本体のドラッグで全体を前後に移動できます。軽くタップすると詳細な時刻編集を開きます。
+          {isToday && "赤い縦線が現在時刻の位置です。開いた時点でこの位置が画面中央に来るようスクロールしています。"}
+        </p>
+      </details>
       <div className="flex">
         <div className="w-24 shrink-0 pr-2 sm:w-36">
           <div className="mb-1 h-5 border-b border-cream/20" />

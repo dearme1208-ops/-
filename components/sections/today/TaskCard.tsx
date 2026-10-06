@@ -10,7 +10,6 @@ import { CONDITION_LEVELS } from "@/lib/condition";
 import { isStageDone } from "@/lib/projectStage";
 import { formatClock, formatHms, formatMsClock } from "@/lib/time";
 import { todoParentTitle } from "@/lib/todoLabel";
-import RadialTimer from "@/components/ui/RadialTimer";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import type { AutoAllocationResult } from "@/lib/allocate";
 import type { ThemedMode } from "@/lib/theme";
@@ -270,7 +269,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
           ⠿
         </span>
       )}
-      <div className={`flex flex-wrap items-center justify-between gap-3 pr-6 ${isDraggable ? "pl-4" : ""}`}>
+      <div className={`flex flex-col gap-3 pr-6 ${isDraggable ? "pl-4" : ""}`}>
         <div>
           {/* 狭い画面で、計測中の印や危険度バッジと並んだ「業務」「突発」が1文字ずつ縦に折り返していた。
               行ごと折り返し、言葉の途中では折り返さない */}
@@ -312,8 +311,8 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
               {task.status === "done" && (
                 <span className="rounded-full border border-cream/30 px-1.5 py-px font-bold text-cream/80">✅ 完了</span>
               )}
-              <span>{task.category}</span>
-              {task.isSpontaneous && <span className="text-alert">突発</span>}
+              <span className="rounded-full bg-cream/10 px-2 py-px text-[11px] text-cream/75">{task.category}</span>
+              {task.isSpontaneous && <span className="rounded-full border border-alert/40 px-1.5 py-px text-[10px] text-alert">突発</span>}
               {isNext && task.status === "pending" && <span className="ml-2 text-cream">▶ 次の作業</span>}
             </span>
             <button
@@ -473,30 +472,30 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             </div>
           )}
           <MethodRow task={task} suggestions={ctx.methodSuggestions} />
-          <div className="text-xs text-cream/50">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-cream/50 [&>span+span]:before:mr-2 [&>span+span]:before:text-cream/25 [&>span+span]:before:content-['·']">
             {predictedSecondsForTask > 0 ? (
-              <span className="font-bold text-cream/70">予測 {formatMsClock(predMs)}</span>
+              <span className="font-bold text-cream/70">予測 {durationLabel(predMs)}</span>
             ) : (
               <span className="text-cream/40" title="マスタの実績がまだ十分にないため、目安の「予測」を算出できません">
                 予測 データ不足
               </span>
             )}
             {task.hasPlan === true && (
-              <span className="ml-2 text-cream/40" title="この作業に個人で設定した目標時間です（工程の判断には使われません）">
-                （個人目標 {formatMsClock(estMs)}）
+              <span className="text-cream/40" title="この作業に個人で設定した目標時間です（工程の判断には使われません）">
+                目標 {durationLabel(estMs)}
               </span>
             )}
             {projectedFinishByTaskId.has(task.id) && (
-              <span className="ml-2 text-cream/70">
-                終了予定 {formatClock(projectedFinishByTaskId.get(task.id)!)}
+              <span className="text-cream/70">
+                {formatClock(projectedFinishByTaskId.get(task.id)!)}ごろ終わる見込み
               </span>
             )}
             {effectiveAllocation?.allocatedMsByTaskId.has(task.id) && (
               <span
-                className="ml-2 text-cream/50"
+                className="text-cream/50"
                 title={`${standardWorkEnd}までに収めるための目標ペース（自動配分）`}
               >
-                配分目安 {formatMsClock(effectiveAllocation.allocatedMsByTaskId.get(task.id)!)}
+                配分目安 {durationLabel(effectiveAllocation.allocatedMsByTaskId.get(task.id)!)}
               </span>
             )}
           </div>
@@ -505,30 +504,43 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             <div className="text-xs text-alert">同じ作業を計測中のため開始できません</div>
           )}
         </div>
-        <div className="text-right">
-          <div className="flex items-center justify-end gap-2">
-            {task.status === "running" && predictedSecondsForTask > 0 && (
-              <RadialTimer progressPct={(elapsedMs / predMs) * 100} overEstimate={overEstimate} />
-            )}
-            <div
-              className={`font-display text-2xl font-bold tabular-nums ${
-                overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : "text-cream"
-              } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
-            >
-              {formatMsClock(elapsedMs)}
-            </div>
-          </div>
-          {predictedSecondsForTask > 0 && (task.status === "running" || task.status === "paused") && (
-            <div
-              className={`text-xs tabular-nums ${
-                remainingMs < 0 ? (va11hallaMode ? "text-v11-pink" : "text-alert") : "text-cream/60"
-              }`}
-            >
-              {remainingMs >= 0 ? `残り ${formatMsClock(remainingMs)}` : `超過 ${formatMsClock(-remainingMs)}`}
+        <div className="space-y-2">
+          {/* 計測中・一時停止中は、経過時間を左に大きく、残り/超過を右に、その下に予測に対する
+              進み具合の帯を通す(以前は右寄せの時間と丸い目盛りで、左側が大きく空いていた) */}
+          {(task.status === "running" || task.status === "paused") && (
+            <div>
+              <div className="flex items-end justify-between gap-3">
+                <div
+                  className={`font-display font-bold leading-none tabular-nums ${task.status === "running" ? "text-4xl" : "text-2xl"} ${
+                    overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : task.status === "paused" ? "text-cream/70" : "text-cream"
+                  } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
+                >
+                  {formatMsClock(elapsedMs)}
+                </div>
+                {predictedSecondsForTask > 0 && (
+                  <div
+                    className={`pb-0.5 text-right text-xs tabular-nums ${
+                      remainingMs < 0 ? (va11hallaMode ? "text-v11-pink" : "font-bold text-alert") : "text-cream/60"
+                    }`}
+                  >
+                    {remainingMs >= 0 ? `残り ${formatMsClock(remainingMs)}` : `超過 ${formatMsClock(-remainingMs)}`}
+                  </div>
+                )}
+              </div>
+              {predictedSecondsForTask > 0 && (
+                <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-cream/10" aria-hidden="true">
+                  <div
+                    className={`h-full rounded-full transition-[width] duration-1000 ${
+                      overEstimate ? (va11hallaMode ? "bg-v11-pink" : "bg-alert") : "bg-[rgb(var(--accent-rgb))]"
+                    } ${task.status === "paused" ? "opacity-50" : ""}`}
+                    style={{ width: `${Math.min(100, (elapsedMs / predMs) * 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
           {task.status !== "done" && (
-            <div className="mt-1 flex items-center justify-end gap-1 text-xs text-cream/40">
+            <div className="flex items-center gap-1 text-xs text-cream/40">
               <span title="開始前後に自分で予想を立てておくと、完了時に的中度が見られます">🎯予想</span>
               <input
                 type="number"
@@ -546,7 +558,9 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
               <span>分</span>
             </div>
           )}
-          <div className="mt-1 flex flex-wrap justify-end gap-2">
+          {task.status !== "done" && (
+            // 操作は横一列に均等に並べる(右寄せで折り返すと、行ごとに位置がばらばらになっていた)
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 [&>button]:w-full [&>button]:whitespace-nowrap [&>button]:px-2 [&>button]:py-2">
             {task.status === "pending" && (
               <>
                 <button
@@ -630,10 +644,13 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                 </button>
               </>
             )}
-            {task.status === "done" && (
-              <div className="text-right">
+            </div>
+          )}
+          {task.status === "done" && (
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="flex flex-wrap items-baseline gap-x-3">
                 {task.startedAt && task.endedAt && (
-                  // 完了後にいちばん直したくなるのが開始・終了の時刻なので、濃く出して押せば編集を開く
+                  // 完了後にいちばん直したくなるのが開始・終了の時刻なので、押せば編集を開く
                   <button
                     onClick={() => setEditingTask(task)}
                     className="rounded px-1 text-sm font-bold tabular-nums text-cream/90 underline decoration-dotted underline-offset-2 hover:bg-cream/10"
@@ -642,6 +659,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                     {formatClock(task.startedAt)}〜{formatClock(task.endedAt)}
                   </button>
                 )}
+                <span className="font-display text-lg font-bold tabular-nums text-cream/80">{formatMsClock(elapsedMs)}</span>
                 {!!task.guessSeconds &&
                   (() => {
                     const actualSeconds = Math.round(baseAccumulatedMs(task) / 1000);
@@ -652,20 +670,17 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                     const label =
                       diffPct <= 10 ? "🎯ほぼ的中" : actualSeconds > task.guessSeconds! ? `${diffPct}%長引いた` : `${diffPct}%早く終わった`;
                     return (
-                      <div className="text-xs tabular-nums text-cream/60">
+                      <span className="text-xs tabular-nums text-cream/60">
                         予想{guessMin}分→実績{actualMin}分・{label}
-                      </div>
+                      </span>
                     );
                   })()}
-                <button
-                  className="mt-1 block w-full text-right text-xs text-cream/50 hover:text-alert"
-                  onClick={() => setDeletingCompletedTask(task)}
-                >
-                  削除
-                </button>
               </div>
-            )}
-          </div>
+              <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setDeletingCompletedTask(task)}>
+                削除
+              </button>
+            </div>
+          )}
         </div>
         {conditionEnabled && task.status === "done" && (
           <div className="mt-2 border-t border-cream/10 pt-2">
@@ -782,7 +797,7 @@ function FinishButton({
         終了
       </button>
       <button
-        className={`${open ? "btn-pill" : "btn-pill-outline"} text-xs`}
+        className={`col-span-full justify-self-end rounded-full px-2 py-1 text-xs ${open ? "text-cream" : "text-cream/55"} hover:text-cream`}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -791,7 +806,7 @@ function FinishButton({
         ⏪ 少し前に終わってた
       </button>
       {open && (
-        <div className="flex w-full flex-wrap justify-end gap-1.5" data-testid="finish-earlier">
+        <div className="col-span-full flex w-full flex-wrap justify-end gap-1.5" data-testid="finish-earlier">
           {options.map((o) => (
             <button key={o.label} className="btn-pill-outline px-3 py-1 text-xs" onClick={() => finishTask(task, o.at)}>
               {o.label}（{formatClock(o.at)}）
@@ -815,5 +830,14 @@ function FinishButton({
       )}
     </>
   );
+}
+
+/** 予測・目標などの長さを「1時間30分」「45分」のように読める形で出す(秒の桁は要らない) */
+function durationLabel(ms: number): string {
+  const min = Math.max(0, Math.round(ms / 60_000));
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}分`;
+  return m === 0 ? `${h}時間` : `${h}時間${m}分`;
 }
 
