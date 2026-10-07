@@ -46,6 +46,7 @@ import ProjectTemplateDialog from "@/components/sections/ProjectTemplateDialog";
 import RetrospectiveInput from "@/components/sections/RetrospectiveInput";
 import ProjectPPMChart from "@/components/sections/ProjectPPMChart";
 import ProgressSyncModal from "@/components/ProgressSyncModal";
+import { ProjectClimbPanel } from "@/components/viz/PlanningViz";
 import ProjectProgressChart from "@/components/sections/ProjectProgressChart";
 import StageDueDensityModal from "@/components/sections/StageDueDensityModal";
 import WeeklyReviewModal from "@/components/WeeklyReviewModal";
@@ -722,6 +723,12 @@ export default function ProjectsSection({
         </button>
       </div>
       {showProgressSync && <ProgressSyncModal onClose={() => setShowProgressSync(false)} />}
+      <ProjectClimbPanel
+        onOpen={(id) => {
+          const target = projects?.find((p) => p.id === id);
+          if (target) setEditingProject(target);
+        }}
+      />
 
       {showCsvTools && (
         <div className="flex flex-wrap justify-end gap-2">

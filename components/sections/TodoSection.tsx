@@ -68,6 +68,7 @@ import { showUndoToast } from "@/lib/toast";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
 import ProgressSyncModal from "@/components/ProgressSyncModal";
+import { DueTerrainPanel } from "@/components/viz/PlanningViz";
 
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
@@ -1281,6 +1282,7 @@ export default function TodoSection({
 
   return (
     <div className="space-y-4">
+      <DueTerrainPanel />
       {/* 表示の切り替え(マイデイ・重要・リスト…)。スマホでは何段にも折り返してタスクが下へ押し出されて
           いたので、狭い画面では1行の横スクロールにする */}
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap [&>*]:shrink-0 [&_button]:whitespace-nowrap">

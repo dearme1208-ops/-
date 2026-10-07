@@ -12,6 +12,8 @@ import { formatClock, formatHms, formatMsClock } from "@/lib/time";
 import { todoParentTitle } from "@/lib/todoLabel";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import TaskClock from "@/components/ui/TaskClock";
+import { RangeBand } from "@/components/viz/RangeBand";
+import type { DurationRange } from "@/lib/visuals";
 import { useSetting } from "@/lib/settings";
 import type { AutoAllocationResult } from "@/lib/allocate";
 import type { ThemedMode } from "@/lib/theme";
@@ -70,6 +72,8 @@ export interface TaskCardContext {
   onOpenProjectEdit: (projectId: string) => void;
   /** 過去に使った手段(Excel・マクロ・Claudeなど)の候補。手段の入力欄に出す */
   methodSuggestions: string[];
+  /** 作業マスタごとの、これまでの所要時間の幅(計測中のカードに「いつもの幅」として描く) */
+  durationRangeByMaster: Map<string, DurationRange>;
 }
 
 // 手段(この作業をどんなやり方でしているか: Excel・マクロ・Claudeなど)の行。計測中・一時停止中・予定の
@@ -550,6 +554,10 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                     style={{ width: `${Math.min(100, (elapsedMs / predMs) * 100)}%` }}
                   />
                 </div>
+              )}
+              {/* これまでの所要時間の幅の中で、今どのあたりか(計測中だけ) */}
+              {task.status === "running" && task.masterTaskId && ctx.durationRangeByMaster.get(task.masterTaskId) && (
+                <RangeBand range={ctx.durationRangeByMaster.get(task.masterTaskId)!} elapsedMs={elapsedMs} />
               )}
             </div>
           )}

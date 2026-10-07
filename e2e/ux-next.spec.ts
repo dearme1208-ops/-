@@ -96,6 +96,8 @@ test("森モード: いつもの間隔より空いてきた家事が「そろそ
   await expect(panel).toContainText("シーツ交換");
   await expect(panel).toContainText("前回から10日");
   await expect(panel).toContainText("いつもは7日おき");
+  // 空き具合は落ち葉の量でも見せる(10日 / 7日 ≒ 143%)
+  await expect(panel.getByRole("img", { name: "空き具合 143%" })).toBeVisible();
 });
 
 test("30日以上触っていない表示は「しばらく使っていない表示」に畳まれ、押すと戻る", async ({ page }) => {

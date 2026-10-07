@@ -4629,3 +4629,37 @@ html[data-text-scale="compact"] {
   font-size: 93.75%;
 }
 
+/* 可視化(components/viz)の区分の色。時間の多い順に上位4区分へ割り当て、残りは「その他」の灰。
+   暗い地のモードは暗い地向けの段、明るい地のモードは明るい地向けの段を使う
+   (どちらも色覚の違いで隣どうしが見分けられることを確かめた並び) */
+:root {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-other: rgb(var(--cream-rgb) / 0.28);
+  --viz-good: #2e9e5b;
+  --viz-bad: #d9534f;
+}
+html[data-visual-mode="natsuyasumi"],
+html[data-visual-mode="adventurer"],
+html[data-visual-mode="library"],
+html[data-visual-mode="powerpro"],
+html[data-visual-mode="origin"],
+html[data-visual-mode="claude"],
+html[data-visual-mode="zen"] {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-visual-mode="claude"],
+  html[data-visual-mode="zen"] {
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-3: #199e70;
+    --viz-4: #c98500;
+  }
+}
+

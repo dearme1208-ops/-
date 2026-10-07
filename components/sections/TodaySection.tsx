@@ -57,6 +57,7 @@ import {
   formatMsClock,
   jsWeekdayToApp,
   todayStr,
+  shiftDateStr,
   formatHms,
 } from "@/lib/time";
 import { getNotificationPermission, notify, requestNotificationPermission } from "@/lib/notifications";
@@ -93,6 +94,8 @@ import DailyChallengePanel from "@/components/DailyChallengePanel";
 import DayGapsModal, { useDayGapCount } from "@/components/DayGapsModal";
 import ChorePanel from "@/components/sections/today/ChorePanel";
 import WeeklySummaryCard from "@/components/sections/today/WeeklySummaryCard";
+import { ConditionHeatmapPanel, DayRing, HourglassPanel, NextScheduleBar, PlanActualPanel, WeekBlocks } from "@/components/viz/TodayViz";
+import { durationRanges } from "@/lib/visuals";
 import TodayHintPanel from "@/components/TodayHintPanel";
 import BackupNudge from "@/components/BackupNudge";
 import DayCardModal from "@/components/DayCardModal";
@@ -2254,6 +2257,12 @@ export default function TodaySection({
   const streakDays = useMemo(() => computeStreakDays(projectRecords ?? [], date), [projectRecords, date]);
 
   const methodSuggestions = useMemo(() => collectMethodSuggestions(projectRecords ?? []), [projectRecords]);
+  // 作業ごとの「いつもの所要時間の幅」(直近90日に終えた回から)
+  const recentDone = useLiveQuery(
+    () => db.dailyTasks.where("date").aboveOrEqual(shiftDateStr(date, -90)).filter((t) => t.status === "done").toArray(),
+    [date]
+  );
+  const durationRangeByMaster = useMemo(() => durationRanges(recentDone ?? []), [recentDone]);
 
   // 同曜日比較: 本日の実績合計を、過去の同じ曜日の平均と比べる
   const todayTotalSeconds = useMemo(
@@ -2324,6 +2333,10 @@ export default function TodaySection({
     status: "本日の作業状況",
     challenge: "デイリーチャレンジ",
     autoAllocate: "自動配分",
+    dayRing: "今日のリング",
+    hourglass: "終業までに収まる?",
+    week: "この1週間",
+    heatmap: "時間帯ごとの調子",
   };
   const { isFolded: isPanelFolded, touch: touchPanel } = usePanelUsage(Object.keys(PANEL_LABELS), now);
   const foldedPanels = Object.entries(PANEL_LABELS)
@@ -2418,6 +2431,7 @@ export default function TodaySection({
   // 作業カード(TaskCard)に渡す、タブ全体で共有している状態と操作
   const taskCardCtx: TaskCardContext = {
     methodSuggestions,
+    durationRangeByMaster,
     now,
     themedMode,
     va11hallaMode,
@@ -2671,6 +2685,18 @@ export default function TodaySection({
         />
       )}
 
+      {taskViewTab === "running" && !background && (
+        <NextScheduleBar
+          tasks={tasks ?? []}
+          date={date}
+          now={now}
+          runningFinishMs={(() => {
+            const r = (tasks ?? []).find((t) => t.status === "running" && !t.isProvisional);
+            return r ? projectedFinishByTaskId.get(r.id) : undefined;
+          })()}
+        />
+      )}
+      {taskViewTab === "done" && !background && <PlanActualPanel tasks={tasks ?? []} />}
       {taskViewTab === "done" && (
         <CompletedTasksGantt
           tasks={nonProvisionalSortedTasks}
@@ -2718,6 +2744,32 @@ export default function TodaySection({
         {!extrasCollapsed && (
           <>
             {!background && <WeeklySummaryCard today={date} />}
+            {!background && !isPanelFolded("dayRing") && (
+              <div data-panel-id="dayRing">
+                <DayRing tasks={tasks ?? []} now={now} />
+              </div>
+            )}
+            {!background && !isPanelFolded("hourglass") && (
+              <div data-panel-id="hourglass">
+                <HourglassPanel
+                  tasks={tasks ?? []}
+                  predictedSecondsByTaskId={predictedSecondsByTaskId}
+                  elapsedMsOf={(t) => segmentsAccumulatedMs(t, now)}
+                  now={now}
+                  workEnd={standardWorkEnd}
+                />
+              </div>
+            )}
+            {!background && !isPanelFolded("week") && (
+              <div data-panel-id="week">
+                <WeekBlocks today={date} />
+              </div>
+            )}
+            {!background && !isPanelFolded("heatmap") && (
+              <div data-panel-id="heatmap">
+                <ConditionHeatmapPanel today={date} />
+              </div>
+            )}
             {themedMode === "home" && !background && <ChorePanel today={date} onStart={addFavoriteAndStart} />}
             {themedMode === "persona5" && <PersonaStatsPanel today={date} />}
             {(!tasks || tasks.length === 0) && (

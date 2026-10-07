@@ -81,7 +81,8 @@ test("なつやすみ: 今月が期限のToDoが宿題になり、チェック�
   await seed(page, { settings: mode("natsuyasumi"), stores: { todoTasks: [todo("t", "読書感想文", jstDate())] } });
   const hw = page.getByTestId("natsu-homework");
   await expect(hw).toContainText(`${m}月のしゅくだい`);
-  await hw.getByLabel("「読書感想文」をおわりにする").check();
+  // 押すとすぐ一覧から消えるので check() ではなく click()(check は「チェック済み」を確かめに行き、消えた要素を待ち続ける)
+  await hw.getByLabel("「読書感想文」をおわりにする").click();
   await expect.poll(async () => (await readOne<{ completed: boolean }>(page, "todoTasks", "t"))?.completed).toBe(true);
 });
 
