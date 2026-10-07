@@ -24,6 +24,8 @@ test.describe("相手待ちの見える化", () => {
           { id: "t3", listId: "l1", title: "資料作り", tag: "対応中", tagChangedAt: jstAt("09:00", -9), important: false, completed: false, order: 2, createdAt: 0 },
         ],
       },
+      // 同じ件名が並ぶ「相手待ちの砂時計」は畳んで、一覧の行だけを見る
+      settings: { "viz.waitingOpen.todo": "false" },
     });
     await openTab(page, "ToDo");
     await page.locator("button", { hasText: "⏳ 返事待ち（2）" }).click();
