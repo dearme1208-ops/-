@@ -67,7 +67,6 @@ export interface TodayToolbarProps {
   showScheduleCsvTools: boolean;
   onTrouble: () => void;
   onAddTask: () => void;
-  onDayCard: () => void;
   onDayPlan: () => void;
   onTomorrowDraft: () => void;
   onTimebox: () => void;
@@ -84,7 +83,7 @@ export interface TodayToolbarProps {
 export default function TodayToolbar(props: TodayToolbarProps) {
   const { date, simpleButtons: simple, todayTotalSeconds, sameWeekdayAvg, voice } = props;
   const scheduleFileInputRef = useRef<HTMLInputElement>(null);
-  // たまにしか使わない操作(今日の一枚・予定の取り込み・再生成)は「その他」に畳む。
+  // たまにしか使わない操作(予定の取り込み・再生成)は「その他」に畳む。
   // スマホでは9個のボタンが作業リストの前に約260pxも並び、リストが下へ押し出されていた
   const [moreOpenStr, setMoreOpenStr] = useSetting("today.toolbarMoreOpen", "false");
   const moreOpen = moreOpenStr === "true";
@@ -204,23 +203,13 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           onClick={() => setMoreOpenStr(moreOpen ? "false" : "true")}
           aria-expanded={moreOpen}
           aria-label="その他の操作"
-          title="今日の一枚・予定の取り込み・再生成など"
+          title="予定の取り込み・再生成など"
         >
           {simple ? "⋯" : `⋯ その他 ${moreOpen ? "▲" : "▼"}`}
         </button>
       </div>
         {moreOpen && (
           <div className="flex w-full flex-wrap gap-2 border-t border-cream/10 pt-2" data-testid="today-toolbar-more">
-            {todayTotalSeconds > 0 && (
-              <ModeButton
-                simple={simple}
-                icon="🖼"
-                label="🖼 今日の一枚"
-                title="今日の一枚(画像で保存)"
-                ariaLabel="今日の一枚"
-                onClick={props.onDayCard}
-              />
-            )}
             {props.showScheduleCsvTools && (
               <>
                 <button className="btn-pill-outline text-sm" onClick={props.onDownloadScheduleTemplate}>

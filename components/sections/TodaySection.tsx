@@ -16,7 +16,7 @@ import {
   timeToMsOfDay,
 } from "@/lib/breaks";
 import { useDraftSetting, useSetting } from "@/lib/settings";
-import { cardOverrunClass, emphasisTextClass, getRiskTier, overrunLabel, useVisualMode, appTitle } from "@/lib/theme";
+import { cardOverrunClass, emphasisTextClass, getRiskTier, overrunLabel, useVisualMode } from "@/lib/theme";
 import {
   baseAccumulatedMs,
   computePredictedSecondsByTaskId,
@@ -48,7 +48,6 @@ import { computeProductivityByWeather } from "@/lib/weather";
 import { fireConfetti } from "@/lib/confetti";
 import { findDueScheduledTasks, findProvisionalStart, inactivityCutoff } from "@/lib/automation";
 
-import { computeGrowthStage } from "@/lib/growth";
 import { createSpeechRecognition, parseVoiceCommand, speak } from "@/lib/voice";
 import { isStageDone } from "@/lib/projectStage";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
@@ -98,10 +97,8 @@ import { ConditionHeatmapPanel, DayRing, HourglassPanel, NextScheduleBar, PlanAc
 import { durationRanges } from "@/lib/visuals";
 import TodayHintPanel from "@/components/TodayHintPanel";
 import BackupNudge from "@/components/BackupNudge";
-import DayCardModal from "@/components/DayCardModal";
 import TodayMemoPanel from "@/components/TodayMemoPanel";
 import TodayHandoffPanel from "@/components/TodayHandoffPanel";
-import type { DayCardData } from "@/lib/dayCard";
 import TomorrowDraftModal from "@/components/TomorrowDraftModal";
 import TimeboxModal from "@/components/TimeboxModal";
 import Modal from "@/components/ui/Modal";
@@ -242,7 +239,7 @@ export default function TodaySection({
   const extrasCollapsed = extrasCollapsedStr === "true";
   const [favoritesCollapsedStr, setFavoritesCollapsedStr] = useSetting("today.collapseFavorites", "false");
   const favoritesCollapsed = favoritesCollapsedStr === "true";
-  const { va11hallaMode, themedMode, wordingThemedMode, wordingMode } = useVisualMode();
+  const { va11hallaMode, themedMode, wordingThemedMode } = useVisualMode();
   const [manualAllocation, setManualAllocation] = useState<AutoAllocationResult | null>(null);
   const [manualAllocationAt, setManualAllocationAt] = useState<number | null>(null);
   const [pendingStart, setPendingStart] = useState<
@@ -2277,8 +2274,6 @@ export default function TodaySection({
   const latestConditionLevel =
     conditionLogs && conditionLogs.length > 0 ? conditionLogs[conditionLogs.length - 1].level : null;
 
-  // 「今日の一枚」: 本日の実績(除外分を除く)からカテゴリ別内訳とMVP作業(最長時間)を集計する
-  const [showDayCard, setShowDayCard] = useState(false);
   const [showTomorrowDraft, setShowTomorrowDraft] = useState(false);
   const [showDayPlan, setShowDayPlan] = useState(false);
   const [showTimebox, setShowTimebox] = useState(false);
@@ -2355,32 +2350,6 @@ export default function TodaySection({
     async () => !!(await db.settings.get(`reflection.daily.${date}`)),
     [date]
   );
-  const todayRecordsForCard = useMemo(
-    () => (projectRecords ?? []).filter((r) => r.date === date && !r.excludedFromStats),
-    [projectRecords, date]
-  );
-  const dayCardData: DayCardData = useMemo(() => {
-    const byCategory = new Map<string, number>();
-    for (const r of todayRecordsForCard) {
-      byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.seconds);
-    }
-    const categoryTotals = [...byCategory.entries()]
-      .map(([category, seconds]) => ({ category, seconds }))
-      .sort((a, b) => b.seconds - a.seconds);
-    const mvpRecord = [...todayRecordsForCard].sort((a, b) => b.seconds - a.seconds)[0];
-    const { stage } = computeGrowthStage(themedMode, todayTotalSeconds);
-    return {
-      appTitle: appTitle(wordingMode),
-      date,
-      totalSeconds: todayTotalSeconds,
-      doneCount: (tasks ?? []).filter((t) => t.status === "done" && !t.isProvisional).length,
-      streakDays,
-      growthIcon: stage.icon,
-      growthLabel: stage.label,
-      categoryTotals,
-      mvpTask: mvpRecord ? { category: mvpRecord.category, name: mvpRecord.name, seconds: mvpRecord.seconds } : undefined,
-    };
-  }, [todayRecordsForCard, themedMode, todayTotalSeconds, tasks, streakDays, date, wordingMode]);
 
   // 条件付き見積もり警告: 現在の体調・天気から、既存の分析データ(体調別/天気別の生産性)を使い
   // 「今日はいつもよりどのくらいかかりそうか」を一言添える(通知ではなく控えめなインライン表示)。
@@ -2572,7 +2541,6 @@ export default function TodaySection({
         showScheduleCsvTools={showScheduleCsvTools}
         onTrouble={() => startTrouble()}
         onAddTask={() => setShowAddDialog(true)}
-        onDayCard={() => setShowDayCard(true)}
         onDayPlan={() => setShowDayPlan(true)}
         onTomorrowDraft={() => setShowTomorrowDraft(true)}
         onTimebox={() => setShowTimebox(true)}
@@ -3142,7 +3110,6 @@ export default function TodaySection({
         />
       )}
 
-      {showDayCard && <DayCardModal data={dayCardData} onClose={() => setShowDayCard(false)} />}
       {showDayPlan && <DayPlanModal today={date} onClose={() => setShowDayPlan(false)} />}
       {showTimebox && <TimeboxModal today={date} onClose={() => setShowTimebox(false)} />}
       {timeboxEndPrompt && (

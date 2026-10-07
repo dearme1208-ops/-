@@ -30,11 +30,13 @@ test("通常表示では文言付きのボタンが並び、見出しに連続�
     await expect(page.getByRole("button", { name: text })).toBeVisible();
   }
   // たまにしか使わない操作は「その他」に畳まれている
-  await expect(page.getByRole("button", { name: "🖼 今日の一枚" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "予定CSVテンプレート" })).toHaveCount(0);
   await page.getByRole("button", { name: "その他の操作" }).click();
-  for (const text of ["🖼 今日の一枚", "予定CSVテンプレート", "予定インポート（CSV/.ics）"]) {
+  for (const text of ["予定CSVテンプレート", "予定インポート（CSV/.ics）"]) {
     await expect(page.getByRole("button", { name: text })).toBeVisible();
   }
+  // 「今日の一枚」は削除した
+  await expect(page.getByRole("button", { name: "🖼 今日の一枚" })).toHaveCount(0);
   await expect(page.getByText(`${jstDate()} の作業リスト`)).toBeVisible();
   await expect(page.getByText("🔥 連続2日")).toBeVisible();
 });
