@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { categorySlots, conditionHeatmap, dayRingSegments, dueTerrain, durationRanges, hourglass, nextScheduled, projectClimbs, weekStacks } from "./visuals";
+import { categorySlots, conditionHeatmap, dayRingSegments, dueTerrain, durationRanges, hourglass, nextScheduled, projectClimbs, waitingSand, weekStacks } from "./visuals";
 import type { DailyTask, ProjectItem, TodoTask, WorkRecord } from "./types";
 
 const D = "2026-10-07"; // 水曜
@@ -75,5 +75,16 @@ describe("可視化の材料", () => {
     expect(d).toHaveLength(14);
     expect(d[1].projects).toEqual(["提案／下書き"]);
     expect(d[2]).toMatchObject({ todos: ["請求書"], projects: ["提案"] });
+  });
+});
+
+describe("waitingSand", () => {
+  it("目安まで砂が落ち、目盛りは最長の待ちか目安の1.5倍にそろう", () => {
+    const [a, b, c] = waitingSand([0, 3, null], 3);
+    expect(a).toEqual({ sandLeft: 1, bar: 0, nudgeAt: 3 / 4.5 });
+    expect(b!.sandLeft).toBe(0);
+    expect(c).toBeNull();
+    const [long] = waitingSand([9], 3);
+    expect(long).toEqual({ sandLeft: 0, bar: 1, nudgeAt: 1 / 3 });
   });
 });

@@ -216,3 +216,23 @@ export function dueTerrain(todos: TodoTask[], projects: ProjectItem[], today: st
   }
   return out;
 }
+
+// ---- 相手待ちの砂時計 ----
+export interface WaitingSand {
+  /** 上の砂の残り(1=待ち始め、0=催促の目安に着いた) */
+  sandLeft: number;
+  /** 棒の長さ(0〜1、全体の目盛りに対して) */
+  bar: number;
+  /** 催促の目安の位置(0〜1) */
+  nudgeAt: number;
+}
+
+/** 待った日数を、催促の目安までの砂時計と、目盛りをそろえた棒に直す。日数不明は null */
+export function waitingSand(days: (number | null)[], nudgeDays: number): (WaitingSand | null)[] {
+  const known = days.filter((d): d is number => d !== null);
+  // 目安の線が右端に張り付かないよう、目盛りは最低でも目安の1.5倍まで取る
+  const scale = Math.max(nudgeDays * 1.5, ...known, 1);
+  return days.map((d) =>
+    d === null ? null : { sandLeft: Math.max(0, 1 - d / nudgeDays), bar: d / scale, nudgeAt: nudgeDays / scale }
+  );
+}

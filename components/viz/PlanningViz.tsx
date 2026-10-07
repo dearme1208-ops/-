@@ -5,7 +5,11 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { formatDateJp, todayStr } from "@/lib/time";
-import { dueTerrain, projectClimbs } from "@/lib/visuals";
+import { dueTerrain, projectClimbs, waitingSand } from "@/lib/visuals";
+import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
+import { collectWaitingItems } from "@/lib/waiting";
+import { useWaitingSettings } from "@/lib/waitingSettings";
+import type { ProjectItem, TodoTask } from "@/lib/types";
 
 // 案件タブ・ToDoタブに置く可視化。計算は lib/visuals.ts
 
@@ -19,8 +23,8 @@ function Fold({ settingKey, title, children, testId }: { settingKey: string; tit
   return (
     <section className="panel p-4" data-testid={testId}>
       <button className="flex w-full items-center justify-between text-left" onClick={() => setOpenStr(open ? "false" : "true")} aria-expanded={open}>
-        <h3 className="font-display text-sm font-bold text-cream/85">{title}</h3>
-        <span className="text-xs text-cream/45">{open ? "▼ たたむ" : "▶ 開く"}</span>
+        <h3 className="min-w-0 font-display text-sm font-bold text-cream/85">{title}</h3>
+        <span className="shrink-0 whitespace-nowrap text-xs text-cream/45">{open ? "▼ たたむ" : "▶ 開く"}</span>
       </button>
       {open && <div className="mt-2">{children}</div>}
     </section>
@@ -148,6 +152,108 @@ export function DueTerrainPanel() {
           ))}
         </div>
       )}
+    </Fold>
+  );
+}
+
+// ---- 相手待ちの砂時計 ----
+/** 上の砂が落ちきったら催促の目安。落ちきると下にたまった砂が警告の色になる */
+function SandGlass({ sandLeft, overdue }: { sandLeft: number; overdue: boolean }) {
+  const top = 10 * sandLeft; // 上の砂の高さ(最大10)
+  const bottom = 10 * (1 - sandLeft);
+  const sand = overdue ? "rgb(var(--alert-rgb))" : "rgb(var(--accent-rgb))";
+  return (
+    <svg viewBox="0 0 16 26" width={16} height={26} className="shrink-0" aria-hidden="true">
+      <defs>
+        <clipPath id="sg-top">
+          <path d="M2 2 H14 L8 13 Z" />
+        </clipPath>
+        <clipPath id="sg-bottom">
+          <path d="M8 13 L14 24 H2 Z" />
+        </clipPath>
+      </defs>
+      <rect x={2} y={13 - top} width={12} height={top} fill={sand} clipPath="url(#sg-top)" />
+      <rect x={2} y={24 - bottom} width={12} height={bottom} fill={sand} clipPath="url(#sg-bottom)" />
+      {sandLeft > 0 && <line x1={8} y1={13} x2={8} y2={24} stroke={sand} strokeWidth={0.8} strokeDasharray="1 1.5" />}
+      <path d="M2 2 H14 L8 13 L14 24 H2 L8 13 Z" fill="none" stroke="rgb(var(--cream-rgb) / 0.6)" strokeWidth={1} strokeLinejoin="round" />
+      <line x1={1} y1={1.5} x2={15} y2={1.5} stroke="rgb(var(--cream-rgb) / 0.6)" strokeWidth={1.2} />
+      <line x1={1} y1={24.5} x2={15} y2={24.5} stroke="rgb(var(--cream-rgb) / 0.6)" strokeWidth={1.2} />
+    </svg>
+  );
+}
+
+/**
+ * 相手の返事を待っているToDo・案件を、待った日数の棒と砂時計で並べる。
+ * 縦の点線が催促の目安(設定の日数)。kind で ToDo タブ・案件タブそれぞれの分だけを出す
+ */
+export function WaitingHourglassPanel({ kind, onOpen }: { kind: "todo" | "project"; onOpen?: (id: string) => void }) {
+  const todos = useLiveQuery<TodoTask[]>(() => (kind === "todo" ? db.todoTasks.toArray() : []), [kind]);
+  const projects = useLiveQuery<ProjectItem[]>(() => (kind === "project" ? db.projects.toArray() : []), [kind]);
+  const { waitingTags, nudgeDays } = useWaitingSettings();
+  const [tagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
+  const priority = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
+  const today = todayStr();
+  const items = useMemo(
+    () => collectWaitingItems(todos ?? [], projects ?? [], priority, waitingTags, nudgeDays, Date.now()),
+    // 日付が変われば日数も変わる
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todos, projects, priority, waitingTags, nudgeDays, today]
+  );
+  const sands = useMemo(() => waitingSand(items.map((i) => i.days), nudgeDays), [items, nudgeDays]);
+  if (items.length === 0) return null;
+  const overdueCount = items.filter((i) => i.overdue).length;
+  const nudgeAt = sands.find((x) => x)?.nudgeAt;
+  return (
+    <Fold settingKey={`viz.waitingOpen.${kind}`} title="⏳ 相手待ちの砂時計" testId="waiting-hourglass">
+      <p className="text-xs text-cream/80">
+        {items.length}件待ち
+        {overdueCount > 0 && <span className="ml-1 font-bold text-alert">・催促どき {overdueCount}件 ⏰</span>}
+      </p>
+      <p className="mb-2 text-[11px] text-cream/50">
+        待ち始めてから{nudgeDays}日で砂が落ちきり、催促の目安です(点線)。目安を過ぎた分は赤で伸びます。
+      </p>
+      <ul className="space-y-2.5">
+        {items.slice(0, 10).map((item, i) => {
+          const s = sands[i];
+          return (
+            <li key={`${item.kind}-${item.id}`} data-testid="waiting-row">
+              <button className="flex w-full items-center gap-2 text-left" onClick={() => onOpen?.(item.id)}>
+                <SandGlass sandLeft={s?.sandLeft ?? 1} overdue={item.overdue} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2 text-xs">
+                    <span className={`min-w-0 truncate ${item.overdue ? "font-bold text-alert" : "text-cream/85"}`}>{item.label}</span>
+                    <span className={`shrink-0 tabular-nums ${item.overdue ? "font-bold text-alert" : "text-cream/55"}`}>
+                      {item.tag}・{item.days === null ? "日数不明" : `${item.days}日目`}
+                      {item.overdue && " ⏰"}
+                    </span>
+                  </div>
+                  {s && (
+                    <div className="relative mt-1 h-2" aria-hidden="true">
+                      <div className="absolute inset-0 rounded-full bg-cream/10" />
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-l-full bg-[rgb(var(--accent-rgb))]"
+                        style={{ width: `${Math.min(s.bar, s.nudgeAt) * 100}%`, borderTopRightRadius: s.bar <= s.nudgeAt ? 9999 : 0, borderBottomRightRadius: s.bar <= s.nudgeAt ? 9999 : 0 }}
+                      />
+                      {s.bar > s.nudgeAt && (
+                        <div
+                          className="absolute inset-y-0 rounded-r-full bg-alert"
+                          style={{ left: `calc(${s.nudgeAt * 100}% + 2px)`, width: `calc(${(s.bar - s.nudgeAt) * 100}% - 2px)` }}
+                        />
+                      )}
+                      <div
+                        className="absolute -inset-y-1 w-0 border-l border-dashed border-cream/60"
+                        style={{ left: `${s.nudgeAt * 100}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {items.length > 10 && <p className="mt-2 text-[11px] text-cream/45">ほか{items.length - 10}件</p>}
+      {nudgeAt !== undefined && <p className="mt-2 text-[11px] text-cream/45">催促の目安の日数は設定タブで変えられます。</p>}
     </Fold>
   );
 }

@@ -74,3 +74,38 @@ test("ToDoタブの期日の山: 日を押すとその日の期日が出る / �
   await expect(climb).toContainText("あと3日");
   await expect(climb.locator(".text-alert", { hasText: "B社 提案" })).toBeVisible();
 });
+
+test("相手待ちの砂時計: 待った日数の長い順に並び、催促の目安を過ぎたものは赤で「⏰」、押すと開く", async ({ page }) => {
+  await page.clock.install({ time: jstAt("10:00") });
+  const todo = (id: string, title: string, tag: string, daysAgo: number) => ({
+    id, listId: "l", title, completed: false, important: false, order: 0, createdAt: 0, tag, tagChangedAt: jstAt("09:00", -daysAgo),
+  });
+  await seed(page, {
+    stores: {
+      todoLists: [{ id: "l", title: "仕事", order: 0, createdAt: 0 }],
+      todoTasks: [todo("a", "見積もりの返事", "客先確認中", 5), todo("b", "稟議の承認", "社内確認中", 1), todo("c", "自分で進める", "対応中", 9)],
+      projects: [{ id: "p", title: "B社 提案", dueDate: jstDate(10), createdAt: jstAt("09:00", -10), tag: "客先確認中", tagChangedAt: jstAt("09:00", -1) }],
+    },
+  });
+  await page.locator(".tab-chip", { hasText: "ToDo" }).first().click();
+  const panel = page.getByTestId("waiting-hourglass");
+  await expect(panel).toContainText("2件待ち・催促どき 1件");
+  const rows = panel.getByTestId("waiting-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("見積もりの返事");
+  await expect(rows.nth(0)).toContainText("客先確認中・6日目 ⏰");
+  await expect(rows.nth(1)).toContainText("稟議の承認");
+  await expect(rows.nth(1)).not.toContainText("⏰");
+  await expect(panel).not.toContainText("自分で進める");
+  // 案件はToDoタブには出さず、案件タブに出す
+  await expect(panel).not.toContainText("B社 提案");
+  await rows.nth(0).click();
+  await expect(page.getByRole("heading", { name: "タスクの詳細" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "タイトル" })).toHaveValue("見積もりの返事");
+
+  await page.getByRole("button", { name: "閉じる" }).click();
+  await page.locator(".tab-chip", { hasText: "案件" }).first().click();
+  const projectPanel = page.getByTestId("waiting-hourglass");
+  await expect(projectPanel).toContainText("B社 提案");
+  await expect(projectPanel).toContainText("客先確認中・2日目");
+});
