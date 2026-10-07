@@ -10,7 +10,6 @@ import { useSetting } from "@/lib/settings";
 import { formatClock, formatHms } from "@/lib/time";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
-import { QuickStampPanel } from "@/components/sections/today/QuickStamp";
 
 // 「今日の抜けを埋める」。1日の記録を整えるのに、振り返り・打刻の一覧・実績編集を行き来していたのを
 // 今日のリング(components/viz/TodayViz.tsx)の下にまとめる。抜けはリングの上にも点線で描く。並べるのは次の3つ:
@@ -56,14 +55,12 @@ export function useDayGaps(date: string, now: number) {
 /** 今日のリングの下に並べる「抜けを埋める」一覧。openGap はリングで押された抜け(その行の作業選びを開く) */
 export function DayGapsList({
   date,
-  now,
   data,
   openGap,
   onOpenGap,
   onEditTask,
 }: {
   date: string;
-  now: number;
   data: ReturnType<typeof useDayGaps>;
   openGap: string | null;
   onOpenGap: (key: string | null) => void;
@@ -96,8 +93,16 @@ export function DayGapsList({
 
       {pendingStamps > 0 && (
         <section className="space-y-2">
-          <p className="text-[11px] text-cream/55">まだ実績にしていない打刻（{pendingStamps}）</p>
-          <QuickStampPanel date={date} now={now} />
+          {/* 打刻の一覧は本日の作業に出ているので、ここでは二重に並べず、そこへ移る近道だけ置く */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cream/15 p-3">
+            <span className="text-cream">まだ実績にしていない打刻が {pendingStamps}件</span>
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={() => document.querySelector('[data-testid="quick-stamp-panel"]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
+            >
+              打刻の一覧へ
+            </button>
+          </div>
         </section>
       )}
 

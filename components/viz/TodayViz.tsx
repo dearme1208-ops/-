@@ -179,7 +179,7 @@ export function DayRing({
         </div>
       </div>
       <div className="mt-3 border-t border-cream/10 pt-3">
-        <DayGapsList date={date} now={now} data={gapData} openGap={openGap} onOpenGap={setOpenGap} onEditTask={onEditTask} />
+        <DayGapsList date={date} data={gapData} openGap={openGap} onOpenGap={setOpenGap} onEditTask={onEditTask} />
       </div>
     </section>
   );
