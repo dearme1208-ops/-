@@ -14,9 +14,13 @@ export default function ChorePanel({ today, onStart }: { today: string; onStart:
     useLiveQuery(() => db.records.where("date").aboveOrEqual(shiftDateStr(today, -120)).toArray(), [today])
   );
   const masters = useHomeFilteredMasterTasks(useLiveQuery(() => db.masterTasks.toArray(), []));
+  const recurringTodoIds = useLiveQuery(
+    async () => new Set((await db.todoTasks.toArray()).filter((t) => !!t.recurrence).map((t) => t.id)),
+    []
+  );
   const items = useMemo(
-    () => choreIntervals(records ?? [], masters ?? [], today).filter((c) => c.ratio >= 0.8).slice(0, 5),
-    [records, masters, today]
+    () => choreIntervals(records ?? [], masters ?? [], today, recurringTodoIds ?? new Set()).filter((c) => c.ratio >= 0.8).slice(0, 5),
+    [records, masters, today, recurringTodoIds]
   );
   if (items.length === 0) return null;
   return (

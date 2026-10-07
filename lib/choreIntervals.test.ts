@@ -20,4 +20,18 @@ describe("そろそろの家事", () => {
       ["風呂掃除", 3, 2],
     ]);
   });
+
+  it("案件の作業・1回きりのToDoの作業は数えない(繰り返しのToDoの作業は数える)", () => {
+    const linked = (id: string, date: string, extra: Partial<WorkRecord>) => ({ ...r(id, date), ...extra });
+    const records = [
+      ...["2026-09-10", "2026-09-17"].map((d) => linked("提案書", d, { projectId: "p1" })),
+      linked("提案書", "2026-09-24", {}), // 案件の印のない実績が混ざっていても出さない
+      linked("提案書", "2026-09-03", {}),
+      linked("提案書", "2026-08-27", {}),
+      ...["2026-09-10", "2026-09-17", "2026-09-24"].map((d) => linked("書類整理", d, { todoTaskId: "once" })),
+      ...["2026-09-10", "2026-09-17", "2026-09-24"].map((d) => linked("ゴミ出し", d, { todoTaskId: "weekly" })),
+    ];
+    const res = choreIntervals(records, ["提案書", "書類整理", "ゴミ出し"].map(m), "2026-10-07", new Set(["weekly"]));
+    expect(res.map((x) => x.master.id)).toEqual(["ゴミ出し"]);
+  });
 });
