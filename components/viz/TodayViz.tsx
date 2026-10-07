@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
@@ -61,24 +61,17 @@ export function DayRing({
   date,
   now,
   onEditTask,
-  focusRequest = 0,
 }: {
   tasks: DailyTask[];
   date: string;
   now: number;
   onEditTask: (task: DailyTask) => void;
-  /** 増えるたびに、リングまで画面を動かす(「抜けを埋める」から呼ばれた時) */
-  focusRequest?: number;
 }) {
   const segs = useMemo(() => dayRingSegments(tasks, now), [tasks, now]);
   const slots = useMemo(() => categorySlots(segs.map((s) => ({ category: s.category, ms: s.end - s.start }))), [segs]);
   const [hover, setHover] = useState<number | null>(null);
   const gapData = useDayGaps(date, now);
   const [openGap, setOpenGap] = useState<string | null>(null);
-  const rootRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (focusRequest > 0) rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [focusRequest]);
   const fillCount = gapData.gaps.length + gapData.longSpans.length + gapData.pendingStamps;
   if (segs.length === 0 && fillCount === 0) return null;
   const dayStart = new Date(now);
@@ -93,7 +86,7 @@ export function DayRing({
   const hovered = hover !== null ? segs[hover] : null;
   const pickedGap = gapData.gaps.find((g) => gapKey(g) === openGap) ?? null;
   return (
-    <section ref={rootRef} className="panel scroll-mt-20 p-4" data-testid="day-ring">
+    <section className="panel p-4" data-testid="day-ring">
       <h3 className="font-display text-sm font-bold text-cream/85">🕰 今日のリング</h3>
       <p className="text-[11px] text-cream/50">
         24時間の輪に、今日計った時間を区分の色で並べています。

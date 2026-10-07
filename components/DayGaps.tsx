@@ -18,11 +18,6 @@ import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 //  - 1回で3時間以上続いた計測(止め忘れの疑い)
 // 記録のない時間は、作業を選べばその時間を計った作業として完了に並ぶ(打刻を実績にするのと同じ仕組み)
 
-export function useDayGapCount(date: string, now: number): number {
-  const { gaps, longSpans } = useDayGaps(date, now);
-  return gaps.length + longSpans.length;
-}
-
 function safeParse(json: string): string[] {
   try {
     const v = JSON.parse(json);

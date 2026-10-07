@@ -23,7 +23,6 @@ const TOOLS: { kind: TodayAction; icon: string; label: string }[] = [
   { kind: "timebox", icon: "⏱", label: "時間割" },
   { kind: "tomorrow", icon: "🗓", label: "明日の下書き" },
   { kind: "reflection", icon: "🌙", label: "終業の振り返り" },
-  { kind: "dayGaps", icon: "🧩", label: "今日の抜けを埋める" },
   { kind: "history", icon: "🕘", label: "操作の履歴" },
 ];
 

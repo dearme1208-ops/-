@@ -73,10 +73,7 @@ test("今日の抜けを埋める: リングの点線(記録のない時間)を�
   const done = (id: string, from: string, to: string, order: number) =>
     dailyTask({ id, date: jstDate(), order, status: "done", segments: [{ start: jstAt(from), end: jstAt(to) }], accumulatedMs: jstAt(to) - jstAt(from), startedAt: jstAt(from), endedAt: jstAt(to) });
   await seed(page, { stores: { masterTasks: [MASTER, M2], dailyTasks: [done("a", "09:00", "10:00", 0), done("b", "10:30", "11:00", 1)] } });
-  // 上の近道からリングへ移る
-  await page.getByRole("button", { name: /抜けを埋める（1）/ }).click();
   const ring = page.getByTestId("day-ring");
-  await expect(ring).toBeInViewport();
   await ring.getByRole("button", { name: "記録のない時間 10:00〜10:30" }).click();
   const gap = ring.getByTestId("day-gap");
   await expect(gap).toContainText("10:00〜10:30");
@@ -87,8 +84,6 @@ test("今日の抜けを埋める: リングの点線(記録のない時間)を�
   expect(t.segments[0]).toEqual({ start: jstAt("10:00"), end: jstAt("10:30") });
   await expect(ring.getByText("埋める所はありません")).toBeVisible();
   await expect(ring.getByTestId("ring-gap")).toHaveCount(0);
-  // 抜けがなくなれば近道のボタンも消える
-  await expect(page.getByRole("button", { name: /抜けを埋める/ })).toHaveCount(0);
 });
 
 test("今日の抜けを埋める: 「記録しない」にした時間はリングの点線からも消える", async ({ page }) => {

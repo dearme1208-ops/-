@@ -3,7 +3,7 @@
 // 「道具袋」から合図を送れば、同じダイアログ・同じ処理がそのまま使える
 export const TODAY_ACTION_EVENT = "koutei:today-action";
 
-export type TodayAction = "trouble" | "add" | "dayPlan" | "timebox" | "tomorrow" | "reflection" | "dayGaps" | "capture" | "search" | "history";
+export type TodayAction = "trouble" | "add" | "dayPlan" | "timebox" | "tomorrow" | "reflection" | "capture" | "search" | "history";
 
 export function requestTodayAction(kind: TodayAction): void {
   window.dispatchEvent(new CustomEvent(TODAY_ACTION_EVENT, { detail: kind }));
