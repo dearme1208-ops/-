@@ -157,15 +157,18 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           ariaLabel="終業の振り返り"
           onClick={props.onReflection}
         />
-        <ModeButton
-          simple={simple}
-          compact
-          icon={props.dayGapCount > 0 ? `🧩${props.dayGapCount}` : "🧩"}
-          label={`🧩 抜けを埋める${props.dayGapCount > 0 ? `（${props.dayGapCount}）` : ""}`}
-          title="今日の記録の抜け・長すぎる計測・未記録の打刻を1画面で埋める"
-          ariaLabel="今日の抜けを埋める"
-          onClick={props.onDayGaps}
-        />
+        {/* 抜けを埋めるのは「今日のリング」の下。抜けがある時だけ、そこへ飛ぶ近道を出す */}
+        {props.dayGapCount > 0 && (
+          <ModeButton
+            simple={simple}
+            compact
+            icon={`🧩${props.dayGapCount}`}
+            label={`🧩 抜けを埋める（${props.dayGapCount}）`}
+            title="今日のリングへ移って、記録の抜け・長すぎる計測を埋める"
+            ariaLabel="今日の抜けを埋める"
+            onClick={props.onDayGaps}
+          />
+        )}
         <ModeButton simple={simple} compact icon="🕘" label="🕘 操作の履歴" title="さっきの操作を一覧から戻す" ariaLabel="操作の履歴" onClick={() => openHistory()} />
         {voice.available &&
           (simple ? (

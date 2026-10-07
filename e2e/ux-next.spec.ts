@@ -68,21 +68,39 @@ test("作業の追加画面の一番上に、今の時間帯によくやる作�
   await expect.poll(async () => (await readAll<Daily>(page, "dailyTasks")).find((t) => t.name === "電話対応")?.status).toBe("running");
 });
 
-test("今日の抜けを埋める: 計測の間の空きに作業を選ぶと、その時間を計った作業として完了に並ぶ", async ({ page }) => {
+test("今日の抜けを埋める: リングの点線(記録のない時間)を押して作業を選ぶと、その時間を計った作業として完了に並ぶ", async ({ page }) => {
   await page.clock.install({ time: jstAt("12:00") });
   const done = (id: string, from: string, to: string, order: number) =>
     dailyTask({ id, date: jstDate(), order, status: "done", segments: [{ start: jstAt(from), end: jstAt(to) }], accumulatedMs: jstAt(to) - jstAt(from), startedAt: jstAt(from), endedAt: jstAt(to) });
   await seed(page, { stores: { masterTasks: [MASTER, M2], dailyTasks: [done("a", "09:00", "10:00", 0), done("b", "10:30", "11:00", 1)] } });
+  // 上の近道からリングへ移る
   await page.getByRole("button", { name: /抜けを埋める（1）/ }).click();
-  const gap = page.getByTestId("day-gap");
+  const ring = page.getByTestId("day-ring");
+  await expect(ring).toBeInViewport();
+  await ring.getByRole("button", { name: "記録のない時間 10:00〜10:30" }).click();
+  const gap = ring.getByTestId("day-gap");
   await expect(gap).toContainText("10:00〜10:30");
-  await gap.getByRole("button", { name: "作業を選ぶ" }).click();
   await gap.getByText("電話対応").first().click();
   await gap.getByRole("button", { name: /この30分を「電話対応」として記録/ }).click();
   await expect.poll(async () => (await readAll<Daily>(page, "dailyTasks")).find((t) => t.name === "電話対応")?.status).toBe("done");
   const t = (await readAll<Daily>(page, "dailyTasks")).find((t) => t.name === "電話対応")!;
   expect(t.segments[0]).toEqual({ start: jstAt("10:00"), end: jstAt("10:30") });
-  await expect(page.getByText("埋める所はありません")).toBeVisible();
+  await expect(ring.getByText("埋める所はありません")).toBeVisible();
+  await expect(ring.getByTestId("ring-gap")).toHaveCount(0);
+  // 抜けがなくなれば近道のボタンも消える
+  await expect(page.getByRole("button", { name: /抜けを埋める/ })).toHaveCount(0);
+});
+
+test("今日の抜けを埋める: 「記録しない」にした時間はリングの点線からも消える", async ({ page }) => {
+  await page.clock.install({ time: jstAt("12:00") });
+  const done = (id: string, from: string, to: string, order: number) =>
+    dailyTask({ id, date: jstDate(), order, status: "done", segments: [{ start: jstAt(from), end: jstAt(to) }], accumulatedMs: jstAt(to) - jstAt(from), startedAt: jstAt(from), endedAt: jstAt(to) });
+  await seed(page, { stores: { masterTasks: [MASTER], dailyTasks: [done("a", "09:00", "10:00", 0), done("b", "10:30", "11:00", 1)] } });
+  const ring = page.getByTestId("day-ring");
+  await expect(ring.getByTestId("ring-gap")).toHaveCount(1);
+  await ring.getByTestId("day-gap").getByRole("button", { name: "記録しない" }).click();
+  await expect(ring.getByTestId("ring-gap")).toHaveCount(0);
+  await expect(ring.getByText("埋める所はありません")).toBeVisible();
 });
 
 test("森モード: いつもの間隔より空いてきた家事が「そろそろの家事」に出る", async ({ page }) => {

@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { formatClock, shiftDateStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
+import { gapKey } from "@/lib/dayGaps";
+import { DayGapsList, useDayGaps } from "@/components/DayGaps";
 import {
   categorySlots,
   conditionHeatmap,
@@ -52,12 +54,33 @@ function Legend({ items }: { items: { label: string; slot: number; ms: number }[
   );
 }
 
-// ---- 1. 今日のリング ----
-export function DayRing({ tasks, now }: { tasks: DailyTask[]; now: number }) {
+// ---- 1. 今日のリング(+ 今日の抜けを埋める) ----
+// 記録のない時間はリングの上に点線で描き、押すと下の一覧でその時間に作業を当てはめられる
+export function DayRing({
+  tasks,
+  date,
+  now,
+  onEditTask,
+  focusRequest = 0,
+}: {
+  tasks: DailyTask[];
+  date: string;
+  now: number;
+  onEditTask: (task: DailyTask) => void;
+  /** 増えるたびに、リングまで画面を動かす(「抜けを埋める」から呼ばれた時) */
+  focusRequest?: number;
+}) {
   const segs = useMemo(() => dayRingSegments(tasks, now), [tasks, now]);
   const slots = useMemo(() => categorySlots(segs.map((s) => ({ category: s.category, ms: s.end - s.start }))), [segs]);
   const [hover, setHover] = useState<number | null>(null);
-  if (segs.length === 0) return null;
+  const gapData = useDayGaps(date, now);
+  const [openGap, setOpenGap] = useState<string | null>(null);
+  const rootRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (focusRequest > 0) rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focusRequest]);
+  const fillCount = gapData.gaps.length + gapData.longSpans.length + gapData.pendingStamps;
+  if (segs.length === 0 && fillCount === 0) return null;
   const dayStart = new Date(now);
   dayStart.setHours(0, 0, 0, 0);
   const deg = (ms: number) => ((ms - dayStart.getTime()) / 86_400_000) * 360;
@@ -68,10 +91,14 @@ export function DayRing({ tasks, now }: { tasks: DailyTask[]; now: number }) {
   const scheduled = tasks.filter((t) => t.status === "pending" && t.scheduledTime);
   const nowDeg = deg(now);
   const hovered = hover !== null ? segs[hover] : null;
+  const pickedGap = gapData.gaps.find((g) => gapKey(g) === openGap) ?? null;
   return (
-    <section className="panel p-4" data-testid="day-ring">
+    <section ref={rootRef} className="panel scroll-mt-20 p-4" data-testid="day-ring">
       <h3 className="font-display text-sm font-bold text-cream/85">🕰 今日のリング</h3>
-      <p className="text-[11px] text-cream/50">24時間の輪に、今日計った時間を区分の色で並べています。すき間は記録のない時間です。</p>
+      <p className="text-[11px] text-cream/50">
+        24時間の輪に、今日計った時間を区分の色で並べています。
+        {gapData.gaps.length > 0 && "点線は記録のない時間です。押すと、その時間にした作業を選べます。"}
+      </p>
       <div className="mt-2 flex flex-wrap items-center justify-center gap-4">
         <svg viewBox="0 0 200 200" width={200} height={200} role="img" aria-label={`今日の記録 合計${hm(total)}`}>
           <circle cx={100} cy={100} r={78} fill="none" stroke="rgb(var(--cream-rgb) / 0.08)" strokeWidth={18} />
@@ -116,22 +143,43 @@ export function DayRing({ tasks, now }: { tasks: DailyTask[]; now: number }) {
               </circle>
             );
           })}
+          {gapData.gaps.map((g) => {
+            const key = gapKey(g);
+            const on = openGap === key;
+            return (
+              <g key={key} role="button" aria-label={`記録のない時間 ${formatClock(g.start)}〜${formatClock(g.end)}`} data-testid="ring-gap" className="cursor-pointer" onClick={() => setOpenGap(on ? null : key)}>
+                {/* 押しやすいよう、見た目より太い透明の当たり判定を重ねる */}
+                <path d={arcPath(100, 100, 78, deg(g.start), deg(g.end))} fill="none" stroke="transparent" strokeWidth={26} />
+                <path
+                  d={arcPath(100, 100, 78, deg(g.start) + 0.4, deg(g.end) - 0.4)}
+                  fill="none"
+                  // 区分の色(特に橙)と見分けられるよう、ふだんは淡い点線、押した所だけ赤くする
+                  stroke={on ? "rgb(var(--alert-rgb))" : "rgb(var(--cream-rgb) / 0.55)"}
+                  strokeWidth={on ? 14 : 10}
+                  strokeDasharray="3 2.5"
+                />
+              </g>
+            );
+          })}
           {(() => {
             const [x1, y1] = polar(100, 100, 60, nowDeg);
             const [x2, y2] = polar(100, 100, 92, nowDeg);
             return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgb(var(--alert-rgb))" strokeWidth={2} strokeLinecap="round" />;
           })()}
           <text x={100} y={95} textAnchor="middle" fontSize={11} fill="rgb(var(--cream-rgb) / 0.6)">
-            {hovered ? hovered.name.slice(0, 8) : "今日の記録"}
+            {hovered ? hovered.name.slice(0, 8) : pickedGap ? "記録なし" : "今日の記録"}
           </text>
           <text x={100} y={114} textAnchor="middle" fontSize={17} fontWeight={700} fill="rgb(var(--cream-rgb))">
-            {hovered ? hm(hovered.end - hovered.start) : hm(total)}
+            {hovered ? hm(hovered.end - hovered.start) : pickedGap ? hm(pickedGap.end - pickedGap.start) : hm(total)}
           </text>
         </svg>
         <div className="min-w-[10rem] space-y-1.5">
           <Legend items={legend} />
           {scheduled.length > 0 && <p className="text-[11px] text-cream/50">○ は予定の時刻、赤い線は今です。</p>}
         </div>
+      </div>
+      <div className="mt-3 border-t border-cream/10 pt-3">
+        <DayGapsList date={date} now={now} data={gapData} openGap={openGap} onOpenGap={setOpenGap} onEditTask={onEditTask} />
       </div>
     </section>
   );

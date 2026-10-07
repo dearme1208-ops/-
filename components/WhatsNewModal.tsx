@@ -13,7 +13,7 @@ export const WHATS_NEW_VERSION = "2026-10-07";
 const ITEMS: { icon: string; title: string; body: string; action?: () => void }[] = [
   { icon: "✏️", title: "ひとこと入力", body: "思いついたことを1行で。ToDo・今やる・予定・メモ・案件へ振り分けます(キーボードの / でも)。", action: () => openQuickCapture() },
   { icon: "🔍", title: "さがす", body: "ToDo・案件・これまでの実績・メモをまとめて探せます(Ctrl+K でも)。", action: () => openSearch() },
-  { icon: "🧩", title: "今日の抜けを埋める", body: "記録のない時間・未記録の打刻・長すぎる計測を1画面で埋められます。", action: () => requestTodayAction("dayGaps") },
+  { icon: "🧩", title: "今日の抜けを埋める", body: "今日のリングの点線が記録のない時間です。押すと、その時間にした作業を選んで埋められます。", action: () => requestTodayAction("dayGaps") },
   { icon: "⏪", title: "少し前に終わってた", body: "計測中のカードから、5/10/15分前や打刻の時刻で終えられます(終了の長押しでも)。" },
   { icon: "↩", title: "完了・削除を元に戻す", body: "完了のお知らせから戻せます。「🕘 操作の履歴」からは、あとからでも戻せます。", action: () => openHistory() },
   { icon: "⏩", title: "ToDoの期日をワンタップで", body: "ToDoの行の ⏩ から、今日・明日・来週月曜・期日なしへ動かせます。" },

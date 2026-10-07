@@ -90,7 +90,7 @@ import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
-import DayGapsModal, { useDayGapCount } from "@/components/DayGapsModal";
+import { useDayGapCount } from "@/components/DayGaps";
 import ChorePanel from "@/components/sections/today/ChorePanel";
 import WeeklySummaryCard from "@/components/sections/today/WeeklySummaryCard";
 import { ConditionHeatmapPanel, DayRing, HourglassPanel, NextScheduleBar, PlanActualPanel, WeekBlocks } from "@/components/viz/TodayViz";
@@ -1094,7 +1094,7 @@ export default function TodaySection({
       else if (kind === "timebox") setShowTimebox(true);
       else if (kind === "tomorrow") setShowTomorrowDraft(true);
       else if (kind === "reflection") setShowReflection(true);
-      else if (kind === "dayGaps") setShowDayGaps(true);
+      else if (kind === "dayGaps") openDayGaps();
       else if (kind === "capture") openQuickCapture();
       else if (kind === "search") openSearch();
       else if (kind === "history") openHistory();
@@ -2315,7 +2315,8 @@ export default function TodaySection({
     };
   }, []);
   const [showReflection, setShowReflection] = useState(false);
-  const [showDayGaps, setShowDayGaps] = useState(false);
+  // 「今日の抜けを埋める」は今日のリングの下にある。呼ばれたら、畳まれていても開いてリングまで動かす
+  const [dayRingFocus, setDayRingFocus] = useState(0);
   const dayGapCount = useDayGapCount(date, now);
   // 使っていない表示をそっと畳む(lib/panelUsage.ts)。どのパネルを触ったかは、パネルに付けた
   // data-panel-id を、画面のどこかを押した時に見て覚える
@@ -2346,6 +2347,11 @@ export default function TodaySection({
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, [background, touchPanel]);
+  function openDayGaps() {
+    setExtrasCollapsedStr("false");
+    touchPanel("dayRing");
+    setDayRingFocus((n) => n + 1);
+  }
   const reflectionAnsweredToday = useLiveQuery(
     async () => !!(await db.settings.get(`reflection.daily.${date}`)),
     [date]
@@ -2545,7 +2551,7 @@ export default function TodaySection({
         onTomorrowDraft={() => setShowTomorrowDraft(true)}
         onTimebox={() => setShowTimebox(true)}
         onReflection={() => setShowReflection(true)}
-        onDayGaps={() => setShowDayGaps(true)}
+        onDayGaps={() => openDayGaps()}
         dayGapCount={dayGapCount}
         onDownloadScheduleTemplate={downloadScheduleTemplate}
         onImportScheduleFile={importScheduleFile}
@@ -2714,7 +2720,7 @@ export default function TodaySection({
             {!background && <WeeklySummaryCard today={date} />}
             {!background && !isPanelFolded("dayRing") && (
               <div data-panel-id="dayRing">
-                <DayRing tasks={tasks ?? []} now={now} />
+                <DayRing tasks={tasks ?? []} date={date} now={now} onEditTask={(t) => setEditingTask(t)} focusRequest={dayRingFocus} />
               </div>
             )}
             {!background && !isPanelFolded("hourglass") && (
@@ -3150,18 +3156,6 @@ export default function TodaySection({
           existingCount={templateConfirm.existingCount}
           onConfirm={confirmGenerateFromTemplate}
           onClose={() => setTemplateConfirm(null)}
-        />
-      )}
-
-      {showDayGaps && (
-        <DayGapsModal
-          date={date}
-          now={now}
-          onEditTask={(t) => {
-            setShowDayGaps(false);
-            setEditingTask(t);
-          }}
-          onClose={() => setShowDayGaps(false)}
         />
       )}
 
