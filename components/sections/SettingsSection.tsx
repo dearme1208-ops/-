@@ -124,6 +124,7 @@ export default function SettingsSection() {
   const [autoFoldPanelsStr, setAutoFoldPanelsStr] = useSetting("ui.autoFoldPanels", "true");
   const [textScale, setTextScale] = useSetting("ui.textScale", "normal");
   const [showWeeklySummaryStr, setShowWeeklySummaryStr] = useSetting("today.showWeeklySummary", "true");
+  const [showTaskClockStr, setShowTaskClockStr] = useSetting("today.showTaskClock", "true");
   const showDailyChallenge = showDailyChallengeStr === "true";
   const [showTodayHintStr, setShowTodayHintStr] = useSetting("today.showHint", "true");
   const showTodayHint = showTodayHintStr === "true";
@@ -1391,6 +1392,13 @@ export default function SettingsSection() {
             title="金〜日に今週、月曜に先週のまとめを本日の作業に出します"
           >
             今週のまとめ: {showWeeklySummaryStr === "true" ? "ON" : "OFF"}
+          </button>
+          <button
+            className={showTaskClockStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setShowTaskClockStr(showTaskClockStr === "true" ? "false" : "true")}
+            title="計測中のカードに、今の時刻と終わる見込みを描いたアナログ時計を出します"
+          >
+            計測中の時計: {showTaskClockStr === "true" ? "ON" : "OFF"}
           </button>
           <span className="flex flex-wrap items-center gap-1 text-xs text-cream/60" data-testid="text-scale">
             文字の大きさ:

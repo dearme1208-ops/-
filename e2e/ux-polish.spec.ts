@@ -82,3 +82,21 @@ test.describe("完了の「元に戻す」", () => {
     expect((await readOne<{ status: string }>(page, "dailyTasks", "a"))?.status).toBe("running");
   });
 });
+
+test("計測中のカードに、今の時刻と終わる見込みを描いたアナログ時計が出る(一時停止中は出さない)", async ({ page }) => {
+  await page.clock.install({ time: jstAt("10:00") });
+  await seed(page, {
+    settings: { "today.taskViewTab": "running" },
+    stores: {
+      masterTasks: [MASTER],
+      dailyTasks: [
+        dailyTask({ id: "a", date: jstDate(), name: "資料作成", status: "running", estimatedSeconds: 2400, hasPlan: true, segments: [{ start: jstAt("09:50") }], startedAt: jstAt("09:50") }),
+        dailyTask({ id: "b", date: jstDate(), order: 1, name: "電話", status: "paused", segments: [{ start: jstAt("09:00"), end: jstAt("09:20") }], accumulatedMs: 1_200_000 }),
+      ],
+    },
+  });
+  const clock = page.getByTestId("task-clock");
+  await expect(clock).toHaveCount(1);
+  await expect(clock.locator("svg")).toHaveAttribute("aria-label", /今 10:0\d/);
+  await expect(clock).toContainText("終わる見込み");
+});

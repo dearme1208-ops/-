@@ -11,6 +11,8 @@ import { isStageDone } from "@/lib/projectStage";
 import { formatClock, formatHms, formatMsClock } from "@/lib/time";
 import { todoParentTitle } from "@/lib/todoLabel";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
+import TaskClock from "@/components/ui/TaskClock";
+import { useSetting } from "@/lib/settings";
 import type { AutoAllocationResult } from "@/lib/allocate";
 import type { ThemedMode } from "@/lib/theme";
 import type { ConditionLog, DailyTask, ProjectItem, TodoTask } from "@/lib/types";
@@ -191,6 +193,8 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
   const predMs = predictedSecondsForTask * 1000;
   const overEstimate = predictedSecondsForTask > 0 && elapsedMs > predMs;
   const remainingMs = predMs - elapsedMs;
+  const [showClockStr] = useSetting("today.showTaskClock", "true");
+  const showClock = showClockStr === "true" && task.status === "running";
   const isNext = task.id === nextTaskId;
   const taskRankKey = task.masterTaskId ?? `${task.category}::${task.name}`;
   const topRank = topRankedKeys.get(taskRankKey);
@@ -509,22 +513,32 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
               進み具合の帯を通す(以前は右寄せの時間と丸い目盛りで、左側が大きく空いていた) */}
           {(task.status === "running" || task.status === "paused") && (
             <div>
-              <div className="flex items-end justify-between gap-3">
-                <div
-                  className={`font-display font-bold leading-none tabular-nums ${task.status === "running" ? "text-4xl" : "text-2xl"} ${
-                    overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : task.status === "paused" ? "text-cream/70" : "text-cream"
-                  } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
-                >
-                  {formatMsClock(elapsedMs)}
-                </div>
-                {predictedSecondsForTask > 0 && (
+              <div className={`flex justify-between gap-3 ${showClock ? "items-center" : "items-end"}`}>
+                <div className={showClock ? "min-w-0 space-y-1.5" : "contents"}>
                   <div
-                    className={`pb-0.5 text-right text-xs tabular-nums ${
-                      remainingMs < 0 ? (va11hallaMode ? "text-v11-pink" : "font-bold text-alert") : "text-cream/60"
-                    }`}
+                    className={`font-display font-bold leading-none tabular-nums ${task.status === "running" ? "text-4xl" : "text-2xl"} ${
+                      overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : task.status === "paused" ? "text-cream/70" : "text-cream"
+                    } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
                   >
-                    {remainingMs >= 0 ? `残り ${formatMsClock(remainingMs)}` : `超過 ${formatMsClock(-remainingMs)}`}
+                    {formatMsClock(elapsedMs)}
                   </div>
+                  {predictedSecondsForTask > 0 && (
+                    <div
+                      className={`pb-0.5 text-xs tabular-nums ${showClock ? "" : "text-right"} ${
+                        remainingMs < 0 ? (va11hallaMode ? "text-v11-pink" : "font-bold text-alert") : "text-cream/60"
+                      }`}
+                    >
+                      {remainingMs >= 0 ? `残り ${formatMsClock(remainingMs)}` : `超過 ${formatMsClock(-remainingMs)}`}
+                    </div>
+                  )}
+                </div>
+                {/* 計測中は、今の時刻を針で、終わる見込みまでを文字盤の帯で見せる(数字だけではピンと来ないため) */}
+                {showClock && (
+                  <TaskClock
+                    now={now}
+                    startMs={task.segments.find((sg) => sg.end === undefined)?.start ?? now}
+                    endMs={projectedFinishByTaskId.get(task.id) ?? (predictedSecondsForTask > 0 ? now + remainingMs : undefined)}
+                  />
                 )}
               </div>
               {predictedSecondsForTask > 0 && (
