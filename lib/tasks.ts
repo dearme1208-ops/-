@@ -1,4 +1,5 @@
 import { db, uid } from "./db";
+import { closeRunningNotification } from "./notifications";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
 import { diffHmToSeconds } from "./time";
 import type { DailyTask, MasterTask, TimeSegment, TodoTask, WorkRecord } from "./types";
@@ -209,6 +210,8 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
     return true;
   });
   if (!claimed) return false;
+  // どの画面・どの経路で終えても、スマホの通知に残っている「計測中」を消す
+  void closeRunningNotification();
 
   let masterTaskId = task.masterTaskId;
   if (!masterTaskId) {
@@ -357,6 +360,7 @@ export async function pauseDailyTask(task: DailyTask, at: number = Date.now()): 
   const end = Math.max(open.start, at);
   const segments = cur.segments.map((s, i) => (i === openIdx ? { ...s, end } : s));
   await db.dailyTasks.update(cur.id, { segments, status: "paused", accumulatedMs: cur.accumulatedMs + (end - open.start), stoppedAt: at });
+  void closeRunningNotification();
 }
 
 /**
