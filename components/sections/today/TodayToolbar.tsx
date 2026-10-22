@@ -19,6 +19,7 @@ function ModeButton({
   title,
   ariaLabel,
   danger,
+  primary,
   compact,
   onClick,
 }: {
@@ -32,11 +33,13 @@ function ModeButton({
   /** 簡易表示の読み上げ名。省略時はtitle */
   ariaLabel?: string;
   danger?: boolean;
+  /** 「いま」の操作(突発作業)。塗りつぶしで目立たせる */
+  primary?: boolean;
   /** 2段目の補助の操作。小さめにして、狭い画面では1行の横スクロールに収める */
   compact?: boolean;
   onClick: () => void;
 }) {
-  const base = danger ? "btn-pill-danger" : "btn-pill-outline";
+  const base = danger ? "btn-pill-danger" : primary ? "btn-pill" : "btn-pill-outline";
   return simple ? (
     <button className={`${base} shrink-0 px-3 py-2 text-base`} onClick={onClick} title={title} aria-label={ariaLabel ?? title}>
       {icon}
@@ -47,6 +50,17 @@ function ModeButton({
     </button>
   );
 }
+
+/** 用途ごとのまとまり。下に小さく見出しを添え、まとまりの間は細い縦線で区切る */
+function ToolGroup({ caption, children }: { caption: string; children: ReactNode }) {
+  return (
+    <div role="group" aria-label={caption} className="flex shrink-0 flex-col items-center gap-0.5">
+      <div className="flex items-center gap-1.5">{children}</div>
+      <span className="text-[10px] leading-none tracking-wider text-cream/45">{caption}</span>
+    </div>
+  );
+}
+const GroupDivider = () => <span aria-hidden="true" className="mx-1 mb-3 w-px shrink-0 self-stretch bg-cream/15" />;
 
 export interface TodayToolbarProps {
   date: string;
@@ -124,69 +138,81 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           </span>
         )}
       </div>
-      {/* よく使う2つ(トラブル・突発作業)を1段目に大きく、ほかの補助の操作は2段目に小さく並べる。
-          スマホで7つのボタンが4段も並び、計測中の作業が画面の外へ押し出されていた。
-          2段目は狭い画面では1行の横スクロールにする(右端が少し切れて、続きがあると分かる) */}
+      {/* 操作は横1列にまとめ、用途ごとに区切る(いま / メモ / 段取り / ふりかえり)。
+          以前は「いま」の2つを1段目、ほかを2段目に分けていたが、2段だと計測中の作業が下へ押し出される。
+          区別は段ではなく、細い区切り線と小さな見出し、「いま」だけ塗りつぶしにすることで付ける。
+          狭い画面では1行の横スクロール(よく使う「いま」が左端) */}
       <div className="flex w-full flex-col gap-2 sm:w-auto">
-      <div className="flex gap-2">
-        <ModeButton simple={simple} danger icon="⚡" label="⚡ トラブル発生" title="トラブル発生" onClick={props.onTrouble} />
-        <ModeButton simple={simple} icon="➕" label="+ 突発作業を追加" title="突発作業を追加" onClick={props.onAddTask} />
-      </div>
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible" data-testid="today-toolbar-sub">
-        <ModeButton simple={simple} compact icon="✏️" label="✏️ ひとこと" title="思いついたことを1行で入れる(キーボードの / でも開きます)" ariaLabel="ひとこと入力" onClick={() => openQuickCapture()} />
-        <ModeButton simple={simple} compact icon="🔍" label="🔍 さがす" title="ToDo・案件・実績・メモをまとめて探す" ariaLabel="さがす" onClick={() => openSearch()} />
-        <ModeButton simple={simple} compact icon="🧭" label="🧭 今日の段取り" title="今日の段取りを提案" onClick={props.onDayPlan} />
-        <ModeButton simple={simple} compact icon="🗓" label="🗓 明日の下書き" title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
-        <ModeButton
-          simple={simple}
-          icon="⏱"
-          compact
-          label="⏱ 時間割"
-          title="作業ごとに時間の枠を決める(タイムボックス)"
-          ariaLabel="時間割を作る"
-          onClick={props.onTimebox}
-        />
-        <ModeButton
-          simple={simple}
-          compact
-          icon={props.reflectionAnsweredToday ? "🌙✓" : "🌙"}
-          label={`🌙 ${props.reflectionAnsweredToday ? "振り返り済み" : "終業の振り返り"}`}
-          title={props.reflectionAnsweredToday ? "終業の振り返り(回答済み)" : "終業の振り返り"}
-          ariaLabel="終業の振り返り"
-          onClick={props.onReflection}
-        />
-        <ModeButton simple={simple} compact icon="🕘" label="🕘 操作の履歴" title="さっきの操作を一覧から戻す" ariaLabel="操作の履歴" onClick={() => openHistory()} />
-        {voice.available &&
-          (simple ? (
-            <button
-              className={voice.listening ? "btn-pill-danger px-3 py-2 text-base" : "btn-pill-outline px-3 py-2 text-base"}
-              onClick={voice.onToggle}
-              title={
-                voice.listening
+      <div className="-mx-1 flex items-start gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible" data-testid="today-toolbar-sub">
+        <ToolGroup caption="いま">
+          <ModeButton simple={simple} compact danger icon="⚡" label="⚡ トラブル発生" title="トラブル発生" onClick={props.onTrouble} />
+          <ModeButton simple={simple} compact primary icon="➕" label="+ 突発作業を追加" title="突発作業を追加" onClick={props.onAddTask} />
+        </ToolGroup>
+        <GroupDivider />
+        <ToolGroup caption="メモ">
+          <ModeButton simple={simple} compact icon="✏️" label="✏️ ひとこと" title="思いついたことを1行で入れる(キーボードの / でも開きます)" ariaLabel="ひとこと入力" onClick={() => openQuickCapture()} />
+          <ModeButton simple={simple} compact icon="🔍" label="🔍 さがす" title="ToDo・案件・実績・メモをまとめて探す" ariaLabel="さがす" onClick={() => openSearch()} />
+        </ToolGroup>
+        <GroupDivider />
+        <ToolGroup caption="段取り">
+          <ModeButton simple={simple} compact icon="🧭" label="🧭 今日の段取り" title="今日の段取りを提案" onClick={props.onDayPlan} />
+          <ModeButton simple={simple} compact icon="🗓" label="🗓 明日の下書き" title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
+          <ModeButton
+            simple={simple}
+            icon="⏱"
+            compact
+            label="⏱ 時間割"
+            title="作業ごとに時間の枠を決める(タイムボックス)"
+            ariaLabel="時間割を作る"
+            onClick={props.onTimebox}
+          />
+        </ToolGroup>
+        <GroupDivider />
+        <ToolGroup caption="ふりかえり">
+          <ModeButton
+            simple={simple}
+            compact
+            icon={props.reflectionAnsweredToday ? "🌙✓" : "🌙"}
+            label={`🌙 ${props.reflectionAnsweredToday ? "振り返り済み" : "終業の振り返り"}`}
+            title={props.reflectionAnsweredToday ? "終業の振り返り(回答済み)" : "終業の振り返り"}
+            ariaLabel="終業の振り返り"
+            onClick={props.onReflection}
+          />
+          <ModeButton simple={simple} compact icon="🕘" label="🕘 操作の履歴" title="さっきの操作を一覧から戻す" ariaLabel="操作の履歴" onClick={() => openHistory()} />
+        </ToolGroup>
+        <GroupDivider />
+        <ToolGroup caption="ほか">
+          {voice.available &&
+            (simple ? (
+              <button
+                className={voice.listening ? "btn-pill-danger px-3 py-2 text-base" : "btn-pill-outline px-3 py-2 text-base"}
+                onClick={voice.onToggle}
+                title={
+                  voice.listening
+                    ? voice.handsFree
+                      ? "ハンズフリーで聞き取り中..."
+                      : "聞き取り中..."
+                    : `音声で操作(「〇〇を開始」「終了」のように話しかけて操作できます)${voice.handsFree ? " / ハンズフリーモードON" : ""}`
+                }
+                aria-label={voice.listening ? "聞き取り中" : "音声で操作"}
+              >
+                {voice.handsFree ? "🎧" : "🎤"}
+              </button>
+            ) : (
+              <button
+                className={`${voice.listening ? "btn-pill-danger" : "btn-pill-outline"} shrink-0 whitespace-nowrap px-3 py-1.5 text-xs`}
+                onClick={voice.onToggle}
+                title={`「〇〇を開始」「終了」のように話しかけて操作できます${voice.handsFree ? " / ハンズフリーモードON(連続で聞き取り、結果を読み上げます)" : ""}`}
+              >
+                {voice.listening
                   ? voice.handsFree
-                    ? "ハンズフリーで聞き取り中..."
-                    : "聞き取り中..."
-                  : `音声で操作(「〇〇を開始」「終了」のように話しかけて操作できます)${voice.handsFree ? " / ハンズフリーモードON" : ""}`
-              }
-              aria-label={voice.listening ? "聞き取り中" : "音声で操作"}
-            >
-              {voice.handsFree ? "🎧" : "🎤"}
-            </button>
-          ) : (
-            <button
-              className={`${voice.listening ? "btn-pill-danger" : "btn-pill-outline"} shrink-0 whitespace-nowrap px-3 py-1.5 text-xs`}
-              onClick={voice.onToggle}
-              title={`「〇〇を開始」「終了」のように話しかけて操作できます${voice.handsFree ? " / ハンズフリーモードON(連続で聞き取り、結果を読み上げます)" : ""}`}
-            >
-              {voice.listening
-                ? voice.handsFree
-                  ? "🎧 ハンズフリー中..."
-                  : "🎤 聞き取り中..."
-                : voice.handsFree
-                  ? "🎧 音声で操作(ハンズフリー)"
-                  : "🎤 音声で操作"}
-            </button>
-          ))}
+                    ? "🎧 ハンズフリー中..."
+                    : "🎤 聞き取り中..."
+                  : voice.handsFree
+                    ? "🎧 音声で操作(ハンズフリー)"
+                    : "🎤 音声で操作"}
+              </button>
+            ))}
         <button
           className={`${moreOpen ? "btn-pill" : "btn-pill-outline"} shrink-0 whitespace-nowrap ${simple ? "px-3 py-2 text-base" : "px-3 py-1.5 text-xs"}`}
           onClick={() => setMoreOpenStr(moreOpen ? "false" : "true")}
@@ -196,6 +222,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
         >
           {simple ? "⋯" : `⋯ その他 ${moreOpen ? "▲" : "▼"}`}
         </button>
+        </ToolGroup>
       </div>
         {moreOpen && (
           <div className="flex w-full flex-wrap gap-2 border-t border-cream/10 pt-2" data-testid="today-toolbar-more">

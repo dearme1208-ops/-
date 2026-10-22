@@ -25,19 +25,21 @@ test("独自の画面のモードで計測中の作業が画面外に出ると�
   await expect(pill).toHaveCount(0);
 });
 
-test("本日の作業: スマホではトラブル・突発作業の2つが1段目、ほかの操作は2段目の1行に収まる", async ({ page }) => {
+test("本日の作業: 操作は横1列にまとまり、用途ごとの見出し(いま・メモ・段取り・ふりかえり)で区切られる", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await seed(page, { stores: { masterTasks: [MASTER], dailyTasks: [running()] } });
-  const trouble = await page.getByRole("button", { name: "⚡ トラブル発生" }).boundingBox();
-  const add = await page.getByRole("button", { name: "+ 突発作業を追加" }).boundingBox();
-  expect(Math.abs(trouble!.y - add!.y)).toBeLessThan(4);
   const sub = page.getByTestId("today-toolbar-sub");
-  const box = await sub.boundingBox();
-  expect(box!.height).toBeLessThan(60);
-  for (const name of ["🧭 今日の段取り", "🗓 明日の下書き", "⏱ 時間割"]) {
-    const b = await sub.getByRole("button", { name }).boundingBox();
-    expect(Math.abs(b!.y - box!.y)).toBeLessThan(12);
+  const box = (await sub.boundingBox())!;
+  // 1行(ボタン+小さな見出し)に収まる
+  expect(box.height).toBeLessThan(70);
+  for (const name of ["⚡ トラブル発生", "+ 突発作業を追加", "🧭 今日の段取り", "🗓 明日の下書き", "⏱ 時間割"]) {
+    const b = (await sub.getByRole("button", { name }).boundingBox())!;
+    expect(Math.abs(b.y - box.y)).toBeLessThan(12);
   }
+  for (const caption of ["いま", "メモ", "段取り", "ふりかえり"]) {
+    await expect(sub.getByRole("group", { name: caption })).toBeVisible();
+  }
+  await expect(sub.getByRole("group", { name: "いま" }).getByRole("button")).toHaveCount(2);
 });
 
 test("禅: 円相の線が名前・時間・ボタンに重ならない(ボタンは円の内側)", async ({ page }) => {
