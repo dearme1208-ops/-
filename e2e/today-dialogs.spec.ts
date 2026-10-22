@@ -107,3 +107,28 @@ test("曜日のテンプレートから本日の作業リストを生成でき�
   const names = (await readAll<Daily & { order: number }>(page, "dailyTasks")).sort((a, b) => a.order - b.order).map((t) => t.name);
   expect(names).toEqual(["朝会", "日報"]);
 });
+
+test("テンプレートから作る枠は、今日の作業が空の時に作業リストの一番上(家事・お気に入りより上)に出る", async ({ page }) => {
+  await seed(page, {
+    settings: { "theme.visualMode": "home" },
+    stores: { masterTasks: [{ ...MASTER, favorite: true }], templateItems: [{ id: "t", weekday: 1, order: 0, category: "定例", name: "朝会", estimatedSeconds: 900 }] },
+  });
+  const card = page.getByTestId("template-generate");
+  await expect(card).toBeVisible();
+  // 「そのほかの表示」を畳んでいても出る
+  const extras = page.getByRole("button", { name: /そのほかの表示/ });
+  expect((await card.boundingBox())!.y).toBeLessThan((await extras.boundingBox())!.y);
+});
+
+test("突発作業の追加(＋)の一番上から、曜日のテンプレートで今日の作業を作れる(既にある作業は確認のうえ置き換え)", async ({ page }) => {
+  const templates = [1, 2, 3, 4, 5].map((weekday) => ({ id: `tpl-${weekday}`, weekday, order: 0, category: "定例", name: "朝会", estimatedSeconds: 900 }));
+  await seed(page, { stores: { masterTasks: [MASTER], templateItems: templates, dailyTasks: [dailyTask({ id: "x", date: jstDate() })] } });
+  await expect(page.getByTestId("template-generate")).toHaveCount(0);
+  await clickButton(page, "+ 突発作業を追加");
+  await page.getByRole("button", { name: /曜日のテンプレートから今日の作業を作る/ }).click();
+  const confirm = page.locator(".modal-scrim").last();
+  await expect(confirm.getByText("本日の作業リストを生成")).toBeVisible();
+  await expect(confirm).toContainText("既に1件あります");
+  await clickButton(page, /^生成する$/);
+  await expect.poll(async () => (await readAll<Daily>(page, "dailyTasks")).map((t) => t.name)).toEqual(["朝会"]);
+});

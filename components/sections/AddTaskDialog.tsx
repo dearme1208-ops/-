@@ -65,7 +65,12 @@ export default function AddTaskDialog({
   onSelectCompleted,
   onClose,
   gateStart,
+  templateWeekdayLabel,
+  onGenerateFromTemplate,
 }: {
+  /** 曜日のテンプレートから今日の作業をまとめて作る(作業を1つずつ足す代わりに) */
+  templateWeekdayLabel?: string;
+  onGenerateFromTemplate?: () => void;
   /** すぐ開始する時に挟む確認(1日の最初の開始なら体調を聞く)。本日の作業のほかの開始操作と揃える */
   gateStart?: (action: () => Promise<void>) => Promise<void>;
   date: string;
@@ -141,6 +146,16 @@ export default function AddTaskDialog({
     () => pickUsualMasters(recentRecords ?? [], allMasters ?? [], new Date(), { exclude: runningMasterIds ?? new Set() }),
     [recentRecords, allMasters, runningMasterIds]
   );
+  // 曜日のテンプレートからまとめて作る入口。1つずつ足すのではなく1日分を並べたい時のため、一番上に置く
+  const templateRow = onGenerateFromTemplate ? (
+    <button
+      className="mb-3 flex w-full items-center justify-between gap-2 rounded-lg border border-cream/20 px-3 py-2 text-left text-sm hover:bg-cream/5"
+      onClick={onGenerateFromTemplate}
+    >
+      <span className="text-cream">📋 {templateWeekdayLabel ?? "曜日"}のテンプレートから今日の作業を作る</span>
+      <span className="shrink-0 text-xs text-cream/45">まとめて ›</span>
+    </button>
+  ) : null;
   const usualRow = usualMasters.length > 0 && (
     <div className="mb-3" data-testid="usual-tasks">
       <p className="mb-1 text-[11px] text-cream/50">いつもこの時間にやっている作業（押すとすぐ開始）</p>
@@ -389,6 +404,7 @@ export default function AddTaskDialog({
   if (style === "menu") {
     return (
       <Modal title="突発作業を追加" onClose={onClose}>
+        {templateRow}
         {usualRow}
         {pane === "menu" && (
           <div className="space-y-2">
@@ -490,6 +506,7 @@ export default function AddTaskDialog({
   if (style === "single") {
     return (
       <Modal title="突発作業を追加" onClose={onClose}>
+        {templateRow}
         {usualRow}
         {planCheckbox}
         <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
@@ -536,6 +553,7 @@ export default function AddTaskDialog({
   // ------------------------------------------------------------
   return (
     <Modal title="突発作業を追加" onClose={onClose}>
+        {templateRow}
         {usualRow}
       <div className="mb-3 flex gap-2">
         <button

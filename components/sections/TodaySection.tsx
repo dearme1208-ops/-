@@ -2562,6 +2562,28 @@ export default function TodaySection({
 
       {taskViewTab !== "board" && (
         <div key={taskViewTab}>
+      {/* 今日の作業がまだ1件もない時は、曜日のテンプレートから作る枠を作業リストの一番上に出す。
+          以前は「そのほかの表示」の中(家事・お気に入りの下)にあって、探さないと見つからなかった */}
+      {tasks && tasks.length === 0 && (taskViewTab === "running" || taskViewTab === "pending") && (
+        <div className="panel mb-3 flex flex-wrap items-center gap-3 p-4" data-testid="template-generate">
+          <h2 className="w-full font-display text-base font-bold">📋 今日の作業をテンプレートから作る</h2>
+          <select
+            value={weekday}
+            onChange={(e) => setWeekday(Number(e.target.value) as Weekday)}
+            className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-cream"
+            aria-label="使うテンプレートの曜日"
+          >
+            {([1, 2, 3, 4, 5] as Weekday[]).map((w) => (
+              <option key={w} value={w}>
+                {WEEKDAY_LABELS[w]}曜日
+              </option>
+            ))}
+          </select>
+          <button className="btn-pill" onClick={requestGenerateFromTemplate}>
+            テンプレートから生成
+          </button>
+        </div>
+      )}
       {provisionalTask && taskViewTab === "running" && (
         <ProvisionalTaskCard
           task={provisionalTask}
@@ -2722,27 +2744,6 @@ export default function TodaySection({
             )}
             {themedMode === "home" && !background && <ChorePanel today={date} onStart={addFavoriteAndStart} />}
             {themedMode === "persona5" && <PersonaStatsPanel today={date} />}
-            {(!tasks || tasks.length === 0) && (
-              <div className="panel p-5">
-                <h2 className="mb-3 font-display text-lg font-bold">本日の作業リストを生成</h2>
-                <div className="flex flex-wrap items-center gap-3">
-                  <select
-                    value={weekday}
-                    onChange={(e) => setWeekday(Number(e.target.value) as Weekday)}
-                    className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-cream"
-                  >
-                    {([1, 2, 3, 4, 5] as Weekday[]).map((w) => (
-                      <option key={w} value={w}>
-                        {WEEKDAY_LABELS[w]}曜日
-                      </option>
-                    ))}
-                  </select>
-                  <button className="btn-pill" onClick={requestGenerateFromTemplate}>
-                    テンプレートから生成
-                  </button>
-                </div>
-              </div>
-            )}
 
             {!isPanelFolded("favorites") && favorites && favorites.length > 0 && (
               <div data-panel-id="favorites" className="panel p-4">
@@ -3087,6 +3088,11 @@ export default function TodaySection({
           onSelectCompleted={(task) => {
             setShowAddDialog(false);
             setRestartChoice(task);
+          }}
+          templateWeekdayLabel={`${WEEKDAY_LABELS[weekday]}曜日`}
+          onGenerateFromTemplate={() => {
+            setShowAddDialog(false);
+            void requestGenerateFromTemplate();
           }}
           onClose={() => setShowAddDialog(false)}
         />
