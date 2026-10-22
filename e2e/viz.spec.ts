@@ -15,7 +15,7 @@ const records = Array.from({ length: 14 }, (_, i) => ({
   id: "r" + i, date: jstDate(-(i % 7)), category: ["業務", "総務"][i % 2], name: "x", masterTaskId: "m1", seconds: 1800, startedAt: 0, endedAt: 0, excludedFromStats: false,
 }));
 
-test("今日タブ: リング・砂時計・次の予定・いつもの幅・1週間の積み木・調子の地図が出て、完了タブに予定と実績が出る", async ({ page }) => {
+test("今日タブ: リング・砂時計・次の予定・いつもの幅が出て、完了タブに予定と実績、記録のタブに1週間の積み木・調子の地図が出る", async ({ page }) => {
   await page.clock.install({ time: jstAt("16:10") });
   await seed(page, {
     settings: { "today.taskViewTab": "running" },
@@ -36,11 +36,16 @@ test("今日タブ: リング・砂時計・次の予定・いつもの幅・1�
   await expect(page.getByTestId("day-ring")).toBeVisible();
   await expect(page.getByTestId("hourglass")).toContainText("18:00までに収まる？");
   await expect(page.getByTestId("hourglass")).toContainText("収まる");
-  await expect(page.getByTestId("week-blocks")).toContainText("業務");
-  await expect(page.getByTestId("condition-heatmap")).toBeVisible();
+  // 1週間の積み木・時間帯の調子は振り返り用なので、本日の作業ではなく記録(実績編集)のタブに出す
+  await expect(page.getByTestId("week-blocks")).toHaveCount(0);
+  await expect(page.getByTestId("condition-heatmap")).toHaveCount(0);
 
   await page.getByRole("button", { name: /完了/ }).filter({ hasText: "(1)" }).first().click();
   await expect(page.getByTestId("plan-actual")).toContainText("電話対応");
+
+  await page.locator(".tab-chip", { hasText: "実績編集" }).first().click();
+  await expect(page.getByTestId("week-blocks")).toContainText("業務");
+  await expect(page.getByTestId("condition-heatmap")).toBeVisible();
 });
 
 test("ToDoタブの期日の山: 日を押すとその日の期日が出る / 案件タブの山登り: 遅れている案件が分かる", async ({ page }) => {

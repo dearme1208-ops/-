@@ -25,6 +25,7 @@ import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import DayReplayModal from "@/components/DayReplayModal";
+import { ConditionHeatmapPanel, WeekBlocks } from "@/components/viz/TodayViz";
 
 // 時刻入力(HH:MM)の変更を、元のタイムスタンプの日付部分は保ったまま時刻だけ差し替える。
 // 日をまたいだ実績(例: 23:42開始〜翌7:02終了)でも、開始・終了それぞれの本来の日付がずれないようにする
@@ -241,6 +242,11 @@ export default function RecordsSection() {
 
   return (
     <div className="space-y-4">
+      {/* 記録を振り返る図(本日の作業から移した)。1週間の積み木と、曜日×時間帯の調子 */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <WeekBlocks today={todayStr()} />
+        <ConditionHeatmapPanel today={todayStr()} />
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <input

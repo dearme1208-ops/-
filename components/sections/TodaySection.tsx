@@ -92,7 +92,7 @@ import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
 import ChorePanel from "@/components/sections/today/ChorePanel";
 import WeeklySummaryCard from "@/components/sections/today/WeeklySummaryCard";
-import { ConditionHeatmapPanel, DayRing, HourglassPanel, NextScheduleBar, PlanActualPanel, WeekBlocks } from "@/components/viz/TodayViz";
+import { DayRing, HourglassPanel, NextScheduleBar, PlanActualPanel } from "@/components/viz/TodayViz";
 import { durationRanges } from "@/lib/visuals";
 import TodayHintPanel from "@/components/TodayHintPanel";
 import BackupNudge from "@/components/BackupNudge";
@@ -2326,8 +2326,6 @@ export default function TodaySection({
     autoAllocate: "自動配分",
     dayRing: "今日のリング",
     hourglass: "終業までに収まる?",
-    week: "この1週間",
-    heatmap: "時間帯ごとの調子",
   };
   const { isFolded: isPanelFolded, touch: touchPanel } = usePanelUsage(Object.keys(PANEL_LABELS), now);
   const foldedPanels = Object.entries(PANEL_LABELS)
@@ -2720,16 +2718,6 @@ export default function TodaySection({
                   now={now}
                   workEnd={standardWorkEnd}
                 />
-              </div>
-            )}
-            {!background && !isPanelFolded("week") && (
-              <div data-panel-id="week">
-                <WeekBlocks today={date} />
-              </div>
-            )}
-            {!background && !isPanelFolded("heatmap") && (
-              <div data-panel-id="heatmap">
-                <ConditionHeatmapPanel today={date} />
               </div>
             )}
             {themedMode === "home" && !background && <ChorePanel today={date} onStart={addFavoriteAndStart} />}
