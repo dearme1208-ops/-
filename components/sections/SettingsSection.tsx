@@ -125,6 +125,7 @@ export default function SettingsSection() {
   const [textScale, setTextScale] = useSetting("ui.textScale", "normal");
   const [showWeeklySummaryStr, setShowWeeklySummaryStr] = useSetting("today.showWeeklySummary", "true");
   const [showTaskClockStr, setShowTaskClockStr] = useSetting("today.showTaskClock", "true");
+  const [dayPlanAtRiskStr, setDayPlanAtRiskStr] = useSetting("dayPlan.showAtRisk", "true");
   const showDailyChallenge = showDailyChallengeStr === "true";
   const [showTodayHintStr, setShowTodayHintStr] = useSetting("today.showHint", "true");
   const showTodayHint = showTodayHintStr === "true";
@@ -1399,6 +1400,13 @@ export default function SettingsSection() {
             title="計測中のカードに、今の時刻と終わる見込みを描いたアナログ時計を出します"
           >
             計測中の時計: {showTaskClockStr === "true" ? "ON" : "OFF"}
+          </button>
+          <button
+            className={dayPlanAtRiskStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setDayPlanAtRiskStr(dayPlanAtRiskStr === "true" ? "false" : "true")}
+            title="「今日の段取り」に、期日に間に合わない見込みのToDo・案件の件数と一覧を出します"
+          >
+            段取りの「間に合わない見込み」: {dayPlanAtRiskStr === "true" ? "ON" : "OFF"}
           </button>
           <span className="flex flex-wrap items-center gap-1 text-xs text-cream/60" data-testid="text-scale">
             文字の大きさ:

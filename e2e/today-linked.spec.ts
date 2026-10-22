@@ -108,3 +108,18 @@ test("「今日の段取り」を反映すると、期日順に並べ替えら�
   expect(tasks.find((t) => t.name === "設計")).toMatchObject({ projectId: "p1", stageId: "s1" });
   expect(tasks.find((t) => t.name === "請求書送付")?.todoTaskId).toBe("tOver");
 });
+
+test("「今日の段取り」の「間に合わない見込み」は設定で出さないようにできる", async ({ page }) => {
+  await page.clock.install({ time: jstAt("10:00") });
+  // 期日を過ぎた見積もり付きのToDo → 間に合わない見込みに入る
+  const todo = { id: "t", listId: "l", title: "爪やすり", completed: false, important: false, order: 0, createdAt: 0, dueDate: jstDate(-3), estimateMinutes: 60 };
+  await seed(page, { stores: { todoLists: [{ id: "l", title: "家", order: 0, createdAt: 0 }], todoTasks: [todo] } });
+  await clickButton(page, "🧭 今日の段取り");
+  await expect(page.getByText("間に合わない見込み").first()).toBeVisible();
+  await page.getByRole("button", { name: "閉じる" }).last().click();
+
+  await seed(page, { settings: { "dayPlan.showAtRisk": "false" }, stores: { todoLists: [{ id: "l", title: "家", order: 0, createdAt: 0 }], todoTasks: [todo] } });
+  await clickButton(page, "🧭 今日の段取り");
+  await expect(page.getByText("今日の残り稼働")).toBeVisible();
+  await expect(page.getByText("間に合わない見込み")).toHaveCount(0);
+});

@@ -38,6 +38,9 @@ export default function DayPlanModal({ today, onClose }: { today: string; onClos
   const [workStart] = useSetting("today.standardWorkStart", "08:00");
   const [workEnd] = useSetting("today.standardWorkEnd", "17:00");
   const [breakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
+  // 「間に合わない見込み」の件数と一覧(設定で出さないようにできる。暮らしの用事など期日が目安のものが多いと煩わしいため)
+  const [showAtRiskStr] = useSetting("dayPlan.showAtRisk", "true");
+  const showAtRisk = showAtRiskStr === "true";
   // 計画は開いた時点の時刻で固定する(見ている間に毎秒並びが変わると落ち着いて読めないため)
   const [now] = useState(() => Date.now());
   const [applied, setApplied] = useState<string | null>(null);
@@ -86,15 +89,17 @@ export default function DayPlanModal({ today, onClose }: { today: string; onClos
   return (
     <Modal title="🧭 今日の段取り" onClose={onClose}>
       <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-2 text-center">
+        <div className={`grid ${showAtRisk ? "grid-cols-3" : "grid-cols-2"} gap-2 text-center`}>
           <Stat label="今日の残り稼働" value={formatHms(plan.remainingSeconds)} note={`〜${workEnd}・休憩除く`} />
           <Stat label="今日に入る作業" value={`${plan.scheduled.length}件`} note={formatHms(plan.scheduled.reduce((s, i) => s + i.plannedSeconds, 0))} />
-          <Stat
-            label="間に合わない見込み"
-            value={`${plan.atRisk.length}件`}
-            note={plan.atRisk.length > 0 ? "下で確認" : "なし"}
-            alert={plan.atRisk.length > 0}
-          />
+          {showAtRisk && (
+            <Stat
+              label="間に合わない見込み"
+              value={`${plan.atRisk.length}件`}
+              note={plan.atRisk.length > 0 ? "下で確認" : "なし"}
+              alert={plan.atRisk.length > 0}
+            />
+          )}
         </div>
 
         {plan.runningTaskName && plan.runningRemainingSeconds > 0 && (
@@ -109,7 +114,7 @@ export default function DayPlanModal({ today, onClose }: { today: string; onClos
           </p>
         )}
 
-        {plan.atRisk.length > 0 && (
+        {showAtRisk && plan.atRisk.length > 0 && (
           <div className="rounded-lg border border-alert/50 bg-alert/5 p-3">
             <h3 className="mb-1 text-sm font-bold text-alert">⚠ このままだと期日に間に合わない見込み</h3>
             <p className="mb-2 text-[11px] text-cream/50">
