@@ -86,7 +86,8 @@ import CompletedTasksGantt from "@/components/sections/CompletedTasksGantt";
 import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import FinishAtDialog from "@/components/sections/FinishAtDialog";
-import ProvisionalTaskCard from "@/components/sections/ProvisionalTaskCard";
+import ProvisionalTaskCard, { type ProvisionalSecondHalf, type ProvisionalTarget } from "@/components/sections/ProvisionalTaskCard";
+import { closeSegmentsAt, closedSegmentsMs, splitSegmentsAt } from "@/lib/provisionalSplit";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
@@ -1954,6 +1955,124 @@ export default function TodaySection({
     setTaskViewTab("running");
   }
 
+  // 仮計測の一部(閉じた区間)を、割り当て先の作業の時間として記録する。
+  //  - 未着手・一時停止中・計測中の作業: その作業に区間を足す(未着手・一時停止中なら一時停止にし、続きは後でその作業として計る)
+  //  - 完了した作業・新しい作業: その作業として完了の記録を1つ作る(同じ日・同じ帰属先の実績に合算される)
+  async function recordProvisionalPart(target: ProvisionalTarget, segs: TimeSegment[]) {
+    if (segs.length === 0) return;
+    const spanMs = closedSegmentsMs(segs);
+    const first = segs[0].start;
+    const last = segs[segs.length - 1].end!;
+    if (target.kind === "existing") {
+      const t = await db.dailyTasks.get(target.taskId);
+      if (!t) return;
+      // 前半と後半に同じ作業を選んだ時は、後半で計測中になったその作業へ前半も足す(計測中のまま)
+      if (t.status === "pending" || t.status === "paused" || t.status === "running") {
+        await db.dailyTasks.update(t.id, {
+          segments: [...t.segments, ...segs].sort((a, b) => a.start - b.start),
+          accumulatedMs: t.accumulatedMs + spanMs,
+          status: t.status === "running" ? "running" : "paused",
+          startedAt: Math.min(t.startedAt ?? first, first),
+          stoppedAt: Math.max(t.stoppedAt ?? last, last),
+        });
+        return;
+      }
+    }
+    const src =
+      target.kind === "existing"
+        ? await db.dailyTasks.get(target.taskId)
+        : undefined;
+    const category = target.kind === "existing" ? src!.category : target.category;
+    const name = target.kind === "existing" ? src!.name : target.name;
+    const masterTaskId =
+      target.kind === "existing" ? src!.masterTaskId : (target.masterTaskId ?? (await findOrCreateMasterTask(category, name, target.estimatedSeconds)).id);
+    const part: DailyTask = {
+      id: uid(),
+      date,
+      order: await db.dailyTasks.where("date").equals(date).count(),
+      masterTaskId,
+      category,
+      name,
+      estimatedSeconds: target.kind === "existing" ? src!.estimatedSeconds : target.hasPlan ? target.estimatedSeconds : 0,
+      hasPlan: target.kind === "existing" ? src!.hasPlan : target.hasPlan,
+      // 計測中として置くと、完了にするまでの一瞬に自動の処理が反応するため、閉じた区間の一時停止で置いてから完了にする
+      status: "paused",
+      segments: segs,
+      accumulatedMs: spanMs,
+      startedAt: first,
+      stoppedAt: last,
+      isSpontaneous: true,
+      ...(src ? dailyTaskLinksOf(src) : {}),
+      ...(target.kind === "new" && target.isTrouble ? { isTrouble: true } : {}),
+    };
+    await db.dailyTasks.add(part);
+    await finishDailyTask(part, { segments: segs, startedAt: first, endAtMs: last });
+  }
+
+  // 仮計測を「完了した作業」などとして記録し、計測をやめる(再開して続けるのではなく、その時間だけ付ける)
+  async function resolveProvisionalRecordAs(target: ProvisionalTarget) {
+    if (!provisionalTask) return;
+    const p = provisionalTask;
+    await db.dailyTasks.delete(p.id);
+    await recordProvisionalPart(target, closeSegmentsAt(p.segments, Date.now()));
+    setTaskViewTab("done");
+  }
+
+  // 仮計測を splitAt で2つに分け、前半と後半を別々の作業に割り当てる。
+  // 後半は「その作業で計測を続ける」「今で終えて記録する」「未割り当てのまま続ける」から選ぶ
+  async function resolveProvisionalSplit(splitAt: number, firstTarget: ProvisionalTarget, second: ProvisionalSecondHalf) {
+    if (!provisionalTask) return;
+    const p = provisionalTask;
+    const { before, after } = splitSegmentsAt(p.segments, splitAt);
+    if (second.mode === "provisional") {
+      // 先に仮計測の側を後半だけにしてから前半を記録する(前半の記録中に、仮計測が前半も含んだまま見えないように)
+      await db.dailyTasks.update(p.id, { segments: after, startedAt: after[0]?.start ?? splitAt, accumulatedMs: closedSegmentsMs(after) });
+      await recordProvisionalPart(firstTarget, before);
+      return;
+    }
+    if (second.mode === "finish") {
+      await db.dailyTasks.delete(p.id);
+      await recordProvisionalPart(firstTarget, before);
+      await recordProvisionalPart(second.target, closeSegmentsAt(after, Date.now()));
+      setTaskViewTab("done");
+      return;
+    }
+    // 後半はその作業として計測を続ける
+    const target = second.target;
+    if (target.kind === "new") {
+      await db.dailyTasks.update(p.id, {
+        segments: after,
+        startedAt: after[0]?.start ?? splitAt,
+        accumulatedMs: closedSegmentsMs(after),
+        category: target.category,
+        name: target.name,
+        estimatedSeconds: target.hasPlan ? target.estimatedSeconds : 0,
+        hasPlan: target.hasPlan,
+        masterTaskId: target.masterTaskId,
+        isProvisional: false,
+        ...(target.isTrouble ? { isTrouble: true } : {}),
+      });
+    } else {
+      const t = tasks?.find((x) => x.id === target.taskId);
+      if (!t) return;
+      if (t.status === "done") {
+        // 完了した作業を続ける場合は、完了の記録は残して新しく計測を始める(完了した作業の「もう一度開始」と同じ)
+        const estimatedSeconds = await computeRemainingEstimatedSeconds(date, t.category, t.name, t.estimatedSeconds);
+        await db.transaction("rw", db.dailyTasks, async () => {
+          await db.dailyTasks.delete(p.id);
+          await insertRunningTask(t.category, t.name, estimatedSeconds, t.masterTaskId, splitAt, { ...dailyTaskLinksOf(t), hasPlan: t.hasPlan });
+        });
+      } else {
+        await db.transaction("rw", db.dailyTasks, async () => {
+          await db.dailyTasks.delete(p.id);
+          await startTask(t, splitAt);
+        });
+      }
+    }
+    await recordProvisionalPart(firstTarget, before);
+    setTaskViewTab("running");
+  }
+
   // 割り当てずに「未分類」の実績としてそのまま終了する
   async function resolveProvisionalFinish() {
     if (!provisionalTask) return;
@@ -2594,6 +2713,8 @@ export default function TodaySection({
           onAssignExisting={resolveProvisionalToExisting}
           onAssignNew={resolveProvisionalAsNew}
           onFinishAsIs={resolveProvisionalFinish}
+          onRecordAs={resolveProvisionalRecordAs}
+          onSplit={resolveProvisionalSplit}
         />
       )}
 
