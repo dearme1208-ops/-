@@ -503,6 +503,33 @@ export async function addProvisionalTaskIfIdle(task: Omit<DailyTask, "order">): 
   });
 }
 
+// 放置検知と未計測の自動計測が噛み合わず、「仮計測中 15:10〜15:10 00:00:00」の完了が
+// 繰り返し作られていた(直した後も、それまでに残った分が完了の一覧に何百件も並ぶ)。
+// 長さ0の仮計測の完了と、秒数0の仮計測の実績だけを消す。長さのあるものには触れない
+const PROVISIONAL_CATEGORY = "未分類";
+const PROVISIONAL_NAME = "仮計測中";
+export async function cleanupZeroLengthProvisionals(): Promise<number> {
+  return db.transaction("rw", db.dailyTasks, db.records, async () => {
+    const tasks = await db.dailyTasks
+      .filter(
+        (t) =>
+          t.status === "done" &&
+          t.category === PROVISIONAL_CATEGORY &&
+          t.name === PROVISIONAL_NAME &&
+          (t.accumulatedMs ?? 0) === 0 &&
+          !(t.manualAdjustmentMs ?? 0) &&
+          t.segments.every((s) => s.end !== undefined && s.end - s.start < 1000)
+      )
+      .primaryKeys();
+    const records = await db.records
+      .filter((r) => r.category === PROVISIONAL_CATEGORY && r.name === PROVISIONAL_NAME && r.seconds === 0)
+      .primaryKeys();
+    await db.dailyTasks.bulkDelete(tasks);
+    await db.records.bulkDelete(records);
+    return tasks.length + records.length;
+  });
+}
+
 // 「実績編集」タブでの実績(WorkRecord)の開始/終了時刻の手動編集は、その実績の元になった
 // dailyTasksの側には反映されない独立したデータだった。そのため編集後も「本日の作業」タブの
 // 「前の作業の終了時刻から開始/再開する」といった提案が編集前の古い時刻のまま出てしまう

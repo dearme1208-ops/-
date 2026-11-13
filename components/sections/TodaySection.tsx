@@ -23,6 +23,7 @@ import {
   computeRemainingEstimatedSeconds,
   computeRunningOverrunTaskIds,
   addProvisionalTaskIfIdle,
+  cleanupZeroLengthProvisionals,
   findMergeTargetRecord,
   finishDailyTask,
   importScheduleRows,
@@ -886,12 +887,31 @@ export default function TodaySection({
     return ids;
   }, [tasks]);
 
+  // 放置・停止の検知で仮計測を打ち切る。打ち切る時刻までの長さが1分に満たなければ、
+  // 記録に残す意味がないので完了にせず消す(長さ0の「仮計測中」が完了に並ばないように)
+  async function stopProvisionalAt(task: DailyTask, cutoff: number) {
+    const measured = closedSegmentsMs(closeSegmentsAt(task.segments, cutoff).filter((s) => s.start < cutoff)) + (task.manualAdjustmentMs ?? 0);
+    if (measured < 60_000) {
+      await db.dailyTasks.delete(task.id);
+      return;
+    }
+    await commitFinish(task, { endAtMs: cutoff });
+  }
+
+  // 上の不具合で残った、長さ0の「仮計測中」の完了と実績を片付ける(開いた時に1回)
+  useEffect(() => {
+    void cleanupZeroLengthProvisionals();
+  }, []);
+
   // 誰も計測していない状態が閾値を超えたら、自動で仮計測タスクを立ち上げる（オフの場合は何もしない）。
   // 除外時間帯（休憩など）の最中は開始しない。しきい値の判定は休憩時間を差し引いた正味の経過時間で行うため、
   // 休憩をまたいでも休憩前に経過していた時間が無駄にならず、休憩が終わった時点で正しく超過を判定できる
   useEffect(() => {
     if (!provisionalEnabled) return;
     if (!tasks) return;
+    // 放置(操作のない状態が放置検知の時間を超えている)の間は始めない。始めてもすぐ放置検知が
+    // 「最後の操作時刻」で打ち切って長さ0の完了になり、それが繰り返されて完了が何百件もできていた
+    if (now - lastActivityRef.current >= provisionalIdleMs) return;
     const gapStart = findProvisionalStart({
       tasks,
       lastStopTime: provisionalAnchorTime,
@@ -919,7 +939,7 @@ export default function TodaySection({
       if (!added) return;
       setTaskViewTab("running");
     })();
-  }, [provisionalEnabled, tasks, now, provisionalAnchorTime, effectiveProvisionalAnchorTime, thresholdMinutes, date, breakRanges]);
+  }, [provisionalEnabled, tasks, now, provisionalAnchorTime, effectiveProvisionalAnchorTime, thresholdMinutes, date, breakRanges, provisionalIdleMs]);
 
   // 強制ストップ付きの休憩帯に入ったら、計測中の作業(仮計測含む)を一時停止し、
   // チェックリストを表示する。1つの休憩帯につき1回だけ行い(breakStopHandledで判定)、
@@ -945,7 +965,7 @@ export default function TodaySection({
     if (cutoff === null) return;
     if (idleFinishInFlightRef.current) return;
     idleFinishInFlightRef.current = true;
-    commitFinish(provisionalTask, { endAtMs: cutoff }).then(() => {
+    stopProvisionalAt(provisionalTask, cutoff).then(() => {
       idleFinishInFlightRef.current = false;
       const hoursLabel = Math.round((provisionalIdleMs / 3600000) * 10) / 10;
       notify(
@@ -1036,7 +1056,7 @@ export default function TodaySection({
     if (cutoff === null) return;
     if (geoFinishInFlightRef.current) return;
     geoFinishInFlightRef.current = true;
-    commitFinish(provisionalTask, { endAtMs: cutoff }).then(() => {
+    stopProvisionalAt(provisionalTask, cutoff).then(() => {
       geoFinishInFlightRef.current = false;
       geoMovement.taskIdRef.current = null;
       const minutesLabel = Math.round((geoStillMs / 60000) * 10) / 10;
