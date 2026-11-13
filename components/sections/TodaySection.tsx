@@ -887,7 +887,7 @@ export default function TodaySection({
     return ids;
   }, [tasks]);
 
-  // 放置・停止の検知で仮計測を打ち切る。打ち切る時刻までの長さが1分に満たなければ、
+  // 放置の検知で仮計測を打ち切る(移動の停止は、動いた分をそのまま残すので従来どおり)。打ち切る時刻までの長さが1分に満たなければ、
   // 記録に残す意味がないので完了にせず消す(長さ0の「仮計測中」が完了に並ばないように)
   async function stopProvisionalAt(task: DailyTask, cutoff: number) {
     const measured = closedSegmentsMs(closeSegmentsAt(task.segments, cutoff).filter((s) => s.start < cutoff)) + (task.manualAdjustmentMs ?? 0);
@@ -1056,7 +1056,7 @@ export default function TodaySection({
     if (cutoff === null) return;
     if (geoFinishInFlightRef.current) return;
     geoFinishInFlightRef.current = true;
-    stopProvisionalAt(provisionalTask, cutoff).then(() => {
+    commitFinish(provisionalTask, { endAtMs: cutoff }).then(() => {
       geoFinishInFlightRef.current = false;
       geoMovement.taskIdRef.current = null;
       const minutesLabel = Math.round((geoStillMs / 60000) * 10) / 10;
