@@ -11,9 +11,10 @@ export default function ToastHost() {
 
   return (
     // 画面下には打刻ボタン・計測中の帯・本日の作業の切り替えなど、モードによって高さの違う
-    // 固定の操作が並び、どの高さに出しても何かに重なっていた。画面の上に出す
+    // 固定の操作が並び、どの高さに出しても何かに重なっていた。画面の上に出す。
+    // ダイアログ(z-50)を開いたまま出た知らせの「元に戻す」も押せるよう、ダイアログより手前に置く
     <div
-      className="pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4"
+      className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4"
       style={{ top: "calc(env(safe-area-inset-top) + 0.75rem)" }}
       role="status"
       aria-live="polite"

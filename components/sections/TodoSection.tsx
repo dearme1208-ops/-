@@ -249,6 +249,9 @@ export default function TodoSection({
   const [newTaskSubtasks, setNewTaskSubtasks] = useState<string[]>([]);
   const [newTaskSubtaskDraft, setNewTaskSubtaskDraft] = useState("");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  // 「コピーして追加」で作ったタスクを開いている間、それがコピーだと分かる帯を出す(元と見た目が同じで、
+  // コピーできたのか分からなかったため)
+  const [copiedFrom, setCopiedFrom] = useState<{ id: string; title: string } | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTag, setFilterTag] = useState("");
@@ -1072,6 +1075,16 @@ export default function TodoSection({
       });
     }
     setDetailTaskId(newId);
+    setCopiedFrom({ id: newId, title: task.title });
+    showUndoToast(
+      `「${task.title}」をコピーして追加しました${subs.length > 0 ? `（サブタスク${subs.length}件も）` : ""}。開いているのはコピーです`,
+      async () => {
+        const created = await db.todoTasks.filter((t) => t.id === newId || t.parentTaskId === newId).primaryKeys();
+        await db.todoTasks.bulkDelete(created);
+        setCopiedFrom(null);
+        setDetailTaskId((cur) => (cur === newId ? task.id : cur));
+      }
+    );
   }
 
   async function toggleSubtaskComplete(sub: TodoTask) {
@@ -2205,7 +2218,9 @@ export default function TodoSection({
 
       {detailTask && (
         <TaskDetailModal
+          key={detailTask.id}
           task={detailTask}
+          copiedFromTitle={copiedFrom?.id === detailTask.id ? copiedFrom.title : undefined}
           subtasks={subtasksByParent.get(detailTask.id) ?? []}
           lists={lists ?? []}
           tagOptions={tagOptions}
@@ -3342,6 +3357,7 @@ function TaskDetailModal({
   customerOptions,
   today,
   linkedProjectTitle,
+  copiedFromTitle,
   onClose,
   onArchive,
   onToggleMyDay,
@@ -3360,6 +3376,8 @@ function TaskDetailModal({
   customerOptions: string[];
   today: string;
   linkedProjectTitle?: string;
+  /** 「コピーして追加」で作った直後なら、元のタスクの名前 */
+  copiedFromTitle?: string;
   onClose: () => void;
   onArchive: () => void;
   onToggleMyDay: () => void;
@@ -3527,8 +3545,13 @@ function TaskDetailModal({
   }
 
   return (
-    <Modal title="タスクの詳細" onClose={onClose}>
+    <Modal title={copiedFromTitle !== undefined ? "タスクの詳細（コピー）" : "タスクの詳細"} onClose={onClose}>
       <div className="max-h-[70vh] space-y-3 overflow-y-auto">
+        {copiedFromTitle !== undefined && (
+          <p className="rounded-lg border border-cream/30 bg-cream/10 px-3 py-2 text-sm text-cream" role="status" data-testid="todo-copied-notice">
+            📋 「{copiedFromTitle}」をコピーして、新しいタスクとして追加しました。ここで直すとコピーの方が変わります（元のタスクはそのまま）。
+          </p>
+        )}
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
