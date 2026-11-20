@@ -89,6 +89,7 @@ import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import FinishAtDialog from "@/components/sections/FinishAtDialog";
 import ProvisionalTaskCard, { type ProvisionalSecondHalf, type ProvisionalTarget } from "@/components/sections/ProvisionalTaskCard";
 import { closeSegmentsAt, closedSegmentsMs, splitSegmentsAt } from "@/lib/provisionalSplit";
+import { closedMs, retimeSegments } from "@/lib/segmentEdit";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
 import DailyChallengePanel from "@/components/DailyChallengePanel";
@@ -1527,11 +1528,13 @@ export default function TodaySection({
       // 再計算すればよい)
       let segments = task.segments;
       if (startedAtOverride !== undefined && segments.length > 0) {
-        segments = segments.map((s, i) => (i === 0 ? { ...s, start: startedAtOverride } : s));
-        if (segments[0].end !== undefined && segments[0].end <= segments[0].start) {
-          alert("開始時刻の指定が不正です(この作業が最初に一時停止した時刻より後になっています)");
+        // 一時停止を挟んだ後ろの区間へ開始を動かした時は、それより前の区間を落とす(lib/segmentEdit.ts)
+        const retimed = retimeSegments(segments, startedAtOverride);
+        if (!retimed) {
+          alert("開始時刻の指定が不正です(今の計測の始まりより後になっています)");
           return;
         }
+        segments = retimed;
       }
       const segmentsChanged = segments !== task.segments;
       const taskUpdates: Partial<DailyTask> = {
@@ -1547,9 +1550,8 @@ export default function TodaySection({
         // 合計は「今の合計 + 開始を動かした分」で求める。区間を足し直すと、完了後に「続きから」再開した作業で
         // 前回の完了時に織り込んだ「時間を加算」の分が消えていた。最初の区間が計測中なら、その経過は
         // 都度数えるので合計は変えない
-        if (task.segments[0].end !== undefined) {
-          taskUpdates.accumulatedMs = task.accumulatedMs + (task.segments[0].start - segments[0].start);
-        }
+        // (閉じた区間の長さが変わった分だけ足し引きする。計測中の区間の経過は都度数える)
+        taskUpdates.accumulatedMs = Math.max(0, task.accumulatedMs + (closedMs(segments) - closedMs(task.segments)));
       }
       await db.dailyTasks.update(task.id, taskUpdates);
       return;
@@ -1568,17 +1570,17 @@ export default function TodaySection({
 
     const oldSeconds = Math.round(task.accumulatedMs / 1000);
     let segments = task.segments;
-    if (startedAtOverride !== undefined && segments.length > 0) {
-      segments = segments.map((s, i) => (i === 0 ? { ...s, start: startedAtOverride } : s));
-    }
-    if (endedAtOverride !== undefined && segments.length > 0) {
-      segments = segments.map((s, i) => (i === segments.length - 1 ? { ...s, end: endedAtOverride } : s));
+    if ((startedAtOverride !== undefined || endedAtOverride !== undefined) && segments.length > 0) {
+      // 一時停止を挟んで区間が分かれていても、新しい開始より前・終了より後の区間は落とし、またぐ区間は切る
+      // (以前は「途中の一時停止区間と矛盾しています」で直せなかった。lib/segmentEdit.ts)
+      const retimed = retimeSegments(segments, startedAtOverride, endedAtOverride);
+      if (!retimed) {
+        alert("開始・終了時刻の範囲が不正です(終了が開始より前になっています)");
+        return;
+      }
+      segments = retimed;
     }
     const segmentsChanged = segments !== task.segments;
-    if (segmentsChanged && segments.some((s) => s.end !== undefined && s.end <= s.start)) {
-      alert("開始・終了時刻の範囲が不正です(途中の一時停止区間と矛盾しています)");
-      return;
-    }
     // 合計は「今の合計 + 区間の長さが変わった分」で求める。区間を足し直すと、完了時に合計へ織り込んだ
     // 「時間を加算」の分が消え、終了を延ばしたのに実績が減る(例: 30分+加算10分で40分の作業の終了を
     // 5分延ばすと35分になっていた)

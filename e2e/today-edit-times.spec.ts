@@ -126,3 +126,37 @@ test("「時間を加算」した作業の終了時刻を延ばすと、加算�
   expect((await readOne<Daily>(page, "dailyTasks", "d1"))!.accumulatedMs).toBe(45 * MIN);
   expect((await readOne<Rec>(page, "records", "r1"))!.seconds).toBe(45 * 60);
 });
+
+test("一時停止を挟んだ作業(10:10〜12:00 と 12:40〜12:50)で開始を12:40にすると、前の区間を落として10分になる", async ({ page }) => {
+  const twoSegs = dailyTask({
+    id: "d1",
+    date: jstDate(),
+    status: "done",
+    segments: [{ start: jstAt("10:10"), end: jstAt("12:00") }, { start: jstAt("12:40"), end: jstAt("12:50") }],
+    accumulatedMs: 120 * MIN,
+    recordedMs: 120 * MIN,
+    recordedSegmentCount: 2,
+    startedAt: jstAt("10:10"),
+    endedAt: jstAt("12:50"),
+    stoppedAt: jstAt("12:50"),
+  });
+  await seed(page, {
+    settings: { "today.taskViewTab": "done" },
+    stores: { masterTasks: [MASTER], dailyTasks: [twoSegs], records: [record("10:10", "12:50", 120 * 60)] },
+  });
+  let alerted = "";
+  page.on("dialog", async (d) => {
+    alerted = d.message();
+    await d.dismiss();
+  });
+  await editTimes(page, 0, "12:40", "12:50");
+  expect(alerted).toBe("");
+  const d = (await readOne<Daily & { segments: unknown[] }>(page, "dailyTasks", "d1"))!;
+  expect(d.segments).toEqual([{ start: jstAt("12:40"), end: jstAt("12:50") }]);
+  expect(d.accumulatedMs).toBe(10 * MIN);
+  expect(d.startedAt).toBe(jstAt("12:40"));
+  const r = (await readOne<Rec>(page, "records", "r1"))!;
+  expect(r.seconds).toBe(10 * 60);
+  expect(r.startedAt).toBe(jstAt("12:40"));
+});
+
