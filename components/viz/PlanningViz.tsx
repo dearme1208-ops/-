@@ -58,7 +58,7 @@ export function ProjectClimbPanel({ onOpen }: { onOpen?: (id: string) => void })
                 </div>
                 <div className="relative mt-1 h-4" aria-hidden="true">
                   {/* 登山道 */}
-                  <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-cream/12" />
+                  <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-cream/10" />
                   {r.progress !== undefined && (
                     <div className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-[rgb(var(--accent-rgb))]" style={{ width: `${r.progress * 100}%` }} />
                   )}

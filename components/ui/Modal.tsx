@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
 export default function Modal({
@@ -17,16 +17,51 @@ export default function Modal({
   // 画面が広い時だけ横幅を使い、狭い画面ではmax-w-mdと同じくビューポート幅いっぱいになる
   size?: "md" | "lg" | "xl";
 }) {
+  const titleId = useId();
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // ダイアログらしい振る舞い: Escで閉じる(重なっている時は一番手前だけ)、開いている間は後ろの画面を
+  // スクロールさせない、開いたらダイアログへ・閉じたら元の場所へフォーカスを戻す
+  useEffect(() => {
+    const prevFocus = document.activeElement as HTMLElement | null;
+    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus({ preventScroll: true });
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing) return;
+      const scrims = document.querySelectorAll(".modal-scrim");
+      if (scrims[scrims.length - 1] !== scrimRef.current) return;
+      if (!onCloseRef.current) return;
+      e.preventDefault();
+      onCloseRef.current();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      // ほかのダイアログがまだ開いていれば、スクロールの固定は続ける
+      if (document.querySelectorAll(".modal-scrim").length <= 1) document.body.style.overflow = prevOverflow === "hidden" ? "" : prevOverflow;
+      if (prevFocus && document.contains(prevFocus)) prevFocus.focus({ preventScroll: true });
+    };
+  }, []);
   const maxWidthClass = size === "xl" ? "max-w-6xl" : size === "lg" ? "max-w-2xl" : "max-w-md";
   // 本日の作業は他のタブを見ている間も裏で動き続け(app/page.tsx)、予定の時刻などで
   // 確認のダイアログを出す。裏に隠した画面の中にあっても見えるよう、ダイアログは画面の直下に出す
   const node = (
-    <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className={`panel flex max-h-[90vh] w-full ${maxWidthClass} flex-col p-5`}>
+    <div ref={scrimRef} className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className={`panel flex max-h-[90vh] w-full ${maxWidthClass} flex-col p-5 outline-none`}
+      >
         <div className="mb-3 flex shrink-0 items-center justify-between">
-          <h3 className="font-display text-lg font-bold text-cream">{title}</h3>
+          <h3 id={titleId} className="font-display text-lg font-bold text-cream">{title}</h3>
           {onClose && (
-            <button onClick={onClose} className="text-cream/60 hover:text-cream" aria-label="閉じる">
+            <button onClick={onClose} className="-mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-cream/70 hover:bg-cream/10 hover:text-cream" aria-label="閉じる">
               ✕
             </button>
           )}

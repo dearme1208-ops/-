@@ -10,7 +10,7 @@ import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib
 import { DEFAULT_WAITING_NUDGE_DAYS, DEFAULT_WAITING_TAGS } from "@/lib/changeTracking";
 import { parseWaitingTags } from "@/lib/waiting";
 import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
-import { importBackup, type BackupFile } from "@/lib/backup";
+import { importBackup, summarizeBackup, type BackupFile } from "@/lib/backup";
 import Modal from "@/components/ui/Modal";
 import { downloadBackupFile, shareBackupFile } from "@/lib/backupFile";
 import {
@@ -21,7 +21,8 @@ import {
   isAutoBackupSupported,
   runAutoBackup,
 } from "@/lib/autoBackup";
-import { buildArchive, deleteArchivedRange } from "@/lib/archive";
+import { buildArchive, deleteArchivedItems, isArchiveFile, restoreArchive, type ArchiveFile } from "@/lib/archive";
+import { showUndoToast } from "@/lib/toast";
 import { downloadTextFile } from "@/lib/report";
 import { todayStr } from "@/lib/time";
 import { ACCENT_PRESETS, DEFAULT_ACCENT_RGB } from "@/lib/theme";
@@ -45,7 +46,9 @@ export default function SettingsSection() {
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [archiveBeforeMonth, setArchiveBeforeMonth] = useState(() => todayStr().slice(0, 7));
   const [archiveStatus, setArchiveStatus] = useState("");
-  const [archiveExported, setArchiveExported] = useState(false);
+  // ダウンロードしたアーカイブの中身。削除はここに入っている行だけを対象にする
+  // (削除ボタンを押した時点で日付から探し直すと、ダウンロードの後に足した行まで消えるため)
+  const [archiveExported, setArchiveExported] = useState<ArchiveFile | null>(null);
   const [thresholdMinutesStr, setThresholdMinutesStr] = useSetting("today.untrackedThresholdMinutes", "5");
   const [provisionalEnabledStr, setProvisionalEnabledStr] = useSetting("today.provisionalEnabled", "false");
   const provisionalEnabled = provisionalEnabledStr === "true";
@@ -446,8 +449,17 @@ export default function SettingsSection() {
   }, []);
 
   async function downloadBackup() {
-    setBackupStatus(await downloadBackupFile());
-    setStaleBackupDays(daysSinceLastBackup());
+    try {
+      setBackupStatus(await downloadBackupFile());
+      setStaleBackupDays(daysSinceLastBackup());
+    } catch (e) {
+      // 書き出しの失敗(データが大きすぎる・保存領域の読み出しエラー等)を黙って通すと、
+      // 控えが取れていないのに取れたつもりになる。画面上部のボタンは近くに状況の表示が
+      // 無いので、その場の表示に加えてトーストでも知らせる
+      const message = `控えを作れませんでした: ${e instanceof Error ? e.message : String(e)}`;
+      setBackupStatus(message);
+      showUndoToast(message, undefined, 10000);
+    }
   }
 
   async function chooseAutoBackup() {
@@ -483,27 +495,51 @@ export default function SettingsSection() {
     try {
       setBackupStatus(await shareBackupFile());
       setStaleBackupDays(daysSinceLastBackup());
-    } catch {
-      // ユーザーがキャンセルした場合など。エラー表示は不要
+    } catch (e) {
+      // 共有の画面をユーザーが閉じた場合(AbortError)はエラー表示は不要。
+      // それ以外(ファイルを作れなかった等)は控えが取れていないので知らせる
+      if (e instanceof Error && e.name === "AbortError") return;
+      setBackupStatus(`控えを作れませんでした: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
   async function restoreBackup(file: File) {
-    const text = await file.text();
     let data: BackupFile;
     try {
-      data = JSON.parse(text);
+      data = JSON.parse(await file.text());
     } catch {
       setBackupStatus("ファイルの読み込みに失敗しました（JSON形式ではありません）。");
       return;
     }
-    if (data.app !== "koutei-hyo" || !data.tables) {
+    // 月次アーカイブのファイルもここで受け付ける。全体のバックアップとは形が違うため以前は
+    // 弾いており、アーカイブして削除した実績を戻す手段が無かった。
+    // アーカイブは今のデータに足すだけで何も消さないので、置き換えの確認は挟まない
+    if (isArchiveFile(data)) {
+      try {
+        const { restoredRecords, restoredDailyTasks, skippedExisting } = await restoreArchive(data);
+        setBackupStatus(
+          `アーカイブから実績${restoredRecords}件・作業${restoredDailyTasks}件を戻しました` +
+            (skippedExisting > 0 ? `（すでにある${skippedExisting}件は今の内容のまま残しました）。` : "。")
+        );
+      } catch (e) {
+        setBackupStatus(`アーカイブを戻せませんでした（今のデータは変わっていません）: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return;
+    }
+    if (!data || data.app !== "koutei-hyo" || !data.tables) {
       setBackupStatus("このアプリのバックアップファイルではないようです。");
       return;
     }
+    // 置き換わるのは「このファイルに入っている種類のデータ」だけ(古い形式のバックアップに
+    // 無い種類は今のまま残る)。何がいつの時点の内容に置き換わるのかを、押す前に見せる
+    const exportedAt = new Date(data.exportedAt);
+    const exportedText = data.exportedAt && !Number.isNaN(exportedAt.getTime()) ? exportedAt.toLocaleString("ja-JP") : "不明";
+    const summaryText = summarizeBackup(data)
+      .map(({ label, count }) => `${label} ${count === null ? "なし(今のまま残ります)" : `${count}件`}`)
+      .join("\n");
     if (
       !confirm(
-        "現在のすべてのデータをこのバックアップの内容で置き換えます。この操作は元に戻せません。よろしいですか?"
+        `このファイルに入っている種類のデータを、ファイルの内容で置き換えます。\n\n控えを取った日時: ${exportedText}\n${summaryText}\n\nファイルに入っていない種類のデータは今のまま残ります。この操作は元に戻せません。よろしいですか?`
       )
     ) {
       return;
@@ -531,18 +567,18 @@ export default function SettingsSection() {
     const data = await buildArchive(beforeDate);
     if (data.records.length === 0 && data.dailyTasks.length === 0) {
       setArchiveStatus("対象期間のデータはありません。");
-      setArchiveExported(false);
+      setArchiveExported(null);
       return;
     }
     downloadTextFile(`koutei-hyo_archive_before-${archiveBeforeMonth}.json`, JSON.stringify(data, null, 2));
     setArchiveStatus(
       `実績${data.records.length}件、日次タスク${data.dailyTasks.length}件をダウンロードしました。内容を確認してから削除を実行してください。`
     );
-    setArchiveExported(true);
+    setArchiveExported(data);
   }
 
   async function deleteArchive() {
-    const beforeDate = `${archiveBeforeMonth}-01`;
+    if (!archiveExported) return;
     if (
       !confirm(
         `${archiveBeforeMonth}より前の実績・日次タスクを削除します。ダウンロードしたアーカイブファイルは保存済みですか？この操作は元に戻せません。`
@@ -550,9 +586,12 @@ export default function SettingsSection() {
     ) {
       return;
     }
-    const { deletedRecords, deletedDailyTasks } = await deleteArchivedRange(beforeDate);
-    setArchiveStatus(`削除しました（実績${deletedRecords}件、日次タスク${deletedDailyTasks}件）。`);
-    setArchiveExported(false);
+    const { deletedRecords, deletedDailyTasks, keptChanged } = await deleteArchivedItems(archiveExported);
+    setArchiveStatus(
+      `削除しました（実績${deletedRecords}件、日次タスク${deletedDailyTasks}件）。` +
+        (keptChanged > 0 ? `ダウンロードの後に書き換えられた${keptChanged}件は、ファイルの内容と違うため残しました。` : "")
+    );
+    setArchiveExported(null);
   }
 
   // ---- 設定の検索・目次 ----
@@ -2144,7 +2183,7 @@ export default function SettingsSection() {
         </div>
         {backupStatus && <p className="text-xs text-cream/70">{backupStatus}</p>}
         <p className="text-xs text-cream/50">
-          このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は現在のデータを全て上書きします。「他の端末に共有」は、クラウドを経由せずOSの共有機能(AirDrop/近くのデバイス等)でその場だけ他の自分の端末にファイルを渡したい場合にお使いください。渡した端末側では「バックアップから復元」で取り込めます。
+          このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は、バックアップファイルに入っている種類のデータを置き換えます（月次アーカイブのファイルを選んだ場合は、今のデータに足し戻します）。「他の端末に共有」は、クラウドを経由せずOSの共有機能(AirDrop/近くのデバイス等)でその場だけ他の自分の端末にファイルを渡したい場合にお使いください。渡した端末側では「バックアップから復元」で取り込めます。
         </p>
       </div>
 
@@ -2201,7 +2240,7 @@ export default function SettingsSection() {
             value={archiveBeforeMonth}
             onChange={(e) => {
               setArchiveBeforeMonth(e.target.value);
-              setArchiveExported(false);
+              setArchiveExported(null);
               setArchiveStatus("");
             }}
             className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
@@ -2222,7 +2261,7 @@ export default function SettingsSection() {
         </div>
         {archiveStatus && <p className="text-xs text-cream/70">{archiveStatus}</p>}
         <p className="text-xs text-cream/50">
-          データが増えすぎて動作が重くなってきた場合などに使います。まずダウンロードしてバックアップし、内容を確認してから削除を実行してください（削除ボタンは同じ期間でダウンロードするまで押せません）。作業マスタや案件、ToDoは削除されません。
+          データが増えすぎて動作が重くなってきた場合などに使います。まずダウンロードしてバックアップし、内容を確認してから削除を実行してください（削除ボタンは同じ期間でダウンロードするまで押せません。削除されるのはダウンロードしたファイルに入っている分だけです）。作業マスタや案件、ToDoは削除されません。削除した分を戻したいときは、上の「バックアップから復元」でアーカイブのファイルを選んでください。
         </p>
       </div>
     </div>

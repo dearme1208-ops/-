@@ -365,6 +365,9 @@ export interface TodoTask {
   completed: boolean;
   completedAt?: number;
   myDayDate?: string; // この日付の「マイデイ」に追加されている場合にセット
+  // この日付のマイデイから利用者が手で外した印。期日が今日のタスクは自動でマイデイに入るため、
+  // 外した直後に入れ直されないよう、その日だけ自動追加の対象から除く(索引は不要)
+  myDayDismissedDate?: string;
   order: number;
   createdAt: number;
   recurrence?: RecurrenceRule;

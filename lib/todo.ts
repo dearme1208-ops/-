@@ -1,5 +1,5 @@
 import { db, uid } from "./db";
-import type { RecurrenceRule, TodoList, TodoTask } from "./types";
+import type { RecurrenceOrdinal, RecurrenceRule, TodoList, TodoTask } from "./types";
 import type { ParsedTodoRow } from "./todoCsv";
 import { todayStr } from "./time";
 import { highestPriorityTag } from "./tagPriority";
@@ -58,7 +58,16 @@ export function effectiveTag(task: TodoTask, subtasks: TodoTask[], priorityOrder
 // 次回の期日に進むだけ。一覧のチェックボックスと期日リマインダーの両方から呼べるよう共通化する
 export async function completeTodoTask(task: TodoTask, today: string): Promise<void> {
   if (task.recurrence) {
-    const nextDue = computeNextDueDate(task.recurrence, task.dueDate ?? today);
+    // 期日を何日も過ぎてから完了した場合、1回分進めただけでは次回も「期限切れ」のままになり、
+    // 追いつくまで何度も完了を押すことになる。今日より後の回になるまでまとめて進める。
+    // (期日より前に早めに完了した場合は、最初の1回で今日より後になるので1回分だけ進む)
+    // 省略された項目(毎月の日付など)は元の期日から一度だけ補い、途中の月末丸めで日付がずれないようにする
+    const base = task.dueDate ?? today;
+    const rule = fillRecurrenceDefaults(task.recurrence, base);
+    let nextDue = computeNextDueDate(rule, base);
+    for (let i = 0; i < 1000 && nextDue <= today; i++) {
+      nextDue = computeNextDueDate(rule, nextDue);
+    }
     // lastRecurrenceAtは、この期日の変更が「延期」ではなく次の回へ進んだものだと記録側に伝える印
     const updates: Partial<TodoTask> = { dueDate: nextDue, lastRecurrenceAt: Date.now() };
     if (task.myDayDate === today) updates.myDayDate = undefined;
@@ -110,10 +119,51 @@ function nthWeekdayOfMonth(year: number, month0: number, weekday: number, ordina
   return nthWeekdayOfMonth(year, month0, weekday, -1);
 }
 
+// 繰り返しルールのうち、その種類に必要な項目をすべて明示した形にして返す。
+// 編集画面は「毎月1日」「第1金曜」のような値を表示していても、利用者が触るまで保存しておらず、
+// 計算側は別の既定(今の期日の日付・曜日)で補っていたため、表示と実際の次回期日が食い違っていた。
+// 表示・保存・計算の3つが同じ値を使うよう、補い方をここ1か所にまとめる。
+// 既定値は基準日(タスクの期日。無ければ今日)から取る。種類に関係ない項目(毎月→毎年に切り替えた時に
+// 残った day:-1 など)は計算を狂わせるので落とす
+export function fillRecurrenceDefaults(rule: RecurrenceRule, baseDateStr: string): RecurrenceRule {
+  const base = toDate(baseDateStr);
+  const interval = Math.max(1, Math.floor(Number(rule.interval)) || 1);
+  const validWeekday = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 6;
+  const validDay = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 31;
+
+  switch (rule.type) {
+    case "daily":
+      return { type: "daily", interval };
+    case "weekly": {
+      const weekdays = [...new Set((rule.weekdays ?? []).filter(validWeekday))].sort((a, b) => a - b);
+      return { type: "weekly", interval, weekdays: weekdays.length > 0 ? weekdays : [base.getDay()] };
+    }
+    case "monthlyDate":
+      return { type: "monthlyDate", interval, day: rule.day === -1 || validDay(rule.day) ? rule.day : base.getDate() };
+    case "monthlyWeekday": {
+      // 基準日がその月の何回目の曜日かを既定にする(5回目は毎月あるとは限らないので「最終」扱い)
+      const nth = Math.ceil(base.getDate() / 7);
+      const baseOrdinal: RecurrenceOrdinal = nth >= 5 ? -1 : (nth as RecurrenceOrdinal);
+      const ordinal =
+        rule.ordinal !== undefined && ([1, 2, 3, 4, -1] as number[]).includes(rule.ordinal) ? rule.ordinal : baseOrdinal;
+      return { type: "monthlyWeekday", interval, weekday: validWeekday(rule.weekday) ? rule.weekday : base.getDay(), ordinal };
+    }
+    case "yearly": {
+      const month =
+        typeof rule.month === "number" && Number.isInteger(rule.month) && rule.month >= 1 && rule.month <= 12
+          ? rule.month
+          : base.getMonth() + 1;
+      return { type: "yearly", interval, month, day: validDay(rule.day) ? rule.day : base.getDate() };
+    }
+  }
+}
+
 // 現在の期日から、繰り返しルールに基づく次回の期日を計算する
-export function computeNextDueDate(rule: RecurrenceRule, fromDateStr: string): string {
+export function computeNextDueDate(rawRule: RecurrenceRule, fromDateStr: string): string {
   const base = toDate(fromDateStr);
-  const interval = Math.max(1, rule.interval || 1);
+  // 省略された項目は編集画面と同じ既定(fillRecurrenceDefaults)で補う
+  const rule = fillRecurrenceDefaults(rawRule, fromDateStr);
+  const interval = rule.interval;
 
   switch (rule.type) {
     case "daily": {
@@ -122,15 +172,16 @@ export function computeNextDueDate(rule: RecurrenceRule, fromDateStr: string): s
       return fromDate(next);
     }
     case "weekly": {
-      const weekdays = rule.weekdays && rule.weekdays.length > 0 ? [...rule.weekdays].sort((a, b) => a - b) : [base.getDay()];
-      // まず同じ週内で、指定曜日のうち直後に来るものを探す
+      const weekdays = rule.weekdays!;
+      // 指定曜日のうち直後に来るものを探す
       for (let i = 1; i <= 7; i++) {
         const cand = new Date(base);
         cand.setDate(cand.getDate() + i);
         if (weekdays.includes(cand.getDay())) {
-          // interval > 1 の場合は週数もチェックする必要があるが、
-          // シンプルに保つため直近の該当曜日を採用し、interval週分先に送る
-          if (interval > 1) cand.setDate(cand.getDate() + (interval - 1) * 7);
+          // 「2週ごとの月・水」のように複数曜日を選んでいる場合、同じ週の中の次の曜日(月→水)は
+          // そのまま採用し、週をまたぐ時(水→翌々週の月)だけ間の週を飛ばす。週は日曜始まりで数える
+          const wrapped = cand.getDay() <= base.getDay();
+          if (interval > 1 && wrapped) cand.setDate(cand.getDate() + (interval - 1) * 7);
           return fromDate(cand);
         }
       }
@@ -139,7 +190,7 @@ export function computeNextDueDate(rule: RecurrenceRule, fromDateStr: string): s
       return fromDate(next);
     }
     case "monthlyDate": {
-      const day = rule.day ?? base.getDate();
+      const day = rule.day!;
       let year = base.getFullYear();
       let month0 = base.getMonth() + interval;
       year += Math.floor(month0 / 12);
@@ -148,19 +199,16 @@ export function computeNextDueDate(rule: RecurrenceRule, fromDateStr: string): s
       return fromDate(new Date(year, month0, clampedDay));
     }
     case "monthlyWeekday": {
-      const weekday = rule.weekday ?? base.getDay();
-      const ordinal = rule.ordinal ?? 1;
       let year = base.getFullYear();
       let month0 = base.getMonth() + interval;
       year += Math.floor(month0 / 12);
       month0 = ((month0 % 12) + 12) % 12;
-      return fromDate(nthWeekdayOfMonth(year, month0, weekday, ordinal));
+      return fromDate(nthWeekdayOfMonth(year, month0, rule.weekday!, rule.ordinal!));
     }
     case "yearly": {
-      const month0 = (rule.month ?? base.getMonth() + 1) - 1;
-      const day = rule.day ?? base.getDate();
+      const month0 = rule.month! - 1;
       const year = base.getFullYear() + interval;
-      const clampedDay = Math.min(day, daysInMonth(year, month0));
+      const clampedDay = Math.min(rule.day!, daysInMonth(year, month0));
       return fromDate(new Date(year, month0, clampedDay));
     }
   }
@@ -201,8 +249,8 @@ export async function upsertTodoFromCsv(
 
     // 既に完了済みのタスクはCSV側がfalseでも復活させない（完了はCSV再取込で覆されない一方向の状態）
     const completed = existing?.completed || row.completed;
-    const task: TodoTask = {
-      id,
+    // CSVに列がある項目だけ。既存タスクではこの項目だけを書き換える
+    const fromCsv = {
       listId,
       parentTaskId: row.parentId || undefined,
       title: row.title,
@@ -217,13 +265,16 @@ export async function upsertTodoFromCsv(
       completed,
       completedAt: completed ? (existing?.completedAt ?? Date.now()) : undefined,
       notes: row.notes,
-      order,
-      createdAt: existing?.createdAt ?? Date.now(),
-      recurrence: row.recurrence,
-      myDayDate: existing?.myDayDate,
-      projectId: existing?.projectId,
     };
-    await db.todoTasks.put(task);
+    if (existing) {
+      // 丸ごと置き換えると、CSVに列の無い項目(添付画像・メール・リマインダー・見込み時間・取引先・
+      // アーカイブ・ボード上の位置・変更履歴など)が再取込のたびに消えてしまうため、差分だけを書く。
+      // 繰り返しは、CSVに繰り返しの指定が無い行では既存の設定を残す
+      await db.todoTasks.update(id, row.recurrence ? { ...fromCsv, recurrence: row.recurrence } : fromCsv);
+    } else {
+      const task: TodoTask = { ...fromCsv, id, order, createdAt: Date.now(), recurrence: row.recurrence };
+      await db.todoTasks.add(task);
+    }
     if (existing) updated++;
     else created++;
   }
@@ -233,7 +284,9 @@ export async function upsertTodoFromCsv(
 
 // 開始日(優先)または期日が設定されたタスクを、同じリスト内で日付順になる位置に挿入する。
 // 日付未設定の既存タスクは常に日付ありのタスクより後ろとして扱う。
-// 挿入位置より後ろの既存タスクのorderは1つずつ後ろにずらす（後で手動並び替え可能なため、以後は維持しない）
+// 既存タスクのorderは、挿入位置を1つ空けた 0..n の連番に振り直す。後ろだけを1つずつずらす方式だと、
+// 既存のorderが連番でない(削除で抜けた・重複している)場合に、返した位置が既存と重複したり
+// 意図と違う場所に入ったりするため、毎回全体を振り直して一意にする(以後は手動並び替え可能)
 export async function computeDateOrderedPosition(
   listId: string,
   taskId: string,
@@ -254,8 +307,9 @@ export async function computeDateOrderedPosition(
   }
 
   await db.transaction("rw", db.todoTasks, async () => {
-    for (let i = siblings.length - 1; i >= insertIndex; i--) {
-      await db.todoTasks.update(siblings[i].id, { order: i + 1 });
+    for (let i = 0; i < siblings.length; i++) {
+      const order = i < insertIndex ? i : i + 1;
+      if (siblings[i].order !== order) await db.todoTasks.update(siblings[i].id, { order });
     }
   });
 

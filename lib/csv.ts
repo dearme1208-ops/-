@@ -11,7 +11,46 @@ const HEADERS = [
   "endedAt",
   "excludedFromStats",
   "excludeReason",
+  // 開始・終了を人が読める形でも書き出す(下の formatCsvDateTime のコメント参照)。
+  // 以前のファイルや他の道具との互換のため、startedAt/endedAtの列もそのまま残す
+  "開始時刻",
+  "終了時刻",
 ] as const;
+
+// startedAt/endedAtは13桁の数値(ミリ秒)なので、Excelで開いて保存し直すと「1.7636E+12」に
+// 丸められて元の時刻が分からなくなる。Excelが日時として扱える形(端末の現地時刻)でも
+// 書き出しておき、取り込みではこちらを手掛かりに復元できるようにする
+function formatCsvDateTime(ms: number): string {
+  if (!Number.isFinite(ms)) return "";
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+// 「2026-11-20 09:53:20」や、Excelが書き換えた「2026/11/20 9:53」を現地時刻のミリ秒にする。
+// 読めなければundefined
+function parseCsvDateTime(raw: string | undefined): number | undefined {
+  const m = raw?.trim().match(/^(\S+?)[ T\u3000]+(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/);
+  if (!m) return undefined;
+  const date = normalizeCsvDate(m[1]);
+  if (!date) return undefined;
+  const [h, min, sec] = [Number(m[2]), Number(m[3]), Number(m[4] ?? 0)];
+  if (h > 23 || min > 59 || sec > 59) return undefined;
+  const [y, mo, d] = date.split("-").map(Number);
+  const ms = new Date(y, mo - 1, d, h, min, sec).getTime();
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+// startedAt/endedAtの列(ミリ秒の数値)を読む。空・数値でない値に加えて、Excelが丸めた
+// 指数表記(1.7636E+12)も「読めない」として扱う。指数表記はNumber()では数値として通って
+// しまうが、下の桁が失われていて元の時刻とは最大で1日以上ずれている
+function parseCsvEpochMs(raw: string | undefined): number | undefined {
+  const v = raw?.trim();
+  if (!v || /e/i.test(v)) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 export function csvEscape(value: string): string {
   if (/[",\r\n]/.test(value)) {
@@ -35,6 +74,8 @@ export function recordsToCsv(records: WorkRecord[]): string {
         String(r.endedAt),
         String(r.excludedFromStats),
         r.excludeReason ?? "",
+        formatCsvDateTime(r.startedAt),
+        formatCsvDateTime(r.endedAt),
       ].join(",")
     );
   }
@@ -171,11 +212,28 @@ export function parseRecordsCsv(text: string): ParsedCsvResult {
     const excludedCol = idx("excludedFromStats");
     const reasonCol = idx("excludeReason");
     const now = Date.now();
-    // 開始・終了は書き出した時の数値(ミリ秒)。空や読めない値なら取り込んだ時刻にする
-    const msCol = (col: number) => {
-      const v = col !== -1 ? Number(cols[col]?.trim() || NaN) : NaN;
-      return Number.isFinite(v) ? v : now;
+    const startedTextCol = idx("開始時刻");
+    const endedTextCol = idx("終了時刻");
+    // 開始・終了は、数値(ミリ秒)の列と、人が読める日時の列の2通りで書き出している。
+    // ・両方読めて1分以内の差なら、ミリ秒まで残っている数値の列を使う
+    //   (Excelは日時の秒を落として保存することがあるため、差が小さい時は数値の方が正確)
+    // ・食い違う時は日時の列を使う(Excelで時刻を手直しした、とみなす)
+    // ・数値の列が空・指数表記に丸められた等で読めない時も日時の列を使う
+    // ・どちらも読めなければ、従来どおり取り込んだ時刻にする
+    const msCol = (col: number, textCol: number) => {
+      const epoch = col !== -1 ? parseCsvEpochMs(cols[col]) : undefined;
+      const fromText = textCol !== -1 ? parseCsvDateTime(cols[textCol]) : undefined;
+      if (epoch !== undefined && fromText !== undefined) return Math.abs(epoch - fromText) < 60_000 ? epoch : fromText;
+      if (epoch === undefined && fromText === undefined && col !== -1 && /\d\s*e\s*\+?\d/i.test(cols[col] ?? "")) rounded = true;
+      return epoch ?? fromText ?? now;
     };
+    let rounded = false;
+    const startedAt = msCol(startedAtCol, startedTextCol);
+    const endedAt = msCol(endedAtCol, endedTextCol);
+    // 行は取り込むが、時刻が元どおりでないことは黙って通さずに知らせる
+    if (rounded) {
+      errors.push(`${i + 1}行目: 開始・終了の時刻がExcelで丸められていて(1.7E+12 のような形)読めないため、取り込んだ時刻にしました`);
+    }
     records.push({
       id: idCol !== -1 && cols[idCol]?.trim() ? cols[idCol].trim() : crypto.randomUUID(),
       date,
@@ -183,8 +241,8 @@ export function parseRecordsCsv(text: string): ParsedCsvResult {
       name,
       method: methodCol !== -1 && cols[methodCol] ? cols[methodCol] : undefined,
       seconds,
-      startedAt: msCol(startedAtCol),
-      endedAt: msCol(endedAtCol),
+      startedAt,
+      endedAt,
       excludedFromStats: excludedCol !== -1 ? /^true$/i.test(cols[excludedCol]?.trim() ?? "") : false,
       excludeReason:
         reasonCol !== -1 && (cols[reasonCol] === "auto-iqr" || cols[reasonCol] === "manual")

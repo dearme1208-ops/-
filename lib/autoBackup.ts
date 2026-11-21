@@ -1,4 +1,4 @@
-import { exportBackup } from "./backup";
+import { backupJsonParts, exportBackup } from "./backup";
 import { todayStr } from "./time";
 
 // 自動バックアップ。
@@ -157,16 +157,18 @@ export async function runAutoBackup({ force = false, interactive = false } = {})
     return { status: "skipped", message: "本日分は書き出し済みです。" };
   }
 
-  if (!(await ensureWritable(handle, interactive))) {
-    return { status: "denied", message: "保存先フォルダへの書き込みが許可されていません。設定画面で選び直してください。" };
-  }
-
   try {
+    // 許可の確認も例外になり得る(保存先フォルダが消された・外付けディスクが外れている等)。
+    // tryの外にあったため、その場合は結果を返さずに例外で抜け、誰にも知らされなかった
+    if (!(await ensureWritable(handle, interactive))) {
+      return { status: "denied", message: "保存先フォルダへの書き込みが許可されていません。設定画面で選び直してください。" };
+    }
     const fileName = `koutei-hyo_auto_${today}.json`;
     const data = await exportBackup();
     const fileHandle = await handle.getFileHandle(fileName, { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(data, null, 2));
+    // 1つの巨大な文字列にせず、分割したままBlobにして渡す(理由は backupJsonParts のコメント参照)
+    await writable.write(new Blob(backupJsonParts(data), { type: "application/json" }));
     await writable.close();
     await pruneGenerations(handle);
     try {

@@ -118,7 +118,8 @@ export default function TimeboxModal({ today, onClose }: { today: string; onClos
             scheduledTime: slot.start,
             timeboxEnd: slot.end,
             timeboxEndHandled: false,
-            autoStartNotified: endMs <= Date.now(),
+            // すでに計測中の作業に枠を付けた時も「開始済み」にする(枠の中で止めた作業が勝手に再開しないように)
+            autoStartNotified: endMs <= Date.now() || t.status === "running",
             autoStartDisabled: false,
           });
         } else if (t.timeboxEnd) {

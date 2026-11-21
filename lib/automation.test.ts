@@ -110,6 +110,19 @@ describe("findDueScheduledTasks", () => {
     ];
     expect(findDueScheduledTasks(tasks, DATE, at("10:05")).map((t) => t.id)).toEqual(["inBox"]);
   });
+
+  it("枠のない予定は、時刻を15分より大きく過ぎていたら始めない(スリープ明けに朝の予定が一斉に始まらない)", () => {
+    const tasks = [task({ id: "morning", scheduledTime: "09:00" }), task({ id: "justNow", scheduledTime: "14:50" })];
+    expect(findDueScheduledTasks(tasks, DATE, at("15:00")).map((t) => t.id)).toEqual(["justNow"]);
+  });
+
+  it("枠の中で一時停止した作業は再開しない(枠より前に止めてあった作業だけ再開する)", () => {
+    const tasks = [
+      task({ id: "pausedInBox", scheduledTime: "10:00", timeboxEnd: "11:00", status: "paused", segments: [{ start: at("09:58"), end: at("10:20") }] }),
+      task({ id: "pausedBefore", scheduledTime: "10:00", timeboxEnd: "11:00", status: "paused", segments: [{ start: at("09:00"), end: at("09:30") }] }),
+    ];
+    expect(findDueScheduledTasks(tasks, DATE, at("10:25")).map((t) => t.id)).toEqual(["pausedBefore"]);
+  });
 });
 
 describe("updateGeoArrivals", () => {

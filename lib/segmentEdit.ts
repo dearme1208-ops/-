@@ -27,3 +27,39 @@ export function retimeSegments(segments: TimeSegment[], newStart?: number, newEn
 export function closedMs(segments: TimeSegment[]): number {
   return segments.reduce((sum, s) => sum + (s.end !== undefined ? s.end - s.start : 0), 0);
 }
+
+const DAY_MS = 86400000;
+
+/**
+ * 完了した作業の時刻を「時:分」だけの入力欄で直した時に、どの日の時刻として保存するかを決める。
+ * rawStart/rawEnd は、編集した側なら入力欄の時刻を作業の日付にあてはめた値、編集していない側なら元の値。
+ * 編集した側は「その日」と「1日ずらした日」(開始は前日、終了は翌日)を候補にし、終了が開始より後になる
+ * 組み合わせのうち、元の開始・終了にいちばん近いものを返す(該当が無ければ null)。
+ *  - 前日20:40〜当日0:12 のように前日から始まっていた作業は、開始を前日にずらす
+ *  - 23:30〜翌0:20 の作業の終了を 0:30 に直した時は、終了を翌日の0:30にする。以前は開始だけを前日へ
+ *    ずらしていたため、終了だけ直すと保存できず、両方直すと作業が丸1日前へずれていた
+ */
+export function resolveEditedTimes(
+  original: { start: number; end: number },
+  rawStart: number,
+  rawEnd: number,
+  startTouched: boolean,
+  endTouched: boolean
+): { start: number; end: number } | null {
+  const starts = startTouched ? [rawStart, rawStart - DAY_MS] : [rawStart];
+  const ends = endTouched ? [rawEnd, rawEnd + DAY_MS] : [rawEnd];
+  let best: { start: number; end: number } | null = null;
+  let bestCost = Infinity;
+  for (const start of starts) {
+    for (const end of ends) {
+      // NaN(入力欄が空)は比較がすべてfalseになるので、ここで弾く
+      if (!(end > start)) continue;
+      const cost = Math.abs(start - original.start) + Math.abs(end - original.end);
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = { start, end };
+      }
+    }
+  }
+  return best;
+}

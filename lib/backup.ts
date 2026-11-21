@@ -28,6 +28,51 @@ export async function exportBackup(): Promise<BackupFile> {
   return { app: "koutei-hyo", version: 2, exportedAt: new Date().toISOString(), tables };
 }
 
+// バックアップをファイルに書くためのJSONを、いくつかの文字列に分けて返す(順につなげると
+// JSON.stringify(data) と同じ構造のJSONになる)。Blobやファイルへはこの配列のまま渡す。
+// 全体を1つの文字列にすると、画像やメールを多く添付したデータではブラウザが扱える
+// 文字列の長さの上限を超えて書き出しそのものが失敗する(=控えが取れなくなる)ため、
+// テーブルごと・一定の大きさごとに区切る。字下げは付けない(復元はどちらの形でも読める)
+const BACKUP_CHUNK_CHARS = 4_000_000;
+
+export function backupJsonParts(data: BackupFile): string[] {
+  const { tables, ...head } = data;
+  const headJson = JSON.stringify(head);
+  // 先頭の項目(app・version・exportedAt)の後ろにtablesを続ける
+  const parts: string[] = [`${headJson.slice(0, -1)}${headJson === "{}" ? "" : ","}"tables":{`];
+  Object.keys(tables).forEach((name, tableIndex) => {
+    parts.push(`${tableIndex > 0 ? "," : ""}${JSON.stringify(name)}:[`);
+    let chunk = "";
+    tables[name].forEach((row, rowIndex) => {
+      // undefinedの行はJSON.stringifyが配列の中でnullにするのと同じ扱いにする
+      chunk += (rowIndex > 0 ? "," : "") + (JSON.stringify(row) ?? "null");
+      if (chunk.length >= BACKUP_CHUNK_CHARS) {
+        parts.push(chunk);
+        chunk = "";
+      }
+    });
+    parts.push(chunk + "]");
+  });
+  parts.push("}}");
+  return parts;
+}
+
+/** 復元の確認に出す、ファイルの中身のあらまし(主なデータの件数) */
+export function summarizeBackup(data: BackupFile): { label: string; count: number | null }[] {
+  const count = (names: string[]): number | null => {
+    const present = names.filter((name) => Array.isArray(data.tables?.[name]));
+    if (present.length === 0) return null; // このファイルには入っていない(復元しても今のデータに触れない)
+    return present.reduce((sum, name) => sum + data.tables[name].length, 0);
+  };
+  return [
+    { label: "作業", count: count(["dailyTasks"]) },
+    { label: "実績", count: count(["records"]) },
+    { label: "ToDo", count: count(["todoTasks"]) },
+    { label: "案件", count: count(["projects"]) },
+    { label: "メモ", count: count(["memoNotes"]) },
+  ];
+}
+
 // 現在のデータを、バックアップファイルに含まれるテーブルの分だけ置き換える
 // （元に戻せないため呼び出し側で確認を取ること）。
 // ファイルに無いテーブルには触れない。これにより旧形式(version 1)のファイルを

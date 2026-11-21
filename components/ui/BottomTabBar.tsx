@@ -58,7 +58,7 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
           ⚠
         </span>
       ) : (
-        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-alert" aria-hidden="true" />
+        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden="true" />
       )}
       <span className={`min-w-0 flex-1 truncate text-left text-xs ${overrun ? "font-bold text-alert" : "text-cream/85"}`}>
         <span className={overrun ? "opacity-70" : "text-cream/45"}>{running.category} / </span>
@@ -78,10 +78,10 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
     overrun ? `border-alert ring-2 ring-alert/70 bg-alert/[0.06] ${running.overrunAnimClass ?? "card-overrun"}` : ""
   }`;
   const actions = (running.onPause || running.onFinish) && (
-    <span className="flex shrink-0 items-center gap-1">
+    <span className="flex shrink-0 items-center gap-2">
       {running.onPause && (
         <button
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-cream/25 text-sm text-cream hover:bg-cream/10"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-cream/25 text-sm text-cream hover:bg-cream/10"
           onClick={running.onPause}
           aria-label="一時停止"
           title="一時停止"
@@ -91,7 +91,7 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
       )}
       {running.onFinish && (
         <button
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-[rgb(var(--accent-rgb))] text-sm font-bold text-ink"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgb(var(--accent-rgb))] text-sm font-bold text-ink"
           onClick={running.onFinish}
           aria-label="完了"
           title="完了"
@@ -159,7 +159,7 @@ export default function BottomTabBar({
   // はみ出していた。その場合、狭い画面ではアイコンを上・名前を下の2段に積んで全部を収める
   const stacked = items.length + (leading ? 1 : 0) >= 5;
   const stackClass = stacked
-    ? "flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 text-[11px] leading-tight sm:flex-row sm:gap-1 sm:px-2 sm:py-2 sm:text-sm"
+    ? "flex min-h-[2.75rem] min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 text-[11px] leading-tight sm:flex-row sm:gap-1 sm:px-2 sm:py-2 sm:text-sm"
     : "";
   const content = (it: BottomTabBarItem, countNode: ReactNode) =>
     stacked ? (

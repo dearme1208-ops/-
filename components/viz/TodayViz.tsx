@@ -67,7 +67,10 @@ export function DayRing({
   now: number;
   onEditTask: (task: DailyTask) => void;
 }) {
-  const segs = useMemo(() => dayRingSegments(tasks, now), [tasks, now]);
+  // 輪の形は分単位で十分。毎秒組み直すと、作業の多い日に重くなる
+  const minute = Math.floor(now / 60_000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const segs = useMemo(() => dayRingSegments(tasks, now), [tasks, minute]);
   const slots = useMemo(() => categorySlots(segs.map((s) => ({ category: s.category, ms: s.end - s.start }))), [segs]);
   const [hover, setHover] = useState<number | null>(null);
   const gapData = useDayGaps(date, now);
@@ -211,14 +214,14 @@ export function HourglassPanel({
       <div className="space-y-1.5 text-[11px] text-cream/60">
         <div className="flex items-center gap-2">
           <span className="w-20 shrink-0">終業まで</span>
-          <div className="h-3 flex-1 rounded-full bg-cream/8">
+          <div className="h-3 flex-1 rounded-full bg-cream/10">
             <div className="h-full rounded-full bg-cream/45" style={{ width: `${(h.leftMs / scale) * 100}%` }} />
           </div>
           <span className="w-16 shrink-0 text-right tabular-nums text-cream/80">{hm(h.leftMs)}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-20 shrink-0">残りの作業</span>
-          <div className="relative h-3 flex-1 rounded-full bg-cream/8">
+          <div className="relative h-3 flex-1 rounded-full bg-cream/10">
             <div className="h-full rounded-full bg-[rgb(var(--accent-rgb))]" style={{ width: `${(Math.min(h.needMs, h.leftMs) / scale) * 100}%` }} />
             {!fits && (
               <div

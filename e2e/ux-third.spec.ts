@@ -34,7 +34,7 @@ test("他のアプリの「共有」から開くと、ひとこと入力に文�
   await seed(page, {});
   await page.goto("/share?title=A%E7%A4%BE%E3%81%AE%E4%BB%B6&url=https%3A%2F%2Fexample.com");
   await expect(page.getByTestId("quick-capture")).toBeVisible();
-  await expect(page.getByLabel("ひとこと")).toHaveValue(/A社の件[\s\S]*https:\/\/example.com/);
+  await expect(page.getByRole("textbox", { name: "ひとこと" })).toHaveValue(/A社の件[\s\S]*https:\/\/example.com/);
   // URLを含むので、行き先の候補はメモ
   await expect(page.getByTestId("quick-capture").getByRole("button", { name: /メモ/ })).toHaveAttribute("aria-pressed", "true");
 });

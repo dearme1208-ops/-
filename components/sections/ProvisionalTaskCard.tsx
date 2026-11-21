@@ -22,6 +22,10 @@ export type ProvisionalSecondHalf =
   | { mode: "finish"; target: ProvisionalTarget }
   | { mode: "provisional" };
 
+// 選ぶ種類の切り替えは控えめな札にして、塗りのボタンは「割り当てる」などの確定だけに使う
+const chip = (on: boolean) =>
+  `rounded-full border px-3 py-1.5 text-xs ${on ? "border-cream bg-cream/20 font-bold text-cream" : "border-cream/25 text-cream/80 hover:bg-cream/10"}`;
+
 const targetKey = (t: ProvisionalTarget | null) =>
   !t ? "" : t.kind === "existing" ? `task:${t.taskId}` : `new:${t.masterTaskId ?? `${t.category}::${t.name}`}`;
 
@@ -103,18 +107,19 @@ export default function ProvisionalTaskCard({
           </div>
           <div className="font-display text-base font-bold">{task.name}</div>
           {task.startedAt && (
-            <div className="text-xs text-cream/50">{formatClock(task.startedAt)} から未計測が続いています</div>
+            <div className="text-xs text-cream/60">{formatClock(task.startedAt)}から、何をしていたかの記録がありません</div>
           )}
         </div>
         <div className="font-display text-2xl font-bold tabular-nums text-alert">{formatMsClock(elapsedMs)}</div>
       </div>
 
       <div className="mt-3 border-t border-cream/10 pt-3">
-        <p className="mb-2 text-xs text-cream/60">この時間をどの作業に割り当てますか？</p>
+        <p className="mb-2 text-sm font-bold text-cream">この時間、何をしていましたか？</p>
         <div className="mb-2 flex flex-wrap gap-2">
           {candidateTasks.length > 0 && (
             <button
-              className={mode === "today" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              className={chip(mode === "today")}
+              aria-pressed={mode === "today"}
               onClick={() => setMode("today")}
             >
               本日の作業から選択
@@ -122,7 +127,8 @@ export default function ProvisionalTaskCard({
           )}
           {completedTasks.length > 0 && (
             <button
-              className={mode === "done" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              className={chip(mode === "done")}
+              aria-pressed={mode === "done"}
               onClick={() => setMode("done")}
             >
               ✅ 完了した作業から
@@ -130,36 +136,26 @@ export default function ProvisionalTaskCard({
           )}
           {favorites.length > 0 && (
             <button
-              className={mode === "favorite" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              className={chip(mode === "favorite")}
+              aria-pressed={mode === "favorite"}
               onClick={() => setMode("favorite")}
             >
               ★ お気に入りから選択
             </button>
           )}
           <button
-            className={mode === "master" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            className={chip(mode === "master")}
+              aria-pressed={mode === "master"}
             onClick={() => setMode("master")}
           >
             マスタから選択
           </button>
           <button
-            className={mode === "free" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            className={chip(mode === "free")}
+              aria-pressed={mode === "free"}
             onClick={() => setMode("free")}
           >
             自由入力
-          </button>
-          <button
-            className={mode === "split" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setMode("split")}
-            title="「◯時◯分までは〇〇、そこからは△△」のように、途中で区切って2つの作業に分ける"
-          >
-            ✂ 途中で区切る
-          </button>
-          <button
-            className="btn-pill-outline border-alert text-xs text-alert hover:bg-alert/10"
-            onClick={assignTrouble}
-          >
-            🚨 トラブル対応として割り当てる
           </button>
         </div>
 
@@ -279,7 +275,20 @@ export default function ProvisionalTaskCard({
           </div>
         )}
 
-        <div className="mt-3 flex justify-end border-t border-cream/10 pt-3">
+        {/* たまに使う方法は下にまとめる(上は「どの作業か」を選ぶだけにして、迷う選択肢を減らす) */}
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-cream/10 pt-3">
+          <span className="mr-auto text-[11px] text-cream/50">ほかの方法</span>
+          <button
+            className={mode === "split" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            onClick={() => setMode(mode === "split" ? (candidateTasks.length > 0 ? "today" : "master") : "split")}
+            aria-pressed={mode === "split"}
+            title="「◯時◯分までは〇〇、そこからは△△」のように、途中で区切って2つの作業に分ける"
+          >
+            ✂ 途中で区切る
+          </button>
+          <button className="btn-pill-outline border-alert text-xs text-alert hover:bg-alert/10" onClick={assignTrouble}>
+            🚨 トラブル対応として割り当てる
+          </button>
           <button className="btn-pill-outline text-xs" onClick={onFinishAsIs}>
             割り当てずに終了
           </button>

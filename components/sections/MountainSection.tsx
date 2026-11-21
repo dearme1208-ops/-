@@ -341,7 +341,7 @@ export default function MountainSection() {
                   <span className="w-8 shrink-0 text-right text-[10px] text-cream/40 tabular-nums">
                     {(item.weightGrams / 1000).toFixed(1)}
                   </span>
-                  <div className="h-2 w-16 shrink-0 overflow-hidden rounded-full bg-cream/8">
+                  <div className="h-2 w-16 shrink-0 overflow-hidden rounded-full bg-cream/10">
                     <div
                       className={`h-full rounded-full ${item.overdue ? "bg-alert" : "bg-cream/45"}`}
                       style={{ width: `${(item.weightGrams / max) * 100}%` }}
@@ -507,7 +507,7 @@ function LegRow({
           >
             {done ? "✓" : index + 1}
           </span>
-          {index < total - 1 && <span className="mt-0.5 h-full w-px flex-1 bg-cream/12" />}
+          {index < total - 1 && <span className="mt-0.5 h-full w-px flex-1 bg-cream/10" />}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -516,7 +516,7 @@ function LegRow({
             {leg.isTrouble && <span className="rounded bg-alert/25 px-1 text-[9px] text-cream">{words.troubleLeg}</span>}
           </div>
           {/* コースタイムに対する行動時間のバー。100%の位置に基準線を引く */}
-          <div className="relative mt-1 h-1.5 overflow-hidden rounded-full bg-cream/8">
+          <div className="relative mt-1 h-1.5 overflow-hidden rounded-full bg-cream/10">
             <div
               // 計測中(=いま登っている区間)の帯は、完了した区間よりも目立つ色で伸びていくようにする。
               // 以前は灰色で、終わった区間(橙)より目立たず、どこを登っているのか分かりにくかった

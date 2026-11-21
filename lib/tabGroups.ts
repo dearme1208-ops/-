@@ -26,7 +26,7 @@ export const TAB_GROUPS: TabGroupDef[] = [
     tabs: ["report", "aggregation", "attention", "overtime", "gantt", "charts", "heatmap", "yearlyChart", "observatory"],
   },
   { key: "records", icon: "🗂", label: "記録・マスタ", shortLabel: "記録", tabs: ["records", "master", "homeMaster"] },
-  { key: "settings", icon: "⚙", label: "設定", tabs: ["appearance", "settings"] },
+  { key: "settings", icon: "⚙", label: "設定", tabs: ["settings", "appearance"] },
 ];
 
 /** そのタブが属する分類。どの分類にも無いタブ(将来追加されたタブ等)はnull */

@@ -63,6 +63,28 @@ html {
   font-size: var(--base-font-size, 16px);
 }
 
+/* 淡い文字の底上げ: text-cream/40〜50 は暗い地の上で 3.2〜4.3:1 しかなく、予測・補足・見出しの
+   「▶ 開く」など意味のある文字が読みにくかった。使用箇所が数百あるため、個々に直さずここで
+   まとめて 5:1 以上に引き上げる(/30 は飾り用なのでそのまま。hover: の指定は後勝ちで効く) */
+.text-cream\/40 {
+  color: rgb(var(--cream-rgb) / 0.56);
+}
+.text-cream\/45 {
+  color: rgb(var(--cream-rgb) / 0.6);
+}
+.text-cream\/50 {
+  color: rgb(var(--cream-rgb) / 0.64);
+}
+/* スマホでは 10px・11px の文字が小さすぎるので1段ずつ大きくする(rem なので文字サイズの設定にも従う) */
+@media (max-width: 639.98px) {
+  .text-\[10px\] {
+    font-size: 0.6875rem;
+  }
+  .text-\[11px\] {
+    font-size: 0.75rem;
+  }
+}
+
 /* ハイコントラストモード: 淡色テキスト・薄い枠線のopacityユーティリティを
    一括で底上げする。個々のクラス名を都度上書きするのではなく、よく使われる
    opacity刻みをまとめて対象にすることで、コンポーネント側の変更なしに全タブへ適用する */
@@ -581,9 +603,25 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="home"] .panel {
     transition: box-shadow 420ms ease, border-color 420ms ease;
   }
-  html[data-visual-mode="home"] .panel:hover {
-    border-color: rgb(var(--accent-rgb) / 0.38);
-    box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.16), 0 18px 34px -20px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(var(--accent-rgb) / 0.16);
+  /* スマホでは、押した後もhoverが貼り付いたままになるので、マウスのある端末だけにする */
+  @media (hover: hover) {
+    html[data-visual-mode="home"] .panel:hover {
+      border-color: rgb(var(--accent-rgb) / 0.38);
+      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.16), 0 18px 34px -20px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(var(--accent-rgb) / 0.16);
+    }
+  }
+  /* 上の .panel の枠と影の指定が強く、仮計測・予定の重なり・超過など「警告の枠」(border-alert)や
+     太枠(border-2)がどれも普通の緑の枠に上書きされて、森モードでは状態が見分けられなかった */
+  html[data-visual-mode="home"] .panel[class*="border-alert"],
+  html[data-visual-mode="home"] .panel[class*="border-alert"]:hover {
+    border-color: rgb(var(--alert-rgb) / 0.6);
+    box-shadow: 0 0 0 1px rgb(var(--alert-rgb) / 0.3), 0 14px 28px -20px rgb(0 0 0 / 0.7);
+  }
+  html[data-visual-mode="home"] .panel.border-2 {
+    border-width: 2px;
+  }
+  html[data-visual-mode="home"] .panel[data-running-card="true"] {
+    border-color: rgb(var(--accent-rgb) / 0.7);
   }
   /* --- ここから森モードのUI。丸ピルの並びをやめ、「林床に並べた木札」に作り替える --- */
 
@@ -2344,10 +2382,10 @@ html[data-high-contrast="true"] :focus-visible {
   @keyframes card-overrun-forest-glow {
     0%,
     100% {
-      box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.35), inset 0 -20px 24px -20px rgb(var(--accent-rgb) / 0.3);
+      box-shadow: 0 0 0 1px rgb(var(--forest-amber-rgb) / 0.35), inset 0 -20px 24px -20px rgb(var(--forest-amber-rgb) / 0.3);
     }
     50% {
-      box-shadow: 0 0 0 1.5px rgb(var(--accent-rgb) / 0.6), inset 0 -28px 28px -18px rgb(var(--accent-rgb) / 0.45);
+      box-shadow: 0 0 0 1.5px rgb(var(--forest-amber-rgb) / 0.6), inset 0 -28px 28px -18px rgb(var(--forest-amber-rgb) / 0.45);
     }
   }
   /* 群生の分布のような、粒の粗い横縞にする */
@@ -2356,8 +2394,8 @@ html[data-high-contrast="true"] :focus-visible {
     border-radius: 999px;
     background-image: repeating-linear-gradient(
       90deg,
-      rgb(var(--accent-rgb) / 0.85) 0 5px,
-      rgb(var(--accent-rgb) / 0.18) 5px 12px
+      rgb(var(--forest-amber-rgb) / 0.85) 0 5px,
+      rgb(var(--forest-amber-rgb) / 0.18) 5px 12px
     );
     background-size: 200% 100%;
     animation: hazard-bar-scroll 2.4s linear infinite;

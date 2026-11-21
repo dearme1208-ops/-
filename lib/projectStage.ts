@@ -73,7 +73,9 @@ export function incompletePreviousStageTitles(project: ProjectItem, stageId: str
   const allStages = project.stages ?? [];
   const idx = allStages.findIndex((s) => s.id === stageId);
   if (idx === -1) return [];
-  return allStages.slice(0, idx).filter((s) => !s.completed).map((s) => s.title);
+  // 件数管理の段階は completed が立たず件数で完了が決まるため、isStageDoneで判定する
+  // (目標件数に達していても「未完了」と警告され続けないように)
+  return allStages.slice(0, idx).filter((s) => !isStageDone(s)).map((s) => s.title);
 }
 
 // 案件全体の対応状況。段階を持たない場合は案件自身の対応状況をそのまま使う(=手動設定)。

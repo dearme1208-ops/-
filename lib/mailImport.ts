@@ -1,4 +1,5 @@
 import MsgReader from "@kenjiuno/msgreader";
+import { showUndoToast } from "./toast";
 
 // Outlookの.msgファイル(メールをファイルとして保存した際の既定形式)を読み込み、
 // 付箋の本文として使える形に整形する。件名を見出しとして先頭に置くことで、
@@ -18,7 +19,25 @@ function formatMailDate(iso: string | undefined): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// 添付できるメールファイルの大きさの上限。メール本体はdata URL(元の約1.33倍の文字列)として
+// 端末内のデータベースにそのまま入るため、大きな添付付きメールを何通か入れるだけで
+// ブラウザの保存容量を使い切り、以後の記録の保存やバックアップの書き出しまで失敗するようになる
+export const MAX_MAIL_FILE_BYTES = 5 * 1024 * 1024;
+
+export function mailFileTooLargeMessage(file: { size: number }): string {
+  const mb = (file.size / 1024 / 1024).toFixed(1);
+  return `メールファイルが大きすぎます(${mb}MB)。添付できるのは5MBまでです。大きな添付ファイルを外したメールを保存し直してお試しください。`;
+}
+
 export async function parseMsgFile(file: File): Promise<ParsedMailFile> {
+  // メールの添付・付箋への取り込みは、どちらも最初にここを通る
+  if (file.size > MAX_MAIL_FILE_BYTES) {
+    const message = mailFileTooLargeMessage(file);
+    // 呼び出し側の多くは失敗の理由を問わず「.msg形式か確認してください」としか出さないため、
+    // 本当の理由(大きすぎる)はここで直接知らせる
+    if (typeof window !== "undefined") showUndoToast(message, undefined, 10000);
+    throw new Error(message);
+  }
   const buffer = await file.arrayBuffer();
   const reader = new MsgReader(buffer);
   const data = reader.getFileData();

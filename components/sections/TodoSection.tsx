@@ -22,6 +22,7 @@ import {
   DEFAULT_TAG_PRESETS,
   effectiveDueDate,
   effectiveTag,
+  fillRecurrenceDefaults,
   normalizeUrl,
   parsePresetList,
   upsertTodoFromCsv,
@@ -459,6 +460,8 @@ export default function TodoSection({
     const items: TodoTask[] = [];
     for (const t of topLevelTasks) {
       if (!t.completed && !!t.dueDate && t.dueDate < today) items.push(t);
+      // 親を「タスクだけ完了」にした場合、残ったサブタスクはもう対応不要なので期限切れに数えない
+      if (t.completed) continue;
       for (const s of subtasksByParent.get(t.id) ?? []) {
         if (!s.completed && !!s.dueDate && s.dueDate < today) items.push(s);
       }
@@ -554,7 +557,12 @@ export default function TodoSection({
   useEffect(() => {
     if (!allTasks) return;
     const toAdd = topLevelTasks.filter(
-      (t) => !t.completed && t.myDayDate !== today && effectiveDueDate(t, subtasksByParent.get(t.id) ?? []) === today
+      (t) =>
+        !t.completed &&
+        t.myDayDate !== today &&
+        // 今日のマイデイから手で外したものは入れ直さない(外した直後にここで戻ってしまい、外せなかった)
+        t.myDayDismissedDate !== today &&
+        effectiveDueDate(t, subtasksByParent.get(t.id) ?? []) === today
     );
     if (toAdd.length === 0) return;
     db.transaction("rw", db.todoTasks, async () => {
@@ -777,7 +785,9 @@ export default function TodoSection({
   // 手で並べ替えられる場所かどうか(並び替え設定は問わない)。
   // 期日順などで並んでいる最中は、手で動かしても次の再描画で元の位置へ戻ってしまうため、
   // 実際にハンドルを出すのは下のreorderEnabled(手動のとき)だけに絞る
-  const reorderAvailableHere = displayMode === "list" && !searchActive && view !== "planned" && view !== "overdue";
+  // 「返事待ち」は待たされている日数順、「期限日」「期限切れ」は期日順で並ぶため、手では動かせない
+  const reorderAvailableHere =
+    displayMode === "list" && !searchActive && view !== "planned" && view !== "overdue" && view !== "waiting";
   const reorderEnabled = reorderAvailableHere && sortMode === "manual";
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -788,9 +798,20 @@ export default function TodoSection({
     const newIndex = incompleteTasks.findIndex((t) => t.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     const reordered = arrayMove(incompleteTasks, oldIndex, newIndex);
+    // orderはリストごとの並び順。マイデイ・重要のように複数のリストのタスクが混ざる画面で
+    // 見えている全タスクへ 0,1,2… を振ると、各リストの並びが壊れる(他のリストのタスクと同じ値になり、
+    // 見えていないタスクとの前後も変わる)。動かしたタスクと同じリストのものだけを対象に、
+    // いま持っているorderの値を新しい見た目の順へ割り当て直す(値の集合は変えない)
+    const dragged = incompleteTasks[oldIndex];
+    const mates = reordered.filter((t) => t.listId === dragged.listId);
+    const orders = mates.map((t) => t.order).sort((a, b) => a - b);
+    // 同じ値が混ざっていると割り当て直しても順番が決まらないので、その分だけ後ろへずらして一意にする
+    for (let i = 1; i < orders.length; i++) {
+      if (orders[i] <= orders[i - 1]) orders[i] = orders[i - 1] + 1;
+    }
     await db.transaction("rw", db.todoTasks, async () => {
-      for (let i = 0; i < reordered.length; i++) {
-        await db.todoTasks.update(reordered[i].id, { order: i });
+      for (let i = 0; i < mates.length; i++) {
+        if (mates[i].order !== orders[i]) await db.todoTasks.update(mates[i].id, { order: orders[i] });
       }
     });
   }
@@ -845,7 +866,7 @@ export default function TodoSection({
     const id = uid();
     const dueDate = newTaskDueDate || undefined;
     // 期日を入れた場合はリスト内で日付順の位置に(既存タスクの編集時と同じ並べ替えロジック)、
-    // 期日なしの場合は埋もれないよう一番上に挿入する(どちらも既存タスクのorderを1つずつ後ろにずらす)
+    // 期日なしの場合は埋もれないよう一番上に挿入する(どちらも既存タスクのorderを振り直して場所を空ける)
     const order = dueDate
       ? await computeDateOrderedPosition(targetListId, id, dueDate)
       : await shiftSiblingsForTopInsert(targetListId);
@@ -934,6 +955,14 @@ export default function TodoSection({
         return;
       }
       await completeTodoTask(task, today);
+      // 繰り返しのタスクは完了にならず期日が次へ進むだけなので、何が起きたかを知らせて戻せるようにする
+      if (task.recurrence) {
+        const after = await db.todoTasks.get(task.id);
+        const subsBefore = subtasksByParent.get(task.id) ?? [];
+        showUndoToast(`「${task.title}」を済みにしました。次回は${after?.dueDate ? formatDateJp(after.dueDate) : "未定"}です`, async () => {
+          await db.todoTasks.bulkPut([task, ...subsBefore]);
+        });
+      }
       return;
     }
     await db.todoTasks.update(task.id, { completed: false, completedAt: undefined });
@@ -966,7 +995,14 @@ export default function TodoSection({
   }
 
   async function toggleMyDay(task: TodoTask) {
-    await db.todoTasks.update(task.id, { myDayDate: task.myDayDate === today ? undefined : today });
+    // 外す時は「今日は外した」印を残す。期日が今日のタスクは自動でマイデイに入るため、
+    // 印が無いと外した直後に入れ直されてしまう。入れ直した時は印を消す
+    await db.todoTasks.update(
+      task.id,
+      task.myDayDate === today
+        ? { myDayDate: undefined, myDayDismissedDate: today }
+        : { myDayDate: today, myDayDismissedDate: undefined }
+    );
   }
 
   async function deleteTask(task: TodoTask) {
@@ -994,7 +1030,14 @@ export default function TodoSection({
     const ids = [...selectedTaskIds];
     if (ids.length === 0) return;
     await db.transaction("rw", db.todoTasks, async () => {
-      for (const id of ids) await db.todoTasks.update(id, { tag: tagValue });
+      for (const id of ids) {
+        await db.todoTasks.update(id, { tag: tagValue });
+        // サブタスクを持つタスクの対応状況はサブタスクから決まる(effectiveTag)ため、親に書くだけでは
+        // 画面の表示が変わらない。未完了のサブタスクにも同じ対応状況を付ける
+        for (const sub of subtasksByParent.get(id) ?? []) {
+          if (!sub.completed) await db.todoTasks.update(sub.id, { tag: tagValue });
+        }
+      }
     });
   }
 
@@ -1041,7 +1084,9 @@ export default function TodoSection({
 
   // タスクをコピーして新規タスクとして追加する（よく使う内容をテンプレート的に使い回す用）。
   // 期日・完了状態・案件連携など「そのインスタンス固有」の情報は引き継がず、
-  // 件名・アクション・タグ・分類・客先・メモ・サブタスクの構成だけを複製する
+  // 件名・アクション・タグ・分類・客先(取引先)・メモ・見込み時間・サブタスクの構成だけを複製する。
+  // サブタスクも件名だけでなく同じ項目を写す(対応状況はサブタスクから決まるので、写さないと
+  // コピーの対応状況が空になる)。期日・通知・完了状態・添付は写さない
   async function copyTask(task: TodoTask) {
     const subs = subtasksByParent.get(task.id) ?? [];
     const count = (allTasks ?? []).filter((t) => t.listId === task.listId && !t.parentTaskId).length;
@@ -1055,7 +1100,9 @@ export default function TodoSection({
       tag: task.tag,
       category: task.category,
       customer: task.customer,
+      clientId: task.clientId,
       notes: task.notes,
+      estimateMinutes: task.estimateMinutes,
       important: false,
       completed: false,
       order: count,
@@ -1068,6 +1115,13 @@ export default function TodoSection({
         listId: task.listId,
         parentTaskId: newId,
         title: subs[i].title,
+        action: subs[i].action,
+        url: subs[i].url,
+        tag: subs[i].tag,
+        category: subs[i].category,
+        customer: subs[i].customer,
+        notes: subs[i].notes,
+        estimateMinutes: subs[i].estimateMinutes,
         important: false,
         completed: false,
         order: i,
@@ -1183,6 +1237,10 @@ export default function TodoSection({
     };
     await db.projects.add(item);
     await db.todoTasks.update(task.id, { projectId: item.id });
+    showUndoToast(`「${task.title}」を案件に追加しました`, async () => {
+      await db.projects.delete(item.id);
+      await db.todoTasks.update(task.id, { projectId: undefined });
+    });
   }
 
   // Todoタスクを本日の作業に追加する。同じタスクを紐付けたDailyTask(todoTaskId)を作り、
@@ -1206,6 +1264,10 @@ export default function TodoSection({
       todoTaskId: task.id,
     };
     await db.dailyTasks.add(dailyTask);
+    // 押しても画面が変わらず、入ったのか分からなかった
+    showUndoToast(`「${workName}」を本日の作業（予定）に追加しました`, async () => {
+      await db.dailyTasks.delete(dailyTask.id);
+    });
   }
 
   function downloadTemplate() {
@@ -3419,6 +3481,10 @@ function TaskDetailModal({
   const [recurrence, setRecurrence] = useState<RecurrenceRule>(
     task.recurrence ?? { type: "weekly", interval: 1, weekdays: [new Date().getDay()] }
   );
+  // 画面に出す値・保存する値・次回期日の計算に使う値を同じにするため、利用者がまだ触っていない項目は
+  // 期日(無ければ今日)から補った形(rec)で表示し、保存時もそのまま書き込む。以前は「毎月1日」と
+  // 表示しながら保存はされず、実際は期日の日付で繰り返していた
+  const rec = fillRecurrenceDefaults(recurrence, dueDate || today);
   const [newSubtask, setNewSubtask] = useState("");
 
   function resolveTag(): string | undefined {
@@ -3452,7 +3518,7 @@ function TaskDetailModal({
       category: resolveCategory(),
       customer: resolveCustomer(),
       clientId: clientId || undefined,
-      recurrence: recurrenceEnabled ? recurrence : undefined,
+      recurrence: recurrenceEnabled ? rec : undefined,
     };
     if (!hasSubtasks) {
       updates.tag = tag;
@@ -3462,7 +3528,8 @@ function TaskDetailModal({
       updates.important = true;
     }
     // 期日を今日にした場合はマイデイに自動反映する
-    if (dueDate === today) {
+    // (今日のマイデイから手で外した後、期日を変えずに保存しただけなら入れ直さない)
+    if (dueDate === today && (task.dueDate !== today || task.myDayDismissedDate !== today)) {
       updates.myDayDate = today;
     }
     // リストを変更した場合、サブタスクも一緒に新しいリストへ移す(サブタスクだけ元の
@@ -3477,8 +3544,11 @@ function TaskDetailModal({
     }
     // 開始日(優先)または期日が設定されていれば、リスト内で日付順の位置に並べ替える
     // (リストを変更した場合は移動先リストの末尾を優先するため、ここでは上書きしない)
+    // 日付を変えていない保存(メモだけ直した等)では並べ替えない。手で並べ替えた位置が、
+    // 開いて保存するたびに日付順へ戻ってしまうのを防ぐ
     const sortDate = startDate || dueDate;
-    if (sortDate && !task.parentTaskId && !listChanged) {
+    const datesChanged = (startDate || "") !== (task.startDate ?? "") || (dueDate || "") !== (task.dueDate ?? "");
+    if (sortDate && datesChanged && !task.parentTaskId && !listChanged) {
       updates.order = await computeDateOrderedPosition(task.listId, task.id, sortDate);
     }
     await db.todoTasks.update(task.id, updates);
@@ -3530,8 +3600,12 @@ function TaskDetailModal({
     await db.todoTasks.update(sub.id, { completed: !sub.completed, completedAt: !sub.completed ? Date.now() : undefined });
   }
 
+  // ✕は小さく押し間違えやすいので、消した直後なら元に戻せるようにする
   async function deleteSubtask(sub: TodoTask) {
     await db.todoTasks.delete(sub.id);
+    showUndoToast(`サブタスク「${sub.title}」を削除しました`, async () => {
+      await db.todoTasks.add(sub);
+    });
   }
 
   async function updateSubtaskDueDate(sub: TodoTask, dueDate: string) {
@@ -3855,9 +3929,10 @@ function TaskDetailModal({
           {recurrenceEnabled && (
             <div className="mt-2 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
+                {/* 種類を変えたら細かい指定は捨て、新しい種類の既定(期日から決まる)を出し直す */}
                 <select
-                  value={recurrence.type}
-                  onChange={(e) => setRecurrence({ ...recurrence, type: e.target.value as RecurrenceType })}
+                  value={rec.type}
+                  onChange={(e) => setRecurrence({ type: e.target.value as RecurrenceType, interval: rec.interval })}
                   className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
                 >
                   {(Object.keys(RECURRENCE_TYPE_LABELS) as RecurrenceType[]).map((t) => (
@@ -3870,29 +3945,29 @@ function TaskDetailModal({
                 <input
                   type="number"
                   min={1}
-                  value={recurrence.interval}
-                  onChange={(e) => setRecurrence({ ...recurrence, interval: Math.max(1, Number(e.target.value) || 1) })}
+                  value={rec.interval}
+                  onChange={(e) => setRecurrence({ ...rec, interval: Math.max(1, Number(e.target.value) || 1) })}
                   className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
                 />
               </div>
 
-              {recurrence.type === "weekly" && (
+              {rec.type === "weekly" && (
                 <div className="flex flex-wrap items-center gap-1">
                   <button
-                    onClick={() => setRecurrence({ ...recurrence, weekdays: [1, 2, 3, 4, 5] })}
+                    onClick={() => setRecurrence({ ...rec, weekdays: [1, 2, 3, 4, 5] })}
                     className="btn-pill-outline text-xs"
                   >
                     平日
                   </button>
                   {WEEKDAY_JP.map((label, w) => {
-                    const active = (recurrence.weekdays ?? []).includes(w);
+                    const active = (rec.weekdays ?? []).includes(w);
                     return (
                       <button
                         key={w}
                         onClick={() => {
-                          const cur = recurrence.weekdays ?? [];
+                          const cur = rec.weekdays ?? [];
                           const next = active ? cur.filter((x) => x !== w) : [...cur, w];
-                          setRecurrence({ ...recurrence, weekdays: next });
+                          setRecurrence({ ...rec, weekdays: next });
                         }}
                         className={active ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
                       >
@@ -3903,29 +3978,29 @@ function TaskDetailModal({
                 </div>
               )}
 
-              {recurrence.type === "monthlyDate" && (
+              {rec.type === "monthlyDate" && (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
                   <span>毎月</span>
                   <button
-                    onClick={() => setRecurrence({ ...recurrence, day: 1 })}
-                    className={(recurrence.day ?? 1) === 1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setRecurrence({ ...rec, day: 1 })}
+                    className={rec.day === 1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
                   >
                     月初
                   </button>
                   <button
-                    onClick={() => setRecurrence({ ...recurrence, day: -1 })}
-                    className={recurrence.day === -1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setRecurrence({ ...rec, day: -1 })}
+                    className={rec.day === -1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
                   >
                     月末
                   </button>
-                  {recurrence.day !== -1 && (
+                  {rec.day !== -1 && (
                     <>
                       <input
                         type="number"
                         min={1}
                         max={31}
-                        value={recurrence.day ?? 1}
-                        onChange={(e) => setRecurrence({ ...recurrence, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+                        value={rec.day}
+                        onChange={(e) => setRecurrence({ ...rec, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
                         className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
                       />
                       <span>日</span>
@@ -3934,12 +4009,12 @@ function TaskDetailModal({
                 </div>
               )}
 
-              {recurrence.type === "monthlyWeekday" && (
+              {rec.type === "monthlyWeekday" && (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
                   <span>毎月</span>
                   <select
-                    value={recurrence.ordinal ?? 1}
-                    onChange={(e) => setRecurrence({ ...recurrence, ordinal: Number(e.target.value) as 1 | 2 | 3 | 4 | -1 })}
+                    value={rec.ordinal}
+                    onChange={(e) => setRecurrence({ ...rec, ordinal: Number(e.target.value) as 1 | 2 | 3 | 4 | -1 })}
                     className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
                   >
                     {([1, 2, 3, 4, -1] as (1 | 2 | 3 | 4 | -1)[]).map((o) => (
@@ -3949,8 +4024,8 @@ function TaskDetailModal({
                     ))}
                   </select>
                   <select
-                    value={recurrence.weekday ?? 5}
-                    onChange={(e) => setRecurrence({ ...recurrence, weekday: Number(e.target.value) })}
+                    value={rec.weekday}
+                    onChange={(e) => setRecurrence({ ...rec, weekday: Number(e.target.value) })}
                     className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
                   >
                     {WEEKDAY_JP.map((label, w) => (
@@ -3962,15 +4037,15 @@ function TaskDetailModal({
                 </div>
               )}
 
-              {recurrence.type === "yearly" && (
+              {rec.type === "yearly" && (
                 <div className="flex items-center gap-2 text-xs text-cream/60">
                   <span>毎年</span>
                   <input
                     type="number"
                     min={1}
                     max={12}
-                    value={recurrence.month ?? 1}
-                    onChange={(e) => setRecurrence({ ...recurrence, month: Math.min(12, Math.max(1, Number(e.target.value) || 1)) })}
+                    value={rec.month}
+                    onChange={(e) => setRecurrence({ ...rec, month: Math.min(12, Math.max(1, Number(e.target.value) || 1)) })}
                     className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
                   />
                   <span>月</span>
@@ -3978,8 +4053,8 @@ function TaskDetailModal({
                     type="number"
                     min={1}
                     max={31}
-                    value={recurrence.day ?? 1}
-                    onChange={(e) => setRecurrence({ ...recurrence, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+                    value={rec.day}
+                    onChange={(e) => setRecurrence({ ...rec, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
                     className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
                   />
                   <span>日</span>

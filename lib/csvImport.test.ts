@@ -58,4 +58,47 @@ describe("CSVの取り込み(Excelで開いて保存し直したファイル・�
     expect(await readTextFile(new Blob([bytes]))).toBe("業務");
     expect(await readTextFile(new Blob(["業務"]))).toBe("業務");
   });
+
+  it("Excelが開始・終了の数値を指数表記(1.7636E+12)に丸めても、日時の列から元の時刻(秒まで)に戻す", () => {
+    const startedAt = new Date(2026, 10, 20, 9, 53, 20, 123).getTime();
+    const endedAt = startedAt + 600_000;
+    const r: WorkRecord = { id: "r1", date: "2026-11-20", category: "組立", name: "A", masterTaskId: "m", seconds: 600, startedAt, endedAt, excludedFromStats: false };
+    const csv = recordsToCsv([r]);
+    expect(csv.split("\n")[0]).toMatch(/,startedAt,endedAt,.*,開始時刻,終了時刻$/);
+    expect(csv).toContain("2026-11-20 09:53:20");
+
+    // そのまま取り込み直せばミリ秒まで元どおり
+    expect(parseRecordsCsv(csv).records[0]).toMatchObject({ startedAt, endedAt });
+
+    // Excelで保存し直した状態: 数値は丸められ、日時は「2026/11/20 9:53:20」の形になる
+    const excel = csv
+      .replace(String(startedAt), "1.7636E+12")
+      .replace(String(endedAt), "1.7636E+12")
+      .replace("2026-11-20 09:53:20", "2026/11/20 9:53:20")
+      .replace("2026-11-20 10:03:20", "2026/11/20 10:03:20");
+    const { records, errors } = parseRecordsCsv(excel);
+    expect(errors).toEqual([]);
+    expect(records[0].startedAt).toBe(new Date(2026, 10, 20, 9, 53, 20).getTime());
+    expect(records[0].endedAt).toBe(new Date(2026, 10, 20, 10, 3, 20).getTime());
+  });
+
+  it("日時の列を手直ししてあれば、そちらを優先する。秒が落ちただけなら数値の方を使う", () => {
+    const startedAt = new Date(2026, 10, 20, 9, 53, 20, 123).getTime();
+    const head = "id,date,category,name,seconds,startedAt,endedAt,開始時刻,終了時刻\n";
+    const edited = parseRecordsCsv(`${head}r1,2026-11-20,組立,A,600,${startedAt},${startedAt + 600_000},2026/11/20 8:00,2026/11/20 8:10`);
+    expect(edited.records[0].startedAt).toBe(new Date(2026, 10, 20, 8, 0, 0).getTime());
+    expect(edited.records[0].endedAt).toBe(new Date(2026, 10, 20, 8, 10, 0).getTime());
+    const secondsDropped = parseRecordsCsv(`${head}r1,2026-11-20,組立,A,600,${startedAt},${startedAt + 600_000},2026/11/20 9:53,2026/11/20 10:03`);
+    expect(secondsDropped.records[0]).toMatchObject({ startedAt, endedAt: startedAt + 600_000 });
+  });
+
+  it("指数表記に丸められ、日時の列も無い以前のファイルは、丸められた値を信じずに知らせる", () => {
+    const before = Date.now();
+    const { records, errors } = parseRecordsCsv("id,date,category,name,seconds,startedAt,endedAt\nr1,2026-11-20,組立,A,600,1.7636E+12,1.7636E+12");
+    expect(records).toHaveLength(1);
+    expect(records[0].startedAt).not.toBe(1.7636e12);
+    expect(records[0].startedAt).toBeGreaterThanOrEqual(before);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("2行目");
+  });
 });

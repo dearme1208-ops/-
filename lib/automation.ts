@@ -46,6 +46,9 @@ export function inactivityCutoff(task: DailyTask, lastEventAt: number, now: numb
 // 予定の時刻(scheduledTime)を過ぎた、自動開始すべき作業。
 // 未着手の作業に加え、時間割(タイムボックス)の枠を持つ一時停止中の作業も、枠の中なら再開の対象にする
 // (途中まで進めた作業に続きの枠を作ったとき、枠の始まりで続きから計測を始めるため)
+/** 時刻だけの予定(枠なし)を、予定の時刻からどれだけ遅れても自動で始めるか */
+export const SCHEDULE_LATE_LIMIT_MS = 15 * 60_000;
+
 export function findDueScheduledTasks(tasks: DailyTask[], date: string, now: number): DailyTask[] {
   const toMs = (hm: string) => {
     const [h, m] = hm.split(":").map(Number);
@@ -55,10 +58,18 @@ export function findDueScheduledTasks(tasks: DailyTask[], date: string, now: num
     if (!task.scheduledTime || task.autoStartNotified || task.autoStartDisabled) return false;
     const scheduledMs = toMs(task.scheduledTime);
     if (scheduledMs === null || now < scheduledMs) return false;
-    if (task.status === "pending") return true;
-    if (task.status !== "paused" || !task.timeboxEnd) return false;
-    const endMs = toMs(task.timeboxEnd);
-    return endMs !== null && now < endMs;
+    const endMs = task.timeboxEnd ? toMs(task.timeboxEnd) : null;
+    if (task.status === "pending") {
+      // 枠があれば枠の中だけ。枠のない予定は、時刻を大きく過ぎていたら始めない(スリープ明けや
+      // 夕方にアプリを開いた時・予定を取り込んだ時に、朝からの予定がまとめて一斉に始まっていた)
+      return endMs !== null ? now < endMs : now - scheduledMs <= SCHEDULE_LATE_LIMIT_MS;
+    }
+    if (task.status !== "paused" || endMs === null || now >= endMs) return false;
+    // 枠の中で本人が一時停止した(または休憩で止まった)作業は再開しない。再開するのは、枠の始まりより
+    // 前に止めてあった作業だけ(枠より先に手で始めた作業は autoStartNotified が付かず、止めても
+    // 次の瞬間に再開されて一時停止できなかった)
+    const lastEnd = task.segments[task.segments.length - 1]?.end;
+    return lastEnd === undefined || lastEnd < scheduledMs;
   });
 }
 

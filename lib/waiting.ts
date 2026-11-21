@@ -1,5 +1,6 @@
 import { effectiveTag } from "./todo";
 import { summarizePostpones, waitingInfo, type PostponeSummary, type WaitingInfo } from "./changeTracking";
+import { isStageDone } from "./projectStage";
 import type { ProjectItem, TodoTask } from "./types";
 
 // ToDo・案件の一覧で使う「相手待ち」「延期」の判定。ToDoは、サブタスクを持つ場合に
@@ -50,7 +51,8 @@ export function projectWaitingInfo(
     if (own) candidates.push(own);
   }
   for (const s of project.stages ?? []) {
-    if (s.completed) continue;
+    // 件数管理の段階は completed が立たないので、目標件数に達したかも含めて判定する
+    if (isStageDone(s)) continue;
     const w = waitingInfo(s, waitingTags, nudgeDays, now);
     if (w) candidates.push({ ...w, stageTitle: s.title });
   }
@@ -104,7 +106,8 @@ export function collectWaitingItems(
     if (w) items.push({ kind: "todo", id: t.id, label: t.title, tag: w.tag, days: w.days, overdue: w.overdue });
   }
   for (const p of projects) {
-    if (p.completedAt) continue;
+    // アーカイブ済みの案件は、ToDoと同じく報告・要注意の対象から外す
+    if (p.completedAt || p.archived) continue;
     const w = projectWaitingInfo(p, waitingTags, nudgeDays, now);
     if (w) {
       items.push({
@@ -151,7 +154,7 @@ export function collectFrequentlyPostponed(todoTasks: TodoTask[], projects: Proj
     if (s.count >= minCount) items.push({ kind: "todo", id: t.id, label: t.title, ...s });
   }
   for (const p of projects) {
-    if (p.completedAt) continue;
+    if (p.completedAt || p.archived) continue;
     const s = summarizePostpones(p.dueHistory);
     if (s.count >= minCount) items.push({ kind: "project", id: p.id, label: p.title, ...s });
   }

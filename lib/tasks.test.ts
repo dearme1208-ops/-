@@ -319,3 +319,128 @@ describe("作業の実測は同時に1つだけ(enforceSingleRunning)", () => {
     expect((await db.dailyTasks.get("a"))!.status).toBe("running");
   });
 });
+
+describe("作業マスタを持たない作業の完了", () => {
+  it("トラブル対応など作業マスタの無い作業は、完了時に決めたマスタを作業の側にも書き戻す", async () => {
+    const { daily, records } = await finish(
+      task({ id: "tr", masterTaskId: undefined, category: "トラブル対応", name: "トラブル 09:00", isTrouble: true }),
+      { endAtMs: T0 + 30 * MIN }
+    );
+    expect(records).toHaveLength(1);
+    expect(records[0].masterTaskId).toBeTruthy();
+    // 後から名前や時刻を直す・削除する時に、この作業の実績を探せる
+    expect(daily.masterTaskId).toBe(records[0].masterTaskId);
+    expect((await findMergeTargetRecord(DATE, daily.masterTaskId!, daily))?.id).toBe(records[0].id);
+  });
+});
+
+describe("「続きから」再開した作業の実績の区間", () => {
+  it("2回目の完了では、反映済みの区間を実績の区間へ重ねて足さない", async () => {
+    const first = await finish(task({ id: "c2" }), { endAtMs: T0 + 50 * MIN });
+    const reopened: DailyTask = {
+      ...first.daily,
+      status: "running",
+      segments: [...first.daily.segments, { start: T0 + 180 * MIN }],
+      endedAt: undefined,
+    };
+    const second = await finish(reopened, { endAtMs: T0 + 210 * MIN });
+    expect(second.records).toHaveLength(1);
+    expect(second.records[0].seconds).toBe(80 * 60);
+    expect(second.records[0].segments).toEqual([
+      { start: T0, end: T0 + 50 * MIN },
+      { start: T0 + 180 * MIN, end: T0 + 210 * MIN },
+    ]);
+  });
+});
+
+describe("「続きから」再開した作業を手動で記録", () => {
+  it("反映済みの分を残したまま手動の分を足し、作業の合計と実績が食い違わない", async () => {
+    const first = await finish(task({ id: "m" }), { endAtMs: T0 + 50 * MIN });
+    // 「続きから」再開して10分計測し、一時停止した状態
+    const paused: DailyTask = {
+      ...first.daily,
+      status: "paused",
+      segments: [...first.daily.segments, { start: T0 + 100 * MIN, end: T0 + 110 * MIN }],
+      accumulatedMs: first.daily.accumulatedMs + 10 * MIN,
+      endedAt: undefined,
+    };
+    // 手動で30分と記録(計測した10分は手動の値で置き換える)
+    const manual = [{ start: T0 + 120 * MIN, end: T0 + 150 * MIN }];
+    const second = await finish(paused, { segments: manual, startedAt: manual[0].start });
+    expect(second.records).toHaveLength(1);
+    expect(second.records[0].seconds).toBe(80 * 60);
+    expect(second.daily.accumulatedMs).toBe(80 * MIN);
+    expect(second.daily.recordedMs).toBe(80 * MIN);
+    expect(second.daily.segments).toEqual([{ start: T0, end: T0 + 50 * MIN }, ...manual]);
+    expect(second.daily.startedAt).toBe(T0);
+    expect(second.daily.endedAt).toBe(T0 + 150 * MIN);
+    expect(second.records[0].segments).toEqual([{ start: T0, end: T0 + 50 * MIN }, ...manual]);
+  });
+
+  it("まだ実績へ反映していない作業は、これまでどおり手動の区間だけになる", async () => {
+    const manual = [{ start: T0 + 60 * MIN, end: T0 + 85 * MIN }];
+    const { daily, records } = await finish(
+      task({ id: "f", status: "paused", segments: [{ start: T0, end: T0 + 10 * MIN }], accumulatedMs: 10 * MIN }),
+      { segments: manual, startedAt: manual[0].start }
+    );
+    expect(daily.segments).toEqual(manual);
+    expect(daily.accumulatedMs).toBe(25 * MIN);
+    expect(daily.startedAt).toBe(T0 + 60 * MIN);
+    expect(records[0].seconds).toBe(25 * 60);
+    expect(records[0].segments).toEqual(manual);
+  });
+});
+
+describe("完了の「元に戻す」(undoFinishDailyTask)", () => {
+  // 完了ポップアップに渡される「元に戻す」を、実際の画面と同じ経路で受け取る
+  async function finishAndCaptureUndo(t: DailyTask, endAtMs: number): Promise<() => Promise<void>> {
+    const { subscribeCompletionPopup } = await import("./completionPopup");
+    let undo: (() => Promise<void>) | undefined;
+    const unsubscribe = subscribeCompletionPopup((info) => {
+      undo = info.undo;
+    });
+    await db.dailyTasks.put(t);
+    await finishDailyTask(t, endAtMs);
+    unsubscribe();
+    return undo!;
+  }
+
+  it("元に戻すまでの間に別の完了が同じ実績へ合算されていても、その分は消さない", async () => {
+    const undoA = await finishAndCaptureUndo(task({ id: "a" }), T0 + 30 * MIN);
+    await finish(task({ id: "b", segments: [{ start: T0 + 40 * MIN }], startedAt: T0 + 40 * MIN }), { endAtMs: T0 + 60 * MIN });
+    await undoA();
+    const records = await db.records.toArray();
+    expect(records).toHaveLength(1);
+    expect(records[0].seconds).toBe(20 * 60);
+    expect(records[0].segments).toEqual([{ start: T0 + 40 * MIN, end: T0 + 60 * MIN }]);
+    expect(records[0].startedAt).toBe(T0 + 40 * MIN);
+    expect(records[0].endedAt).toBe(T0 + 60 * MIN);
+    expect((await db.dailyTasks.get("a"))!.status).toBe("running");
+    expect((await db.dailyTasks.get("b"))!.status).toBe("done");
+  });
+
+  it("合算した完了を戻す時も、その後に合算された分は残す", async () => {
+    await finish(task({ id: "a" }), { endAtMs: T0 + 30 * MIN });
+    const undoB = await finishAndCaptureUndo(task({ id: "b", segments: [{ start: T0 + 40 * MIN }], startedAt: T0 + 40 * MIN }), T0 + 60 * MIN);
+    await finish(task({ id: "c", segments: [{ start: T0 + 70 * MIN }], startedAt: T0 + 70 * MIN }), { endAtMs: T0 + 80 * MIN });
+    await undoB();
+    const records = await db.records.toArray();
+    expect(records).toHaveLength(1);
+    expect(records[0].seconds).toBe(40 * 60);
+    expect(records[0].segments).toEqual([
+      { start: T0, end: T0 + 30 * MIN },
+      { start: T0 + 70 * MIN, end: T0 + 80 * MIN },
+    ]);
+  });
+
+  it("ほかに変更が無ければ、新しく作った実績は消し、合算した実績は合算前へ戻す", async () => {
+    const undoA = await finishAndCaptureUndo(task({ id: "a" }), T0 + 30 * MIN);
+    await undoA();
+    expect(await db.records.count()).toBe(0);
+
+    const first = await finish(task({ id: "a2" }), { endAtMs: T0 + 30 * MIN });
+    const undoB = await finishAndCaptureUndo(task({ id: "b2", segments: [{ start: T0 + 40 * MIN }], startedAt: T0 + 40 * MIN }), T0 + 60 * MIN);
+    await undoB();
+    expect(await db.records.toArray()).toEqual(first.records);
+  });
+});

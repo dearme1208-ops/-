@@ -1,6 +1,6 @@
-import { exportBackup } from "./backup";
+import { backupJsonParts, exportBackup } from "./backup";
 import { markManualBackup } from "./autoBackup";
-import { downloadTextFile } from "./report";
+import { downloadBlob } from "./report";
 import { todayStr } from "./time";
 
 // バックアップの「書き出し方」をここに集約する。設定タブと、本日タブの催促の
@@ -10,13 +10,14 @@ function backupFileName(): string {
   return `koutei-hyo_backup_${todayStr()}.json`;
 }
 
-async function backupJson(): Promise<string> {
-  return JSON.stringify(await exportBackup(), null, 2);
+// 中身は1つの文字列にせず、分割したまま渡す(理由は backupJsonParts のコメント参照)
+async function backupParts(): Promise<string[]> {
+  return backupJsonParts(await exportBackup());
 }
 
 /** ファイルとして保存する。書き出せたら「最後にバックアップした日」を更新する */
 export async function downloadBackupFile(): Promise<string> {
-  downloadTextFile(backupFileName(), await backupJson());
+  downloadBlob(backupFileName(), new Blob(await backupParts(), { type: "text/plain;charset=utf-8" }));
   markManualBackup();
   return "バックアップをダウンロードしました。";
 }
@@ -37,7 +38,7 @@ export function canShareBackupFile(): boolean {
  * 渡し終えた時点で最終バックアップ日も更新する(取り消した場合は例外になり更新されない)
  */
 export async function shareBackupFile(): Promise<string> {
-  const file = new File([await backupJson()], backupFileName(), { type: "application/json" });
+  const file = new File(await backupParts(), backupFileName(), { type: "application/json" });
   if (typeof navigator === "undefined" || !navigator.share || !navigator.canShare?.({ files: [file] })) {
     return "この端末・ブラウザは共有機能に対応していません。「バックアップをダウンロード」をご利用ください。";
   }

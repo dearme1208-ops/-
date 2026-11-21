@@ -42,6 +42,12 @@ test("休憩(強制ストップ)明けの仮計測と、休憩前の作業が同
   await expect.poll(async () => (await readAll<Daily>(page, "dailyTasks")).some((t) => t.isProvisional && t.status === "running")).toBe(true);
   await expectSingle(page);
   // そこで休憩前の作業を再開すると、仮計測は止まる
+  // (休憩・超過の確認のダイアログが開いている間はショートカットが効かないので、先に Esc で閉じる)
+  for (let i = 0; i < 3 && (await page.locator(".modal-scrim").count()) > 0; i++) {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(150);
+  }
+  await expect(page.locator(".modal-scrim")).toHaveCount(0);
   await page.locator("body").click({ position: { x: 1, y: 1 } });
   await page.keyboard.press("Space");
   await expect.poll(async () => (await readOne<Daily>(page, "dailyTasks", "a"))?.status).toBe("running");

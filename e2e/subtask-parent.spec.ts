@@ -29,8 +29,9 @@ test("本日の作業: サブタスクから追加した作業のカード・期
   // 予定タブの「期限切れ」の一覧
   await page.locator("button", { hasText: /期限切れ/ }).first().click();
   await expect(page.locator(".modal-scrim").getByText("A社見積 ›")).toBeVisible();
+  // ダイアログは Esc で閉じる
   await page.keyboard.press("Escape");
-  await page.locator(".modal-scrim button[aria-label='閉じる']").first().click().catch(() => {});
+  await expect(page.locator(".modal-scrim")).toHaveCount(0);
 
   // 作業を終えたときの「元のTodoはこれで完了ですか?」
   await clickButton(page, /^開始$/);

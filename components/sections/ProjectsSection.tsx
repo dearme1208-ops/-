@@ -340,9 +340,13 @@ export default function ProjectsSection({
       setImportResult("");
       return;
     }
-    const { created, updated, autoCompleted } = await upsertProjectsFromCsv(rows);
+    const { created, updated, autoCompleted, autoCompletedTitles } = await upsertProjectsFromCsv(rows);
+    // どの案件が完了になったのか分かるよう、件名も添える(多い時は先頭の5件)
+    const titles = autoCompletedTitles.slice(0, 5).map((t) => `「${t}」`).join("");
     const autoCompletedText =
-      autoCompleted > 0 ? `、${autoCompleted}件を今回のインポートに含まれなかったため自動的に完了にしました` : "";
+      autoCompleted > 0
+        ? `、${autoCompleted}件を今回のインポートに含まれなかったため自動的に完了にしました（${titles}${autoCompletedTitles.length > 5 ? " ほか" : ""}）`
+        : "";
     setImportResult(`${created}件を新規追加、${updated}件を更新しました${autoCompletedText}。`);
   }
 
@@ -393,16 +397,36 @@ export default function ProjectsSection({
   }
 
   async function deleteProject(item: ProjectItem) {
-    await db.projects.delete(item.id);
-    // 削除した案件を先行案件として参照していた、残る案件からその参照を外す
-    for (const p of projects ?? []) {
-      if (!p.predecessorProjectIds?.includes(item.id)) continue;
-      await db.projects.update(p.id, {
-        predecessorProjectIds: p.predecessorProjectIds.filter((pid) => pid !== item.id),
-      });
-    }
+    // 削除した案件を先行案件として参照していた案件と、この案件に反映済みのToDo。
+    // 元に戻す時に両方の紐づけを復元できるよう、消す前に控えておく
+    const dependentIds = (projects ?? []).filter((p) => p.predecessorProjectIds?.includes(item.id)).map((p) => p.id);
+    const linkedTodoIds = await db.todoTasks.filter((t) => t.projectId === item.id).primaryKeys();
+    await db.transaction("rw", db.projects, db.todoTasks, async () => {
+      await db.projects.delete(item.id);
+      // 削除した案件を先行案件として参照していた、残る案件からその参照を外す
+      for (const id of dependentIds) {
+        const p = await db.projects.get(id);
+        if (!p?.predecessorProjectIds) continue;
+        await db.projects.update(id, { predecessorProjectIds: p.predecessorProjectIds.filter((pid) => pid !== item.id) });
+      }
+      // ToDo側に案件への紐づけが残ると、存在しない案件に「反映済み」のまま再反映できず、
+      // 今日の段取りの候補からも外れ続けるため、紐づけを外して普通のToDoに戻す
+      for (const id of linkedTodoIds) await db.todoTasks.update(id, { projectId: undefined });
+    });
     showUndoToast(`「${item.title}」を削除しました`, async () => {
-      await db.projects.add(item);
+      await db.transaction("rw", db.projects, db.todoTasks, async () => {
+        await db.projects.add(item);
+        for (const id of dependentIds) {
+          const p = await db.projects.get(id);
+          if (!p || p.predecessorProjectIds?.includes(item.id)) continue;
+          await db.projects.update(id, { predecessorProjectIds: [...(p.predecessorProjectIds ?? []), item.id] });
+        }
+        for (const id of linkedTodoIds) {
+          // 削除後に別の案件へ反映し直したToDoは、その新しい紐づけを優先する
+          const t = await db.todoTasks.get(id);
+          if (t && !t.projectId) await db.todoTasks.update(id, { projectId: item.id });
+        }
+      });
     });
   }
 

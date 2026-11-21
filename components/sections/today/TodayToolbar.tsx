@@ -45,7 +45,7 @@ function ModeButton({
       {icon}
     </button>
   ) : (
-    <button className={`${base} shrink-0 whitespace-nowrap ${compact ? "px-3 py-1.5 text-xs" : "text-sm"}`} onClick={onClick}>
+    <button className={`${base} shrink-0 whitespace-nowrap ${compact ? "px-3 py-2 text-xs sm:py-1.5" : "text-sm"}`} onClick={onClick}>
       {label}
     </button>
   );
@@ -56,7 +56,7 @@ function ToolGroup({ caption, children }: { caption: string; children: ReactNode
   return (
     <div role="group" aria-label={caption} className="flex shrink-0 flex-col items-center gap-0.5">
       <div className="flex items-center gap-1.5">{children}</div>
-      <span className="text-[10px] leading-none tracking-wider text-cream/45">{caption}</span>
+      <span className="text-[10px] leading-none tracking-wider text-cream/60">{caption}</span>
     </div>
   );
 }
@@ -108,7 +108,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
         <h2 className="font-display text-lg font-bold whitespace-nowrap">{date} の作業リスト</h2>
         {props.streakDays > 0 && (
           <span
-            className="rounded-full bg-alert/15 px-2 py-0.5 text-xs font-bold text-alert"
+            className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-bold text-accent"
             title="実績が記録されている連続日数"
           >
             🔥 連続{props.streakDays}日

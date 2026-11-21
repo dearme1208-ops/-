@@ -74,7 +74,9 @@ export function useGeoArrivalWatch(enabled: boolean, places: GeoPlace[] | undefi
   const [arrivedEvent, setArrivedEvent] = useState<{ placeId: string; at: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
   // 地点ごとに「現在圏内にいるか」を保持し、圏内に入った瞬間だけ到着とする
-  const insidePlaceIdsRef = useRef<Set<string>>(new Set());
+  // アプリを開き直すたびに空から始めると、同じ場所に居続けているだけで毎回「到着」になり、
+  // 通知が重なり同じ作業が何度も始まっていた。圏内の地点を端末に覚えておき、12時間以内なら引き継ぐ
+  const insidePlaceIdsRef = useRef<Set<string>>(loadInsidePlaces());
 
   useEffect(() => {
     if (!enabled || !places || places.length === 0) {
@@ -82,7 +84,8 @@ export function useGeoArrivalWatch(enabled: boolean, places: GeoPlace[] | undefi
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
       watchIdRef.current = null;
-      insidePlaceIdsRef.current = new Set();
+      // 地点の読み込み待ち(places が未定義)では、覚えておいた圏内の地点を消さない
+      if (!enabled || places) insidePlaceIdsRef.current = new Set();
       setError(null);
       return;
     }
@@ -97,6 +100,7 @@ export function useGeoArrivalWatch(enabled: boolean, places: GeoPlace[] | undefi
         for (const placeId of updateGeoArrivals(insidePlaceIdsRef.current, places, latitude, longitude)) {
           setArrivedEvent({ placeId, at: Date.now() });
         }
+        saveInsidePlaces(insidePlaceIdsRef.current);
       },
       () => setError("位置情報を取得できませんでした（権限をご確認ください）"),
       { enableHighAccuracy: false, maximumAge: 30000, timeout: 20000 }
@@ -169,4 +173,26 @@ export function useWakeLock(enabled: boolean) {
   }, [enabled]);
 
   return { active, error };
+}
+
+const INSIDE_KEY = "koutei.geoInsidePlaces";
+const INSIDE_TTL_MS = 12 * 60 * 60_000;
+
+function loadInsidePlaces(): Set<string> {
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(INSIDE_KEY);
+    if (!raw) return new Set();
+    const v = JSON.parse(raw) as { at: number; ids: string[] };
+    return Date.now() - v.at < INSIDE_TTL_MS && Array.isArray(v.ids) ? new Set(v.ids) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveInsidePlaces(ids: Set<string>) {
+  try {
+    localStorage.setItem(INSIDE_KEY, JSON.stringify({ at: Date.now(), ids: [...ids] }));
+  } catch {
+    // 保存できなくても動作には支障がない(開き直した時にもう一度「到着」になるだけ)
+  }
 }

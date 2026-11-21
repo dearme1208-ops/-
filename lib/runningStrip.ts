@@ -29,7 +29,9 @@ export interface RunningStripInfo {
   overrun: boolean;
 }
 
-export function useRunningTaskStrip(): RunningStripInfo | null {
+/** externalNow: 呼び出し側がすでに毎秒進む時計を持っている場合に渡す(渡すと、ここでは時計を回さない。
+ *  本日の作業は自前の時計と合わせて毎秒2回描き直していた) */
+export function useRunningTaskStrip(externalNow?: number): RunningStripInfo | null {
   const date = todayStr();
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
@@ -38,13 +40,15 @@ export function useRunningTaskStrip(): RunningStripInfo | null {
   const hasRunning = running.length > 0;
 
   // 経過時間を進めるための時計。計測中が無い間はタイマーごと止める
-  const [now, setNow] = useState(() => Date.now());
+  const [ownNow, setNow] = useState(() => Date.now());
+  const now = externalNow ?? ownNow;
+  const useOwnClock = externalNow === undefined;
   useEffect(() => {
-    if (!hasRunning) return;
+    if (!hasRunning || !useOwnClock) return;
     setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [hasRunning]);
+  }, [hasRunning, useOwnClock]);
 
   if (!hasRunning) return null;
 

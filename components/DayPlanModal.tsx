@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { parseBreakRanges } from "@/lib/breaks";
 import { buildDayPlan, PLAN_HORIZON_DAYS, type PlanCandidate, type PlannedItem } from "@/lib/dayPlan";
 import { applyPlanToToday } from "@/lib/dayPlanApply";
-import { useSetting } from "@/lib/settings";
+import { useSetting, useSettingLoaded } from "@/lib/settings";
 import { daysBetweenDateStrs, formatClock, formatDateJp, formatHms } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 
@@ -38,6 +38,13 @@ export default function DayPlanModal({ today, onClose }: { today: string; onClos
   const [workStart] = useSetting("today.standardWorkStart", "08:00");
   const [workEnd] = useSetting("today.standardWorkEnd", "17:00");
   const [breakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
+  // 設定(始業・終業・休憩)を読み終える前に計算すると、既定の8:00〜17:00で計画が固まり、
+  // 夜に開くと「残り稼働 00:00:00」になっていた。読み終えるまで待つ
+  const settingsLoaded = [
+    useSettingLoaded("today.standardWorkStart"),
+    useSettingLoaded("today.standardWorkEnd"),
+    useSettingLoaded("today.provisionalBreakRanges"),
+  ].every(Boolean);
   // 「間に合わない見込み」の件数と一覧(設定で出さないようにできる。暮らしの用事など期日が目安のものが多いと煩わしいため)
   const [showAtRiskStr] = useSetting("dayPlan.showAtRisk", "true");
   const showAtRisk = showAtRiskStr === "true";
@@ -47,7 +54,7 @@ export default function DayPlanModal({ today, onClose }: { today: string; onClos
   const [busy, setBusy] = useState(false);
 
   const plan = useMemo(() => {
-    if (!dailyTasks || !projects || !todoTasks || !masterTasks || !records) return null;
+    if (!settingsLoaded || !dailyTasks || !projects || !todoTasks || !masterTasks || !records) return null;
     return buildDayPlan({
       now,
       today,
@@ -62,7 +69,7 @@ export default function DayPlanModal({ today, onClose }: { today: string; onClos
     });
     // 反映後に本日の作業が変わっても、計画自体は開いた時点のものを見せ続ける
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dailyTasks === undefined, projects === undefined, todoTasks === undefined, masterTasks === undefined, records === undefined]);
+  }, [settingsLoaded, dailyTasks === undefined, projects === undefined, todoTasks === undefined, masterTasks === undefined, records === undefined]);
 
   async function apply() {
     if (!plan || plan.scheduled.length === 0) return;

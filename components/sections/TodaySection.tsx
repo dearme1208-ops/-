@@ -6,7 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
-import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "@/lib/master";
+import { findOrCreateMasterTask, normalizeMasterKey, recomputeEstimateFromRecords } from "@/lib/master";
 import { collectMethodSuggestions } from "@/lib/method";
 import {
   adjustStopTimeForBreaks,
@@ -82,7 +82,7 @@ import { openHistory, openSearch } from "@/lib/globalPanels";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import AddTaskDialog from "@/components/sections/AddTaskDialog";
 import AddTimeDialog from "@/components/sections/AddTimeDialog";
-import EditTaskDialog from "@/components/sections/EditTaskDialog";
+import EditTaskDialog, { type TaskEditResult } from "@/components/sections/EditTaskDialog";
 import CompletedTasksGantt from "@/components/sections/CompletedTasksGantt";
 import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTaskDialog";
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
@@ -142,6 +142,18 @@ import { TODAY_ACTION_EVENT } from "@/lib/todayActions";
 import type { QuickStamp } from "@/lib/types";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
+
+// 最後に操作した時刻を、同じアプリを開いているほかの窓と共有するためのキー(放置検知に使う)
+const ACTIVITY_KEY = "koutei.lastActivityAt";
+/** この窓とほかの窓のうち、一番新しい操作の時刻 */
+function lastActivityAt(own: number): number {
+  try {
+    const shared = Number(localStorage.getItem(ACTIVITY_KEY));
+    return Number.isFinite(shared) ? Math.max(own, shared) : own;
+  } catch {
+    return own;
+  }
+}
 
 export default function TodaySection({
   onOpenTodoDetail,
@@ -320,7 +332,7 @@ export default function TodaySection({
   const simpleButtons = simpleButtonsStr === "true";
   // 下部タブバーに出す「今なにを計測しているか」。件数だけでは中身が分からないため、
   // 作業名と経過時間を帯で添える
-  const runningStrip = useRunningTaskStrip();
+  const runningStrip = useRunningTaskStrip(now);
   // 実行中/予定/完了でタブ分けして表示するモード。選んだタブは端末に保存し、次回も同じ表示にする
   const [taskViewTabRaw, setTaskViewTab] = useSetting("today.taskViewTab", "running");
   const taskViewTab: "running" | "pending" | "done" | "board" =
@@ -468,8 +480,20 @@ export default function TodaySection({
 
   // マウス/キーボード操作を監視し、放置検知（未計測の自動打ち切り）の起点として使う
   useEffect(() => {
+    // 同じアプリを別の窓(PWAとブラウザなど)でも開いていると、触っていない方の窓が「放置」と判断して、
+    // 使っている方の窓の仮計測を打ち切っていた。最後に触った時刻を窓どうしで共有する(書くのは15秒に1回)
+    let lastShared = 0;
     function markActivity() {
-      lastActivityRef.current = Date.now();
+      const t = Date.now();
+      lastActivityRef.current = t;
+      if (t - lastShared > 15_000) {
+        lastShared = t;
+        try {
+          localStorage.setItem(ACTIVITY_KEY, String(t));
+        } catch {
+          // 共有できなくても、この窓の中の放置検知は働く
+        }
+      }
     }
     const events: (keyof WindowEventMap)[] = ["mousemove", "mousedown", "keydown", "touchstart", "wheel", "scroll"];
     events.forEach((ev) => window.addEventListener(ev, markActivity, { passive: true }));
@@ -494,6 +518,9 @@ export default function TodaySection({
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // ほかのタブを見ている時・ボタンや選択欄にフォーカスがある時・ダイアログを開いている時は効かせない
+      // (ボタンの上でSpaceを押すと計測が止まる、選択欄で「t」を打つとトラブル対応が始まる、が起きていた)
+      if (background || tag === "BUTTON" || tag === "SELECT" || tag === "A" || document.querySelector(".modal-scrim")) return;
 
       if (e.code === "Space") {
         const running = (tasks ?? []).find((t) => t.status === "running" && !t.isProvisional);
@@ -567,6 +594,7 @@ export default function TodaySection({
   // 作業一覧(useLiveQuery)に反映されるまでの一瞬に下のチェックが古い一覧で走ると、
   // 閉じたばかりの確認がまた開いてしまうため、反映を待たずに覚えておく
   const overrunDismissedAtRef = useRef(new Map<string, number>());
+  const scheduleStartInFlightRef = useRef(false);
 
   // 予測超過チェック（通知 + 20分超過の画面確認）
   useEffect(() => {
@@ -577,7 +605,7 @@ export default function TodaySection({
       const elapsedMs = segmentsAccumulatedMs(task, now);
       const predMs = predicted * 1000;
       if (elapsedMs > predMs && !task.notifiedOverrun) {
-        notify("予測時間を超過しました", `${task.category} / ${workLabel(task)}`);
+        notify("予測時間を超過しました", `${task.category} / ${workLabel(task)}`, `overrun-${task.id}`);
         db.dailyTasks.update(task.id, { notifiedOverrun: true });
       }
       const dismissedAt = Math.max(task.overrunPromptDismissedAt ?? 0, overrunDismissedAtRef.current.get(task.id) ?? 0);
@@ -638,7 +666,14 @@ export default function TodaySection({
   // 予定インポートで登録した作業(scheduledTime)が指定時刻になったら自動的に差し込み開始する
   useEffect(() => {
     if (!tasks) return;
-    for (const task of findDueScheduledTasks(tasks, date, now)) autoStartScheduledTask(task);
+    // 同時に時刻が来た予定をまとめて始めると、どれも「何も計っていない」と見て一斉に計測中になる。
+    // 1つずつ(前のが終わってから次の周回で)扱う
+    const due = findDueScheduledTasks(tasks, date, now)[0];
+    if (!due || scheduleStartInFlightRef.current) return;
+    scheduleStartInFlightRef.current = true;
+    autoStartScheduledTask(due).finally(() => {
+      scheduleStartInFlightRef.current = false;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now, tasks, date]);
 
@@ -731,6 +766,9 @@ export default function TodaySection({
       }),
     [nonProvisionalSortedTasks, taskViewTab]
   );
+  // 完了タブで一度に描く件数(新しい方から)
+  const [doneShown, setDoneShown] = useState(30);
+  const hiddenDoneCount = taskViewTab === "done" ? Math.max(0, visibleTasks.length - doneShown) : 0;
 
   // 予定タブ用: ToDo・案件の期限切れ/本日期限の件数サマリー。判定ロジックは
   // ToDoタブの「期限切れ」ビュー(TodoSection)・案件タブ(ProjectsSection)と揃える
@@ -912,7 +950,10 @@ export default function TodaySection({
     if (!tasks) return;
     // 放置(操作のない状態が放置検知の時間を超えている)の間は始めない。始めてもすぐ放置検知が
     // 「最後の操作時刻」で打ち切って長さ0の完了になり、それが繰り返されて完了が何百件もできていた
-    if (now - lastActivityRef.current >= provisionalIdleMs) return;
+    if (now - lastActivityAt(lastActivityRef.current) >= provisionalIdleMs) return;
+    // 昨日から計り続けている作業がある間(日付をまたいだ直後)は始めない。今日の作業だけを見て
+    // 「何も計っていない」と判断すると、その作業と仮計測が二重に進んでいた
+    if ((allRunning ?? []).some((t) => !t.isProvisional)) return;
     const gapStart = findProvisionalStart({
       tasks,
       lastStopTime: provisionalAnchorTime,
@@ -962,7 +1003,7 @@ export default function TodaySection({
   // PCを開いたまま放置しても、際限なく計測され続けないようにするための保険
   useEffect(() => {
     if (!provisionalTask || provisionalTask.status !== "running") return;
-    const cutoff = inactivityCutoff(provisionalTask, lastActivityRef.current, now, provisionalIdleMs);
+    const cutoff = inactivityCutoff(provisionalTask, lastActivityAt(lastActivityRef.current), now, provisionalIdleMs);
     if (cutoff === null) return;
     if (idleFinishInFlightRef.current) return;
     idleFinishInFlightRef.current = true;
@@ -1364,8 +1405,26 @@ export default function TodaySection({
     return Promise.resolve(action());
   }
 
-  async function startTask(task: DailyTask, startAt: number = Date.now()) {
+  // takeOver: 作業カードの「開始/再開」「HH:MMから開始/再開」から、利用者が自分で始めた時に指定する。
+  // ほかに計測中の作業(仮計測を除く)があれば、先にそれを一時停止してからこの作業を計測中にする。
+  // 計測中が2つになった時の整理(lib/tasks.ts enforceSingleRunning)は「いちばん後から計測を始めた
+  // もの」を残すため、「10:00から開始」のようにさかのぼって始めると、10:30から計測中だった別の作業の
+  // 方が後になり、今始めた作業の方が止められていた。止める時刻は、その作業の計測の始まりと
+  // この作業の開始のうち遅い方(今にすると時間が重なって二重に数えるため)。
+  // 仮計測の割り当てなど、内部から呼ぶ開始では指定しない(それぞれの流れが仮計測を片付ける)
+  async function startTask(task: DailyTask, startAt: number = Date.now(), takeOver = false) {
     const doStart = async () => {
+      if (takeOver) {
+        const others = await db.dailyTasks
+          .where("date")
+          .equals(task.date)
+          .filter((t) => t.status === "running" && !t.isProvisional && t.id !== task.id)
+          .toArray();
+        for (const other of others) {
+          const openStart = other.segments.find((sg) => sg.end === undefined)?.start ?? startAt;
+          await pauseDailyTask(other, Math.max(openStart, startAt));
+        }
+      }
       const segments = [...task.segments, { start: startAt }];
       // さかのぼって開始/再開した場合、その時点で既に「予定超過+20分」を
       // 超えていることがあり得るが、開始直後に超過確認ダイアログが出るのは
@@ -1502,6 +1561,21 @@ export default function TodaySection({
     return prev.endedAt ?? null;
   }
 
+  // 完了した作業の作業マスタのID。以前は、作業マスタを持たずに完了した作業(トラブル対応・完了前に
+  // 名前を変えた作業・仮計測のまま完了した作業)にはマスタが書き戻されず、実績だけにマスタが付いていた。
+  // その頃のデータでも実績を探せるよう、区分・作業名からマスタを探す(無ければ作らない)
+  async function masterIdOfDoneTask(task: DailyTask): Promise<string | undefined> {
+    if (task.masterTaskId) return task.masterTaskId;
+    const cat = task.category.trim();
+    const nm = task.name.trim();
+    const master =
+      (await db.masterTasks.filter((m) => m.category === cat && m.name === nm).first()) ??
+      (await db.masterTasks
+        .filter((m) => normalizeMasterKey(m.category) === normalizeMasterKey(cat) && normalizeMasterKey(m.name) === normalizeMasterKey(nm))
+        .first());
+    return master?.id;
+  }
+
   // 作業内容の編集を保存する。完了済み(done)の場合は、既に作成済みの実績(WorkRecord)にも反映する。
   // 同じ区分/作業名の実績は日付ごとに1件へ合算されているため、実績時間の変更は差分(delta)を
   // その実績にそのまま加減することで、他の作業から合算された分にも影響を与えず正しく反映できる。
@@ -1518,7 +1592,7 @@ export default function TodaySection({
     method?: string,
     startedAtOverride?: number,
     endedAtOverride?: number
-  ) {
+  ): Promise<TaskEditResult> {
     const renamed = category !== task.category || name !== task.name;
 
     if (task.status === "running" || task.status === "paused") {
@@ -1531,8 +1605,9 @@ export default function TodaySection({
         // 一時停止を挟んだ後ろの区間へ開始を動かした時は、それより前の区間を落とす(lib/segmentEdit.ts)
         const retimed = retimeSegments(segments, startedAtOverride);
         if (!retimed) {
-          alert("開始時刻の指定が不正です(今の計測の始まりより後になっています)");
-          return;
+          // 以前はここでalertを出していたが、編集画面は既に閉じていて、ほかの変更(名前・メモなど)も
+          // 消えていた。保存できなかった理由を返し、編集画面を開いたままその場に出す
+          return { ok: false, message: "開始時刻を保存できません。今の計測の始まりより前の時刻にしてください" };
         }
         segments = retimed;
       }
@@ -1554,7 +1629,7 @@ export default function TodaySection({
         taskUpdates.accumulatedMs = Math.max(0, task.accumulatedMs + (closedMs(segments) - closedMs(task.segments)));
       }
       await db.dailyTasks.update(task.id, taskUpdates);
-      return;
+      return { ok: true };
     }
 
     if (task.status !== "done") {
@@ -1565,7 +1640,7 @@ export default function TodaySection({
         method,
         ...(renamed ? { masterTaskId: undefined } : {}),
       });
-      return;
+      return { ok: true };
     }
 
     const oldSeconds = Math.round(task.accumulatedMs / 1000);
@@ -1575,8 +1650,7 @@ export default function TodaySection({
       // (以前は「途中の一時停止区間と矛盾しています」で直せなかった。lib/segmentEdit.ts)
       const retimed = retimeSegments(segments, startedAtOverride, endedAtOverride);
       if (!retimed) {
-        alert("開始・終了時刻の範囲が不正です(終了が開始より前になっています)");
-        return;
+        return { ok: false, message: "この時刻では保存できません。終了を開始より後の時刻にしてください" };
       }
       segments = retimed;
     }
@@ -1610,7 +1684,9 @@ export default function TodaySection({
       taskUpdates.recordedSegmentCount = (taskUpdates.segments ?? task.segments).length;
     }
 
-    const oldMasterId = task.masterTaskId;
+    // 作業マスタを持たないまま完了した以前のデータ(トラブル対応など)は、区分・作業名からマスタを探す
+    const oldMasterId = await masterIdOfDoneTask(task);
+    if (oldMasterId && !task.masterTaskId) taskUpdates.masterTaskId = oldMasterId;
     // 編集前の帰属先(案件・段階・ToDo・手段)で、この作業分が合算されている実績を探す
     const existingOld = oldMasterId ? await findMergeTargetRecord(task.date, oldMasterId, task) : undefined;
 
@@ -1618,6 +1694,58 @@ export default function TodaySection({
     // 正確な区間を再構成できないため、既存のsegmentsは破棄して(定時以降の判定は
     // startedAt〜endedAtによる従来通りの近似に戻す)、ズレたまま残さないようにする
     const clearSegments = delta !== 0 || segmentsChanged;
+
+    // 手段は実績の帰属先の一部(lib/tasks.ts sameAttribution)。同じ日に同じ作業を別々の手段で行った分は
+    // 別の実績になっているので、この作業だけ手段を変えた時は、この作業の分を新しい手段の実績へ移す。
+    // 以前は合算先の実績の手段を書き換えていたため、同じ実績に合算されているほかの作業まで
+    // 手段が変わり、手段別の比較が狂っていた
+    const methodChanged = (method?.trim() || undefined) !== (task.method?.trim() || undefined);
+
+    const methodTarget =
+      !renamed && methodChanged && existingOld && oldMasterId
+        ? await findMergeTargetRecord(task.date, oldMasterId, { ...task, method })
+        : undefined;
+    // この作業だけの実績で、移す先の実績も無い時は、下の通常の経路で実績の手段をそのまま書き換える
+    // (実績を作り直すと、実績に付けたメモや集計からの除外の指定が外れるため)
+    if (!renamed && methodChanged && existingOld && oldMasterId && (methodTarget || existingOld.seconds - oldSeconds > 0)) {
+      const newEndedAt = taskUpdates.endedAt ?? task.endedAt ?? existingOld.endedAt;
+      const newStartedAt = taskUpdates.startedAt ?? task.startedAt ?? existingOld.startedAt;
+      const remaining = existingOld.seconds - oldSeconds;
+      if (remaining <= 0) await db.records.delete(existingOld.id);
+      else await db.records.update(existingOld.id, { seconds: remaining, segments: undefined });
+      const target = methodTarget;
+      if (target) {
+        await db.records.update(target.id, {
+          seconds: target.seconds + newSeconds,
+          startedAt: Math.min(target.startedAt, newStartedAt),
+          endedAt: Math.max(target.endedAt, newEndedAt),
+          note,
+          segments: undefined,
+        });
+      } else {
+        await db.records.add({
+          id: uid(),
+          date: task.date,
+          category,
+          name,
+          masterTaskId: oldMasterId,
+          seconds: newSeconds,
+          startedAt: newStartedAt,
+          endedAt: newEndedAt,
+          excludedFromStats: false,
+          projectId: task.projectId,
+          stageId: task.stageId,
+          todoTaskId: task.todoTaskId,
+          isTrouble: task.isTrouble,
+          secondaryProjectIds: task.secondaryProjectIds,
+          note,
+          method: method?.trim() || undefined,
+        });
+      }
+      await db.dailyTasks.update(task.id, taskUpdates);
+      if (delta !== 0) await recomputeEstimateFromRecords(oldMasterId);
+      return { ok: true };
+    }
 
     if (!renamed) {
       if (existingOld) {
@@ -1631,7 +1759,7 @@ export default function TodaySection({
       }
       await db.dailyTasks.update(task.id, taskUpdates);
       if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
-      return;
+      return { ok: true };
     }
 
     if (masterEditMode === "rename") {
@@ -1652,7 +1780,7 @@ export default function TodaySection({
       }
       await db.dailyTasks.update(task.id, taskUpdates);
       if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
-      return;
+      return { ok: true };
     }
 
     // relink: 実績ごと別マスタ(既存 or 新規)へ繋ぎ変える
@@ -1698,6 +1826,7 @@ export default function TodaySection({
     await db.dailyTasks.update(task.id, taskUpdates);
     if (oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
     await recomputeEstimateFromRecords(newMaster.id);
+    return { ok: true };
   }
 
   // 本日の作業カードから直接お気に入りを付け外しする。まだ作業マスタに紐づいていない
@@ -1759,13 +1888,15 @@ export default function TodaySection({
     let recordSnapshot: WorkRecord | undefined;
     let masterSnapshot: MasterTask | undefined;
 
-    const existing = task.masterTaskId ? await findMergeTargetRecord(task.date, task.masterTaskId, task) : undefined;
+    // 作業マスタを持たないまま完了した以前のデータ(トラブル対応など)は、区分・作業名からマスタを探す
+    const masterId = await masterIdOfDoneTask(task);
+    const existing = masterId ? await findMergeTargetRecord(task.date, masterId, task) : undefined;
+    const taskSeconds = Math.round(task.accumulatedMs / 1000);
 
     await db.dailyTasks.delete(task.id);
 
     if (deleteRecord && existing) {
       recordSnapshot = { ...existing };
-      const taskSeconds = Math.round(task.accumulatedMs / 1000);
       const remaining = existing.seconds - taskSeconds;
       if (remaining <= 0) {
         await db.records.delete(existing.id);
@@ -1790,22 +1921,44 @@ export default function TodaySection({
       }
     }
 
-    if (deleteMaster && task.masterTaskId) {
-      masterSnapshot = await db.masterTasks.get(task.masterTaskId);
-      await db.masterTasks.delete(task.masterTaskId);
-    } else if (deleteRecord && existing && task.masterTaskId) {
-      await recomputeEstimateFromRecords(task.masterTaskId);
+    if (deleteMaster && masterId) {
+      masterSnapshot = await db.masterTasks.get(masterId);
+      await db.masterTasks.delete(masterId);
+    } else if (deleteRecord && existing && masterId) {
+      await recomputeEstimateFromRecords(masterId);
     }
 
     const parts = ["本日の作業"];
     if (deleteRecord && existing) parts.push("実績");
     if (deleteMaster && masterSnapshot) parts.push("作業マスタ");
     showUndoToast(`「${workLabel(task)}」の${parts.join("・")}を削除しました`, async () => {
-      await db.dailyTasks.add(taskSnapshot);
-      if (recordSnapshot) await db.records.put(recordSnapshot);
-      if (masterSnapshot) await db.masterTasks.put(masterSnapshot);
-      if (deleteRecord && existing && task.masterTaskId && !deleteMaster) {
-        await recomputeEstimateFromRecords(task.masterTaskId);
+      // 「元に戻す」は操作の履歴から、しばらく経ってからでも押せる。削除した時点の控えで丸ごと
+      // 上書きすると、その後に同じ実績へ入った分(別の作業の完了・時刻の編集など)が消えるため、
+      // 実績が残っていればこの作業の分だけを足し戻す。控えから戻すのは、実績が無くなっている時だけ
+      await db.transaction("rw", db.dailyTasks, db.records, db.masterTasks, async () => {
+        await db.dailyTasks.put(taskSnapshot);
+        if (recordSnapshot) {
+          // 実績ごと消した後に、同じ作業の完了で実績が作り直されていれば、そちらへ足し戻す(同じ帰属先の実績を2件にしない)
+          const current =
+            (await db.records.get(recordSnapshot.id)) ?? (masterId ? await findMergeTargetRecord(task.date, masterId, task) : undefined);
+          if (!current) {
+            await db.records.put(recordSnapshot);
+          } else {
+            const mine = task.segments.filter((sg) => sg.end !== undefined);
+            await db.records.update(current.id, {
+              seconds: current.seconds + taskSeconds,
+              startedAt: Math.min(current.startedAt, task.startedAt ?? recordSnapshot.startedAt),
+              endedAt: Math.max(current.endedAt, task.endedAt ?? recordSnapshot.endedAt),
+              // 区間を持つ実績には、この作業の区間も戻す(区間を捨てた実績は捨てたまま)
+              ...(current.segments ? { segments: [...current.segments, ...mine].sort((a, b) => a.start - b.start) } : {}),
+            });
+          }
+        }
+        // 作業マスタは、同じIDのものが既にあれば上書きしない(戻すまでの間に直した内容を消さないように)
+        if (masterSnapshot && !(await db.masterTasks.get(masterSnapshot.id))) await db.masterTasks.put(masterSnapshot);
+      });
+      if (deleteRecord && existing && masterId && !deleteMaster) {
+        await recomputeEstimateFromRecords(masterId);
       }
     });
   }
@@ -2394,11 +2547,23 @@ export default function TodaySection({
 
   const methodSuggestions = useMemo(() => collectMethodSuggestions(projectRecords ?? []), [projectRecords]);
   // 作業ごとの「いつもの所要時間の幅」(直近90日に終えた回から)
-  const recentDone = useLiveQuery(
-    () => db.dailyTasks.where("date").aboveOrEqual(shiftDateStr(date, -90)).filter((t) => t.status === "done").toArray(),
-    [date]
-  );
-  const durationRangeByMaster = useMemo(() => durationRanges(recentDone ?? []), [recentDone]);
+  // (その日に1回読めば足りる。常に見張ると、開始・終了のたびに90日分を読み直して操作が重くなる)
+  const [recentDone, setRecentDone] = useState<DailyTask[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void db.dailyTasks
+      .where("date")
+      .aboveOrEqual(shiftDateStr(date, -90))
+      .filter((t) => t.status === "done")
+      .toArray()
+      .then((rows) => {
+        if (alive) setRecentDone(rows);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [date]);
+  const durationRangeByMaster = useMemo(() => durationRanges(recentDone), [recentDone]);
 
   // 同曜日比較: 本日の実績合計を、過去の同じ曜日の平均と比べる
   const todayTotalSeconds = useMemo(
@@ -2562,7 +2727,8 @@ export default function TodaySection({
     setConditionEditTaskId,
     taskOwnConditionLog,
     taskDisplayConditionLevel,
-    startTask,
+    // 作業カードからの開始は利用者が自分で始めたものなので、ほかの計測中の作業より優先する
+    startTask: (task: DailyTask, startAt?: number) => startTask(task, startAt, true),
     pauseTask,
     finishTask,
     deleteTask,
@@ -2705,7 +2871,7 @@ export default function TodaySection({
         <div key={taskViewTab}>
       {/* 今日の作業がまだ1件もない時は、曜日のテンプレートから作る枠を作業リストの一番上に出す。
           以前は「そのほかの表示」の中(家事・お気に入りの下)にあって、探さないと見つからなかった */}
-      {tasks && tasks.length === 0 && (taskViewTab === "running" || taskViewTab === "pending") && (
+      {tasks && tasks.every((t) => t.isProvisional) && (taskViewTab === "running" || taskViewTab === "pending") && (
         <div className="panel mb-3 flex flex-wrap items-center gap-3 p-4" data-testid="template-generate">
           <h2 className="w-full font-display text-base font-bold">📋 今日の作業をテンプレートから作る</h2>
           <select
@@ -2823,14 +2989,18 @@ export default function TodaySection({
       )}
       {taskViewTab === "done" && !background && <PlanActualPanel tasks={tasks ?? []} />}
       {taskViewTab === "done" && (
+        // 1件1行なので、完了が多い日は縦に何画面分にもなり、下の作業の一覧にたどり着けなかった。高さを区切る
+        <div className={nonProvisionalSortedTasks.length > 20 ? "max-h-[60vh] overflow-y-auto" : ""}>
         <CompletedTasksGantt
           tasks={nonProvisionalSortedTasks}
           date={date}
           onOpenEdit={(task) => setEditingTask(task)}
-          onCommitTimes={(task, startedAt, endedAt) =>
-            applyTaskEdit(task, task.category, task.name, undefined, task.note, task.method, startedAt, endedAt)
-          }
+          onCommitTimes={async (task, startedAt, endedAt) => {
+            const result = await applyTaskEdit(task, task.category, task.name, undefined, task.note, task.method, startedAt, endedAt);
+            if (!result.ok) showUndoToast(result.message);
+          }}
         />
+        </div>
       )}
 
       <div className="space-y-3">
@@ -2841,7 +3011,14 @@ export default function TodaySection({
             {taskViewTab === "done" && "完了した作業はまだありません"}
           </p>
         )}
-        {visibleTasks.map((task) => (
+        {/* 完了が多い日(数百件)に全部を描くと開くのも操作も重いので、新しい方から30件だけ出す。
+            並びは終えた順のまま(下ほど新しい)で、古い分は上のボタンで開く */}
+        {hiddenDoneCount > 0 && (
+          <button className="btn-pill-outline w-full text-sm" onClick={() => setDoneShown((n) => n + 60)}>
+            ▲ それより前の{hiddenDoneCount}件を表示
+          </button>
+        )}
+        {(hiddenDoneCount > 0 ? visibleTasks.slice(hiddenDoneCount) : visibleTasks).map((task) => (
           <TaskCard key={task.id} task={task} ctx={taskCardCtx} />
         ))}
       </div>
@@ -3340,9 +3517,11 @@ export default function TodaySection({
           task={editingTask}
           previousTaskEndedAt={findPreviousTaskEndedAt(editingTask)}
           methodSuggestions={methodSuggestions}
-          onSave={(category, name, actualSeconds, note, method, startedAt, endedAt) =>
-            applyTaskEdit(editingTask, category, name, actualSeconds, note, method, startedAt, endedAt)
-          }
+          onSave={async (category, name, actualSeconds, note, method, startedAt, endedAt) => {
+            const result = await applyTaskEdit(editingTask, category, name, actualSeconds, note, method, startedAt, endedAt);
+            if (result.ok) showUndoToast(`「${name}」を保存しました`);
+            return result;
+          }}
           onClose={() => setEditingTask(null)}
         />
       )}

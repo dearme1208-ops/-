@@ -33,13 +33,14 @@ export default function TodoReminderPopup({ onViewDetail }: { onViewDetail: (tas
       (t) => t.reminderAt !== undefined && t.reminderAt <= now && !t.reminderFiredAt && !t.completed
     );
     if (due.length === 0) return;
-    (async () => {
-      for (const t of due) {
-        await db.todoTasks.update(t.id, { reminderFiredAt: Date.now() });
-        notify("🔔 ToDoの通知時刻です", todoLabel(t, byId), `todo-reminder-${t.id}`);
-      }
-    })();
-    setDueQueue((prev) => [...prev, ...due]);
+    // 複数件が同時に来た時、1件ずつ書くと途中の状態でこの処理がまた走り、同じ通知が二重に並んでいた。
+    // まとめて1回で「知らせ済み」にし、並べる側でも同じものを重ねない
+    const firedAt = Date.now();
+    void db.transaction("rw", db.todoTasks, async () => {
+      for (const t of due) await db.todoTasks.update(t.id, { reminderFiredAt: firedAt });
+    });
+    for (const t of due) notify("🔔 ToDoの通知時刻です", todoLabel(t, byId), `todo-reminder-${t.id}`);
+    setDueQueue((prev) => [...prev, ...due.filter((t) => !prev.some((p) => p.id === t.id))]);
     setDismissed(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now, allTasks]);

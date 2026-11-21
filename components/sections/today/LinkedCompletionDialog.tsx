@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { fireConfetti } from "@/lib/confetti";
+import { isStageDone } from "@/lib/projectStage";
 import { todoLabel } from "@/lib/todoLabel";
 import type { DailyTask, ProjectItem, TodoTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -35,7 +36,8 @@ export default function LinkedCompletionDialog({
     const isCountBased = stage.targetCount != null;
     const stages = project.stages ?? [];
     const idx = stages.findIndex((s) => s.id === stage.id);
-    const incompletePrevious = stages.slice(0, idx).filter((s) => !s.completed);
+    // 件数管理の段階は completed が立たないため、目標件数に達していれば完了として扱う
+    const incompletePrevious = stages.slice(0, idx).filter((s) => !isStageDone(s));
     return (
       <Modal title="段階の進捗確認" onClose={onDone}>
         <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>

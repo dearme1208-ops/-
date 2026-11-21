@@ -25,21 +25,32 @@ function pad(n: number): string {
 
 /** 期限の後ろに付く助詞(「までに」「中に」など)。件名から一緒に取り除く */
 const DUE_SUFFIX = "(?:までに|まで|中に|中|に|の)?";
-/** 前後の区切り(行頭・行末・空白・読点) */
-const START = "(?:^|[\\s、,])";
+/** 前の区切り(行頭・空白・読点) */
+const START = "(?:^|[\\s、,。])";
+/** 後ろの区切り(行末・空白・読点) */
+const END = "(?=$|[\\s、,。])";
 
+// 日付の言葉は「独立した語」として書かれた時だけ期限として受け取る。区切りを見ないと、
+// 「来週日程調整」の「来週日」、「月曜日報」の「月曜日」、「明日中止」の「明日中」、「3日以内」の「3日」、
+// 「1/2ページ」の「1/2」のように、件名の一部を期限として食べてしまう。
+// 例外として「明日までに送る」「今日中に出す」のように期限だと明示する助詞が付いている場合は、
+// 後ろに区切りが無くても、また「見積書を明日までに送る」のように文の途中(を・は・が・に の直後)でも受け取る
 interface DateRule {
-  re: RegExp;
+  /** 日付の言葉そのもの(前後の区切り・助詞を含まない) */
+  core: string;
+  /** 区切りが無くても期限と認める助詞。既定は「までに」「中に」 */
+  explicit?: string;
   resolve: (m: RegExpMatchArray, today: string) => string | null;
 }
 
 const DATE_RULES: DateRule[] = [
-  { re: new RegExp(`${START}(今日|本日)${DUE_SUFFIX}`), resolve: (_m, t) => t },
-  { re: new RegExp(`${START}(明後日|あさって)${DUE_SUFFIX}`), resolve: (_m, t) => shiftDateStr(t, 2) },
-  { re: new RegExp(`${START}(明日|あした|あす)${DUE_SUFFIX}`), resolve: (_m, t) => shiftDateStr(t, 1) },
+  { core: "(今日|本日)", resolve: (_m, t) => t },
+  { core: "(明後日|あさって)", resolve: (_m, t) => shiftDateStr(t, 2) },
+  { core: "(明日|あした|あす)", resolve: (_m, t) => shiftDateStr(t, 1) },
   {
     // 今週中・今週末: その週の金曜(週末なら日曜)。金曜を過ぎていれば今日
-    re: new RegExp(`${START}今週(中|末)${DUE_SUFFIX}`),
+    core: "今週(中|末)",
+    explicit: "(?:までに|に)",
     resolve: (m, t) => {
       const wd = weekdayOf(t);
       if (wd === 0) return t; // 日曜は週の最終日
@@ -49,8 +60,8 @@ const DATE_RULES: DateRule[] = [
     },
   },
   {
-    // 来週の○曜 / 来週○曜日
-    re: new RegExp(`${START}来週の?([日月火水木金土])曜?日?${DUE_SUFFIX}`),
+    // 来週の○曜 / 来週○曜日。「曜」まで書かれた時だけ曜日とみなす(「来週月次報告」の「月」を曜日にしない)
+    core: "来週の?([日月火水木金土])曜日?",
     resolve: (m, t) => {
       const wd = weekdayOf(t);
       const toNextMonday = ((8 - wd) % 7) || 7;
@@ -60,17 +71,18 @@ const DATE_RULES: DateRule[] = [
   },
   {
     // 来週: 来週の月曜
-    re: new RegExp(`${START}来週${DUE_SUFFIX}`),
+    core: "来週",
     resolve: (_m, t) => shiftDateStr(t, ((8 - weekdayOf(t)) % 7) || 7),
   },
   {
     // ○曜(日): 今日から数えて次のその曜日(今日がその曜日なら今日)
-    re: new RegExp(`${START}([日月火水木金土])曜日?${DUE_SUFFIX}`),
+    core: "([日月火水木金土])曜日?",
     resolve: (m, t) => shiftDateStr(t, (WEEKDAYS.indexOf(m[1]) - weekdayOf(t) + 7) % 7),
   },
   {
     // 10/12 ・ 10月12日。過ぎていれば来年
-    re: new RegExp(`${START}(\\d{1,2})(?:/|月)(\\d{1,2})日?${DUE_SUFFIX}`),
+    core: "(\\d{1,2})(?:/|月)(\\d{1,2})日?",
+    explicit: "(?:までに)",
     resolve: (m, t) => {
       const mo = Number(m[1]);
       const d = Number(m[2]);
@@ -82,8 +94,10 @@ const DATE_RULES: DateRule[] = [
   },
   {
     // 12日: 今月のその日。過ぎていれば来月
-    // 「3日で」「2日間」のような所要日数は期限として扱わない
-    re: new RegExp(`${START}(\\d{1,2})日(?!で|間|かけ|ほど|くらい)${DUE_SUFFIX}`),
+    // 「3日で」「2日間」「3日以内」のような所要日数は、後ろに区切りが無いので期限として扱われない
+    // (「3日中に」は「3日のうちに」とも読めるため、明示の助詞は「までに」だけにする)
+    core: "(\\d{1,2})日",
+    explicit: "(?:までに)",
     resolve: (m, t) => {
       const d = Number(m[1]);
       if (d < 1 || d > 31) return null;
@@ -96,6 +110,14 @@ const DATE_RULES: DateRule[] = [
     },
   },
 ];
+
+const DATE_MATCHERS = DATE_RULES.map((rule) => ({
+  rule,
+  // 独立した語として書かれた形: 「明日 A社に電話」「金曜までに 資料」
+  separate: new RegExp(`${START}${rule.core}${DUE_SUFFIX}${END}`),
+  // 期限だと明示する助詞つきの形: 「明日までに見積書を送る」「見積書を明日までに送る」
+  explicit: new RegExp(`(?:${START}|(?<=[をはがに]))${rule.core}${rule.explicit ?? "(?:までに|中に)"}`),
+}));
 
 const ESTIMATE_RE = /(?:^|[\s、,])約?(\d+(?:\.\d+)?)\s*(分|時間|h|min)(?:くらい|ほど|程度|で)?(?=[\s、,]|$)/i;
 
@@ -126,13 +148,15 @@ export function parseCompose(raw: string, today: string): ComposeResult {
     text = text.replace(est[0], " ");
   }
 
-  for (const rule of DATE_RULES) {
-    const m = rule.re.exec(text);
+  for (const { rule, separate, explicit } of DATE_MATCHERS) {
+    const m = separate.exec(text) ?? explicit.exec(text);
     if (!m) continue;
     const resolved = rule.resolve(m, today);
     if (!resolved) continue;
     dueDate = resolved;
-    text = text.replace(m[0], " ");
+    // 区切りから始まる一致は空白に置き換える。文の途中(「見積書を|明日までに|送る」)から抜いた時は
+    // 前後をそのままつなげ、件名に不自然な空白が入らないようにする
+    text = text.replace(m[0], /^[\s、,。]/.test(m[0]) ? " " : "");
     break;
   }
 

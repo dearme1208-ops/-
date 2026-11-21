@@ -138,7 +138,7 @@ export function OverrunPromptDialog({
 }) {
   const workCtx = useWorkContext();
   return (
-    <Modal title="まだこの作業中ですか?">
+    <Modal title="まだこの作業中ですか?" onClose={onKeepGoing}>
       <p className="mb-4 text-sm text-cream/80">「{workCtx.label(task)}」が予測時間を大幅に超過しています。</p>
       <div className="flex justify-end gap-2">
         <button className="btn-pill-outline text-sm" onClick={onKeepGoing}>

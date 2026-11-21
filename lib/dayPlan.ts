@@ -329,7 +329,11 @@ export function collectPlanCandidates(input: DayPlanInput): PlanCandidate[] {
     if (linkedTodos.has(t.id)) continue;
     // 案件に反映済みのToDoは案件側の候補と重複するため除く。サブタスクが残っている
     // 親ToDoは、実際の作業単位であるサブタスクの方を候補にする
-    if (t.projectId || hasOpenChildren.has(t.id)) continue;
+    // ただし反映先の案件が削除済み・完了・アーカイブ済みなら案件側の候補は出ないので、
+    // ToDoがどこにも現れなくならないよう、その場合はToDoの方を候補に残す
+    const linkedProject = t.projectId ? projectById.get(t.projectId) : undefined;
+    const coveredByProject = !!linkedProject && !linkedProject.completedAt && !linkedProject.archived;
+    if (coveredByProject || hasOpenChildren.has(t.id)) continue;
     const parent = t.parentTaskId ? todoById.get(t.parentTaskId) : undefined;
     const due = t.dueDate ?? parent?.dueDate;
     const inMyDay = t.myDayDate === today;

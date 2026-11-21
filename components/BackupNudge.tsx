@@ -38,8 +38,11 @@ export default function BackupNudge() {
     try {
       showUndoToast(await action());
       setDays(daysSinceLastBackup());
-    } catch {
-      // 共有の取り消しなど。何も言わない(催促はそのまま残る)
+    } catch (e) {
+      // 共有の画面を閉じただけ(AbortError)なら何も言わない(催促はそのまま残る)。
+      // それ以外は控えが取れていない。黙っていると「押したから取れた」と思い込んでしまうので知らせる
+      if (e instanceof Error && e.name === "AbortError") return;
+      showUndoToast(`控えを作れませんでした: ${e instanceof Error ? e.message : String(e)}`, undefined, 10000);
     } finally {
       setBusy(false);
     }

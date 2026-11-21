@@ -21,6 +21,7 @@ import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
 import { addManualRecord, findMergeTargetRecord, mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
 import { formatClock, formatDateJp, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
+import { showUndoToast } from "@/lib/toast";
 import type { WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
@@ -180,22 +181,32 @@ export default function RecordsSection() {
     }
   }
 
-  // 開始・終了時刻を編集した場合、実績時間(seconds)もその2時刻の差に合わせて再計算する
-  // (時刻と実績時間の表示がずれて見えないようにするため)
-  async function updateRecordStartTime(r: WorkRecord, timeStr: string) {
-    if (!timeStr) return;
-    const startedAt = withNewTime(r.startedAt, timeStr);
-    const seconds = Math.max(0, Math.round((r.endedAt - startedAt) / 1000));
-    await updateRecord(r, { startedAt, seconds });
-    await syncDailyTaskBoundaryFromRecord(r, "start", startedAt);
-  }
-
-  async function updateRecordEndTime(r: WorkRecord, timeStr: string) {
-    if (!timeStr) return;
-    const endedAt = withNewTime(r.endedAt, timeStr);
-    const seconds = Math.max(0, Math.round((endedAt - r.startedAt) / 1000));
-    await updateRecord(r, { endedAt, seconds });
-    await syncDailyTaskBoundaryFromRecord(r, "end", endedAt);
+  // 開始・終了時刻を編集した場合、実績時間(seconds)は動かした分だけ増減させる。
+  // 実績は同じ日の同じ作業を合算したもので、間が空いていることがある(9〜10時と16〜17時の2回で2時間など)。
+  // 以前は「終了 − 開始」で置き換えていたため、開始を9:05に直しただけで7時間55分になっていた。
+  // 元になった本日の作業があればそちらを先に直し、作業の合計が変わった分をそのまま実績に反映する
+  // (作業の側が直せない時刻なら実績も直さず、実績と作業が食い違わないようにする)。
+  // 戻り値: 直したか(直さなかった時は、呼び出し側が入力欄を元の時刻へ戻す)
+  async function updateRecordBoundary(r: WorkRecord, edge: "start" | "end", timeStr: string): Promise<boolean> {
+    const oldTime = edge === "start" ? r.startedAt : r.endedAt;
+    // 入力欄から出ただけ(時刻を変えていない)なら何もしない。秒が切り捨てられて時間が変わってしまう
+    if (!timeStr || timeStr === formatClock(oldTime)) return true;
+    const newTime = withNewTime(oldTime, timeStr);
+    if (edge === "start" ? newTime >= r.endedAt : newTime <= r.startedAt) {
+      showUndoToast("開始は終了より前の時刻にしてください");
+      return false;
+    }
+    const synced = await syncDailyTaskBoundaryFromRecord(r, edge, newTime);
+    if (synced.status === "rejected") {
+      showUndoToast("この時刻には直せません(元になった作業の計測した時間と合いません)。本日の作業の側で直してください");
+      return false;
+    }
+    const deltaMs = synced.status === "synced" ? synced.deltaMs : edge === "start" ? oldTime - newTime : newTime - oldTime;
+    const seconds = Math.max(0, r.seconds + Math.round(deltaMs / 1000));
+    // 実績の区間(segments)は古い時刻のままになるので捨てる(定時以降の集計は開始〜終了で近似する。
+    // 本日の作業の側で時刻を直した時と同じ扱い)
+    await updateRecord(r, { ...(edge === "start" ? { startedAt: newTime } : { endedAt: newTime }), seconds, segments: undefined });
+    return true;
   }
 
   async function deleteRecord(r: WorkRecord) {
@@ -500,7 +511,12 @@ export default function RecordsSection() {
                   key={`start-${r.startedAt}`}
                   type="time"
                   defaultValue={formatClock(r.startedAt)}
-                  onBlur={(e) => updateRecordStartTime(r, e.target.value)}
+                  onBlur={(e) => {
+                    const el = e.currentTarget;
+                    void updateRecordBoundary(r, "start", el.value).then((ok) => {
+                      if (!ok) el.value = formatClock(r.startedAt);
+                    });
+                  }}
                   className="rounded-md border border-cream/20 bg-ink px-2 py-1 text-cream tabular-nums"
                 />
                 <span>〜</span>
@@ -508,7 +524,12 @@ export default function RecordsSection() {
                   key={`end-${r.endedAt}`}
                   type="time"
                   defaultValue={formatClock(r.endedAt)}
-                  onBlur={(e) => updateRecordEndTime(r, e.target.value)}
+                  onBlur={(e) => {
+                    const el = e.currentTarget;
+                    void updateRecordBoundary(r, "end", el.value).then((ok) => {
+                      if (!ok) el.value = formatClock(r.endedAt);
+                    });
+                  }}
                   className="rounded-md border border-cream/20 bg-ink px-2 py-1 text-cream tabular-nums"
                 />
               </div>

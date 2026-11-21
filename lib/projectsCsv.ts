@@ -6,10 +6,18 @@ const HEADERS = ["id", "title", "group", "category", "workName", "dueDate", "cre
 
 // 段階(ProjectStage)は1セルに「タイトル:期日:目標件数」を;区切りで詰めて表現する
 // (例: 初稿作成:2026-08-20:;検収立会:2026-08-25:5 )。期日・目標件数は空でもよい。
-// タイトルに":"や";"を含めることはできない
+// タイトルに含まれる区切り文字(":" ";")と"\"は、前に"\"を置いて書き出す。
+// 以前はそのまま書き出していたため、「10:30 客先打合せ」のような段階名が取り込み直しで
+// 「10」という別の段階になり、元の段階の完了状態や添付が引き継がれなくなっていた
+function escapeStageTitle(title: string): string {
+  return title.replace(/[\\:;]/g, (ch) => "\\" + ch);
+}
+
 function serializeStages(stages: ProjectStage[] | undefined): string {
   if (!stages || stages.length === 0) return "";
-  return stages.map((s) => `${s.title}:${s.dueDate ?? ""}:${s.targetCount != null ? s.targetCount : ""}`).join(";");
+  return stages
+    .map((s) => `${escapeStageTitle(s.title)}:${s.dueDate ?? ""}:${s.targetCount != null ? s.targetCount : ""}`)
+    .join(";");
 }
 
 export function projectsToCsv(projects: ProjectItem[]): string {
@@ -61,24 +69,81 @@ export interface ParsedProjectRow {
   createdDate?: string;
   completed: boolean;
   // 未定義=CSVにstages列自体が無い/空セル(既存の段階には触れない)。
-  // 空配列以上の値があれば、その内容で段階を作成・更新する
+  // 値があれば、その内容で段階を作成・更新する(ここに無い既存の段階は消さずに残す)
   stages?: ParsedProjectStage[];
 }
 
-// 「タイトル:期日:目標件数」;区切りのセルをパースする
+// "\"でエスケープされていない区切り文字で分ける。分けた各片のエスケープはまだ解かない
+// (":"で分ける前に解くと、タイトル中の"\:"が区切りと見分けられなくなる)
+function splitUnescaped(text: string, sep: string): string[] {
+  const parts: string[] = [];
+  let cur = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\\" && i + 1 < text.length) {
+      cur += ch + text[i + 1];
+      i++;
+    } else if (ch === sep) {
+      parts.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  parts.push(cur);
+  return parts;
+}
+
+// "\:" "\;" "\\" だけを元の文字に戻す。それ以外の"\"(エスケープを始める前に書き出した
+// ファイルや手書きのファイルにある「C:\work」など)はそのまま残す
+function unescapeStageText(text: string): string {
+  return text.replace(/\\([\\:;])/g, "$1");
+}
+
+// 期日の欄として読める形か(空・YYYY-MM-DD・Excelが書き換えた 2026/8/20 など)
+function looksLikeStageDate(raw: string): boolean {
+  const v = raw.trim();
+  return v === "" || /^\d{1,4}[-/.年]\d{1,2}([-/.月]\d{1,4})?日?$/.test(v);
+}
+
+// 目標件数の欄として読める形か(空・数値)
+function looksLikeStageCount(raw: string): boolean {
+  const v = raw.trim();
+  return v === "" || /^\d+(\.\d+)?$/.test(v);
+}
+
+// 「タイトル:期日:目標件数」;区切りのセルをパースする。
+// 期日・目標件数は末尾から読む。エスケープを始める前に書き出したファイルでは、タイトルの
+// ":"がそのまま入っているため、先頭から3つに分けるとタイトルが途中で切れてしまう
+// (「10:30 客先打合せ:2026-12-01:」→ タイトル「10」)。末尾の2欄が期日・件数として読める
+// 限り、それより前は":"を含めてすべてタイトルとして扱う。
+// なお、エスケープ前のファイルでタイトルに";"が入っていた場合は、段階の区切りと
+// 見分けがつかないため救えない
 function parseStagesCell(cell: string): ParsedProjectStage[] {
   const trimmed = cell.trim();
   if (!trimmed) return [];
-  return trimmed
-    .split(";")
+  return splitUnescaped(trimmed, ";")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
     .map((entry) => {
-      const [titleRaw, dueDateRaw, targetCountRaw] = entry.split(":");
-      const title = (titleRaw ?? "").trim();
-      const dueDate = (dueDateRaw ?? "").trim() ? normalizeCsvDate(dueDateRaw.trim()) ?? dueDateRaw.trim() : undefined;
-      const targetCountStr = (targetCountRaw ?? "").trim();
-      const targetCountNum = targetCountStr ? Number(targetCountStr) : NaN;
+      const fields = splitUnescaped(entry, ":");
+      const n = fields.length;
+      let titleFields = fields;
+      let dueDateRaw = "";
+      let targetCountRaw = "";
+      if (n >= 3 && looksLikeStageCount(fields[n - 1]) && looksLikeStageDate(fields[n - 2])) {
+        titleFields = fields.slice(0, n - 2);
+        dueDateRaw = fields[n - 2].trim();
+        targetCountRaw = fields[n - 1].trim();
+      } else if (n >= 2 && looksLikeStageDate(fields[n - 1])) {
+        // 手書きの「タイトル:期日」(目標件数の欄ごと省略した形)
+        titleFields = fields.slice(0, n - 1);
+        dueDateRaw = fields[n - 1].trim();
+      }
+      // どちらにも当てはまらなければ、全体をタイトルとみなす(「10:30 客先打合せ」とだけ書いた場合など)
+      const title = unescapeStageText(titleFields.join(":")).trim();
+      const dueDate = dueDateRaw ? normalizeCsvDate(dueDateRaw) ?? dueDateRaw : undefined;
+      const targetCountNum = targetCountRaw ? Number(targetCountRaw) : NaN;
       return { title, dueDate, targetCount: Number.isFinite(targetCountNum) ? targetCountNum : undefined };
     })
     .filter((s) => !!s.title);
