@@ -75,8 +75,9 @@ export function useGeoArrivalWatch(enabled: boolean, places: GeoPlace[] | undefi
   const watchIdRef = useRef<number | null>(null);
   // 地点ごとに「現在圏内にいるか」を保持し、圏内に入った瞬間だけ到着とする
   // アプリを開き直すたびに空から始めると、同じ場所に居続けているだけで毎回「到着」になり、
-  // 通知が重なり同じ作業が何度も始まっていた。圏内の地点を端末に覚えておき、12時間以内なら引き継ぐ
-  const insidePlaceIdsRef = useRef<Set<string>>(loadInsidePlaces());
+  // 通知が重なり同じ作業が何度も始まっていた。圏内の地点を端末に覚えておき、同じ日の4時間以内なら引き継ぐ
+  const insidePlaceIdsRef = useRef<Set<string>>(null as unknown as Set<string>);
+  if (insidePlaceIdsRef.current === null) insidePlaceIdsRef.current = loadInsidePlaces();
 
   useEffect(() => {
     if (!enabled || !places || places.length === 0) {
@@ -176,14 +177,16 @@ export function useWakeLock(enabled: boolean) {
 }
 
 const INSIDE_KEY = "koutei.geoInsidePlaces";
-const INSIDE_TTL_MS = 12 * 60 * 60_000;
+// 翌朝また同じ場所に着いた時は「到着」にしたいので、長くは引き継がない
+const INSIDE_TTL_MS = 4 * 60 * 60_000;
 
 function loadInsidePlaces(): Set<string> {
   try {
     const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(INSIDE_KEY);
     if (!raw) return new Set();
     const v = JSON.parse(raw) as { at: number; ids: string[] };
-    return Date.now() - v.at < INSIDE_TTL_MS && Array.isArray(v.ids) ? new Set(v.ids) : new Set();
+    const sameDay = new Date(v.at).toDateString() === new Date().toDateString();
+    return sameDay && Date.now() - v.at < INSIDE_TTL_MS && Array.isArray(v.ids) ? new Set(v.ids) : new Set();
   } catch {
     return new Set();
   }

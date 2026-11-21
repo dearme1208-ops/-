@@ -40,17 +40,20 @@ interface DateRule {
   core: string;
   /** 区切りが無くても期限と認める助詞。既定は「までに」「中に」 */
   explicit?: string;
+  /** 「明日見積書を送る」のように、区切りも助詞も無く件名が続く書き方でも受け取る時の形(無ければ受け取らない) */
+  loose?: string;
   resolve: (m: RegExpMatchArray, today: string) => string | null;
 }
 
 const DATE_RULES: DateRule[] = [
-  { core: "(今日|本日)", resolve: (_m, t) => t },
-  { core: "(明後日|あさって)", resolve: (_m, t) => shiftDateStr(t, 2) },
-  { core: "(明日|あした|あす)", resolve: (_m, t) => shiftDateStr(t, 1) },
+  { core: "(今日|本日)", loose: "(今日|本日)", resolve: (_m, t) => t },
+  { core: "(明後日|あさって)", loose: "(明後日|あさって)", resolve: (_m, t) => shiftDateStr(t, 2) },
+  { core: "(明日|あした|あす)", loose: "(明日|あした|あす)", resolve: (_m, t) => shiftDateStr(t, 1) },
   {
     // 今週中・今週末: その週の金曜(週末なら日曜)。金曜を過ぎていれば今日
     core: "今週(中|末)",
     explicit: "(?:までに|に)",
+    loose: "今週(中|末)",
     resolve: (m, t) => {
       const wd = weekdayOf(t);
       if (wd === 0) return t; // 日曜は週の最終日
@@ -62,6 +65,7 @@ const DATE_RULES: DateRule[] = [
   {
     // 来週の○曜 / 来週○曜日。「曜」まで書かれた時だけ曜日とみなす(「来週月次報告」の「月」を曜日にしない)
     core: "来週の?([日月火水木金土])曜日?",
+    loose: "来週の?([日月火水木金土])曜(?:日(?![報程誌記]))?",
     resolve: (m, t) => {
       const wd = weekdayOf(t);
       const toNextMonday = ((8 - wd) % 7) || 7;
@@ -72,17 +76,22 @@ const DATE_RULES: DateRule[] = [
   {
     // 来週: 来週の月曜
     core: "来週",
+    loose: "来週",
     resolve: (_m, t) => shiftDateStr(t, ((8 - weekdayOf(t)) % 7) || 7),
   },
   {
     // ○曜(日): 今日から数えて次のその曜日(今日がその曜日なら今日)
     core: "([日月火水木金土])曜日?",
+    // 「月曜日報」の「日」は件名側に残す。「日曜大工」は曜日ではない
+    loose: "([日月火水木金土])曜(?:日(?![報程誌記]))?(?!大工)",
     resolve: (m, t) => shiftDateStr(t, (WEEKDAYS.indexOf(m[1]) - weekdayOf(t) + 7) % 7),
   },
   {
     // 10/12 ・ 10月12日。過ぎていれば来年
     core: "(\\d{1,2})(?:/|月)(\\d{1,2})日?",
     explicit: "(?:までに)",
+    // 「10月12日納品」は受け取る。「1/2ページ」と紛れる N/M の形は、区切りか「までに」が要る
+    loose: "(\\d{1,2})月(\\d{1,2})日",
     resolve: (m, t) => {
       const mo = Number(m[1]);
       const d = Number(m[2]);
@@ -117,6 +126,12 @@ const DATE_MATCHERS = DATE_RULES.map((rule) => ({
   separate: new RegExp(`${START}${rule.core}${DUE_SUFFIX}${END}`),
   // 期限だと明示する助詞つきの形: 「明日までに見積書を送る」「見積書を明日までに送る」
   explicit: new RegExp(`(?:${START}|(?<=[をはがに]))${rule.core}${rule.explicit ?? "(?:までに|中に)"}`),
+  // 区切りも助詞も無い形: 「明日見積書を送る」「見積書を明日送る」「金曜に提出」「10月12日納品」。
+  // すぐ後ろに件名(漢字・カタカナ・英数字)が続く時だけ受け取る。ひらがなが続く「明日は休み」「明日の会議」や、
+  // 「明日中止」「3日以内」「2日間」のように別の語になる形は受け取らない
+  loose: rule.loose
+    ? new RegExp(`(?:${START}|(?<=[をはがに]))${rule.loose}(?:までに|まで|に)?(?=[一-龠々ァ-ヶーA-Za-z0-9０-９])(?![中以間])`)
+    : null,
 }));
 
 const ESTIMATE_RE = /(?:^|[\s、,])約?(\d+(?:\.\d+)?)\s*(分|時間|h|min)(?:くらい|ほど|程度|で)?(?=[\s、,]|$)/i;
@@ -148,8 +163,8 @@ export function parseCompose(raw: string, today: string): ComposeResult {
     text = text.replace(est[0], " ");
   }
 
-  for (const { rule, separate, explicit } of DATE_MATCHERS) {
-    const m = separate.exec(text) ?? explicit.exec(text);
+  for (const { rule, separate, explicit, loose } of DATE_MATCHERS) {
+    const m = separate.exec(text) ?? explicit.exec(text) ?? loose?.exec(text);
     if (!m) continue;
     const resolved = rule.resolve(m, today);
     if (!resolved) continue;

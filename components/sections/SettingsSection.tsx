@@ -508,7 +508,7 @@ export default function SettingsSection() {
     try {
       data = JSON.parse(await file.text());
     } catch {
-      setBackupStatus("ファイルの読み込みに失敗しました（JSON形式ではありません）。");
+      setBackupStatus("ファイルを読み込めませんでした（バックアップのファイルではないか、壊れているか、大きすぎる可能性があります）。");
       return;
     }
     // 月次アーカイブのファイルもここで受け付ける。全体のバックアップとは形が違うため以前は

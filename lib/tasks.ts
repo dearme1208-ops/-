@@ -384,6 +384,14 @@ export async function undoFinishDailyTask(
   contribution: FinishContribution
 ): Promise<void> {
   await db.transaction("rw", db.dailyTasks, db.records, async () => {
+    // 完了の後で時刻を直していると、実績にはその分も入っている。完了時に足した分ではなく、
+    // いまこの作業が実績に入れている分(完了前からの増分)を引く。そうしないと直した分だけ実績に残り、
+    // もう一度完了した時に二重に数えていた
+    const current = await db.dailyTasks.get(taskBefore.id);
+    const secondsToRemove =
+      current?.status === "done" && current.recordedMs !== undefined
+        ? Math.round((current.recordedMs - (taskBefore.recordedMs ?? 0)) / 1000)
+        : contribution.seconds;
     await db.dailyTasks.put(taskBefore);
     const rec = await db.records.get(contribution.recordId);
     // 実績が既に消されていれば(実績編集で削除したなど)、戻す分は無い
@@ -399,7 +407,7 @@ export async function undoFinishDailyTask(
       else await db.records.delete(rec.id);
       return;
     }
-    const remaining = rec.seconds - contribution.seconds;
+    const remaining = rec.seconds - secondsToRemove;
     if (contribution.created && remaining <= 0) {
       await db.records.delete(rec.id);
       return;

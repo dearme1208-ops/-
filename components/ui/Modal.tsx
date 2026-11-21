@@ -30,7 +30,10 @@ export default function Modal({
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing) return;
+      // 日本語入力の変換を取り消す Esc では閉じない(isComposing が立たないブラウザ向けに keyCode 229 も見る)
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
+      // さがす(Ctrl+K)の窓が手前に開いている時は、そちらだけが閉じる
+      if (document.querySelector("[data-command-palette]")) return;
       const scrims = document.querySelectorAll(".modal-scrim");
       if (scrims[scrims.length - 1] !== scrimRef.current) return;
       if (!onCloseRef.current) return;
@@ -41,8 +44,11 @@ export default function Modal({
     return () => {
       document.removeEventListener("keydown", onKey);
       // ほかのダイアログがまだ開いていれば、スクロールの固定は続ける
-      if (document.querySelectorAll(".modal-scrim").length <= 1) document.body.style.overflow = prevOverflow === "hidden" ? "" : prevOverflow;
-      if (prevFocus && document.contains(prevFocus)) prevFocus.focus({ preventScroll: true });
+      // (この時点で自分の枠はもう画面から外れている。残っていれば、ほかのダイアログが開いている)
+      if (document.querySelectorAll(".modal-scrim").length === 0) document.body.style.overflow = prevOverflow === "hidden" ? "" : prevOverflow;
+      // 別のダイアログへ切り替わった時などに、そちらの入力欄からフォーカスを奪わない
+      const active = document.activeElement;
+      if (prevFocus && document.contains(prevFocus) && (!active || active === document.body)) prevFocus.focus({ preventScroll: true });
     };
   }, []);
   const maxWidthClass = size === "xl" ? "max-w-6xl" : size === "lg" ? "max-w-2xl" : "max-w-md";

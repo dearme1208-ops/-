@@ -545,7 +545,7 @@ export default function TodaySection({
     }
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
-  }, [shortcutsEnabled, tasks]);
+  }, [shortcutsEnabled, tasks, background]);
 
   // 「予測」（マスタの平均想定時間）。ガントチャートと同じ考え方で、同日中に同じ作業を
   // 複数回登録している場合は、既に今日積み上がった実績分を差し引いた残り予測にする。
@@ -669,7 +669,8 @@ export default function TodaySection({
     // 同時に時刻が来た予定をまとめて始めると、どれも「何も計っていない」と見て一斉に計測中になる。
     // 1つずつ(前のが終わってから次の周回で)扱う
     const due = findDueScheduledTasks(tasks, date, now)[0];
-    if (!due || scheduleStartInFlightRef.current) return;
+    // 前の予定の「止めて始めますか」の確認が出ている間は、次の予定で上書きしない
+    if (!due || scheduleStartInFlightRef.current || scheduleConflict) return;
     scheduleStartInFlightRef.current = true;
     autoStartScheduledTask(due).finally(() => {
       scheduleStartInFlightRef.current = false;
@@ -1409,8 +1410,8 @@ export default function TodaySection({
   // ほかに計測中の作業(仮計測を除く)があれば、先にそれを一時停止してからこの作業を計測中にする。
   // 計測中が2つになった時の整理(lib/tasks.ts enforceSingleRunning)は「いちばん後から計測を始めた
   // もの」を残すため、「10:00から開始」のようにさかのぼって始めると、10:30から計測中だった別の作業の
-  // 方が後になり、今始めた作業の方が止められていた。止める時刻は、その作業の計測の始まりと
-  // この作業の開始のうち遅い方(今にすると時間が重なって二重に数えるため)。
+  // 方が後になり、今始めた作業の方が止められていた。止める時刻は今(さかのぼった開始時刻で止めると、
+  // 止められる側のそれまで計った時間が黙って消えてしまうため。重なった分は時刻の編集で直せる)。
   // 仮計測の割り当てなど、内部から呼ぶ開始では指定しない(それぞれの流れが仮計測を片付ける)
   async function startTask(task: DailyTask, startAt: number = Date.now(), takeOver = false) {
     const doStart = async () => {
@@ -1420,10 +1421,7 @@ export default function TodaySection({
           .equals(task.date)
           .filter((t) => t.status === "running" && !t.isProvisional && t.id !== task.id)
           .toArray();
-        for (const other of others) {
-          const openStart = other.segments.find((sg) => sg.end === undefined)?.start ?? startAt;
-          await pauseDailyTask(other, Math.max(openStart, startAt));
-        }
+        for (const other of others) await pauseDailyTask(other, Date.now());
       }
       const segments = [...task.segments, { start: startAt }];
       // さかのぼって開始/再開した場合、その時点で既に「予定超過+20分」を
@@ -1707,7 +1705,7 @@ export default function TodaySection({
         : undefined;
     // この作業だけの実績で、移す先の実績も無い時は、下の通常の経路で実績の手段をそのまま書き換える
     // (実績を作り直すと、実績に付けたメモや集計からの除外の指定が外れるため)
-    if (!renamed && methodChanged && existingOld && oldMasterId && (methodTarget || existingOld.seconds - oldSeconds > 0)) {
+    if (!renamed && methodChanged && existingOld && oldMasterId && (methodTarget || existingOld.seconds - oldSeconds > 1)) {
       const newEndedAt = taskUpdates.endedAt ?? task.endedAt ?? existingOld.endedAt;
       const newStartedAt = taskUpdates.startedAt ?? task.startedAt ?? existingOld.startedAt;
       const remaining = existingOld.seconds - oldSeconds;
