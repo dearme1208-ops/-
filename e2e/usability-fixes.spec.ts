@@ -57,9 +57,9 @@ test.describe("スマホ幅の表示崩れ", () => {
   });
 });
 
-test("使い始め(作業マスタが0件)の「突発作業を追加」は、選ぶものが無いマスタ選択ではなく自由入力で開く", async ({ page }) => {
+test("使い始め(作業マスタが0件)の「作業を追加」は、選ぶものが無いマスタ選択ではなく自由入力で開く", async ({ page }) => {
   await seed(page);
-  await page.locator("button", { hasText: "+ 突発作業を追加" }).first().click();
+  await page.locator("button", { hasText: "+ 作業を追加" }).first().click();
   const dialog = page.locator(".modal-scrim").last();
   await expect(dialog.getByPlaceholder("例: 見積書の作成")).toBeVisible();
   // ページを開いた時刻と同じ「◯◯から開始」は出さない(すぐ開始と区別がつかない)

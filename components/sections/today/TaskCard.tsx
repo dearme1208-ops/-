@@ -232,6 +232,13 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
   // 兼ねるため、ネイティブdraggableは無効にする(有効のままだとポインタベースのスワイプ検知と
   // ブラウザのHTML5ドラッグが競合し、スワイプが反応しなくなる)
   const isDraggable = task.status === "pending";
+  // たまにしか使わない操作(時間を足す・かかった時間だけ記録・計測中の🎯予想)は「⋯」に畳む。
+  // カードごとにボタンが5つ並ぶと、次に押すもの(開始・再開・終了)が埋もれて探すことになっていた。
+  // 開け閉めは状態(予定/計測中/一時停止)ごとに覚える。予定で開けたまま開始しても、計測中は閉じた形から始まる
+  const [moreToggle, setMoreToggle] = useState<{ status: DailyTask["status"]; open: boolean } | null>(null);
+  // 計測中のカードで🎯予想を入れてある時は、入れた値が隠れないよう最初から開いておく
+  const moreDefaultOpen = task.status === "running" && !!task.guessSeconds;
+  const moreOpen = moreToggle?.status === task.status ? moreToggle.open : moreDefaultOpen;
   return (
     <div
       key={task.id}
@@ -562,22 +569,38 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
             </div>
           )}
           {task.status !== "done" && (
-            <div className="flex items-center gap-1 text-xs text-cream/40">
-              <span title="開始前後に自分で予想を立てておくと、完了時に的中度が見られます">🎯予想</span>
-              <input
-                type="number"
-                min={0}
-                value={task.guessSeconds ? Math.round(task.guessSeconds / 60) : ""}
-                onChange={(e) => {
-                  const min = Number(e.target.value);
-                  db.dailyTasks.update(task.id, {
-                    guessSeconds: Number.isFinite(min) && min > 0 ? Math.round(min * 60) : undefined,
-                  });
-                }}
-                placeholder="-"
-                className="w-12 rounded border border-cream/20 bg-ink px-1 py-0.5 text-right tabular-nums text-cream"
-              />
-              <span>分</span>
+            // 🎯予想は開始の前に立てるものなので、予定・一時停止のカードではそのまま出し、計測中は「⋯」の中に畳む。
+            // 「⋯」はどの状態でも同じ位置(この行の右端)に置き、行を増やさない
+            <div className="flex min-h-[1.75rem] items-center justify-between gap-2">
+              {(task.status !== "running" || moreOpen) && (
+                <div className="flex items-center gap-1 text-xs text-cream/40">
+                  <span title="開始前後に自分で予想を立てておくと、完了時に的中度が見られます">🎯予想</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={task.guessSeconds ? Math.round(task.guessSeconds / 60) : ""}
+                    onChange={(e) => {
+                      const min = Number(e.target.value);
+                      db.dailyTasks.update(task.id, {
+                        guessSeconds: Number.isFinite(min) && min > 0 ? Math.round(min * 60) : undefined,
+                      });
+                    }}
+                    placeholder="-"
+                    className="w-12 rounded border border-cream/20 bg-ink px-1 py-0.5 text-right tabular-nums text-cream"
+                  />
+                  <span>分</span>
+                </div>
+              )}
+              <button
+                type="button"
+                className={`-my-1 ml-auto rounded-full px-3 py-1 text-base leading-none ${moreOpen ? "text-cream" : "text-cream/50"} hover:text-cream`}
+                onClick={() => setMoreToggle({ status: task.status, open: !moreOpen })}
+                aria-label="そのほかの操作"
+                aria-expanded={moreOpen}
+                title="そのほかの操作"
+              >
+                ⋯
+              </button>
             </div>
           )}
           {task.status !== "done" && (
@@ -603,13 +626,16 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                     {formatClock(effectiveLastStopTime)}から開始
                   </button>
                 )}
-                <button
-                  className="btn-pill-outline text-xs"
-                  disabled={controlsDisabled}
-                  onClick={() => setManualFinishTaskTarget(task)}
-                >
-                  手動で記録
-                </button>
+                {moreOpen && (
+                  // 文言が長く1マス(5.5rem)には収まらないので、2マス分使う
+                  <button
+                    className="btn-pill-outline col-span-2 text-xs"
+                    disabled={controlsDisabled}
+                    onClick={() => setManualFinishTaskTarget(task)}
+                  >
+                    かかった時間だけ記録
+                  </button>
+                )}
               </>
             )}
             {task.status === "running" && (
@@ -617,20 +643,24 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                 <button className="btn-pill-outline text-xs" disabled={controlsDisabled} onClick={() => pauseTask(task)}>
                   一時停止
                 </button>
-                <button
-                  className="btn-pill-outline text-xs"
-                  disabled={controlsDisabled}
-                  onClick={() => setAddTimeTask(task)}
-                >
-                  時間を加算
-                </button>
+                {moreOpen && (
+                  <button
+                    className="btn-pill-outline text-xs"
+                    disabled={controlsDisabled}
+                    onClick={() => setAddTimeTask(task)}
+                  >
+                    時間を足す
+                  </button>
+                )}
                 <FinishButton task={task} disabled={controlsDisabled} finishTask={finishTask} setFinishAtTask={setFinishAtTask} />
               </>
             )}
             {task.status === "paused" && (
               <>
+                {/* 一時停止中の作業で次に押すのはたいてい「再開」なので、こちらを塗りつぶしの主ボタンにする
+                    (以前は「終了」が塗りつぶしで、再開のつもりで終了を押しやすかった) */}
                 <button
-                  className="btn-pill-outline text-xs"
+                  className="btn-pill text-xs"
                   disabled={controlsDisabled || duplicateRunning}
                   onClick={() => startTask(task)}
                 >
@@ -647,23 +677,28 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
                     {formatClock(effectiveLastStopTime)}から再開
                   </button>
                 )}
-                <button
-                  className="btn-pill-outline text-xs"
-                  disabled={controlsDisabled}
-                  onClick={() => setAddTimeTask(task)}
-                >
-                  時間を加算
-                </button>
-                <button className="btn-pill text-xs" disabled={controlsDisabled} onClick={() => finishTask(task)}>
+                {moreOpen && (
+                  <button
+                    className="btn-pill-outline text-xs"
+                    disabled={controlsDisabled}
+                    onClick={() => setAddTimeTask(task)}
+                  >
+                    時間を足す
+                  </button>
+                )}
+                <button className="btn-pill-outline text-xs" disabled={controlsDisabled} onClick={() => finishTask(task)}>
                   終了
                 </button>
-                <button
-                  className="btn-pill-outline text-xs"
-                  disabled={controlsDisabled}
-                  onClick={() => setManualFinishTaskTarget(task)}
-                >
-                  手動で記録
-                </button>
+                {moreOpen && (
+                  // 文言が長く1マス(5.5rem)には収まらないので、2マス分使う
+                  <button
+                    className="btn-pill-outline col-span-2 text-xs"
+                    disabled={controlsDisabled}
+                    onClick={() => setManualFinishTaskTarget(task)}
+                  >
+                    かかった時間だけ記録
+                  </button>
+                )}
               </>
             )}
             </div>

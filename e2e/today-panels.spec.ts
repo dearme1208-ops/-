@@ -9,12 +9,12 @@ test.beforeEach(async ({ page }) => {
 
 test("簡易表示ではアイコンだけのボタンになり、押すと同じ操作ができる", async ({ page }) => {
   await seed(page, { settings: { "today.simpleButtons": "true" } });
-  for (const label of ["トラブル発生", "突発作業を追加", "今日の段取りを提案", "明日の下書きを作る", "終業の振り返り"]) {
+  for (const label of ["トラブル発生", "作業を追加", "今日の段取りを提案", "明日の下書きを作る", "終業の振り返り"]) {
     await expect(page.locator(`button[aria-label='${label}']`)).toBeVisible();
   }
-  await expect(page.getByRole("button", { name: "+ 突発作業を追加" })).toHaveCount(0);
-  await page.locator("button[aria-label='突発作業を追加']").click();
-  await expect(page.getByText("突発作業を追加").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ 作業を追加" })).toHaveCount(0);
+  await page.locator("button[aria-label='作業を追加']").click();
+  await expect(page.getByText("作業を追加").first()).toBeVisible();
 });
 
 test("通常表示では文言付きのボタンが並び、見出しに連続日数が出る", async ({ page }) => {
@@ -26,7 +26,7 @@ test("通常表示では文言付きのボタンが並び、見出しに連続�
       ],
     },
   });
-  for (const text of ["⚡ トラブル発生", "+ 突発作業を追加", "🧭 今日の段取り", "🗓 明日の下書き", "🌙 終業の振り返り", "⏱ 時間割"]) {
+  for (const text of ["⚡ トラブル発生", "+ 作業を追加", "🧭 今日の段取り", "🗓 明日の下書き", "🌙 終業の振り返り", "⏱ 時間割"]) {
     await expect(page.getByRole("button", { name: text })).toBeVisible();
   }
   // たまにしか使わない操作は「その他」に畳まれている

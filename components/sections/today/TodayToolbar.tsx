@@ -95,7 +95,7 @@ export interface TodayToolbarProps {
 export default function TodayToolbar(props: TodayToolbarProps) {
   const { date, simpleButtons: simple, todayTotalSeconds, sameWeekdayAvg, voice } = props;
   const scheduleFileInputRef = useRef<HTMLInputElement>(null);
-  // たまにしか使わない操作(予定の取り込み・再生成)は「その他」に畳む。
+  // たまにしか使わない操作(予定の取り込み・テンプレートでの作り直し)は「その他」に畳む。
   // スマホでは9個のボタンが作業リストの前に約260pxも並び、リストが下へ押し出されていた
   const [moreOpenStr, setMoreOpenStr] = useSetting("today.toolbarMoreOpen", "false");
   const moreOpen = moreOpenStr === "true";
@@ -146,7 +146,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
       <div className="-mx-1 flex items-start gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible" data-testid="today-toolbar-sub">
         <ToolGroup caption="いま">
           <ModeButton simple={simple} compact danger icon="⚡" label="⚡ トラブル発生" title="トラブル発生" onClick={props.onTrouble} />
-          <ModeButton simple={simple} compact primary icon="➕" label="+ 突発作業を追加" title="突発作業を追加" onClick={props.onAddTask} />
+          <ModeButton simple={simple} compact primary icon="➕" label="+ 作業を追加" title="作業を追加" onClick={props.onAddTask} />
         </ToolGroup>
         <GroupDivider />
         <ToolGroup caption="メモ">
@@ -218,7 +218,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           onClick={() => setMoreOpenStr(moreOpen ? "false" : "true")}
           aria-expanded={moreOpen}
           aria-label="その他の操作"
-          title="予定の取り込み・再生成など"
+          title="予定の取り込み・テンプレートでの作り直しなど"
         >
           {simple ? "⋯" : `⋯ その他 ${moreOpen ? "▲" : "▼"}`}
         </button>
@@ -252,8 +252,12 @@ export default function TodayToolbar(props: TodayToolbarProps) {
               </>
             )}
             {props.hasTasks && (
-              <button className="btn-pill-outline text-sm" onClick={props.onRegenerate}>
-                再生成
+              <button
+                className="btn-pill-outline text-sm"
+                onClick={props.onRegenerate}
+                title="今日の作業を消して、テンプレートから作り直します"
+              >
+                テンプレートで作り直す
               </button>
             )}
           </div>

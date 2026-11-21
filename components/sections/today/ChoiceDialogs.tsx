@@ -25,14 +25,14 @@ export function TemplateConfirmDialog({
   onClose: () => void;
 }) {
   return (
-    <Modal title="本日の作業リストを生成" onClose={onClose}>
+    <Modal title="テンプレートから今日の作業を作る" onClose={onClose}>
       <div className="space-y-3 text-sm text-cream/80">
         <p>
           {WEEKDAY_LABELS[weekday]}曜日のテンプレート（{itemCount}件）から、本日の作業リストを作成します。
         </p>
         {existingCount > 0 && (
           <p className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2 text-alert">
-            本日の作業リストには既に{existingCount}件あります。生成すると、これらは削除され進行中の記録も失われます。
+            本日の作業リストには既に{existingCount}件あります。作ると、これらは削除され進行中の記録も失われます。
           </p>
         )}
         <div className="flex justify-end gap-2">
@@ -40,7 +40,7 @@ export function TemplateConfirmDialog({
             キャンセル
           </button>
           <button className="btn-pill text-sm" onClick={onConfirm}>
-            生成する
+            作る
           </button>
         </div>
       </div>

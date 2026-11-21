@@ -19,7 +19,7 @@ test("ToDoタブを見ている間に予定の時刻が来ても、その時刻�
   expect(task!.segments[0].start).toBeLessThan(jstAt("10:05") + 2 * 60_000);
 });
 
-test("禅モードでも予定の時刻に自動で開始され、計測中なら確認のダイアログが出る。道具から突発作業を追加できる", async ({ page }) => {
+test("禅モードでも予定の時刻に自動で開始され、計測中なら確認のダイアログが出る。道具から作業を追加できる", async ({ page }) => {
   await seed(page, {
     settings: { "theme.visualMode": "zen" },
     stores: {
@@ -36,8 +36,8 @@ test("禅モードでも予定の時刻に自動で開始され、計測中な�
   await expect.poll(async () => (await readOne<{ status: string }>(page, "dailyTasks", "s1"))?.status).toBe("running");
 
   await page.getByRole("button", { name: "道具" }).click();
-  await page.getByRole("menuitem", { name: /突発作業を追加/ }).click();
-  await expect(page.locator(".modal-scrim").getByText("突発作業を追加").first()).toBeVisible();
+  await page.getByRole("menuitem", { name: /作業を追加/ }).click();
+  await expect(page.locator(".modal-scrim").getByText("作業を追加").first()).toBeVisible();
 });
 
 test("初めて開くタブの読み込みに失敗しても、その画面だけが失敗を知らせ、ほかのタブと予定の自動開始は動き続ける", async ({ page }) => {

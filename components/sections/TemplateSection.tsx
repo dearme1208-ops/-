@@ -25,6 +25,7 @@ import { templateItemsToCsv, templateCsvTemplate, parseTemplateCsv } from "@/lib
 import { downloadTextFile } from "@/lib/report";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import { useSetting } from "@/lib/settings";
+import { showUndoToast } from "@/lib/toast";
 import type { MasterTask, TemplateItem, Weekday } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
@@ -104,8 +105,17 @@ export default function TemplateSection() {
     });
   }
 
-  async function deleteItem(id: string) {
-    await db.templateItems.delete(id);
+  async function deleteItem(item: TemplateItem) {
+    // 押した瞬間に消えるので、押し間違えた時に戻せるよう「元に戻す」を出す
+    const snapshot = (await db.templateItems.get(item.id)) ?? item;
+    await db.templateItems.delete(item.id);
+    showUndoToast(`「${item.name}」をテンプレートから外しました`, async () => {
+      // 同じIDの行がもう無い時だけ足す(CSVの取り込みなどで入り直していたら、古い控えで上書きしない)
+      await db.transaction("rw", db.templateItems, async () => {
+        if (await db.templateItems.get(snapshot.id)) return;
+        await db.templateItems.add(snapshot);
+      });
+    });
   }
 
   function downloadTemplate() {
@@ -201,7 +211,7 @@ export default function TemplateSection() {
             <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-2">
                 {items.map((item) => (
-                  <SortableRow key={item.id} item={item} onDelete={() => deleteItem(item.id)} />
+                  <SortableRow key={item.id} item={item} onDelete={() => deleteItem(item)} />
                 ))}
               </div>
             </SortableContext>
@@ -272,7 +282,7 @@ function TemplatePickerDialog({
           className={mode === "master" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
           onClick={() => setMode("master")}
         >
-          マスタから選択
+          登録済みの作業から選ぶ
         </button>
         <button
           className={mode === "free" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}

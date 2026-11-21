@@ -28,7 +28,7 @@ export default function CategoryWorkNameDialog({
   // 省略時はチェックボックス自体を出さない
   toggleLabel?: string;
   defaultToggle?: boolean;
-  /** 最初に開く入力方法。「作業マスタから選択」ボタンから開く場合は"master"にして、すぐ一覧を出す */
+  /** 最初に開く入力方法。「作業登録済みの作業から選ぶ」ボタンから開く場合は"master"にして、すぐ一覧を出す */
   initialMode?: "free" | "master";
   onConfirm: (category: string, workName: string, toggle: boolean) => void;
   onClose: () => void;
@@ -68,7 +68,7 @@ export default function CategoryWorkNameDialog({
           className={mode === "master" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
           onClick={() => setMode("master")}
         >
-          マスタから選択
+          登録済みの作業から選ぶ
         </button>
       </div>
       {toggleLabel && (

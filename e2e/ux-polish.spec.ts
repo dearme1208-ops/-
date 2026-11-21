@@ -32,7 +32,7 @@ test("本日の作業: 操作は横1列にまとまり、用途ごとの見出�
   const box = (await sub.boundingBox())!;
   // 1行(ボタン+小さな見出し)に収まる
   expect(box.height).toBeLessThan(70);
-  for (const name of ["⚡ トラブル発生", "+ 突発作業を追加", "🧭 今日の段取り", "🗓 明日の下書き", "⏱ 時間割"]) {
+  for (const name of ["⚡ トラブル発生", "+ 作業を追加", "🧭 今日の段取り", "🗓 明日の下書き", "⏱ 時間割"]) {
     const b = (await sub.getByRole("button", { name }).boundingBox())!;
     expect(Math.abs(b.y - box.y)).toBeLessThan(12);
   }

@@ -1856,10 +1856,18 @@ export default function TodaySection({
 
   // 段階に紐付かず案件に直接追加された作業カードから、案件そのものを完了/未完了に切り替える
   async function toggleLinkedProjectComplete(project: ProjectItem) {
-    if (!project.completedAt && !confirm(`案件「${project.title}」を完了にしますか?`)) return;
+    // 確認を挟む代わりに、すぐ完了にして「元に戻す」を出す
     const nowCompleting = !project.completedAt;
-    await db.projects.update(project.id, { completedAt: nowCompleting ? Date.now() : undefined, autoCompletedByImport: false });
-    if (nowCompleting) fireConfetti();
+    const completedAt = nowCompleting ? Date.now() : undefined;
+    await db.projects.update(project.id, { completedAt, autoCompletedByImport: false });
+    if (!nowCompleting) return;
+    fireConfetti();
+    showUndoToast(`案件「${project.title}」を完了にしました`, async () => {
+      // 今回書いた完了のままの時だけ戻す。その後に未完了へ戻して完了し直した等なら、新しい方を残す
+      const current = await db.projects.get(project.id);
+      if (!current || current.completedAt !== completedAt) return;
+      await db.projects.update(project.id, { completedAt: undefined, autoCompletedByImport: project.autoCompletedByImport });
+    });
   }
 
   async function deleteTask(task: DailyTask) {
@@ -2994,8 +3002,53 @@ export default function TodaySection({
           date={date}
           onOpenEdit={(task) => setEditingTask(task)}
           onCommitTimes={async (task, startedAt, endedAt) => {
+            // ドラッグのたびに確認は出さず、すぐ反映して「元に戻す」を出す。戻せるよう、直す前の作業を控える
+            const before = (await db.dailyTasks.get(task.id)) ?? task;
             const result = await applyTaskEdit(task, task.category, task.name, undefined, task.note, task.method, startedAt, endedAt);
-            if (!result.ok) showUndoToast(result.message);
+            if (!result.ok) {
+              showUndoToast(result.message);
+              return;
+            }
+            const after = await db.dailyTasks.get(task.id);
+            showUndoToast(`「${workLabel(task)}」の時刻を ${formatClock(startedAt)}〜${formatClock(endedAt)} に変更しました`, async () => {
+              // 履歴からは後になってからでも押せる。今の作業を読み直し、今回の変更のままの時だけ戻す
+              // (その後に時刻や時間を直していたら、古い時刻で上書きしない)
+              const now = await db.dailyTasks.get(task.id);
+              if (!now || !after) return;
+              if (
+                now.status !== "done" ||
+                now.startedAt !== after.startedAt ||
+                now.endedAt !== after.endedAt ||
+                now.accumulatedMs !== after.accumulatedMs
+              ) {
+                showUndoToast(`「${workLabel(task)}」はその後に変更されているため、時刻を元に戻しませんでした`);
+                return;
+              }
+              if (before.startedAt == null || before.endedAt == null) return;
+              // 実績(同じ日の同じ作業の合算)は、控えで上書きせず、変更の時と同じ経路で差分だけ直す
+              const undone = await applyTaskEdit(now, now.category, now.name, undefined, now.note, now.method, before.startedAt, before.endedAt);
+              if (!undone.ok) {
+                showUndoToast(undone.message);
+                return;
+              }
+              // 一時停止を挟んだ作業は、変更で落とした区間が上の戻しでは1本につながり、止めていた間まで
+              // 時間に入ってしまう。区間を元の形に戻し、実績には食い違った分だけを足し引きする
+              const restored = await db.dailyTasks.get(task.id);
+              if (!restored || JSON.stringify(restored.segments) === JSON.stringify(before.segments)) return;
+              const diffSeconds = Math.round(before.accumulatedMs / 1000) - Math.round(restored.accumulatedMs / 1000);
+              await db.dailyTasks.update(task.id, {
+                segments: before.segments,
+                accumulatedMs: before.accumulatedMs,
+                recordedMs: before.accumulatedMs,
+                recordedSegmentCount: before.segments.length,
+              });
+              if (diffSeconds === 0) return;
+              const masterId = await masterIdOfDoneTask(restored);
+              const record = masterId ? await findMergeTargetRecord(restored.date, masterId, restored) : undefined;
+              if (!record || !masterId) return;
+              await db.records.update(record.id, { seconds: Math.max(0, record.seconds + diffSeconds) });
+              await recomputeEstimateFromRecords(masterId);
+            });
           }}
         />
         </div>

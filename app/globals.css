@@ -4702,3 +4702,124 @@ html[data-visual-mode="zen"] {
   }
 }
 
+
+/* ══ 設定タブのON/OFFスイッチ(components/sections/SettingsSection.tsx の button[data-toggle]) ══
+   設定タブはピル型のボタンが90個近く並び、切り替え(ON/OFF)と、押すと何かが起きる操作
+   (書き出し・復元・削除)が同じ見た目で区別できなかった。切り替えだけを「行+右端のスイッチ」に
+   して、押す前から種類が分かるようにする。文言の「: ON / : OFF」はそのまま残す(色だけに頼らない)。
+
+   :not(#_) は詳細度を1段上げるためだけの指定(該当するidは無いので常に真)。
+   .btn-pill 系には html[data-visual-mode="home"] .btn-pill:not(...):not(...):not(...) のような
+   詳細度の高いモード別の上書きがあり、属性セレクタを重ねるだけでは負けるため。
+   @layer の外・ファイル末尾に置いているのも、全モードの上書きより後ろで勝たせるため。
+   色は --cream-rgb / --ink-rgb / --accent-rgb だけを使い、どのモードでもそのモードの配色に従う */
+button[data-toggle]:not(#_) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.6rem;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgb(var(--cream-rgb) / 0.14);
+  border-radius: 0.75rem;
+  /* 以下は各モードのピルの装飾の打ち消し: 塗りとグラデーション(森・Claude)、影(既定・森)、
+     斜めの切り欠きとはみ出し隠し(ペルソナ風)、破線(なつやすみ風) */
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  clip-path: none;
+  overflow: visible;
+  color: rgb(var(--cream-rgb) / 0.9);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  font-weight: 500;
+  text-align: left;
+  /* 幅いっぱいの行が押すたびに縮んだり(active:scale-95)震えたりすると落ち着かないので止める */
+  transform: none;
+  animation: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+button[data-toggle]:not(#_):hover {
+  background-color: rgb(var(--cream-rgb) / 0.05);
+  border-color: rgb(var(--cream-rgb) / 0.28);
+  box-shadow: none;
+  transform: none;
+  animation: none;
+}
+button[data-toggle]:not(#_):active {
+  transform: none;
+}
+/* ONの行は枠にも基調色を少し乗せ、スイッチを見なくても一覧の中で拾えるようにする */
+button[data-toggle][aria-checked="true"]:not(#_) {
+  border-color: rgb(var(--accent-rgb) / 0.45);
+}
+/* スイッチ本体。要素を足さずに ::after の1枚で描く:
+   背景色がレール、その上に重ねた円形グラデーション(レールの高さと同じ正方形)がつまみ。
+   つまみの位置は background-position で動かす(左端=OFF、右端=ON)。
+   position/inset/opacity/animation は、ペルソナ風モードがピルの ::after に敷く
+   光沢アニメーション用の指定を打ち消すためのもの */
+button[data-toggle]:not(#_)::after {
+  content: "";
+  position: static;
+  inset: auto;
+  flex: none;
+  margin-left: auto;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  opacity: 1;
+  animation: none;
+  pointer-events: none;
+  background-color: rgb(var(--cream-rgb) / 0.2);
+  background-image: radial-gradient(
+    circle closest-side,
+    rgb(var(--cream-rgb) / 0.85) 76%,
+    transparent 82%
+  );
+  background-size: 1.25rem 1.25rem;
+  background-repeat: no-repeat;
+  background-position: 0 50%;
+  transition: background-position 0.15s ease, background-color 0.15s ease;
+}
+/* ONのつまみは --ink-rgb(各モードの地の色)。基調色のレールの上で一番はっきり見える組み合わせ */
+button[data-toggle][aria-checked="true"]:not(#_)::after {
+  background-color: rgb(var(--accent-rgb));
+  background-image: radial-gradient(
+    circle closest-side,
+    rgb(var(--ink-rgb)) 76%,
+    transparent 82%
+  );
+  background-position: 100% 50%;
+}
+/* ハイコントラストでは、OFFの枠とレールも背景から埋もれない濃さまで上げる */
+html[data-high-contrast="true"] button[data-toggle]:not(#_) {
+  border-color: rgb(var(--cream-rgb) / 0.45);
+  color: rgb(var(--cream-rgb));
+}
+html[data-high-contrast="true"] button[data-toggle]:not([aria-checked="true"]):not(#_)::after {
+  background-color: rgb(var(--cream-rgb) / 0.4);
+}
+/* スマホでは1行に1つずつ並べ、縦に読み下せる一覧にする */
+@media (max-width: 639.98px) {
+  button[data-toggle]:not(#_) {
+    width: 100%;
+  }
+}
+/* 広い画面では中身に合わせつつ、短い名前でもスイッチの位置がそろうよう最低幅を持たせる */
+@media (min-width: 640px) {
+  button[data-toggle]:not(#_) {
+    min-width: 16rem;
+  }
+}
+/* 動きを減らす設定の人には、つまみを滑らせずにその場で切り替える */
+@media (prefers-reduced-motion: reduce) {
+  button[data-toggle]:not(#_),
+  button[data-toggle]:not(#_)::after {
+    transition: none;
+  }
+}
+
+/* なつやすみモードは枠を破線にしているが、スイッチの行は実線にそろえる */
+html[data-visual-mode="natsuyasumi"] button[data-toggle]:not(#_) {
+  border-style: solid;
+}

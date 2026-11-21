@@ -143,17 +143,19 @@ test("別のモード(ターミナル)のコマンドで作業を始めても、
   expect((await readOne<Daily>(page, "dailyTasks", "a"))?.status).toBe("paused");
 });
 
-test.describe("仮計測中に突発作業を追加して開始する", () => {
+test.describe("仮計測中に作業を追加して開始する", () => {
   const setup = async (page: Page) => {
     await page.clock.install({ time: jstAt("10:00") });
     await seed(page, { settings: { "today.provisionalEnabled": "true", "today.taskViewTab": "running" }, stores: { masterTasks: [MASTER], dailyTasks: [prov("09:40")] } });
-    await page.getByRole("button", { name: "+ 突発作業を追加" }).click();
+    await page.getByRole("button", { name: "+ 作業を追加" }).click();
     // 仮計測の割り当て欄にも「自由入力」があるので、後から開いた追加画面の方を押す
     await page.getByRole("button", { name: "自由入力" }).last().click();
     await page.getByPlaceholder("例: 資料作成").fill("総務");
     await page.getByPlaceholder("例: 見積書の作成").fill("電話対応");
+    // 手段と見込み時間は折りたたみの中にあるので、先に開く
+    await page.getByRole("button", { name: "▼ 見込み時間・手段" }).click();
     await page.getByPlaceholder("例: Excel、マクロ、クエリ、Claude").fill("電話");
-    await page.getByRole("button", { name: "追加してすぐ開始" }).click();
+    await page.getByRole("button", { name: "今から始める" }).click();
     await expect(page.getByText(/から、記録のない時間が続いています/)).toBeVisible();
     await expectSingle(page);
   };

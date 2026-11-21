@@ -14,14 +14,16 @@ test.beforeEach(async ({ page }) => {
   await page.clock.install({ time: jstAt("10:00") });
 });
 
-test("自由入力で突発作業を追加すると、手段付きで予定に並ぶ", async ({ page }) => {
+test("自由入力で作業を追加すると、手段付きで予定に並ぶ", async ({ page }) => {
   await seed(page);
-  await clickButton(page, "+ 突発作業を追加");
+  await clickButton(page, "+ 作業を追加");
   await clickButton(page, "自由入力");
   await page.getByPlaceholder("例: 資料作成").fill("経理");
   await page.getByPlaceholder("例: 見積書の作成").fill("請求書発行");
+  // 手段と見込み時間は折りたたみの中にあるので、先に開く
+  await page.getByRole("button", { name: "▼ 見込み時間・手段" }).click();
   await page.getByPlaceholder("例: Excel、マクロ、クエリ、Claude").fill("マクロ");
-  await clickButton(page, "追加のみ");
+  await clickButton(page, "予定に入れるだけ");
   await openTaskTab(page, "予定");
   await expect(page.getByText("請求書発行").first()).toBeVisible();
   const tasks = await readAll<Daily & { category: string }>(page, "dailyTasks");
@@ -49,13 +51,15 @@ test("開始→一時停止→再開→終了で区間が2つ残り、実績は�
   near(rec.endedAt, jstAt("10:25"));
 });
 
-test("「時間を加算」した分は実績に含まれる", async ({ page }) => {
+test("「時間を足す」した分は実績に含まれる", async ({ page }) => {
   await seed(page, { stores: { masterTasks: [MASTER], dailyTasks: [dailyTask({ id: "d1", date: jstDate() })] } });
   await openTaskTab(page, "予定");
   await clickButton(page, /^開始$/);
   await page.clock.fastForward("10:00");
   await openTaskTab(page, "実行中");
-  await clickButton(page, "時間を加算");
+  // たまにしか使わない操作はカードの「⋯」に畳んである
+  await page.getByRole("button", { name: "そのほかの操作" }).first().click();
+  await clickButton(page, "時間を足す");
   await page.getByText("手動で加算する時間").locator("..").locator("input").fill("00:05:00");
   await clickButton(page, /^加算する$/);
   await clickButton(page, /^終了$/);
@@ -81,10 +85,12 @@ test("止め忘れた作業は、終了時刻を指定して完了できる", as
   near(rec.endedAt, jstAt("10:15"), 60_000);
 });
 
-test("未着手の作業を「手動で記録」すると、入力した所要時間の実績になる", async ({ page }) => {
+test("未着手の作業を「かかった時間だけ記録」すると、入力した所要時間の実績になる", async ({ page }) => {
   await seed(page, { stores: { masterTasks: [MASTER], dailyTasks: [dailyTask({ id: "d1", date: jstDate() })] } });
   await openTaskTab(page, "予定");
-  await clickButton(page, "手動で記録");
+  // たまにしか使わない操作はカードの「⋯」に畳んである
+  await page.getByRole("button", { name: "そのほかの操作" }).first().click();
+  await clickButton(page, "かかった時間だけ記録");
   await page.getByPlaceholder("所要時間 hh:mm:ss").fill("00:25:00");
   await clickButton(page, "この時間で終了");
   const d = (await readOne<Daily>(page, "dailyTasks", "d1"))!;

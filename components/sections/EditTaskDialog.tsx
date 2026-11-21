@@ -178,7 +178,7 @@ export default function EditTaskDialog({
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
         <button type="button" className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
-          作業マスタから選択
+          登録済みの作業から選ぶ
         </button>
         {task.isTrouble && troubleDetailOptions.length > 0 && (
           <div className="space-y-1">
@@ -365,7 +365,7 @@ export default function EditTaskDialog({
       </div>
       {showMasterPicker && (
         <CategoryWorkNameDialog
-          title="作業マスタから選択"
+          title="登録済みの作業から選ぶ"
           initialMode="master"
           confirmLabel="この内容を使う"
           defaultCategory={category}

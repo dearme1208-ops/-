@@ -402,11 +402,17 @@ export default function TodoSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialFilterTaskId, allTasks]);
 
+  // リスト削除を「元に戻す」した直後は、画面側のlistsがまだ古く(戻したリストが入っていない)、
+  // 下の「存在しないリストならマイデイへ」に弾かれてしまう。戻したリストが届くまでは弾かない
+  const restoringListIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (view.startsWith("list:") && lists && lists.length > 0) {
       const listId = view.slice(5);
       if (!lists.some((l) => l.id === listId)) {
+        if (restoringListIdRef.current === listId) return;
         setView("myday");
+      } else if (restoringListIdRef.current === listId) {
+        restoringListIdRef.current = null;
       }
     }
   }, [view, lists]);
@@ -824,13 +830,31 @@ export default function TodoSection({
   }
 
   async function deleteList(listId: string) {
-    if (!confirm("このリストと、含まれる全てのタスクを削除しますか?")) return;
-    const taskIds = (allTasks ?? []).filter((t) => t.listId === listId).map((t) => t.id);
+    // 確認ダイアログで止めるより、すぐ消して「元に戻す」を出す方が手数が少なく、押し間違いも取り返せる
+    // (以前は確認のあと戻す手段が無かった)。戻せるよう、消す前の中身をそのまま控えておく。
+    // 画面用のallTasksではなくDBから直接読むのは、読み込み途中でも取りこぼさないため
+    const list = await db.todoLists.get(listId);
+    if (!list) return;
+    const deletedTasks = await db.todoTasks.where("listId").equals(listId).toArray();
+    const wasViewing = view === `list:${listId}`;
     await db.transaction("rw", db.todoLists, db.todoTasks, async () => {
-      await db.todoTasks.bulkDelete(taskIds);
+      await db.todoTasks.bulkDelete(deletedTasks.map((t) => t.id));
       await db.todoLists.delete(listId);
     });
-    if (view === `list:${listId}`) setView("myday");
+    if (wasViewing) setView("myday");
+    // 件数はサブタスクを除いた、一覧で見えていた数にする(中身はサブタスクも含めて全部戻す)
+    const count = deletedTasks.filter((t) => !t.parentTaskId).length;
+    showUndoToast(`リスト「${list.title}」と中のタスク${count}件を削除しました`, async () => {
+      // bulkPut: 戻すまでの間に同じIDが作られていても失敗せず、控えた内容で戻す
+      await db.transaction("rw", db.todoLists, db.todoTasks, async () => {
+        await db.todoLists.put(list);
+        await db.todoTasks.bulkPut(deletedTasks);
+      });
+      if (wasViewing) {
+        restoringListIdRef.current = listId;
+        setView(`list:${listId}`);
+      }
+    });
   }
 
   function resolveTag(mode: string, custom: string): string | undefined {
@@ -3486,6 +3510,9 @@ function TaskDetailModal({
   // 表示しながら保存はされず、実際は期日の日付で繰り返していた
   const rec = fillRecurrenceDefaults(recurrence, dueDate || today);
   const [newSubtask, setNewSubtask] = useState("");
+  // 「くわしく」の開閉は次に開いた時も同じにする(毎回開け直す手間をなくす)
+  const [moreOpenStr, setMoreOpenStr] = useSetting("todo.detailMoreOpen", "false");
+  const moreOpen = moreOpenStr === "true";
 
   function resolveTag(): string | undefined {
     if (tagMode === CUSTOM_TAG_VALUE) return customTag.trim() || undefined;
@@ -3618,6 +3645,21 @@ function TaskDetailModal({
     await db.todoTasks.update(sub.id, { title: trimmed });
   }
 
+  // 畳んだ中で値が入っている項目。編集中の値(まだ保存していない分)で判定し、
+  // 即時保存の通知・画像・メールだけはタスク本体を見る
+  const foldedSetLabels = [
+    recurrenceEnabled ? "繰り返し" : "",
+    task.reminderAt ? "通知" : "",
+    action.trim() ? "アクション" : "",
+    url.trim() ? "URL" : "",
+    task.imageDataUrl ? "画像" : "",
+    task.mailFileDataUrl ? "メール" : "",
+    resolveCategory() ? "分類" : "",
+    resolveCustomer() ? "客先" : "",
+    clientId ? "取引先" : "",
+    startDate ? "開始日" : "",
+  ].filter(Boolean);
+
   return (
     <Modal title={copiedFromTitle !== undefined ? "タスクの詳細（コピー）" : "タスクの詳細"} onClose={onClose}>
       <div className="max-h-[70vh] space-y-3 overflow-y-auto">
@@ -3633,50 +3675,21 @@ function TaskDetailModal({
           placeholder="タイトル"
         />
 
-        {lists.length > 1 && (
-          <label className="flex items-center gap-2 text-xs text-cream/60">
-            リスト
-            <select
-              value={listId}
-              onChange={(e) => setListId(e.target.value)}
-              className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
-            >
-              {lists.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.title}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <input
-          value={action}
-          onChange={(e) => setAction(e.target.value)}
-          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-          placeholder="アクション（次にすべき行動）"
-        />
-
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-cream/60">期日</label>
           <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-            placeholder="URL（一覧のリンクボタンから開けます）"
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
           />
-          {url.trim() && (
-            <button
-              onClick={() => window.open(normalizeUrl(url.trim()), "_blank", "noopener,noreferrer")}
-              aria-label="リンクを開く"
-              className="shrink-0 text-lg text-cream/50 hover:text-cream"
-            >
-              🔗
+          {dueDate && (
+            <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setDueDate("")}>
+              クリア
             </button>
           )}
         </div>
-
-        <TaskImageField task={task} />
-        <TaskMailField task={task} />
+        <DueDateLoadWarning dateStr={dueDate} excludeTodoId={task.id} />
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-cream/60">対応状況</label>
@@ -3714,130 +3727,6 @@ function TaskDetailModal({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-cream/60">分類</label>
-          <select
-            value={categoryMode}
-            onChange={(e) => setCategoryMode(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-          >
-            <option value={NO_CATEGORY_VALUE}>分類なし</option>
-            {categoryOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-            <option value={CUSTOM_CATEGORY_VALUE}>＋ 新しい分類...</option>
-          </select>
-          {categoryMode === CUSTOM_CATEGORY_VALUE && (
-            <input
-              value={customCategory}
-              onChange={(e) => setCustomCategory(e.target.value)}
-              placeholder="分類名"
-              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-            />
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-cream/60">客先</label>
-          <select
-            value={customerMode}
-            onChange={(e) => setCustomerMode(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-          >
-            <option value={NO_CUSTOMER_VALUE}>客先なし</option>
-            {customerOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-            <option value={CUSTOM_CUSTOMER_VALUE}>＋ 新しい客先...</option>
-          </select>
-          {customerMode === CUSTOM_CUSTOMER_VALUE && (
-            <input
-              value={customCustomer}
-              onChange={(e) => setCustomCustomer(e.target.value)}
-              placeholder="客先名"
-              className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-            />
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-cream/60">取引先</label>
-          <select
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-          >
-            <option value="">（なし）</option>
-            {(clients ?? []).map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-[10px] text-cream/40">「案件」タブで登録した取引先マスタと紐付けます（客先とは別）</span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-cream/60">開始日</label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-          />
-          {startDate && (
-            <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setStartDate("")}>
-              クリア
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-cream/60">期日</label>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-          />
-          {dueDate && (
-            <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setDueDate("")}>
-              クリア
-            </button>
-          )}
-        </div>
-        <DueDateLoadWarning dateStr={dueDate} excludeTodoId={task.id} />
-        <p className="text-[10px] text-cream/40">
-          開始日を設定した場合、リスト内の並び順は期日ではなく開始日が優先されます。
-        </p>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-cream/60">🔔 通知</label>
-          <input
-            type="datetime-local"
-            value={reminderInput}
-            onChange={(e) => setReminderInput(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-          />
-          <button className="btn-pill-outline text-xs" onClick={setReminder} disabled={!reminderInput}>
-            設定
-          </button>
-          {task.reminderAt && (
-            <button className="text-xs text-cream/50 hover:text-alert" onClick={clearReminder}>
-              クリア
-            </button>
-          )}
-        </div>
-        {task.reminderAt && (
-          <p className="text-[10px] text-cream/40">
-            {formatDateTimeJp(task.reminderAt)}に通知{task.reminderFiredAt ? "（通知済み）" : ""}
-          </p>
-        )}
-
         <div className="flex flex-wrap gap-2">
           <button
             className={task.myDayDate === today ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -3846,37 +3735,12 @@ function TaskDetailModal({
             ☀ {task.myDayDate === today ? "マイデイから削除" : "マイデイに追加"}
           </button>
           <button
-            className={task.projectId ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowReflectDialog(true)}
-            disabled={!!task.projectId}
-          >
-            📁 {task.projectId ? "案件に反映済み" : "案件に反映"}
-          </button>
-          <button
             className={alreadyAddedToToday ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowAddToTodayDialog(true)}
             disabled={alreadyAddedToToday}
           >
             📌 {alreadyAddedToToday ? "本日の作業に追加済み" : "本日の作業に追加"}
           </button>
-          <button
-            className="btn-pill-outline text-xs"
-            onClick={onConvertToMemo}
-            title={subtasks.length > 0 ? "サブタスクを含めてチェックリスト付箋にします" : "タイトル・次の行動・メモをまとめた付箋にします"}
-          >
-            📝 メモに変換
-          </button>
-          {!task.parentTaskId && (
-            <button
-              className={task.boardX !== undefined ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => {
-                if (task.boardX !== undefined) removeTodoFromBoard(task.id);
-                else placeTodoOnBoard(task.id);
-              }}
-            >
-              🗂 {task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}
-            </button>
-          )}
         </div>
 
         {showReflectDialog && (
@@ -3906,164 +3770,6 @@ function TaskDetailModal({
             onClose={() => setShowAddToTodayDialog(false)}
           />
         )}
-
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="メモ"
-          rows={3}
-          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
-
-        {/* 繰り返し設定 */}
-        <div className="rounded-lg border border-cream/10 p-3">
-          <label className="flex items-center gap-2 text-xs text-cream/70">
-            <input
-              type="checkbox"
-              checked={recurrenceEnabled}
-              onChange={(e) => setRecurrenceEnabled(e.target.checked)}
-              className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
-            />
-            繰り返し
-          </label>
-          {recurrenceEnabled && (
-            <div className="mt-2 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {/* 種類を変えたら細かい指定は捨て、新しい種類の既定(期日から決まる)を出し直す */}
-                <select
-                  value={rec.type}
-                  onChange={(e) => setRecurrence({ type: e.target.value as RecurrenceType, interval: rec.interval })}
-                  className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-                >
-                  {(Object.keys(RECURRENCE_TYPE_LABELS) as RecurrenceType[]).map((t) => (
-                    <option key={t} value={t}>
-                      {RECURRENCE_TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-xs text-cream/60">間隔</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={rec.interval}
-                  onChange={(e) => setRecurrence({ ...rec, interval: Math.max(1, Number(e.target.value) || 1) })}
-                  className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
-                />
-              </div>
-
-              {rec.type === "weekly" && (
-                <div className="flex flex-wrap items-center gap-1">
-                  <button
-                    onClick={() => setRecurrence({ ...rec, weekdays: [1, 2, 3, 4, 5] })}
-                    className="btn-pill-outline text-xs"
-                  >
-                    平日
-                  </button>
-                  {WEEKDAY_JP.map((label, w) => {
-                    const active = (rec.weekdays ?? []).includes(w);
-                    return (
-                      <button
-                        key={w}
-                        onClick={() => {
-                          const cur = rec.weekdays ?? [];
-                          const next = active ? cur.filter((x) => x !== w) : [...cur, w];
-                          setRecurrence({ ...rec, weekdays: next });
-                        }}
-                        className={active ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {rec.type === "monthlyDate" && (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
-                  <span>毎月</span>
-                  <button
-                    onClick={() => setRecurrence({ ...rec, day: 1 })}
-                    className={rec.day === 1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                  >
-                    月初
-                  </button>
-                  <button
-                    onClick={() => setRecurrence({ ...rec, day: -1 })}
-                    className={rec.day === -1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                  >
-                    月末
-                  </button>
-                  {rec.day !== -1 && (
-                    <>
-                      <input
-                        type="number"
-                        min={1}
-                        max={31}
-                        value={rec.day}
-                        onChange={(e) => setRecurrence({ ...rec, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
-                        className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
-                      />
-                      <span>日</span>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {rec.type === "monthlyWeekday" && (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
-                  <span>毎月</span>
-                  <select
-                    value={rec.ordinal}
-                    onChange={(e) => setRecurrence({ ...rec, ordinal: Number(e.target.value) as 1 | 2 | 3 | 4 | -1 })}
-                    className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-                  >
-                    {([1, 2, 3, 4, -1] as (1 | 2 | 3 | 4 | -1)[]).map((o) => (
-                      <option key={o} value={o}>
-                        {ORDINAL_LABELS[o]}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={rec.weekday}
-                    onChange={(e) => setRecurrence({ ...rec, weekday: Number(e.target.value) })}
-                    className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-                  >
-                    {WEEKDAY_JP.map((label, w) => (
-                      <option key={w} value={w}>
-                        {label}曜日
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {rec.type === "yearly" && (
-                <div className="flex items-center gap-2 text-xs text-cream/60">
-                  <span>毎年</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={rec.month}
-                    onChange={(e) => setRecurrence({ ...rec, month: Math.min(12, Math.max(1, Number(e.target.value) || 1)) })}
-                    className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
-                  />
-                  <span>月</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={rec.day}
-                    onChange={(e) => setRecurrence({ ...rec, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
-                    className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
-                  />
-                  <span>日</span>
-                </div>
-              )}
-              <p className="text-[10px] text-cream/40">完了にすると自動で次回の期日に進み、完了状態には戻りません。</p>
-            </div>
-          )}
-        </div>
 
         {/* サブタスク: 親から一段ずらして表示 */}
         <div>
@@ -4123,6 +3829,368 @@ function TaskDetailModal({
             </div>
           </div>
         </div>
+
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="メモ"
+          rows={3}
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+
+        {/* よく使う項目(期日・対応状況・サブタスク・メモ)だけを常に出し、残りはここへ畳む。
+            スマホで期日やサブタスクが画面の外へ押し出されていたため。畳んでいても値はこの
+            コンポーネントのstateが持っているので、「保存」は開閉に関係なく全項目を書き込む */}
+        <div>
+          <button
+            type="button"
+            className="btn-pill-outline w-full text-xs"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpenStr(moreOpen ? "false" : "true")}
+          >
+            {moreOpen ? "▲ くわしくを閉じる" : "▼ くわしく（リスト・分類・繰り返し など）"}
+          </button>
+          {/* 畳んだまま設定済みの項目に気づけないと困るので、閉じている間は何が入っているかだけ1行で出す */}
+          {!moreOpen && foldedSetLabels.length > 0 && (
+            <p className="mt-1 text-[11px] text-cream/60" data-testid="todo-detail-folded-summary">
+              設定あり: {foldedSetLabels.join("・")}
+            </p>
+          )}
+        </div>
+        {moreOpen && (
+          <div className="space-y-3">
+            {lists.length > 1 && (
+              <label className="flex items-center gap-2 text-xs text-cream/60">
+                リスト
+                <select
+                  value={listId}
+                  onChange={(e) => setListId(e.target.value)}
+                  className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
+                >
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <input
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+              placeholder="アクション（次にすべき行動）"
+            />
+
+            <div className="flex items-center gap-2">
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                placeholder="URL（一覧のリンクボタンから開けます）"
+              />
+              {url.trim() && (
+                <button
+                  onClick={() => window.open(normalizeUrl(url.trim()), "_blank", "noopener,noreferrer")}
+                  aria-label="リンクを開く"
+                  className="shrink-0 text-lg text-cream/50 hover:text-cream"
+                >
+                  🔗
+                </button>
+              )}
+            </div>
+
+            <TaskImageField task={task} />
+            <TaskMailField task={task} />
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-cream/60">分類</label>
+              <select
+                value={categoryMode}
+                onChange={(e) => setCategoryMode(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+              >
+                <option value={NO_CATEGORY_VALUE}>分類なし</option>
+                {categoryOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                <option value={CUSTOM_CATEGORY_VALUE}>＋ 新しい分類...</option>
+              </select>
+              {categoryMode === CUSTOM_CATEGORY_VALUE && (
+                <input
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  placeholder="分類名"
+                  className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-cream/60">客先</label>
+              <select
+                value={customerMode}
+                onChange={(e) => setCustomerMode(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+              >
+                <option value={NO_CUSTOMER_VALUE}>客先なし</option>
+                {customerOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                <option value={CUSTOM_CUSTOMER_VALUE}>＋ 新しい客先...</option>
+              </select>
+              {customerMode === CUSTOM_CUSTOMER_VALUE && (
+                <input
+                  value={customCustomer}
+                  onChange={(e) => setCustomCustomer(e.target.value)}
+                  placeholder="客先名"
+                  className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-cream/60">取引先</label>
+              <select
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+              >
+                <option value="">（なし）</option>
+                {(clients ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[10px] text-cream/40">「案件」タブで登録した取引先マスタと紐付けます（客先とは別）</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-cream/60">開始日</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+              />
+              {startDate && (
+                <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setStartDate("")}>
+                  クリア
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-cream/40">
+              開始日を設定した場合、リスト内の並び順は期日ではなく開始日が優先されます。
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-cream/60">🔔 通知</label>
+              <input
+                type="datetime-local"
+                value={reminderInput}
+                onChange={(e) => setReminderInput(e.target.value)}
+                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+              />
+              <button className="btn-pill-outline text-xs" onClick={setReminder} disabled={!reminderInput}>
+                設定
+              </button>
+              {task.reminderAt && (
+                <button className="text-xs text-cream/50 hover:text-alert" onClick={clearReminder}>
+                  クリア
+                </button>
+              )}
+            </div>
+            {task.reminderAt && (
+              <p className="text-[10px] text-cream/40">
+                {formatDateTimeJp(task.reminderAt)}に通知{task.reminderFiredAt ? "（通知済み）" : ""}
+              </p>
+            )}
+
+            {/* 繰り返し設定 */}
+            <div className="rounded-lg border border-cream/10 p-3">
+              <label className="flex items-center gap-2 text-xs text-cream/70">
+                <input
+                  type="checkbox"
+                  checked={recurrenceEnabled}
+                  onChange={(e) => setRecurrenceEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+                />
+                繰り返し
+              </label>
+              {recurrenceEnabled && (
+                <div className="mt-2 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* 種類を変えたら細かい指定は捨て、新しい種類の既定(期日から決まる)を出し直す */}
+                    <select
+                      value={rec.type}
+                      onChange={(e) => setRecurrence({ type: e.target.value as RecurrenceType, interval: rec.interval })}
+                      className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                    >
+                      {(Object.keys(RECURRENCE_TYPE_LABELS) as RecurrenceType[]).map((t) => (
+                        <option key={t} value={t}>
+                          {RECURRENCE_TYPE_LABELS[t]}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-cream/60">間隔</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={rec.interval}
+                      onChange={(e) => setRecurrence({ ...rec, interval: Math.max(1, Number(e.target.value) || 1) })}
+                      className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
+                    />
+                  </div>
+
+                  {rec.type === "weekly" && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        onClick={() => setRecurrence({ ...rec, weekdays: [1, 2, 3, 4, 5] })}
+                        className="btn-pill-outline text-xs"
+                      >
+                        平日
+                      </button>
+                      {WEEKDAY_JP.map((label, w) => {
+                        const active = (rec.weekdays ?? []).includes(w);
+                        return (
+                          <button
+                            key={w}
+                            onClick={() => {
+                              const cur = rec.weekdays ?? [];
+                              const next = active ? cur.filter((x) => x !== w) : [...cur, w];
+                              setRecurrence({ ...rec, weekdays: next });
+                            }}
+                            className={active ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {rec.type === "monthlyDate" && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+                      <span>毎月</span>
+                      <button
+                        onClick={() => setRecurrence({ ...rec, day: 1 })}
+                        className={rec.day === 1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                      >
+                        月初
+                      </button>
+                      <button
+                        onClick={() => setRecurrence({ ...rec, day: -1 })}
+                        className={rec.day === -1 ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                      >
+                        月末
+                      </button>
+                      {rec.day !== -1 && (
+                        <>
+                          <input
+                            type="number"
+                            min={1}
+                            max={31}
+                            value={rec.day}
+                            onChange={(e) => setRecurrence({ ...rec, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+                            className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
+                          />
+                          <span>日</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {rec.type === "monthlyWeekday" && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
+                      <span>毎月</span>
+                      <select
+                        value={rec.ordinal}
+                        onChange={(e) => setRecurrence({ ...rec, ordinal: Number(e.target.value) as 1 | 2 | 3 | 4 | -1 })}
+                        className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                      >
+                        {([1, 2, 3, 4, -1] as (1 | 2 | 3 | 4 | -1)[]).map((o) => (
+                          <option key={o} value={o}>
+                            {ORDINAL_LABELS[o]}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={rec.weekday}
+                        onChange={(e) => setRecurrence({ ...rec, weekday: Number(e.target.value) })}
+                        className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                      >
+                        {WEEKDAY_JP.map((label, w) => (
+                          <option key={w} value={w}>
+                            {label}曜日
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {rec.type === "yearly" && (
+                    <div className="flex items-center gap-2 text-xs text-cream/60">
+                      <span>毎年</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={rec.month}
+                        onChange={(e) => setRecurrence({ ...rec, month: Math.min(12, Math.max(1, Number(e.target.value) || 1)) })}
+                        className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
+                      />
+                      <span>月</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={rec.day}
+                        onChange={(e) => setRecurrence({ ...rec, day: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+                        className="w-14 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-center text-xs text-cream"
+                      />
+                      <span>日</span>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-cream/40">完了にすると自動で次回の期日に進み、完了状態には戻りません。</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                className={task.projectId ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setShowReflectDialog(true)}
+                disabled={!!task.projectId}
+              >
+                📁 {task.projectId ? "案件に反映済み" : "案件に反映"}
+              </button>
+              <button
+                className="btn-pill-outline text-xs"
+                onClick={onConvertToMemo}
+                title={subtasks.length > 0 ? "サブタスクを含めてチェックリスト付箋にします" : "タイトル・次の行動・メモをまとめた付箋にします"}
+              >
+                📝 メモに変換
+              </button>
+              {!task.parentTaskId && (
+                <button
+                  className={task.boardX !== undefined ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  onClick={() => {
+                    if (task.boardX !== undefined) removeTodoFromBoard(task.id);
+                    else placeTodoOnBoard(task.id);
+                  }}
+                >
+                  🗂 {task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-cream/10 pt-3">

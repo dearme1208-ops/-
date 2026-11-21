@@ -17,7 +17,7 @@ import { QuickStampPanel, QuickStampSheet } from "@/components/sections/today/Qu
 const TOOLS: { kind: TodayAction; icon: string; label: string }[] = [
   { kind: "capture", icon: "✏️", label: "ひとこと入力" },
   { kind: "search", icon: "🔍", label: "さがす" },
-  { kind: "add", icon: "+", label: "突発作業を追加" },
+  { kind: "add", icon: "+", label: "作業を追加" },
   { kind: "trouble", icon: "⚡", label: "トラブル発生" },
   { kind: "dayPlan", icon: "🧭", label: "今日の段取り" },
   { kind: "timebox", icon: "⏱", label: "時間割" },

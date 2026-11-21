@@ -74,6 +74,32 @@ export default function RecordsSection() {
     return journalEntries.filter((e) => e.date.includes(journalSearch) || e.text.includes(journalSearch));
   }, [journalEntries, journalSearch]);
 
+  // 設定テーブルの1行(日記・振り返り)を消し、「元に戻す」を出す。確認の画面は挟まない
+  // (押し間違えても戻せるので、毎回の確認は要らない)。
+  // 戻す時は、その日の行がまだ無い時だけ元の内容を入れる。消した後に本日タブで同じ日の記録を
+  // 書き直していたら、古い内容で上書きせずそのままにする(履歴からは後になってからでも戻せるため)
+  async function deleteSettingRowWithUndo(key: string, deletedMessage: string, keptMessage: string) {
+    const prev = await db.settings.get(key);
+    if (!prev) return;
+    await db.settings.delete(key);
+    showUndoToast(deletedMessage, async () => {
+      const restored = await db.transaction("rw", db.settings, async () => {
+        if (await db.settings.get(key)) return false;
+        await db.settings.add(prev);
+        return true;
+      });
+      if (!restored) showUndoToast(keptMessage);
+    });
+  }
+
+  async function deleteJournalEntry(date: string) {
+    await deleteSettingRowWithUndo(
+      `${JOURNAL_KEY_PREFIX}${date}`,
+      `${date}の記録を削除しました`,
+      `${date}の記録は書き直されているため、元に戻しませんでした`
+    );
+  }
+
   async function updateJournalText(date: string, text: string) {
     const key = `${JOURNAL_KEY_PREFIX}${date}`;
     if (text.trim() === "") {
@@ -94,7 +120,11 @@ export default function RecordsSection() {
   const reflectionCollapsed = reflectionCollapsedStr === "true";
 
   async function deleteReflection(date: string) {
-    await db.settings.delete(`${REFLECTION_KEY_PREFIX}${date}`);
+    await deleteSettingRowWithUndo(
+      `${REFLECTION_KEY_PREFIX}${date}`,
+      `${date}の振り返りを削除しました`,
+      `${date}の振り返りは書き直されているため、元に戻しませんでした`
+    );
   }
 
   const filtered = useMemo(() => {
@@ -210,9 +240,22 @@ export default function RecordsSection() {
   }
 
   async function deleteRecord(r: WorkRecord) {
-    if (!confirm(`「${r.date} ${r.category}/${workCtx.label(r)}」の実績を削除しますか?`)) return;
+    // 確認を挟む代わりに、すぐ消して「元に戻す」を出す(本日の作業の削除と同じ)。
+    // 画面に出ている行は少し古いことがあるので、消す直前の中身を控える
+    const snapshot = (await db.records.get(r.id)) ?? r;
     await db.records.delete(r.id);
-    if (r.masterTaskId) await recomputeEstimateFromRecords(r.masterTaskId);
+    if (snapshot.masterTaskId) await recomputeEstimateFromRecords(snapshot.masterTaskId);
+    showUndoToast(`「${workCtx.label(r)}」の実績を削除しました`, async () => {
+      // 実績は同じ日の同じ作業を合算した行。戻す時は「同じIDの行がもう無い時だけ足す」。
+      // putで戻すと、その後に入った新しい内容を古い控えで上書きしてしまう
+      const restored = await db.transaction("rw", db.records, async () => {
+        if (await db.records.get(snapshot.id)) return false;
+        await db.records.add(snapshot);
+        return true;
+      });
+      // 削除の時に計算し直した作業マスタの想定時間も、戻した実績を含めて計算し直す
+      if (restored && snapshot.masterTaskId) await recomputeEstimateFromRecords(snapshot.masterTaskId);
+    });
   }
 
   async function toggleExclude(r: WorkRecord) {
@@ -365,7 +408,7 @@ export default function RecordsSection() {
                         <button
                           className="text-xs text-alert"
                           aria-label={`${e.date}の記録を削除`}
-                          onClick={() => confirm(`${e.date}の記録を削除しますか?`) && updateJournalText(e.date, "")}
+                          onClick={() => deleteJournalEntry(e.date)}
                         >
                           削除
                         </button>
@@ -441,7 +484,7 @@ export default function RecordsSection() {
                         <button
                           className="text-xs text-alert"
                           aria-label={`${e.date}の振り返りを削除`}
-                          onClick={() => confirm(`${e.date}の振り返りを削除しますか?`) && deleteReflection(e.date)}
+                          onClick={() => deleteReflection(e.date)}
                         >
                           削除
                         </button>
@@ -684,7 +727,7 @@ function AddRecordDialog({
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
         <button type="button" className="btn-pill-outline text-xs" onClick={() => setShowMasterPicker(true)}>
-          作業マスタから選択
+          登録済みの作業から選ぶ
         </button>
         <div>
           <label className="mb-1 block text-xs text-cream/60">開始〜終了時刻</label>
@@ -722,7 +765,7 @@ function AddRecordDialog({
       </div>
       {showMasterPicker && (
         <CategoryWorkNameDialog
-          title="作業マスタから選択"
+          title="登録済みの作業から選ぶ"
           initialMode="master"
           confirmLabel="この内容を使う"
           defaultCategory={category}

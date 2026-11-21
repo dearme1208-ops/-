@@ -61,7 +61,7 @@ test("作業の追加画面の一番上に、今の時間帯によくやる作�
   recs.push({ ...recs[0], id: "r9", date: jstDate(-7), startedAt: jstAt("10:00", -7), endedAt: jstAt("10:10", -7) });
   recs.push({ ...recs[0], id: "r10", date: jstDate(-14), startedAt: jstAt("10:00", -14), endedAt: jstAt("10:10", -14) });
   await seed(page, { stores: { masterTasks: [MASTER, M2], records: recs } });
-  await page.getByRole("button", { name: "+ 突発作業を追加" }).click();
+  await page.getByRole("button", { name: "+ 作業を追加" }).click();
   const usual = page.getByTestId("usual-tasks");
   await expect(usual).toContainText("電話対応");
   await usual.getByRole("button", { name: /電話対応/ }).click();

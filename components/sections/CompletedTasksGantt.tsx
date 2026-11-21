@@ -12,6 +12,7 @@ const MAX_PX_PER_MIN = 30;
 const ROW_H = 44;
 const BAR_H = 22;
 const MIN_BAR_MIN = 1; // これより短くはできない(分)
+const TAP_SLOP_PX = 4; // これより動かしていなければタップ(詳細な時刻編集を開く)とみなす
 
 // 完了した作業だけを対象に、開始/終了をドラッグで直接調整できる簡易ガントチャート。
 // 通常のGanttSection(表示専用・全ステータス対象)とは別に、「完了タブで時間を
@@ -208,6 +209,9 @@ function CompletedBar({
   const [deltaMin, setDeltaMin] = useState(0);
   const dragStartXRef = useRef(0);
   const movedRef = useRef(false);
+  // 端のつまみで始めたドラッグは、つまみとバー本体の両方にpointerupが届く(親へ伝わるため)。
+  // stateは次の描画まで変わらず2回確定してしまうので、進行中かどうかはrefで持ち、1回目で即座に終える
+  const dragModeRef = useRef<"move" | "left" | "right" | null>(null);
 
   function beginDrag(mode: "move" | "left" | "right") {
     return (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -215,27 +219,40 @@ function CompletedBar({
       e.currentTarget.setPointerCapture(e.pointerId);
       dragStartXRef.current = e.clientX;
       movedRef.current = false;
+      dragModeRef.current = mode;
       setDrag({ mode });
       setDeltaMin(0);
     };
   }
   function onMove(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!drag) return;
+    if (!dragModeRef.current) return;
     const dxPx = e.clientX - dragStartXRef.current;
-    if (Math.abs(dxPx) > 3) movedRef.current = true;
+    if (Math.abs(dxPx) >= TAP_SLOP_PX) movedRef.current = true;
     setDeltaMin(Math.round(dxPx / pxPerMin));
   }
-  function onUp(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!drag) return;
-    const mode = drag.mode;
-    const wasMoved = movedRef.current;
+  function endDrag(): "move" | "left" | "right" | null {
+    const mode = dragModeRef.current;
+    dragModeRef.current = null;
     setDrag(null);
+    setDeltaMin(0);
+    return mode;
+  }
+  // 画面の縦スクロールなどでブラウザがドラッグを打ち切った時(pointercancel)は、何も確定せず元に戻す。
+  // 以前はここでも確定していたため、バーの上からスクロールを始めただけで時刻が変わることがあった
+  function onCancel() {
+    endDrag();
+  }
+  function onUp(e: ReactPointerEvent<HTMLDivElement>) {
+    const wasMoved = movedRef.current;
+    // 離した位置から求める(最後のpointermoveの描画がまだ反映されていなくてもずれないように)
+    const finalDeltaMin = Math.round((e.clientX - dragStartXRef.current) / pxPerMin);
+    const mode = endDrag();
+    if (!mode) return;
     if (!wasMoved) {
-      setDeltaMin(0);
       onOpenEdit(task);
       return;
     }
-    const deltaMs = deltaMin * 60000;
+    const deltaMs = finalDeltaMin * 60000;
     let newStart = origStart;
     let newEnd = origEnd;
     if (mode === "move") {
@@ -246,14 +263,9 @@ function CompletedBar({
     } else {
       newEnd = Math.max(origEnd + deltaMs, origStart + MIN_BAR_MIN * 60000);
     }
-    setDeltaMin(0);
-    if (newStart === origStart && newEnd === origEnd) return;
-    // ドラッグでの変更は誤操作の可能性もあるため、確定前に一度確認する。
-    // キャンセルした場合はdragがnullに戻っているのでプレビューも自動的に元の位置に戻る
-    const confirmed = confirm(
-      `「${label}」の時刻を変更します。\n${formatClock(origStart)}〜${formatClock(origEnd)} → ${formatClock(newStart)}〜${formatClock(newEnd)}\n\nよろしいですか?`
-    );
-    if (!confirmed) return;
+    // 1分に満たない変更は、指が少し滑っただけとみなして何もしない
+    if (Math.abs(newStart - origStart) < 60000 && Math.abs(newEnd - origEnd) < 60000) return;
+    // 確認は挟まずそのまま確定する(呼び出し側が「元に戻す」を出す)
     onCommit(task, newStart, newEnd);
   }
 
@@ -289,11 +301,12 @@ function CompletedBar({
         className={`group absolute cursor-grab rounded active:cursor-grabbing ${overlapping ? "ring-2 ring-alert" : ""} ${
           drag ? (overlapping ? "bg-alert" : "bg-cream") : ""
         }`}
-        style={{ left, width, top: barTop, height: BAR_H }}
+        // バー本体は縦のスクロールを妨げない(横に動かした時だけドラッグになる)
+        style={{ left, width, top: barTop, height: BAR_H, touchAction: "pan-y" }}
         onPointerDown={beginDrag("move")}
         onPointerMove={onMove}
         onPointerUp={onUp}
-        onPointerCancel={onUp}
+        onPointerCancel={onCancel}
       >
         {!drag &&
           rawSegments.map((seg, i) => {
@@ -310,17 +323,21 @@ function CompletedBar({
           })}
         <div
           className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l bg-ink/20 hover:bg-ink/40"
+          // 端のつまみは小さいので、触れたら必ず伸縮になるようスクロールに取られないようにする
+          style={{ touchAction: "none" }}
           onPointerDown={beginDrag("left")}
           onPointerMove={onMove}
           onPointerUp={onUp}
-          onPointerCancel={onUp}
+          onPointerCancel={onCancel}
         />
         <div
           className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r bg-ink/20 hover:bg-ink/40"
+          // 端のつまみは小さいので、触れたら必ず伸縮になるようスクロールに取られないようにする
+          style={{ touchAction: "none" }}
           onPointerDown={beginDrag("right")}
           onPointerMove={onMove}
           onPointerUp={onUp}
-          onPointerCancel={onUp}
+          onPointerCancel={onCancel}
         />
       </div>
       <div

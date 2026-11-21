@@ -16,7 +16,7 @@ export default function ManualFinishDialog({
   const [duration, setDuration] = useState("00:10:00");
 
   return (
-    <Modal title={`「${taskName}」を手動で記録`} onClose={onClose}>
+    <Modal title={`「${taskName}」のかかった時間だけ記録`} onClose={onClose}>
       <p className="mb-2 text-xs text-cream/60">
         計測し忘れていた場合、実際にかかった時間を直接入力して終了できます。
       </p>

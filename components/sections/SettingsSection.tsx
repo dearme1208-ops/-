@@ -693,7 +693,7 @@ export default function SettingsSection() {
                   ⬇ ファイルを保存する
                 </button>
               </div>
-              {backupStatus && <p className="mt-1 text-xs text-cream/70">{backupStatus}</p>}
+              {backupStatus && <p className="mt-1 text-xs text-cream/65">{backupStatus}</p>}
             </li>
             <li className="rounded-lg border border-cream/15 p-3">
               <div className="font-bold text-cream">② 新しい端末で工程表を開く</div>
@@ -780,11 +780,14 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">時間割（タイムボックス）</h3>
-        <p className="text-xs text-cream/60">
+        <h3 className="font-display text-base font-bold text-cream">時間割（タイムボックス）</h3>
+        <p className="text-xs text-cream/65">
           本日の作業の「⏱ 時間割」で作業ごとに時間の枠を決めると、枠の始まりで自動的に計測を始め、終わりで音と通知で知らせます。
         </p>
         <button
+          role="switch"
+          aria-checked={timeboxAutoStop}
+          data-toggle
           className={timeboxAutoStop ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
           onClick={() => setTimeboxAutoStopStr(timeboxAutoStop ? "false" : "true")}
         >
@@ -796,9 +799,12 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">未計測時間の自動計測</h3>
+        <h3 className="font-display text-base font-bold text-cream">未計測時間の自動計測</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
+            role="switch"
+            aria-checked={provisionalEnabled}
+            data-toggle
             className={provisionalEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setProvisionalEnabledStr(provisionalEnabled ? "false" : "true")}
           >
@@ -817,6 +823,9 @@ export default function SettingsSection() {
             />
             <span>分以上続いたら、自動で仮計測を開始します</span>
             <button
+              role="switch"
+              aria-checked={provisionalNotifyEnabled}
+              data-toggle
               className={provisionalNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
               onClick={() => setProvisionalNotifyEnabledStr(provisionalNotifyEnabled ? "false" : "true")}
             >
@@ -827,7 +836,7 @@ export default function SettingsSection() {
 
         {provisionalEnabled && (
           <div className="space-y-2 border-t border-cream/10 pt-3">
-            <p className="text-xs text-cream/60">
+            <p className="text-xs text-cream/65">
               除外する時間帯（休憩など）。この時間帯は未計測の自動開始が始まらず、「さかのぼって開始/再開」でも対象に含まれません。
             </p>
             {breakRanges.map((r, i) => (
@@ -847,6 +856,9 @@ export default function SettingsSection() {
                     className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
                   />
                   <button
+                    role="switch"
+                    aria-checked={r.forceStop}
+                    data-toggle
                     className={r.forceStop ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
                     onClick={() => updateBreakRange(i, { forceStop: !r.forceStop })}
                   >
@@ -901,9 +913,12 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">位置情報による移動検知</h3>
+        <h3 className="font-display text-base font-bold text-cream">位置情報による移動検知</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
+            role="switch"
+            aria-checked={geoTrackingEnabled}
+            data-toggle
             className={geoTrackingEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setGeoTrackingEnabledStr(geoTrackingEnabled ? "false" : "true")}
           >
@@ -964,9 +979,12 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">位置情報による地点到着検知（自動開始）</h3>
+        <h3 className="font-display text-base font-bold text-cream">位置情報による地点到着検知（自動開始）</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
+            role="switch"
+            aria-checked={geoArrivalEnabled}
+            data-toggle
             className={geoArrivalEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setGeoArrivalEnabledStr(geoArrivalEnabled ? "false" : "true")}
           >
@@ -1090,9 +1108,12 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">天気変化の通知（降水確率）</h3>
+        <h3 className="font-display text-base font-bold text-cream">天気変化の通知（降水確率）</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
+            role="switch"
+            aria-checked={weatherNotifyEnabled}
+            data-toggle
             className={weatherNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setWeatherNotifyEnabledStr(weatherNotifyEnabled ? "false" : "true")}
           >
@@ -1211,9 +1232,12 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">ホーム画面のクイック起動</h3>
+        <h3 className="font-display text-base font-bold text-cream">ホーム画面のクイック起動</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
+            role="switch"
+            aria-checked={quickStartEnabled}
+            data-toggle
             className={quickStartEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setQuickStartEnabledStr(quickStartEnabled ? "false" : "true")}
           >
@@ -1226,9 +1250,12 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">音声での開始/終了</h3>
+        <h3 className="font-display text-base font-bold text-cream">音声での開始/終了</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
+            role="switch"
+            aria-checked={voiceEnabled}
+            data-toggle
             className={voiceEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setVoiceEnabledStr(voiceEnabled ? "false" : "true")}
           >
@@ -1242,6 +1269,9 @@ export default function SettingsSection() {
           <>
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <button
+                role="switch"
+                aria-checked={handsFreeEnabled}
+                data-toggle
                 className={handsFreeEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
                 onClick={() => setHandsFreeEnabledStr(handsFreeEnabled ? "false" : "true")}
               >
@@ -1256,7 +1286,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">コスト換算（時給/単価）</h3>
+        <h3 className="font-display text-base font-bold text-cream">コスト換算（時給/単価）</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <label className="text-xs text-cream/60">デフォルト単価</label>
           <input
@@ -1274,7 +1304,7 @@ export default function SettingsSection() {
           設定すると、集計・週報/月報・案件などの画面に概算金額（作業時間×単価）が表示されます。未設定のカテゴリ・案件にはこのデフォルト単価が使われます。案件ごとの単価は「案件」タブから個別に設定できます。
         </p>
         <div className="space-y-2 border-t border-cream/10 pt-3">
-          <p className="text-xs text-cream/60">カテゴリ別の単価（デフォルトより優先されます）</p>
+          <p className="text-xs text-cream/65">カテゴリ別の単価（デフォルトより優先されます）</p>
           {Object.entries(categoryRates).map(([cat, amount]) => (
             <div key={cat} className="flex items-center gap-2 text-xs text-cream/70">
               <span className="flex-1 truncate">{cat}</span>
@@ -1308,35 +1338,41 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">本日の作業の表示</h3>
+        <h3 className="font-display text-base font-bold text-cream">本日の作業の表示</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            role="switch"
+            aria-checked={emphasizeRunning}
+            data-toggle
             className={emphasizeRunning ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setEmphasizeRunningStr(emphasizeRunning ? "false" : "true")}
           >
             計測中の作業を強調表示: {emphasizeRunning ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={shortcutsEnabled}
+            data-toggle
             className={shortcutsEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShortcutsEnabledStr(shortcutsEnabled ? "false" : "true")}
           >
             キーボードショートカット: {shortcutsEnabled ? "ON" : "OFF"}
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           ONにすると、計測中の作業がある間は他の作業が薄く表示され、ボタンも操作できなくなります（仮計測中と同様の見せ方です）。
         </p>
         {shortcutsEnabled && (
-          <p className="text-xs text-cream/50">
+          <p className="text-xs text-cream/65">
             キーボードショートカット（入力欄にフォーカスしていない時のみ有効）: <b className="text-cream">Space</b>
-            = 計測中の作業を一時停止/一番上の一時停止中の作業を再開、<b className="text-cream">N</b> = 突発作業を追加、
+            = 計測中の作業を一時停止/一番上の一時停止中の作業を再開、<b className="text-cream">N</b> = 作業を追加、
             <b className="text-cream">T</b> = トラブル発生
           </p>
         )}
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">作業の追加画面</h3>
+        <h3 className="font-display text-base font-bold text-cream">作業の追加画面</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             className={addTaskStyle === "tabs" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1357,12 +1393,12 @@ export default function SettingsSection() {
             1枚にまとめる
           </button>
         </div>
-        <p className="text-xs text-cream/50">
-          「本日の作業」の<b className="text-cream">＋ 突発作業を追加</b>を押したときに出る画面の作りを選びます。追加そのものの扱い（「予定」を設定するか、同じ作業の残り想定時間の繰り越し、未計測との重なりの確認、自由入力したものを作業マスタへ登録）は、どれを選んでも変わりません。
+        <p className="text-xs text-cream/65">
+          「本日の作業」の<b className="text-cream">＋ 作業を追加</b>を押したときに出る画面の作りを選びます。追加そのものの扱い（かかる時間の見込みを入れるか、同じ作業の残り想定時間の繰り越し、未計測との重なりの確認、自由入力したものを作業マスタへ登録）は、どれを選んでも変わりません。
         </p>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           <b className="text-cream">タブで切り替え</b>=
-          「マスタから選択」「自由入力」をタブで行き来する従来の形です。
+          「登録済みの作業から選ぶ」「自由入力」をタブで行き来する従来の形です。
           <br />
           <b className="text-cream">メニューから選ぶ</b>=
           最初に「どこから追加しますか」と聞き、作業マスタ／お気に入り／自由入力のどれかを選んでから、その専用の画面に進みます。演出テーマの育成選手モードと同じ流れです。
@@ -1373,39 +1409,57 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">本日タブのパネル表示</h3>
+        <h3 className="font-display text-base font-bold text-cream">本日タブのパネル表示</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            role="switch"
+            aria-checked={showStatusPanel}
+            data-toggle
             className={showStatusPanel ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowStatusPanelStr(showStatusPanel ? "false" : "true")}
           >
             本日の作業状況: {showStatusPanel ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={showAutoAllocate}
+            data-toggle
             className={showAutoAllocate ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowAutoAllocateStr(showAutoAllocate ? "false" : "true")}
           >
             自動配分: {showAutoAllocate ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={showSuggestedTask}
+            data-toggle
             className={showSuggestedTask ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowSuggestedTaskStr(showSuggestedTask ? "false" : "true")}
           >
             そろそろこの作業では?: {showSuggestedTask ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={showNextMovePick}
+            data-toggle
             className={showNextMovePick ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowNextMovePickStr(showNextMovePick ? "false" : "true")}
           >
             今この一手: {showNextMovePick ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={showDailyChallenge}
+            data-toggle
             className={showDailyChallenge ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowDailyChallengeStr(showDailyChallenge ? "false" : "true")}
           >
             デイリーチャレンジ: {showDailyChallenge ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={hapticsStr === "true"}
+            data-toggle
             className={hapticsStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setHapticsStr(hapticsStr === "true" ? "false" : "true")}
             title="計測の開始・完了の時に、端末を軽く振動させます(対応する端末のみ)"
@@ -1413,6 +1467,9 @@ export default function SettingsSection() {
             操作時の振動: {hapticsStr === "true" ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={runningNotificationStr === "true"}
+            data-toggle
             className={runningNotificationStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setRunningNotificationStr(runningNotificationStr === "true" ? "false" : "true")}
             title="アプリを閉じている間、計測中の作業を通知に出します。Androidでは通知から一時停止・完了できます(通知の許可が必要)"
@@ -1420,6 +1477,9 @@ export default function SettingsSection() {
             計測中を通知に出す: {runningNotificationStr === "true" ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={autoFoldPanelsStr === "true"}
+            data-toggle
             className={autoFoldPanelsStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setAutoFoldPanelsStr(autoFoldPanelsStr === "true" ? "false" : "true")}
             title="30日以上触っていない表示を「しばらく使っていない表示」にまとめます"
@@ -1427,6 +1487,9 @@ export default function SettingsSection() {
             使っていない表示を畳む: {autoFoldPanelsStr === "true" ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={showWeeklySummaryStr === "true"}
+            data-toggle
             className={showWeeklySummaryStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowWeeklySummaryStr(showWeeklySummaryStr === "true" ? "false" : "true")}
             title="金〜日に今週、月曜に先週のまとめを本日の作業に出します"
@@ -1434,6 +1497,9 @@ export default function SettingsSection() {
             今週のまとめ: {showWeeklySummaryStr === "true" ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={showTaskClockStr === "true"}
+            data-toggle
             className={showTaskClockStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowTaskClockStr(showTaskClockStr === "true" ? "false" : "true")}
             title="計測中のカードに、今の時刻と終わる見込みを描いたアナログ時計を出します"
@@ -1441,6 +1507,9 @@ export default function SettingsSection() {
             計測中の時計: {showTaskClockStr === "true" ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={dayPlanAtRiskStr === "true"}
+            data-toggle
             className={dayPlanAtRiskStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setDayPlanAtRiskStr(dayPlanAtRiskStr === "true" ? "false" : "true")}
             title="「今日の段取り」に、期日に間に合わない見込みのToDo・案件の件数と一覧を出します"
@@ -1463,36 +1532,45 @@ export default function SettingsSection() {
             ))}
           </span>
           <button
+            role="switch"
+            aria-checked={showTodayHint}
+            data-toggle
             className={showTodayHint ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowTodayHintStr(showTodayHint ? "false" : "true")}
           >
             今日効く助言: {showTodayHint ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={showBackupNudge}
+            data-toggle
             className={showBackupNudge ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowBackupNudgeStr(showBackupNudge ? "false" : "true")}
           >
             バックアップの催促: {showBackupNudge ? "ON" : "OFF"}
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           OFFにしたパネルは本日タブに表示されなくなります（記録や設定自体は消えません。自動配分はモード自体を「オフ」にしても止められますが、ここでOFFにするとパネルごと非表示にできます）。「今日効く助言」は要注意リストの分析から今の時間帯に効くものを1件だけ出すもので、OFFにしても要注意リストタブでは今までどおり見られます。「バックアップの催促」をOFFにすると、長く書き出していなくても本日タブでは報せません（このタブの「データのバックアップ」からはいつでも書き出せます）。
         </p>
         <div className="border-t border-cream/10 pt-3">
           <button
+            role="switch"
+            aria-checked={patternSuggestNotifyEnabled}
+            data-toggle
             className={patternSuggestNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setPatternSuggestNotifyEnabledStr(patternSuggestNotifyEnabled ? "false" : "true")}
           >
             パターン学習型の声かけ通知: {patternSuggestNotifyEnabled ? "ON" : "OFF"}
           </button>
-          <p className="mt-2 text-xs text-cream/50">
+          <p className="mt-2 text-xs text-cream/65">
             「そろそろこの作業では?」の提案が出た最初のタイミングで、パネル表示に加えて通知も送ります（同じ提案は1日1回まで）。
           </p>
         </div>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">基本労働時間</h3>
+        <h3 className="font-display text-base font-bold text-cream">基本労働時間</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <input
             type="time"
@@ -1508,14 +1586,14 @@ export default function SettingsSection() {
             className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
           />
         </div>
-        <p className="text-xs text-cream/50">
-          本日タブの「時間を加算」で、この時間帯のうちどの作業のセグメントにも含まれていない
+        <p className="text-xs text-cream/65">
+          本日タブの「時間を足す」で、この時間帯のうちどの作業のセグメントにも含まれていない
           （未計測の）時間を目安として表示します。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">アクセントカラー</h3>
+        <h3 className="font-display text-base font-bold text-cream">アクセントカラー</h3>
         <div className="flex flex-wrap gap-2">
           {ACCENT_PRESETS.map((p) => (
             <button
@@ -1533,13 +1611,13 @@ export default function SettingsSection() {
             </button>
           ))}
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           警告・重要・強調表示に使う単色アクセントの色相を変更します（配色方針自体は単色のまま維持されます）。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">文字サイズ・見やすさ</h3>
+        <h3 className="font-display text-base font-bold text-cream">文字サイズ・見やすさ</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             className={fontScale === "sm" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1562,19 +1640,22 @@ export default function SettingsSection() {
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
+            role="switch"
+            aria-checked={highContrast}
+            data-toggle
             className={highContrast ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setHighContrastStr(highContrast ? "false" : "true")}
           >
             ハイコントラスト: {highContrast ? "ON" : "OFF"}
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           文字サイズはアプリ全体に反映されます。ハイコントラストは、薄い文字色・枠線をより濃く表示し、フォーカス時の輪郭も強調します。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">📆 カレンダーの週表示</h3>
+        <h3 className="font-display text-base font-bold text-cream">📆 カレンダーの週表示</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             className={weekViewMode === "fixedStart" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1608,20 +1689,20 @@ export default function SettingsSection() {
             ))}
           </div>
         )}
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           案件・ToDoタブのカレンダー表示を「週」に切り替えた際に、1週間として表示する範囲を選べます。
         </p>
       </div>
 
       <div className="panel space-y-2 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">🎭 演出テーマ</h3>
-        <p className="text-xs text-cream/50">
+        <h3 className="font-display text-base font-bold text-cream">🎭 演出テーマ</h3>
+        <p className="text-xs text-cream/65">
           モードの選択はタブ列の「モード選択」に移りました。アクセントカラー・文字サイズなど、モードに関わらない全体設定はこのまま設定タブに残っています。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">日・週・月の目標時間</h3>
+        <h3 className="font-display text-base font-bold text-cream">日・週・月の目標時間</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <span>日の目標</span>
           <input
@@ -1661,15 +1742,18 @@ export default function SettingsSection() {
           />
           <span>時間</span>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           日報・週報・月報に達成率を表示します。空欄のままなら目標表示は行いません。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">朝の自動ダイジェスト通知</h3>
+        <h3 className="font-display text-base font-bold text-cream">朝の自動ダイジェスト通知</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            role="switch"
+            aria-checked={morningDigestEnabled}
+            data-toggle
             className={morningDigestEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setMorningDigestEnabledStr(morningDigestEnabled ? "false" : "true")}
           >
@@ -1687,15 +1771,18 @@ export default function SettingsSection() {
             </>
           )}
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           指定した時刻になったら、本日の予定件数と、ToDo・案件の期限切れ/本日期限の件数をまとめて通知します（1日1回、アプリを開いている時に判定します）。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">1日の終わりの自動サマリー通知</h3>
+        <h3 className="font-display text-base font-bold text-cream">1日の終わりの自動サマリー通知</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            role="switch"
+            aria-checked={dailySummaryEnabled}
+            data-toggle
             className={dailySummaryEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setDailySummaryEnabledStr(dailySummaryEnabled ? "false" : "true")}
           >
@@ -1713,24 +1800,27 @@ export default function SettingsSection() {
             </>
           )}
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           指定した時刻になったら、その日の合計作業時間（と体調を記録していればその内容）を通知します（1日1回）。
         </p>
         <div className="border-t border-cream/10 pt-3">
           <button
+            role="switch"
+            aria-checked={monthlySummaryEnabled}
+            data-toggle
             className={monthlySummaryEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setMonthlySummaryEnabledStr(monthlySummaryEnabled ? "false" : "true")}
           >
             月次ダイジェスト通知: {monthlySummaryEnabled ? "ON" : "OFF"}
           </button>
-          <p className="mt-2 text-xs text-cream/50">
+          <p className="mt-2 text-xs text-cream/65">
             月が変わって初めてアプリを開いたタイミングで、先月の合計作業時間と最も時間を使った業務区分を通知します（月1回）。
           </p>
         </div>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">使用頻度の低い作業マスタの検出基準</h3>
+        <h3 className="font-display text-base font-bold text-cream">使用頻度の低い作業マスタの検出基準</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <span>最終実績から</span>
           <input
@@ -1745,7 +1835,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">体調の記録</h3>
+        <h3 className="font-display text-base font-bold text-cream">体調の記録</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={conditionEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1760,7 +1850,7 @@ export default function SettingsSection() {
             OFF
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           {conditionEnabled
             ? "本日タブに「今の体調」欄を表示し、いつでも記録できます。"
             : "本日タブの「今の体調」欄を非表示にします（既に記録済みのデータは残ります）。"}
@@ -1789,7 +1879,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">タブの並べ方</h3>
+        <h3 className="font-display text-base font-bold text-cream">タブの並べ方</h3>
         <label className="flex items-center gap-2 text-sm text-cream/85">
           <input
             type="checkbox"
@@ -1799,13 +1889,13 @@ export default function SettingsSection() {
           />
           タブを分類ごとにまとめる
         </label>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           ONにすると、上の段に「今日・計画・振り返り・記録・マスタ・設定」の分類だけを並べ、選んだ分類のタブを下の段に出します。タブが10個以下のモード(禅・Claudeなど)では、もともと少ないので1列のままです。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">各タブのボタン表示</h3>
+        <h3 className="font-display text-base font-bold text-cream">各タブのボタン表示</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={!simpleButtons ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1820,15 +1910,15 @@ export default function SettingsSection() {
             簡易表示（アイコンのみ）
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           {simpleButtons
-            ? "本日の作業(トラブル発生・突発作業を追加・明日の下書き・終業の振り返り・音声で操作)、ToDo・作業マスタ・曜日別テンプレート・マンダラチャート・実績編集の「+ 追加」系ボタンをアイコンのみで表示します。"
-            : "本日の作業(トラブル発生・突発作業を追加・明日の下書き・終業の振り返り・音声で操作)、ToDo・作業マスタ・曜日別テンプレート・マンダラチャート・実績編集の「+ 追加」系ボタンを文字付きで表示します。"}
+            ? "本日の作業(トラブル発生・作業を追加・明日の下書き・終業の振り返り・音声で操作)、ToDo・作業マスタ・曜日別テンプレート・マンダラチャート・実績編集の「+ 追加」系ボタンをアイコンのみで表示します。"
+            : "本日の作業(トラブル発生・作業を追加・明日の下書き・終業の振り返り・音声で操作)、ToDo・作業マスタ・曜日別テンプレート・マンダラチャート・実績編集の「+ 追加」系ボタンを文字付きで表示します。"}
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">下部固定タブバー</h3>
+        <h3 className="font-display text-base font-bold text-cream">下部固定タブバー</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={tabBarStyle === "pill" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1855,57 +1945,72 @@ export default function SettingsSection() {
             スタンプ
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           「本日の作業」画面下部の実行中/予定/完了/ボードタブ（ToDoの下部表示をONにした場合はそちらも）の見た目を切り替えます。
         </p>
         <div className="flex flex-wrap gap-2 border-t border-cream/10 pt-3">
           <button
+            role="switch"
+            aria-checked={tabBarProgressStrip}
+            data-toggle
             className={tabBarProgressStrip ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setTabBarProgressStripStr(tabBarProgressStrip ? "false" : "true")}
           >
             進捗ストリップを表示: {tabBarProgressStrip ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={tabBarAdaptiveEmphasis}
+            data-toggle
             className={tabBarAdaptiveEmphasis ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setTabBarAdaptiveEmphasisStr(tabBarAdaptiveEmphasis ? "false" : "true")}
           >
             実行中タブを強調: {tabBarAdaptiveEmphasis ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={todoBottomViewBar}
+            data-toggle
             className={todoBottomViewBar ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setTodoBottomViewBarStr(todoBottomViewBar ? "false" : "true")}
           >
             ToDoタブも下部固定表示にする: {todoBottomViewBar ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={quickStampButton}
+            data-toggle
             className={quickStampButton ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setQuickStampButtonStr(quickStampButton ? "false" : "true")}
           >
             📍打刻ボタンを表示: {quickStampButton ? "ON" : "OFF"}
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           進捗ストリップは、本日の作業の実行中/予定/完了の内訳をバー上部に帯で表示します。実行中タブの強調は、実際に計測中の作業がある間だけ「実行中」タブを一回り大きく表示します。ToDoタブの下部固定表示をONにすると、マイデイ/重要/期限日/期限切れの4つが上部の一覧から下部のタブバーに移動します（カスタムリストや検索・絞り込みは引き続き上部に表示されます）。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">本日の育成度表示</h3>
+        <h3 className="font-display text-base font-bold text-cream">本日の育成度表示</h3>
         <div className="flex flex-wrap gap-2">
           <button
+            role="switch"
+            aria-checked={growthStageEnabled}
+            data-toggle
             className={growthStageEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setGrowthStageEnabledStr(growthStageEnabled ? "false" : "true")}
           >
             育成度表示: {growthStageEnabled ? "ON" : "OFF"}
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           演出テーマ選択時、「本日の作業リスト」の見出し横に、本日の作業時間に応じた育成度バッジ（例: ロボトミー風の「完全収容」、ぼくのなつやすみ風の「大輪」など）を表示します。OFFにすると、このバッジだけ非表示になります（他の演出は変わりません）。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">実績編集で名称・区分を変更した時の挙動</h3>
+        <h3 className="font-display text-base font-bold text-cream">実績編集で名称・区分を変更した時の挙動</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={masterEditModeStr === "relink" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1920,7 +2025,7 @@ export default function SettingsSection() {
             マスタ自体もリネームする
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           {masterEditModeStr === "rename"
             ? "この実績が紐づく作業マスタの名称・区分もそのまま書き換えます。同じマスタに紐づく他の日の実績の表示も一緒に変わります。"
             : "新しい名称・区分の作業マスタが既にあればそこに繋ぎ変え、なければ新規作成して繋ぎ変えます。元のマスタや、それに紐づく他の実績には影響しません。"}
@@ -1928,13 +2033,13 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">ToDoの対応状況の選択肢</h3>
+        <h3 className="font-display text-base font-bold text-cream">ToDoの対応状況の選択肢</h3>
         <TagPriorityEditor presets={tagPresets} onAdd={addTagPreset} onRemove={removeTagPreset} onMove={moveTagPreset} />
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           ToDoの「対応状況」ドロップダウン・かんばんの列に出てくる選択肢です。ここでの増減とは別に、ToDo登録・編集時は自由入力（「＋
           新しい対応状況...」）も引き続きできます。
         </p>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           並び順は<b className="text-cream/80">優先度</b>でもあります（上ほど高い）。サブタスク・案件の段階を持つ親タスク／案件は、対応状況を自分では設定できず、配下の未完了のサブタスク・段階の中で最も優先度の高いものが自動的に反映されます（配下が無ければこれまでどおり自分で設定します）。
         </p>
 
@@ -1957,7 +2062,7 @@ export default function SettingsSection() {
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs text-cream/50">
+          <p className="mt-2 text-xs text-cream/65">
             {autoImportantTag
               ? `ToDoのタスク登録・編集時に対応状況「${autoImportantTag}」を選ぶと、自動的に★重要にします（対応状況を外しても重要フラグは自動では解除しません）。`
               : "自動重要化は無効です。対応状況を選んでも★重要は自動では変わりません。"}
@@ -1993,16 +2098,19 @@ export default function SettingsSection() {
             />
             日目から
           </label>
-          <p className="mt-2 text-xs text-cream/50">
+          <p className="mt-2 text-xs text-cream/65">
             選んだ対応状況のToDo・案件・段階には「客先確認中 5日目」のように、その状況になってから何日目かを出し、目安の日数を過ぎたら催促の目安として強調します。ToDoの「⏳ 返事待ち」で一覧にでき、日報・週報にも載ります。
           </p>
         </div>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">ToDoの期日リマインダー</h3>
+        <h3 className="font-display text-base font-bold text-cream">ToDoの期日リマインダー</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
+            role="switch"
+            aria-checked={todoReminderEnabled}
+            data-toggle
             className={todoReminderEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setTodoReminderEnabledStr(todoReminderEnabled ? "false" : "true")}
           >
@@ -2026,76 +2134,85 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">ToDoの分類の選択肢</h3>
+        <h3 className="font-display text-base font-bold text-cream">ToDoの分類の選択肢</h3>
         <PresetListEditor presets={categoryPresets} onAdd={addCategoryPreset} onRemove={removeCategoryPreset} placeholder="分類名" />
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           分類には既定値はありません。ここで登録したものだけがドロップダウン・かんばんの列に出てきます（自由入力でタスクに設定はできますが、ここで登録するまで選択肢やかんばんの列にはなりません）。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">トラブル対応の部署・項目候補</h3>
+        <h3 className="font-display text-base font-bold text-cream">トラブル対応の部署・項目候補</h3>
         <PresetListEditor
           presets={troubleDetailOptions}
           onAdd={addTroubleDetailOption}
           onRemove={removeTroubleDetailOption}
           placeholder="部署名・項目名"
         />
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           トラブル対応の詳細作業名を編集する際に、クイック入力ボタンとして出てくる候補です。あくまで参考の候補であり、詳細作業名欄には常に自由入力できます。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">完了済みのサブタスク・段階の表示</h3>
+        <h3 className="font-display text-base font-bold text-cream">完了済みのサブタスク・段階の表示</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            role="switch"
+            aria-checked={showCompletedSubtasks}
+            data-toggle
             className={showCompletedSubtasks ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowCompletedSubtasksStr(showCompletedSubtasks ? "false" : "true")}
           >
             ToDoの完了済みサブタスクを表示: {showCompletedSubtasks ? "ON" : "OFF"}
           </button>
           <button
+            role="switch"
+            aria-checked={showCompletedStages}
+            data-toggle
             className={showCompletedStages ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowCompletedStagesStr(showCompletedStages ? "false" : "true")}
           >
             案件の完了済み段階を表示: {showCompletedStages ? "ON" : "OFF"}
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           OFFにすると、親タスク・案件の下に並ぶ完了済みのサブタスク・段階を一覧から隠します（データ自体は消えません。進捗率・件数の集計には引き続き含まれます）。段階のほうは<b>案件タブの一覧の上にも同じ切替ボタン</b>があり、どちらで切り替えても状態は共通です。
         </p>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           案件の完了済み段階には、チェックマークの代わりに<b>実際に完了した順番</b>が丸数字で入り、右側に完了日が付きます（丸や日付を長押し／マウスを重ねると完了日時が出ます）。リスト上の並びと実際に片付けた順番は食い違うことがあるため、前の段階を追い越して完了した段階は丸に赤い輪を付けて区別しています。完了した時刻が残っていない段階（この表示より前に完了させた古い段階など）は、順番を推測せずこれまで通りチェックマークのままにします。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">モード選択メニュー</h3>
+        <h3 className="font-display text-base font-bold text-cream">モード選択メニュー</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            role="switch"
+            aria-checked={powerproMenu}
+            data-toggle
             className={powerproMenu ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setPowerproMenuStr(powerproMenu ? "false" : "true")}
           >
             メニューから入る: {powerproMenu ? "ON" : "OFF"}
           </button>
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           ONにすると、家庭用ゲームのモード選択画面のような<b>メニュー</b>が最初に出ます。タブが4列のタイルで並び、1回押すと下の帯に説明が出て、もう1回押すとその画面に入ります。入った先の左上の「◀ メニュー」で戻れます。タイルの下に出る件数（本日の消化、期限切れのToDo、期日超過の案件など）はすべて実際の数え上げです。OFFにすると、これまで通りタブを直接切り替える形になります。
         </p>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           メニューが出るのは<b className="text-cream">
             育成選手・ロボトミー風・VA-11 HALL-A風・ペルソナ5風・端末風・冒険者・図書館・流行り神風・登山・ぼくのなつやすみ風
           </b>
           の10モードです。並ぶタイルと件数はどのモードでも同じで、モードごとに変わるのはタイルの輪郭と質感（角丸／名刺／傾き／計器の画面、照りの有無）、上段と側帯に出る数字の呼び名、進行状況の言い回しだけです。演出テーマの文言をOFFにしている場合は、形と色はそのままに呼び名だけ元に戻ります。
         </p>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           Claudeモード・禅モード・ハブモードには出ません。この3つはタブを絞り込むことそのものが狙いのモードで、「どのタブへ行くか選ぶ」入口を挟むと逆向きになるためです。演出テーマがOFFのとき（通常のモード）にも出ません。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">タブごとのCSVインポート/エクスポート/テンプレート表示</h3>
+        <h3 className="font-display text-base font-bold text-cream">タブごとのCSVインポート/エクスポート/テンプレート表示</h3>
         <div className="flex flex-wrap items-center gap-2">
           {csvToolSettings.map(({ label, valueStr, setValueStr }) => {
             const visible = valueStr === "true";
@@ -2110,13 +2227,13 @@ export default function SettingsSection() {
             );
           })}
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           普段使わないCSVテンプレート・エクスポート・インポート（ToDoの「ガイド貼り付けインポート」を含む）のボタンをタブごとに隠せます。OFFにしても機能自体やデータには一切影響せず、ボタンが一覧の上から消えるだけです（いつでもONに戻せます）。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">週報・月報の「定時以降の業務」判定基準</h3>
+        <h3 className="font-display text-base font-bold text-cream">週報・月報の「定時以降の業務」判定基準</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <span>定時（終業時刻）</span>
           <input
@@ -2126,11 +2243,14 @@ export default function SettingsSection() {
             className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
           />
         </div>
-        <p className="text-xs text-cream/50">
+        <p className="text-xs text-cream/65">
           週報・月報で、この時刻より後にかかった実績時間を「定時以降の業務」として集計します（所定労働時間による概算残業とは別の、実際の時刻ベースの集計です）。
         </p>
         <div className="space-y-2 border-t border-cream/10 pt-3">
           <button
+            role="switch"
+            aria-checked={weeklyAfterHoursNotifyEnabled}
+            data-toggle
             className={weeklyAfterHoursNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setWeeklyAfterHoursNotifyEnabledStr(weeklyAfterHoursNotifyEnabled ? "false" : "true")}
           >
@@ -2154,7 +2274,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">全データのバックアップ・復元</h3>
+        <h3 className="font-display text-base font-bold text-cream">全データのバックアップ・復元</h3>
         <div className="flex flex-wrap gap-2">
           <button className="btn-pill-outline text-sm" onClick={downloadBackup}>
             バックアップをダウンロード
@@ -2181,14 +2301,14 @@ export default function SettingsSection() {
             }}
           />
         </div>
-        {backupStatus && <p className="text-xs text-cream/70">{backupStatus}</p>}
-        <p className="text-xs text-cream/50">
+        {backupStatus && <p className="text-xs text-cream/65">{backupStatus}</p>}
+        <p className="text-xs text-cream/65">
           このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は、バックアップファイルに入っている種類のデータを置き換えます（月次アーカイブのファイルを選んだ場合は、今のデータに足し戻します）。「他の端末に共有」は、クラウドを経由せずOSの共有機能(AirDrop/近くのデバイス等)でその場だけ他の自分の端末にファイルを渡したい場合にお使いください。渡した端末側では「バックアップから復元」で取り込めます。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">自動バックアップ</h3>
+        <h3 className="font-display text-base font-bold text-cream">自動バックアップ</h3>
         {autoBackupSupported ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
@@ -2207,18 +2327,18 @@ export default function SettingsSection() {
               )}
             </div>
             {autoBackupFolder && (
-              <p className="text-xs text-cream/70">
+              <p className="text-xs text-cream/65">
                 保存先: <span className="text-cream">{autoBackupFolder}</span>
               </p>
             )}
-            {autoBackupStatus && <p className="text-xs text-cream/70">{autoBackupStatus}</p>}
-            <p className="text-xs text-cream/50">
+            {autoBackupStatus && <p className="text-xs text-cream/65">{autoBackupStatus}</p>}
+            <p className="text-xs text-cream/65">
               保存先を指定しておくと、アプリを開いた日に1回だけ、そのフォルダへ自動で書き出します。同じ日は上書きされ、14世代より古いファイルは消えます。保存先にiCloud
               Drive・OneDrive・Dropbox等の同期フォルダを選べば、そのまま他の端末からも取り出せます（読み込みは「バックアップから復元」から行ってください）。
             </p>
           </>
         ) : (
-          <p className="text-xs text-cream/50">
+          <p className="text-xs text-cream/65">
             この端末・ブラウザは保存先フォルダの指定に対応していません（iPhone/iPadのSafariや多くのスマートフォンが該当します）。お手数ですが、上の「バックアップをダウンロード」を定期的にお使いください。
           </p>
         )}
@@ -2233,7 +2353,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">実績データの月次アーカイブ</h3>
+        <h3 className="font-display text-base font-bold text-cream">実績データの月次アーカイブ</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <input
             type="month"
@@ -2259,8 +2379,8 @@ export default function SettingsSection() {
             ダウンロード済みデータを削除
           </button>
         </div>
-        {archiveStatus && <p className="text-xs text-cream/70">{archiveStatus}</p>}
-        <p className="text-xs text-cream/50">
+        {archiveStatus && <p className="text-xs text-cream/65">{archiveStatus}</p>}
+        <p className="text-xs text-cream/65">
           データが増えすぎて動作が重くなってきた場合などに使います。まずダウンロードしてバックアップし、内容を確認してから削除を実行してください（削除ボタンは同じ期間でダウンロードするまで押せません。削除されるのはダウンロードしたファイルに入っている分だけです）。作業マスタや案件、ToDoは削除されません。削除した分を戻したいときは、上の「バックアップから復元」でアーカイブのファイルを選んでください。
         </p>
       </div>

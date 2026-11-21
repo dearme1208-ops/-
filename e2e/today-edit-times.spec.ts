@@ -115,7 +115,7 @@ test("作業名と時刻を同時に直すと、新しい作業名の実績が�
   expect(recs[0]).toMatchObject({ name: "会議", seconds: 90 * 60, startedAt: jstAt("16:30"), endedAt: jstAt("18:00") });
 });
 
-test("「時間を加算」した作業の終了時刻を延ばすと、加算した分を残したまま延ばした分だけ増える", async ({ page }) => {
+test("「時間を足す」した作業の終了時刻を延ばすと、加算した分を残したまま延ばした分だけ増える", async ({ page }) => {
   // 17:00〜17:30 の計測 + 加算10分 = 40分で完了した作業
   const d1 = { ...done("d1", "17:00", "17:30"), accumulatedMs: 40 * MIN, recordedMs: 40 * MIN };
   await seed(page, {

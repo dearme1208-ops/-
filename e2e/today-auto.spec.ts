@@ -56,7 +56,7 @@ test.describe("未計測の仮計測", () => {
     expect(assigned.segments[0].start).toBe(jstAt("09:58"));
   });
 
-  test("仮計測を「割り当てずに終了」すると、未分類の実績として残る", async ({ page }) => {
+  test("仮計測を「未分類のまま記録して終える」すると、未分類の実績として残る", async ({ page }) => {
     await page.clock.install({ time: jstAt("10:00") });
     await seed(page, {
       settings: { "today.provisionalEnabled": "true", "today.taskViewTab": "running" },
@@ -66,7 +66,7 @@ test.describe("未計測の仮計測", () => {
         ],
       },
     });
-    await clickButton(page, "割り当てずに終了");
+    await clickButton(page, "未分類のまま記録して終える");
     const [rec] = await readAll<Rec>(page, "records");
     expect(rec).toMatchObject({ category: "未分類", name: "仮計測中" });
     near(rec.seconds * 1000, 20 * MIN);

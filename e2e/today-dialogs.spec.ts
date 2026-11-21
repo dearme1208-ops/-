@@ -33,11 +33,11 @@ test("仮計測中に新しい作業をすぐ開始しようとすると確認�
       ],
     },
   });
-  await clickButton(page, "+ 突発作業を追加");
+  await clickButton(page, "+ 作業を追加");
   await page.locator(".modal-scrim").last().locator("button", { hasText: "自由入力" }).click();
   await page.getByPlaceholder("例: 資料作成").fill("総務");
   await page.getByPlaceholder("例: 見積書の作成").fill("来客対応");
-  await clickButton(page, "追加してすぐ開始");
+  await clickButton(page, "今から始める");
   await expect(page.getByText("09:45から、記録のない時間が続いています")).toBeVisible();
   await clickButton(page, /から「来客対応」をしていた/);
   const tasks = await readAll<Daily>(page, "dailyTasks");
@@ -95,15 +95,15 @@ test("予測を大きく超えて計測が続くと「まだこの作業中で�
   await expect(page.getByText("まだこの作業中ですか?")).toHaveCount(0);
 });
 
-test("曜日のテンプレートから本日の作業リストを生成できる", async ({ page }) => {
+test("曜日のテンプレートから今日の作業を作れる", async ({ page }) => {
   const templates = [1, 2, 3, 4, 5].flatMap((weekday) => [
     { id: `tpl-${weekday}-a`, weekday, order: 0, category: "定例", name: "朝会", estimatedSeconds: 900 },
     { id: `tpl-${weekday}-b`, weekday, order: 1, category: "定例", name: "日報", estimatedSeconds: 600 },
   ]);
   await seed(page, { stores: { templateItems: templates } });
   await clickButton(page, "テンプレートから生成");
-  await expect(page.locator(".modal-scrim").last().getByText("本日の作業リストを生成")).toBeVisible();
-  await clickButton(page, /^生成する$/);
+  await expect(page.locator(".modal-scrim").last().getByText("テンプレートから今日の作業を作る")).toBeVisible();
+  await clickButton(page, /^作る$/);
   const names = (await readAll<Daily & { order: number }>(page, "dailyTasks")).sort((a, b) => a.order - b.order).map((t) => t.name);
   expect(names).toEqual(["朝会", "日報"]);
 });
@@ -124,11 +124,11 @@ test("突発作業の追加(＋)の一番上から、曜日のテンプレート
   const templates = [1, 2, 3, 4, 5].map((weekday) => ({ id: `tpl-${weekday}`, weekday, order: 0, category: "定例", name: "朝会", estimatedSeconds: 900 }));
   await seed(page, { stores: { masterTasks: [MASTER], templateItems: templates, dailyTasks: [dailyTask({ id: "x", date: jstDate() })] } });
   await expect(page.getByTestId("template-generate")).toHaveCount(0);
-  await clickButton(page, "+ 突発作業を追加");
+  await clickButton(page, "+ 作業を追加");
   await page.getByRole("button", { name: /曜日のテンプレートから今日の作業を作る/ }).click();
   const confirm = page.locator(".modal-scrim").last();
-  await expect(confirm.getByText("本日の作業リストを生成")).toBeVisible();
+  await expect(confirm.getByText("テンプレートから今日の作業を作る")).toBeVisible();
   await expect(confirm).toContainText("既に1件あります");
-  await clickButton(page, /^生成する$/);
+  await clickButton(page, /^作る$/);
   await expect.poll(async () => (await readAll<Daily>(page, "dailyTasks")).map((t) => t.name)).toEqual(["朝会"]);
 });

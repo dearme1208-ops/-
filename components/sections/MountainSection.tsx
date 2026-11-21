@@ -406,7 +406,7 @@ export default function MountainSection() {
                   setPickedMaster(null);
                 }}
               >
-                {wordingEnabled ? "この区間へ出発する" : "追加してすぐ開始"}
+                {wordingEnabled ? "この区間へ出発する" : "今から始める"}
               </button>
               <button
                 className={btn + " w-full disabled:opacity-40"}
@@ -417,7 +417,7 @@ export default function MountainSection() {
                   setPickedMaster(null);
                 }}
               >
-                {wordingEnabled ? "行程に加えるだけ" : "追加のみ"}
+                {wordingEnabled ? "行程に加えるだけ" : "予定に入れるだけ"}
               </button>
               <div className="flex gap-1.5 pt-1">
                 <input

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
@@ -54,6 +54,71 @@ function CompletedTaskList({ tasks, onSelect }: { tasks: DailyTask[]; onSelect: 
   );
 }
 
+// 見込み時間のチェックと手段の入力をまとめた折りたたみ。どちらも任意で、毎回は使わないため、
+// 開いた直後の画面では閉じておき、読む量を「何を追加するか」だけに絞る。
+// すでに値が入っている時(画面を行き来して戻ってきた時など)は、入れた内容が隠れないよう開いて出す
+function ExtrasFold({
+  setPlan,
+  onSetPlan,
+  method,
+  onMethod,
+  methodSuggestions,
+  children,
+}: {
+  setPlan: boolean;
+  onSetPlan: (v: boolean) => void;
+  method: string;
+  onMethod: (v: string) => void;
+  methodSuggestions?: string[];
+  /** 見込みをチェックした時に出す想定時間の入力欄(自由入力のときだけ渡す) */
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(() => setPlan || method.trim() !== "");
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        className="-mx-1 rounded px-1 py-1 text-xs text-cream/60 hover:text-cream"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? "▲" : "▼"} 見込み時間・手段
+      </button>
+      {open && (
+        <div className="mt-2 space-y-3" data-testid="add-task-extras">
+          <label className="flex items-center gap-1.5 text-xs text-cream/60">
+            <input
+              type="checkbox"
+              checked={setPlan}
+              onChange={(e) => onSetPlan(e.target.checked)}
+              className="h-4 w-4 shrink-0 rounded border-cream/30 bg-ink accent-cream"
+            />
+            かかる時間の見込みを入れる（任意）
+          </label>
+          {children}
+          <div>
+            <label className="mb-1 block text-xs text-cream/60">手段（任意）</label>
+            <input
+              list="add-task-method-suggestions"
+              placeholder="例: Excel、マクロ、クエリ、Claude"
+              value={method}
+              onChange={(e) => onMethod(e.target.value)}
+              className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+            {methodSuggestions && methodSuggestions.length > 0 && (
+              <datalist id="add-task-method-suggestions">
+                {methodSuggestions.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AddTaskDialog({
   date,
   provisionalRunning,
@@ -100,7 +165,7 @@ export default function AddTaskDialog({
   const style = normalizeAddTaskStyle(styleStr);
 
   const [mode, setMode] = useState<"master" | "free" | "done">("master");
-  // 作業マスタがまだ1件も無い(使い始めたばかり)なら、選ぶものが無い「マスタから選択」ではなく
+  // 作業マスタがまだ1件も無い(使い始めたばかり)なら、選ぶものが無い「登録済みの作業から選ぶ」ではなく
   // 「自由入力」で開く。マスタの件数を読み終えた最初の1回だけ切り替え、以降は手動の選択を尊重する
   const masterCount = useLiveQuery(() => db.masterTasks.count(), []);
   const initialModeResolved = useRef(false);
@@ -118,9 +183,9 @@ export default function AddTaskDialog({
   // どんな手段(Excel/マクロ/クエリ/Claude等)で行うか。任意で、マスタ選択・自由入力どちらの
   // 追加方法でも共通して設定できる(insertTaskに渡すDailyTask.methodになる)
   const [method, setMethod] = useState("");
-  // 登録時点では実際の所要時間が読めないことが多いため、既定では「予定」を設定しない
+  // 登録時点では実際の所要時間が読めないことが多いため、既定では見込み(予定)を入れない
   // （目安に近い「予測」はマスタの平均値から別途ガントチャートに自動表示される）。
-  // チェックした場合のみ、この作業に「予定」を設定する
+  // 「かかる時間の見込みを入れる」をチェックした場合のみ、この作業に見込みを設定する
   const [setPlan, setSetPlan] = useState(false);
 
   // お気に入りはメニュー型でしか使わないので、それ以外のときは引きに行かない
@@ -252,7 +317,7 @@ export default function AddTaskDialog({
     await insertTask(category.trim(), name.trim(), estimatedSeconds, master.id, startAt, setPlan);
   }
 
-  // 「追加のみ / (前の作業の終了時刻)から開始 / 追加してすぐ開始」の3つ。
+  // 「予定に入れるだけ / (前の作業の終了時刻)から開始 / 今から始める」の3つ。
   // どの作り方でも同じ選択肢を出したいので、ここにまとめている
   function Actions({
     submit,
@@ -267,7 +332,7 @@ export default function AddTaskDialog({
     const wide = stacked ? " w-full" : "";
     const start = (
       <button key="start" className={`btn-pill text-sm${wide}`} onClick={() => submit(Date.now())} disabled={disabled}>
-        追加してすぐ開始
+        今から始める
       </button>
     );
     // 前の作業を止めた時刻が今とほとんど同じ(使い始めでまだ何も止めていない等)なら、
@@ -285,7 +350,7 @@ export default function AddTaskDialog({
     );
     const addOnly = (
       <button key="only" className={`btn-pill-outline text-sm${wide}`} onClick={() => submit(undefined)} disabled={disabled}>
-        追加のみ
+        予定に入れるだけ
       </button>
     );
     // 横並びのときは右端が主ボタンになる従来の並び、縦積みのときは上から主ボタンの順にする
@@ -295,44 +360,6 @@ export default function AddTaskDialog({
       </div>
     );
   }
-
-  // 但し書きはチェックの右へ流し込むと縦に3行へ折り返して読みにくいので、行を分ける
-  const planCheckbox = (
-    <div className="mb-3">
-      <label className="flex items-center gap-1.5 text-xs text-cream/60">
-        <input
-          type="checkbox"
-          checked={setPlan}
-          onChange={(e) => setSetPlan(e.target.checked)}
-          className="h-4 w-4 shrink-0 rounded border-cream/30 bg-ink accent-cream"
-        />
-        この作業の「予定」を設定する
-      </label>
-      <p className="mt-1 text-[11px] leading-relaxed text-cream/40">
-        登録時点では読めないことが多いためオフが既定です。マスタの平均から出る「予測」は別途表示されます。
-      </p>
-    </div>
-  );
-
-  const methodField = (
-    <div className="mb-3">
-      <label className="mb-1 block text-xs text-cream/60">手段（任意）</label>
-      <input
-        list="add-task-method-suggestions"
-        placeholder="例: Excel、マクロ、クエリ、Claude"
-        value={method}
-        onChange={(e) => setMethod(e.target.value)}
-        className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-      />
-      {methodSuggestions && methodSuggestions.length > 0 && (
-        <datalist id="add-task-method-suggestions">
-          {methodSuggestions.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
-      )}
-    </div>
-  );
 
   const estimateField = setPlan && (
     <div>
@@ -393,9 +420,21 @@ export default function AddTaskDialog({
           </div>
         </div>
       )}
-      {methodField}
-      {estimateField}
     </div>
+  );
+
+  // 見込み時間と手段は毎回は入れないので、1つの折りたたみにまとめて選ぶ画面の下に置く。
+  // 3つの作り方(メニュー型・1枚型・タブ型)で同じものを出す
+  const extras = (withEstimate: boolean) => (
+    <ExtrasFold
+      setPlan={setPlan}
+      onSetPlan={setSetPlan}
+      method={method}
+      onMethod={setMethod}
+      methodSuggestions={methodSuggestions}
+    >
+      {withEstimate && estimateField}
+    </ExtrasFold>
   );
 
   // ------------------------------------------------------------
@@ -403,7 +442,7 @@ export default function AddTaskDialog({
   // ------------------------------------------------------------
   if (style === "menu") {
     return (
-      <Modal title="突発作業を追加" onClose={onClose}>
+      <Modal title="作業を追加" onClose={onClose}>
         {templateRow}
         {usualRow}
         {pane === "menu" && (
@@ -431,9 +470,8 @@ export default function AddTaskDialog({
 
         {pane === "master" && (
           <div>
-            {planCheckbox}
             <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
-            {methodField}
+            {extras(false)}
             <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
             <button className="btn-pill-outline mt-2 w-full text-sm" onClick={() => setPane("menu")}>
               戻る
@@ -443,7 +481,6 @@ export default function AddTaskDialog({
 
         {pane === "favorite" && (
           <div>
-            {planCheckbox}
             <div className="space-y-1.5">
               {favorites === undefined ? null : favorites.length === 0 ? (
                 <p className="text-xs text-cream/50">お気に入りに登録された作業はまだありません。</p>
@@ -466,7 +503,7 @@ export default function AddTaskDialog({
                 ))
               )}
             </div>
-            {methodField}
+            {extras(false)}
             <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
             <button className="btn-pill-outline mt-2 w-full text-sm" onClick={() => setPane("menu")}>
               戻る
@@ -488,8 +525,8 @@ export default function AddTaskDialog({
 
         {pane === "free" && (
           <div>
-            {planCheckbox}
             {freeFields}
+            {extras(true)}
             <Actions submit={submitFreeform} disabled={!category.trim() || !name.trim()} stacked />
             <button className="btn-pill-outline mt-2 w-full text-sm" onClick={() => setPane("menu")}>
               戻る
@@ -505,12 +542,11 @@ export default function AddTaskDialog({
   // ------------------------------------------------------------
   if (style === "single") {
     return (
-      <Modal title="突発作業を追加" onClose={onClose}>
+      <Modal title="作業を追加" onClose={onClose}>
         {templateRow}
         {usualRow}
-        {planCheckbox}
         <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
-        {methodField}
+        {extras(false)}
         <Actions submit={submitMaster} disabled={!selectedMaster} stacked />
         <div className="mt-4 space-y-2 border-t border-cream/10 pt-3">
           <p className="text-xs text-cream/50">マスタに無い作業は、ここに直接書いて追加できます</p>
@@ -552,7 +588,7 @@ export default function AddTaskDialog({
   // タブ型(従来)
   // ------------------------------------------------------------
   return (
-    <Modal title="突発作業を追加" onClose={onClose}>
+    <Modal title="作業を追加" onClose={onClose}>
         {templateRow}
         {usualRow}
       <div className="mb-3 flex gap-2">
@@ -560,7 +596,7 @@ export default function AddTaskDialog({
           className={mode === "master" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
           onClick={() => setMode("master")}
         >
-          マスタから選択
+          登録済みの作業から選ぶ
         </button>
         <button
           className={mode === "free" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -578,17 +614,16 @@ export default function AddTaskDialog({
         )}
       </div>
 
-      {mode !== "done" && planCheckbox}
-
       {mode === "master" ? (
         <div className="space-y-2">
           <MasterTaskPicker selectedId={selectedMaster?.id} onSelect={setSelectedMaster} />
-          {methodField}
+          {extras(false)}
           <Actions submit={submitMaster} disabled={!selectedMaster} />
         </div>
       ) : mode === "free" ? (
         <div className="space-y-2">
           {freeFields}
+          {extras(true)}
           <Actions submit={submitFreeform} disabled={!category.trim() || !name.trim()} />
         </div>
       ) : (

@@ -368,7 +368,7 @@ function ConvertStampDialog({ span, defaultEnd, onClose }: { span: StampSpan; de
       </div>
       {picking && (
         <CategoryWorkNameDialog
-          title="作業マスタから選択"
+          title="登録済みの作業から選ぶ"
           initialMode="master"
           confirmLabel="この内容を使う"
           defaultCategory={category}

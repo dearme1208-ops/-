@@ -103,7 +103,7 @@ export default function ProvisionalTaskCard({
         <div>
           <div className="flex items-center gap-1 text-xs font-bold text-alert">
             <span className="h-2 w-2 animate-pulse rounded-full bg-alert" />
-            仮計測中（未割り当て）
+            記録のない時間（何をしていたか未入力）
           </div>
           <div className="font-display text-base font-bold">{task.name}</div>
           {task.startedAt && (
@@ -148,7 +148,7 @@ export default function ProvisionalTaskCard({
               aria-pressed={mode === "master"}
             onClick={() => setMode("master")}
           >
-            マスタから選択
+            登録済みの作業から選ぶ
           </button>
           <button
             className={chip(mode === "free")}
@@ -214,8 +214,7 @@ export default function ProvisionalTaskCard({
               onChange={(e) => setSetPlan(e.target.checked)}
               className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
             />
-            この作業の「予定」を設定する
-            <span className="text-cream/40">（未計測分の割り当てのためオフが既定です）</span>
+            かかる時間の見込みを入れる（任意）
           </label>
         )}
 
@@ -290,7 +289,7 @@ export default function ProvisionalTaskCard({
             🚨 トラブル対応として割り当てる
           </button>
           <button className="btn-pill-outline text-xs" onClick={onFinishAsIs}>
-            割り当てずに終了
+            未分類のまま記録して終える
           </button>
         </div>
       </div>
