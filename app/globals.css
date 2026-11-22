@@ -1033,19 +1033,23 @@ html[data-high-contrast="true"] :focus-visible {
     font-family: var(--font-yomogi), var(--font-noto-sans-jp), sans-serif;
     font-weight: 400;
   }
-  html[data-visual-mode="natsuyasumi"] .tabular-nums {
+  html[data-visual-mode="natsuyasumi"] .tabular-nums,
+  html[data-visual-mode="natsuyasumi"] .num {
     font-family: var(--font-yomogi), var(--font-noto-sans-jp), sans-serif;
     letter-spacing: 0.02em;
   }
-  html[data-visual-mode="va11halla"] .tabular-nums {
+  html[data-visual-mode="va11halla"] .tabular-nums,
+  html[data-visual-mode="va11halla"] .num {
     font-family: var(--font-vt323), var(--font-noto-sans-jp), monospace;
     letter-spacing: 0.03em;
   }
-  html[data-visual-mode="persona5"] .tabular-nums {
+  html[data-visual-mode="persona5"] .tabular-nums,
+  html[data-visual-mode="persona5"] .num {
     font-family: var(--font-anton), var(--font-noto-sans-jp), sans-serif;
     letter-spacing: 0.01em;
   }
-  html[data-visual-mode="lobotomy"] .tabular-nums {
+  html[data-visual-mode="lobotomy"] .tabular-nums,
+  html[data-visual-mode="lobotomy"] .num {
     font-family: var(--font-special-elite), var(--font-noto-sans-jp), monospace;
   }
   /* Claudeモード: Claude自身の製品デザインを思わせる温かいセリフ体を見出し・アプリ名・
@@ -1065,7 +1069,8 @@ html[data-high-contrast="true"] :focus-visible {
   html[data-visual-mode="zen"] .app-title,
   html[data-visual-mode="zen"] h2.font-display,
   html[data-visual-mode="zen"] h3.font-display,
-  html[data-visual-mode="zen"] .tabular-nums {
+  html[data-visual-mode="zen"] .tabular-nums,
+  html[data-visual-mode="zen"] .num {
     font-family: var(--font-noto-serif-jp), var(--font-noto-sans-jp), serif;
     font-weight: 400;
     letter-spacing: 0.04em;
@@ -1095,6 +1100,7 @@ html[data-high-contrast="true"] :focus-visible {
   /* 冒険者モード: RPGのタイトルロゴ・クエストログを思わせる彫り込み風のファンタジー書体。
      日本語グリフを持たないため、数字(HP/EXP/ゴールド等)とボタンのラテン部分にだけ効く */
   html[data-visual-mode="adventurer"] .tabular-nums,
+  html[data-visual-mode="adventurer"] .num,
   html[data-visual-mode="adventurer"] .adv-rune {
     font-family: var(--font-medieval-sharp), var(--font-noto-sans-jp), serif;
     letter-spacing: 0.03em;
@@ -4765,6 +4771,7 @@ html[data-visual-mode="home"] {
      森モードの年輪の下線や各モードの見出しの飾りは h3.font-display を狙っているので、そちらもそのまま効く) */
   .section-title {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.4rem;
     font-size: 0.9375rem; /* 15px */
@@ -4788,6 +4795,8 @@ html[data-visual-mode="home"] {
     color: rgb(var(--cream-rgb) / 0.6);
   }
   /* 時間・件数。桁をそろえ、数字だけ表示用の書体にする */
+  /* 書体は森モードなど、数字の書体を持たないモードだけ Oswald にする(なつやすみ・ペルソナ・ターミナル等は
+     .tabular-nums にモード専用の書体を当てているので、それをそのまま使えるよう num と併用する) */
   .num {
     font-family: var(--font-oswald), var(--font-noto-sans-jp), sans-serif;
     font-variant-numeric: tabular-nums;
@@ -5025,7 +5034,8 @@ html[data-visual-mode="home"] {
       height: 5rem;
     }
     html[data-visual-mode="home"] .tab-nav {
-      padding-bottom: 0.5rem;
+      /* 選んだタブの下の芽(::after)が欠けないだけの余白は残す */
+      padding-bottom: 0.7rem;
       margin-bottom: 0.75rem;
     }
     html[data-visual-mode="home"] .tab-nav:not(.tab-nav-sub):not(.tab-nav-groups) .tab-chip {
@@ -5247,5 +5257,29 @@ html[data-visual-mode="natsuyasumi"] button[data-toggle]:not(#_) {
   .scroll-fade-right:not([data-at-end="true"]) {
     -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
     mask-image: linear-gradient(to right, #000 88%, transparent);
+  }
+}
+
+/* 見出しの横の件数などは、見出しの文字と一緒に折り返さない(「（0件）」が縦に割れていた) */
+.section-title > span {
+  white-space: nowrap;
+}
+/* ターミナルモードは画面全体が等幅なので、数字も等幅のまま */
+html[data-visual-mode="terminal"] .num {
+  font-family: inherit;
+}
+/* 下からせり上がるダイアログ: dvh が使えない古い端末でも画面からはみ出さない高さにし、
+   iPhoneの下端(ホームバーの操作域)にボタンが重ならないよう余白をとる */
+@media (max-width: 639.98px) {
+  .modal-scrim > .panel {
+    max-height: 88vh;
+  }
+  @supports (height: 1dvh) {
+    .modal-scrim > .panel {
+      max-height: 88dvh;
+    }
+  }
+  .modal-scrim {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
   }
 }

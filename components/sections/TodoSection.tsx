@@ -3037,7 +3037,7 @@ function TaskRow({
           ? "gap-2.5 rounded-xl border-y border-r border-cream/20 bg-cream/[0.04] py-2.5 pl-0 pr-3 shadow-sm transition-[opacity,filter,background-color,border-color] hover:border-cream/35 hover:bg-cream/[0.08]"
           : "list-row-card"
       } ${task.completed ? "opacity-50" : agingClass} ${
-        overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""
+        overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-caution/50" : ""
       }`}
       style={
         powerproMode && scout

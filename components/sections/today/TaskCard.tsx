@@ -336,7 +336,7 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
               {isNext && task.status === "pending" && <span className="chip" data-tone="accent">▶ 次の作業</span>}
             </span>
             {/* 操作の印(☆・✎・🏷️)は札と混ざらないよう、右端にひとまとめにする */}
-            <span className="ml-auto flex items-center gap-2.5">
+            <span className="ml-auto mr-2 flex items-center gap-2.5">
               <button
                 onClick={() => toggleTaskFavorite(task)}
                 // 押せる範囲だけを広げる(見た目の位置は変えない)。小さすぎて押しにくかった

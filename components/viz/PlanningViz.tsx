@@ -207,7 +207,7 @@ export function WaitingHourglassPanel({ kind, onOpen }: { kind: "todo" | "projec
     <Fold settingKey={`viz.waitingOpen.${kind}`} title="⏳ 相手待ちの砂時計" testId="waiting-hourglass">
       <p className="text-xs text-cream/80">
         {items.length}件待ち
-        {overdueCount > 0 && <span className="ml-1 font-bold text-alert">・催促どき {overdueCount}件 ⏰</span>}
+        {overdueCount > 0 && <span className="ml-1 font-bold text-caution">・催促どき {overdueCount}件 ⏰</span>}
       </p>
       <p className="section-sub mb-2">
         待ち始めてから{nudgeDays}日で砂が落ちきり、催促の目安です(点線)。目安を過ぎた分は赤で伸びます。
