@@ -14,6 +14,9 @@ const config: Config = {
         alert: "rgb(var(--alert-rgb) / <alpha-value>)",
         // アクセント色(計測中・選択中・良い知らせ)。警告の alert と使い分ける
         accent: "rgb(var(--accent-rgb) / <alpha-value>)",
+        // 「そろそろ注意」(本日期限・一時停止・突発・催促どき)の色。遅れ・超過の alert と分け、
+        // まだ間に合うものが警報に見えないようにする(--caution-rgb、app/globals.css)
+        caution: "rgb(var(--caution-rgb) / <alpha-value>)",
         panel: "rgb(var(--panel-rgb) / <alpha-value>)",
         // VA-11 HALL-A風演出テーマ専用のネオンパレット(固定色、アクセントカラー設定とは独立)
         "v11-pink": "rgb(255 45 149 / <alpha-value>)",

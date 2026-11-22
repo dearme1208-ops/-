@@ -35,7 +35,7 @@ export default function AutoAllocatePanel({
         className="flex w-full items-center justify-between gap-2 text-left"
         onClick={() => setCollapsedStr(collapsed ? "false" : "true")}
       >
-        <h3 className="font-display text-sm font-bold text-cream/80">
+        <h3 className="section-title font-display">
           自動配分
           {collapsed && mode !== "off" && (
             <span className="ml-1 font-normal text-cream/40">（{mode === "live" ? "ライブ" : "手動"}）</span>

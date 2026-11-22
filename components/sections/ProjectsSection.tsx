@@ -741,19 +741,18 @@ export default function ProjectsSection({
 
   return (
     <div className="space-y-4">
+      {/* 右寄せのボタン1つだけの段が2つ続いて一覧を押し下げていたので、1段にまとめる */}
       <div className="flex flex-wrap justify-end gap-2">
         <button
-          className="btn-pill-outline text-sm"
+          className="btn-pill-outline text-xs"
           onClick={() => setShowWeeklyReview(true)}
           title="期日切れの案件・ToDoを1件ずつ見直します"
         >
           📋 週次レビュー
         </button>
-      </div>
-      <div className="flex flex-wrap justify-end gap-2">
         {/* 別のAIに案件・ToDoの進捗を登録してもらう入口(CSVの表示設定とは関係なく出す) */}
         <button
-          className="btn-pill-outline text-sm"
+          className="btn-pill-outline text-xs"
           onClick={() => setShowProgressSync(true)}
           title="別のAI(Claudeなど)に案件・ToDoの進捗を登録してもらう"
         >
@@ -761,61 +760,30 @@ export default function ProjectsSection({
         </button>
       </div>
       {showProgressSync && <ProgressSyncModal onClose={() => setShowProgressSync(false)} />}
-      <ProjectClimbPanel
-        onOpen={(id) => {
-          const target = projects?.find((p) => p.id === id);
-          if (target) setEditingProject(target);
-        }}
-      />
-      <WaitingHourglassPanel
-        kind="project"
-        onOpen={(id) => {
-          const target = projects?.find((p) => p.id === id);
-          if (target) setEditingProject(target);
-        }}
-      />
+      {/* 登山と返事待ちの砂時計は、PCでは横に並べて幅を使い、案件一覧を上へ寄せる */}
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+        <ProjectClimbPanel
+          onOpen={(id) => {
+            const target = projects?.find((p) => p.id === id);
+            if (target) setEditingProject(target);
+          }}
+        />
+        <WaitingHourglassPanel
+          kind="project"
+          onOpen={(id) => {
+            const target = projects?.find((p) => p.id === id);
+            if (target) setEditingProject(target);
+          }}
+        />
+      </div>
 
-      {showCsvTools && (
-        <div className="flex flex-wrap justify-end gap-2">
-          <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
-            CSVテンプレート
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={exportCsv}>
-            CSVエクスポート
-          </button>
-          <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
-            CSVインポート
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importCsv(file);
-              e.target.value = "";
-            }}
-          />
-        </div>
-      )}
-
-      {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
-      {importErrors.length > 0 && (
-        <div className="panel border border-alert/40 p-3 text-xs text-alert">
-          {importErrors.map((e, i) => (
-            <div key={i}>{e}</div>
-          ))}
-        </div>
-      )}
-
-      <div className="panel p-4">
+      <div className="panel px-4 py-3">
         <button
           className="flex w-full items-center justify-between text-left"
           onClick={() => setShowForm((v) => !v)}
         >
-          <h2 className="font-display text-lg font-bold">案件を登録</h2>
-          <span className="text-cream/60">{showForm ? "▼" : "▶"}</span>
+          <h2 className="section-title font-display">案件を登録</h2>
+          <span className="text-xs text-cream/60">{showForm ? "▼" : "▶"}</span>
         </button>
         {showForm && (
           <div className="mt-2 space-y-2">
@@ -878,15 +846,15 @@ export default function ProjectsSection({
         )}
       </div>
 
-      <div className="panel p-4">
+      <div className="panel px-4 py-3">
         <button
           className="flex w-full items-center justify-between text-left"
           onClick={() => setShowClients((v) => !v)}
         >
-          <h2 className="font-display text-lg font-bold">
+          <h2 className="section-title font-display">
             取引先{(clients ?? []).length > 0 && `（${(clients ?? []).length}）`}
           </h2>
-          <span className="text-cream/60">{showClients ? "▼" : "▶"}</span>
+          <span className="text-xs text-cream/60">{showClients ? "▼" : "▶"}</span>
         </button>
         {showClients && (
           <>
@@ -996,7 +964,7 @@ export default function ProjectsSection({
       })()}
 
       {(completedStageCount > 0 || archivedProjectCount > 0 || showArchived) && (
-        <div className="mb-2 flex flex-wrap justify-end gap-2">
+        <div className="mb-0 flex flex-wrap justify-end gap-2">
           {archivedProjectCount > 0 || showArchived ? (
             <button
               type="button"
@@ -1022,7 +990,7 @@ export default function ProjectsSection({
         </div>
       )}
 
-      <div className="panel divide-y divide-cream/10">
+      <div className="panel list-rows">
         {activeRows.map(({ project, overdue, dueToday, daysLeft, paceWarning, forecast, stageForecast }) => (
           <ProjectRow
             key={project.id}
@@ -1069,7 +1037,7 @@ export default function ProjectsSection({
             {showCompleted ? "▼" : "▶"} 完了済み（{completedRows.length}）
           </button>
           {showCompleted && (
-            <div className="panel divide-y divide-cream/10">
+            <div className="panel list-rows">
               {completedRows.map(({ project, overdue, daysLeft }) => (
                 <ProjectRow
                   key={project.id}
@@ -1478,6 +1446,43 @@ export default function ProjectsSection({
           </div>
         </Modal>
       )}
+
+      {/* CSVの入出力はたまにしか使わないのに一覧を押し下げていたので、画面のいちばん下へ置く。
+          取り込みの結果・エラーも押したボタンのそばに出るよう一緒に移す */}
+      {showCsvTools && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <span className="caption mr-auto self-center">CSV</span>
+          <button className="btn-pill-outline text-xs" onClick={downloadTemplate}>
+            CSVテンプレート
+          </button>
+          <button className="btn-pill-outline text-xs" onClick={exportCsv}>
+            CSVエクスポート
+          </button>
+          <button className="btn-pill-outline text-xs" onClick={() => fileInputRef.current?.click()}>
+            CSVインポート
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importCsv(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      )}
+
+      {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
+      {importErrors.length > 0 && (
+        <div className="panel border border-alert/40 p-3 text-xs text-alert">
+          {importErrors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1580,7 +1585,7 @@ function ProjectRow({
   return (
     <>
     <div
-      className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 ${project.completedAt ? "opacity-50" : ""} ${
+      className={`list-row flex-wrap justify-between py-3 ${project.completedAt ? "opacity-50" : ""} ${
         overdue
           ? themedMode
             ? cardOverrunClass(themedMode)
@@ -1603,7 +1608,7 @@ function ProjectRow({
         )}
         <div className="min-w-0">
         {/* 件名を主に、詳細作業名を従に。以前は件名が小さく、詳細作業名の方が大きく見えていた */}
-        <div className="text-sm font-bold text-cream">
+        <div className="text-[0.9375rem] font-bold leading-snug text-cream">
           {hayarigamiMode && (
             <span className="mr-1.5 font-mono text-cream/45">
               {hayarigamiWordsFor(wordingEnabled).fileNoPrefix}
@@ -1634,7 +1639,8 @@ function ProjectRow({
               段階を持つ案件は、対応状況が段階側から自動算出されるため読み取り専用にする */}
           {(project.stages ?? []).length > 0 ? (
             <span
-              className="ml-2 rounded-full border border-cream/40 bg-cream/10 px-1.5 py-0.5 align-middle text-[10px] font-bold text-cream"
+              className="chip ml-2 align-middle"
+              data-tone="strong"
               title="対応状況は段階から自動的に決まります"
             >
               {effectiveProjectTag(project, tagOptions) ?? "未設定"}
@@ -1644,7 +1650,7 @@ function ProjectRow({
               value={project.tag ?? ""}
               onChange={(e) => onSetTag(e.target.value)}
               title="対応状況"
-              className={`ml-2 rounded-full border px-1.5 py-0.5 align-middle text-[10px] font-bold outline-none ${
+              className={`ml-2 h-6 rounded-full border px-2 align-middle text-[11px] font-bold ${
                 project.tag ? "border-cream/40 bg-cream/10 text-cream" : "border-cream/15 bg-transparent text-cream/30"
               }`}
             >
@@ -1658,10 +1664,10 @@ function ProjectRow({
             </select>
           )}
           {waiting && waiting.days != null && (
+            // 返事待ちは「気にかけておく」注意(caution)。催促の目安を過ぎたものだけ警告(alert)にする
             <span
-              className={`ml-1 rounded-full border px-1.5 py-0.5 align-middle text-[10px] font-bold tabular-nums ${
-                waiting.overdue ? "border-alert/50 bg-alert/15 text-alert" : "border-cream/25 bg-cream/5 text-cream/70"
-              }`}
+              className="chip ml-1 align-middle tabular-nums"
+              data-tone={waiting.overdue ? "alert" : "caution"}
               title={
                 waiting.overdue
                   ? `「${waiting.tag}」になってから${waiting.days}日目です。催促や状況確認の目安(${nudgeDays}日目)を過ぎています`
@@ -1675,9 +1681,8 @@ function ProjectRow({
           )}
           {postpones && postpones.count > 0 && (
             <span
-              className={`ml-1 rounded-full border px-1.5 py-0.5 align-middle text-[10px] tabular-nums ${
-                postpones.count >= 3 ? "border-alert/50 bg-alert/10 text-alert" : "border-cream/20 bg-cream/5 text-cream/60"
-              }`}
+              className="chip ml-1 align-middle tabular-nums"
+              data-tone={postpones.count >= 3 ? "alert" : undefined}
               title="案件の期日を後ろへずらした回数と、ずらした日数の合計"
             >
               ↪ 延期{postpones.count}回・計{postpones.totalDays}日
@@ -1696,18 +1701,18 @@ function ProjectRow({
           {project.category && <span className="ml-2 text-cream/40">［{project.category}］</span>}
           {project.groupName && (
             <span
-              className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60"
+              className="chip ml-2"
               title="この案件自体の件名(グループ名が登録されているため、題目にはグループ名を表示しています)"
             >
               📄 {project.title}
             </span>
           )}
           {clientName && (
-            <span className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60">🏢 {clientName}</span>
+            <span className="chip ml-2">🏢 {clientName}</span>
           )}
           {hasAnalysisContent(project) && (
             <span
-              className="ml-2 rounded-full border border-cream/20 px-1.5 py-0.5 text-[10px] text-cream/60"
+              className="chip ml-2"
               title="SWOT/BSC/3C分析が入力されています"
             >
               📝分析あり

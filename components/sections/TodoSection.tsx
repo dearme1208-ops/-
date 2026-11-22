@@ -1383,11 +1383,14 @@ export default function TodoSection({
 
   return (
     <div className="space-y-4">
-      <DueTerrainPanel />
-      <WaitingHourglassPanel kind="todo" onOpen={(id) => setDetailTaskId(id)} />
+      {/* 期日の地形と返事待ちの砂時計は、PCでは横に並べて幅を使い、タスク一覧を上へ寄せる */}
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+        <DueTerrainPanel />
+        <WaitingHourglassPanel kind="todo" onOpen={(id) => setDetailTaskId(id)} />
+      </div>
       {/* 表示の切り替え(マイデイ・重要・リスト…)。スマホでは何段にも折り返してタスクが下へ押し出されて
           いたので、狭い画面では1行の横スクロールにする */}
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap [&>*]:shrink-0 [&_button]:whitespace-nowrap">
+      <div className="scroll-fade-right -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap [&>*]:shrink-0 [&_button]:whitespace-nowrap">
         {!bottomViewBar &&
           (["myday", "important", "planned"] as ViewKey[]).map((v) => {
             const count = v === "myday" ? mydayCount : v === "important" ? importantCount : plannedCount;
@@ -1395,7 +1398,7 @@ export default function TodoSection({
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={view === v ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+                className={view === v ? "btn-pill px-3.5 py-1.5 text-xs" : "btn-pill-outline px-3.5 py-1.5 text-xs"}
               >
                 {v === "myday" ? "☀ マイデイ" : v === "important" ? "★ 重要" : "📅 期限日"}
                 {count > 0 && `（${count}）`}
@@ -1405,7 +1408,7 @@ export default function TodoSection({
         {!bottomViewBar && (
           <button
             onClick={() => setView("overdue")}
-            className={view === "overdue" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+            className={view === "overdue" ? "btn-pill px-3.5 py-1.5 text-xs" : "btn-pill-outline px-3.5 py-1.5 text-xs"}
           >
             ⚠ 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
           </button>
@@ -1413,7 +1416,7 @@ export default function TodoSection({
         {!bottomViewBar && (
           <button
             onClick={() => setView("waiting")}
-            className={view === "waiting" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+            className={view === "waiting" ? "btn-pill px-3.5 py-1.5 text-xs" : "btn-pill-outline px-3.5 py-1.5 text-xs"}
             title={`対応状況が「${waitingTags.join("・")}」のToDo(相手の返事待ち)を、待っている日数の長い順に並べます`}
           >
             ⏳ 返事待ち{waitingTasks.length > 0 && `（${waitingTasks.length}）`}
@@ -1423,7 +1426,7 @@ export default function TodoSection({
           <div key={l.id} className="flex items-center">
             <button
               onClick={() => setView(`list:${l.id}`)}
-              className={view === `list:${l.id}` ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
+              className={view === `list:${l.id}` ? "btn-pill px-3.5 py-1.5 text-xs" : "btn-pill-outline px-3.5 py-1.5 text-xs"}
             >
               {l.title}
             </button>
@@ -1465,7 +1468,7 @@ export default function TodoSection({
       {/* 検索・3つの絞り込み・保存済みビューで画面の上半分が埋まり、肝心のタスクが
           見えるまでスクロールが要るため、条件を何も使っていない間は折りたたんでおく。
           絞り込み中は開いたままにして、何で絞っているか隠れないようにする */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
         <button
           className={searchActive ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
           onClick={() => setFiltersOpen((v) => !v)}
@@ -1476,8 +1479,9 @@ export default function TodoSection({
         {!filtersOpen && !searchActive && savedViews.length > 0 && (
           <span className="text-xs text-cream/40">保存済みビュー {savedViews.length}件</span>
         )}
-        {/* 別のAIとのやり取り・CSVの取り込み/書き出しも同じ行に並べ、上部の段数を減らす */}
-        <span className="ml-auto flex gap-2 [&>button]:whitespace-nowrap">
+        {/* 別のAIとのやり取り・CSVの取り込み/書き出しも同じ行に並べ、上部の段数を減らす。
+            スマホでは右寄せのまま折り返すと段がガタつくので、1段まるごと使って同じ幅で並べる */}
+        <span className="flex w-full gap-2 sm:ml-auto sm:w-auto [&>button]:flex-1 [&>button]:whitespace-nowrap sm:[&>button]:flex-none">
           <button
             className="btn-pill-outline text-xs"
             onClick={() => setShowProgressSync(true)}
@@ -1624,7 +1628,7 @@ export default function TodoSection({
       )}
 
       <div className="panel p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-cream/10 pb-3">
           <h2 className="font-display text-lg font-bold">{panelTitle}</h2>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -3027,8 +3031,11 @@ function TaskRow({
   return (
     <div
       title={ageDays >= 14 ? `${ageDays}日間手つかずです` : undefined}
-      className={`flex items-center gap-2 border-cream/20 bg-cream/[0.04] shadow-sm transition-[opacity,filter,background-color,border-color] hover:border-cream/35 hover:bg-cream/[0.08] ${
-        powerproMode ? "gap-2.5 rounded-xl border-y border-r py-2.5 pl-0 pr-3" : "rounded-lg border px-3 py-2"
+      // 通常は共通の一覧札(list-row-card)。育成選手モードは名鑑風の独自の札なので従来の枠のまま残す
+      className={`flex items-center gap-2 ${
+        powerproMode
+          ? "gap-2.5 rounded-xl border-y border-r border-cream/20 bg-cream/[0.04] py-2.5 pl-0 pr-3 shadow-sm transition-[opacity,filter,background-color,border-color] hover:border-cream/35 hover:bg-cream/[0.08]"
+          : "list-row-card"
       } ${task.completed ? "opacity-50" : agingClass} ${
         overdue && themedMode ? cardOverrunClass(themedMode) : dueToday ? "ring-1 ring-alert/50" : ""
       }`}
@@ -3107,25 +3114,25 @@ function TaskRow({
             </>
           )}
           {listTitle && (
-            <span className="rounded-full bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/40">{listTitle}</span>
+            <span className="chip">{listTitle}</span>
           )}
           {/* 対応状況と客先は、一覧を追うときに件名の次によく見る情報なので、
               リスト名・分類より一段大きく・濃く出す */}
           {tag && (
             <span
-              className={`rounded-full border px-2 py-0.5 text-xs font-bold ${
-                !!autoImportantTag && tag === autoImportantTag
-                  ? "border-alert/50 bg-alert/15 text-alert"
-                  : "border-cream/40 bg-cream/10 text-cream"
-              }`}
+              className="chip"
+              data-size="lg"
+              data-tone={!!autoImportantTag && tag === autoImportantTag ? "alert" : "strong"}
             >
               {tag}
               {waiting?.days != null && <span className="ml-1 font-normal tabular-nums">{waiting.days}日目</span>}
             </span>
           )}
           {waiting?.overdue && (
+            // 催促の目安は「そろそろ声をかける頃」の注意。期限切れの警告(alert)とは色を分ける
             <span
-              className="rounded-full border border-alert/50 bg-alert/15 px-2 py-0.5 text-[10px] font-bold text-alert"
+              className="chip"
+              data-tone="caution"
               title={`「${waiting.tag}」になってから${waiting.days}日目です。催促や状況確認の目安(${nudgeDays}日目)を過ぎています`}
             >
               ⏰ 催促の目安
@@ -3133,25 +3140,24 @@ function TaskRow({
           )}
           {postpones && postpones.count > 0 && (
             <span
-              className={`rounded-full border px-1.5 py-0.5 text-[10px] tabular-nums ${
-                postpones.count >= 3 ? "border-alert/50 bg-alert/10 text-alert" : "border-cream/20 bg-cream/5 text-cream/60"
-              }`}
+              className="chip tabular-nums"
+              data-tone={postpones.count >= 3 ? "alert" : undefined}
               title="期日を後ろへずらした回数と、ずらした日数の合計(サブタスクの期日も含む)"
             >
               ↪ 延期{postpones.count}回・計{postpones.totalDays}日
             </span>
           )}
           {task.category && (
-            <span className="rounded-full border border-cream/20 bg-cream/5 px-1.5 py-0.5 text-[10px] text-cream/60">
+            <span className="chip">
               {task.category}
             </span>
           )}
           {task.customer && (
-            <span className="rounded-full border border-cream/25 bg-cream/15 px-2 py-0.5 text-xs font-bold text-cream/90">
+            <span className="chip" data-size="lg" data-tone="strong">
               {task.customer}
             </span>
           )}
-          <span className={`text-sm text-cream ${task.completed ? "line-through" : ""}`}>{task.title}</span>
+          <span className={`text-[0.9375rem] leading-snug text-cream ${task.completed ? "line-through" : ""}`}>{task.title}</span>
           {task.action && <span className="text-xs text-cream/50">→ {task.action}</span>}
           {task.recurrence && !task.completed && <span className="text-xs text-cream/40">🔁</span>}
           {task.projectId && (
@@ -3172,7 +3178,8 @@ function TaskRow({
                 overdue
                   ? `font-bold ${themedMode ? emphasisTextClass(themedMode) : "text-alert"} ${themedMode ? "overrun-flicker" : ""}`
                   : dueToday
-                    ? "font-bold text-alert"
+                    ? // 本日期限は「今日中に」の注意。期限切れ(alert)と見分けられるよう琥珀色にする
+                      "font-bold text-caution"
                     : "text-cream/50"
               }
             >
@@ -3181,7 +3188,7 @@ function TaskRow({
                 : formatDateJp(dueDate)}
               {!task.dueDate && <span className="ml-1 text-cream/30">(サブタスク)</span>}
               {dueToday && (
-                <span className="ml-1 rounded-full bg-alert/20 px-1.5 py-0.5 text-[9px] font-bold text-alert">本日</span>
+                <span className="chip ml-1" data-tone="caution">本日</span>
               )}
             </span>
           )}

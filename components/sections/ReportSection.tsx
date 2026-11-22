@@ -422,56 +422,52 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          className={kind === "day" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-          onClick={() => setKind("day")}
-        >
-          日報
-        </button>
-        <button
-          className={kind === "week" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-          onClick={() => setKind("week")}
-        >
-          週報
-        </button>
-        <button
-          className={kind === "month" ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-          onClick={() => setKind("month")}
-        >
-          月報
-        </button>
-        <button className="btn-pill-outline text-sm" onClick={download} disabled={!data}>
-          ダウンロード (.txt)
-        </button>
-        <button className="btn-pill-outline text-sm" onClick={downloadPdf} disabled={!data || pdfExporting}>
-          {pdfExporting ? "PDF作成中..." : "ダウンロード (.pdf)"}
-        </button>
-        <button className="btn-pill-outline text-sm" onClick={downloadStaticHtml} disabled={!data}>
-          静的HTMLで書き出す
-        </button>
-        <button
-          className="btn-pill-outline text-sm print:hidden"
-          onClick={() => window.print()}
-          disabled={!data}
-          title="演出テーマを外したシンプルな見た目で印刷します"
-        >
-          🖨 印刷用に表示
-        </button>
-        <button
-          className="btn-pill-outline text-sm"
-          onClick={downloadIcs}
-          disabled={!data}
-          title="完了した実績を、カレンダーアプリにインポートできる形式で書き出します"
-        >
-          実績をカレンダーへ (.ics)
-        </button>
+      {/* 期間の切り替え(どれか1つ)と書き出しを別の段に分け、押せる札の種類を見分けやすくする */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="seg" role="group" aria-label="期間">
+          <button aria-pressed={kind === "day"} onClick={() => setKind("day")}>
+            日報
+          </button>
+          <button aria-pressed={kind === "week"} onClick={() => setKind("week")}>
+            週報
+          </button>
+          <button aria-pressed={kind === "month"} onClick={() => setKind("month")}>
+            月報
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={download} disabled={!data}>
+            ダウンロード (.txt)
+          </button>
+          <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={downloadPdf} disabled={!data || pdfExporting}>
+            {pdfExporting ? "PDF作成中..." : "ダウンロード (.pdf)"}
+          </button>
+          <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={downloadStaticHtml} disabled={!data}>
+            静的HTMLで書き出す
+          </button>
+          <button
+            className="btn-pill-outline px-3 py-1.5 text-xs print:hidden"
+            onClick={() => window.print()}
+            disabled={!data}
+            title="演出テーマを外したシンプルな見た目で印刷します"
+          >
+            🖨 印刷用に表示
+          </button>
+          <button
+            className="btn-pill-outline px-3 py-1.5 text-xs"
+            onClick={downloadIcs}
+            disabled={!data}
+            title="完了した実績を、カレンダーアプリにインポートできる形式で書き出します"
+          >
+            実績をカレンダーへ (.ics)
+          </button>
+        </div>
       </div>
 
       {!data ? (
         <p className="text-sm text-cream/50">読み込み中...</p>
       ) : data.ranking.length === 0 ? (
-        <div className="panel p-6 text-center text-sm text-cream/50">この期間の実績データはまだありません。</div>
+        <div className="empty-state">この期間の実績データはまだありません。</div>
       ) : (
         <div ref={reportRef} id="report-print-area" className="space-y-4">
           <div className="panel p-5">
@@ -489,7 +485,8 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             {(data.prevTotalSeconds > 0 || data.totalSeconds > 0) && (
               <p className="mt-3 border-t border-cream/10 pt-3 text-sm text-cream/80">
                 前{periodLabel}比{" "}
-                <span className={data.totalSeconds - data.prevTotalSeconds >= 0 ? "font-bold text-alert" : "font-bold text-cream"}>
+                {/* 作業時間が増えたこと自体は警告ではないので、alert(赤系)ではなく accent で示す */}
+                <span className={data.totalSeconds - data.prevTotalSeconds >= 0 ? "num text-accent" : "num text-cream"}>
                   {data.totalSeconds - data.prevTotalSeconds >= 0 ? "+" : "-"}
                   {formatHms(Math.abs(data.totalSeconds - data.prevTotalSeconds))}
                 </span>
@@ -505,7 +502,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 
           {narrative && (
             <div className="panel p-4">
-              <h3 className="mb-2 font-display text-sm font-bold text-cream/80">📝 振り返り</h3>
+              <h3 className="mb-2 section-title font-display">📝 振り返り</h3>
               <p className="text-sm leading-relaxed text-cream/80">{narrative}</p>
             </div>
           )}
@@ -513,7 +510,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           {goalSeconds && (
             <div className="panel p-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="font-display text-sm font-bold text-cream/80">🎯 今{periodLabel}の目標達成率</h3>
+                <h3 className="section-title font-display">🎯 今{periodLabel}の目標達成率</h3>
                 <span className="text-sm tabular-nums text-cream/70">
                   {formatHms(data.totalSeconds)} / {formatHms(goalSeconds)}
                 </span>
@@ -536,7 +533,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 
           {data.paceWarning && (
             <div className="panel border border-alert/40 p-4">
-              <h3 className="mb-1 font-display text-sm font-bold text-alert">⏰ 週後半の進捗遅れ警告</h3>
+              <h3 className="mb-1 section-title font-display text-alert">⏰ 週後半の進捗遅れ警告</h3>
               <p className="text-sm text-cream/80">
                 週の残りが少なくなってきましたが、ここまでの実績は
                 <span className="mx-1 font-bold tabular-nums text-alert">{formatHms(data.paceWarning.actualSeconds)}</span>
@@ -607,7 +604,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 
           {overlayPoints.length > 1 && (
             <div className="panel p-4">
-              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
+              <h3 className="mb-3 section-title font-display">
                 📈 前{periodLabel}との重ね合わせ比較（日別）
               </h3>
               <OverlayLineChart
@@ -626,7 +623,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 
           {data.dailyWeather.length > 0 && (
             <div className="panel p-4 print:hidden">
-              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">🌤 期間中の天気（降水確率）</h3>
+              <h3 className="mb-3 section-title font-display">🌤 期間中の天気（降水確率）</h3>
               <div className="flex flex-wrap gap-2 text-xs">
                 {data.dailyWeather.map((w) => (
                   <span
@@ -646,7 +643,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           )}
 
           <div className="panel p-4">
-            <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
+            <h3 className="mb-3 section-title font-display">
               📊 作業時間ランキング（上位{Math.min(TOP_N, data.ranking.length)}件）
             </h3>
             <RankingBarChart
@@ -670,7 +667,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           </div>
 
           <div className="panel p-4">
-            <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
+            <h3 className="mb-3 section-title font-display">
               🌙 定時（{afterHoursCutoff}）以降の業務
             </h3>
             {data.afterHours.totalSeconds === 0 ? (
@@ -715,7 +712,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           </div>
 
           <div className="panel p-4">
-            <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
+            <h3 className="mb-3 section-title font-display">
               ⚠️ 要注意項目（想定比+30%以上の超過）
             </h3>
             {data.attention.length === 0 ? (
@@ -737,7 +734,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           </div>
 
           <div className="panel p-4">
-            <h3 className="mb-3 font-display text-sm font-bold text-cream/80">⚡ トラブル対応</h3>
+            <h3 className="mb-3 section-title font-display">⚡ トラブル対応</h3>
             {data.troubleCount === 0 ? (
               <p className="text-sm text-cream/50">この期間、トラブル対応の発生はありませんでした。</p>
             ) : (
@@ -759,7 +756,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           </div>
 
           <div className="panel p-4">
-            <h3 className="mb-3 font-display text-sm font-bold text-cream/80">
+            <h3 className="mb-3 section-title font-display">
               📅 ToDoの期限超過タスク（{data.overdueTodos.length}件）
             </h3>
             {data.overdueTodos.length === 0 ? (
@@ -788,7 +785,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 
           {data.todoSummary && (
             <div className="panel p-4">
-              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">📋 ToDoの推移</h3>
+              <h3 className="mb-3 section-title font-display">📋 ToDoの推移</h3>
               <p className="text-sm text-cream/70">
                 未完了{" "}
                 <button
@@ -841,7 +838,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
               案件の段階・ToDo・サブタスクを名前で並べる */}
           {data.completions && hasAnyCompletion(data.completions) && (
             <div className="panel p-4">
-              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">✅ 完了したこと</h3>
+              <h3 className="mb-3 section-title font-display">✅ 完了したこと</h3>
               <div className="space-y-3">
                 {data.completions.stages.length > 0 && (
                   <div>
@@ -890,7 +887,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 
           {waitingItems.length > 0 && (
             <div className="panel p-4">
-              <h3 className="mb-3 font-display text-sm font-bold text-cream/80">⏳ 返事待ち（{waitingItems.length}）</h3>
+              <h3 className="mb-3 section-title font-display">⏳ 返事待ち（{waitingItems.length}）</h3>
               <ul className="space-y-1">
                 {waitingItems.map((w) => (
                   <li key={`${w.kind}-${w.id}`} className="flex flex-wrap items-center gap-2 text-sm text-cream/85">
@@ -912,7 +909,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           )}
 
           <div className="panel space-y-2 p-4">
-            <h3 className="font-display text-sm font-bold text-cream/80">🪞 {reflectionQuestion}</h3>
+            <h3 className="section-title font-display">🪞 {reflectionQuestion}</h3>
             <input
               type="text"
               value={reflectionAnswer}
@@ -926,7 +923,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           </div>
 
           <div className="panel space-y-2 p-4">
-            <h3 className="font-display text-sm font-bold text-cream/80">📝 今{periodLabel}の一言</h3>
+            <h3 className="section-title font-display">📝 今{periodLabel}の一言</h3>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -1027,9 +1024,9 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
 
 function StatTile({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className={`panel p-4 ${accent ? "border border-alert/40" : ""}`}>
-      <div className="text-xs text-cream/50">{label}</div>
-      <div className={`mt-1 font-display text-2xl font-bold tabular-nums ${accent ? "text-alert" : "text-cream"}`}>
+    <div className={`panel px-4 py-3 ${accent ? "border border-alert/40" : ""}`}>
+      <div className="caption">{label}</div>
+      <div className={`num mt-1 text-2xl ${accent ? "text-alert" : "text-cream"}`}>
         {value}
       </div>
     </div>

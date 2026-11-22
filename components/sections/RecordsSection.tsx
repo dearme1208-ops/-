@@ -307,7 +307,7 @@ export default function RecordsSection() {
             placeholder="日付・区分・作業名で検索"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            className="w-full sm:w-64 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
           <label className="flex items-center gap-1.5 text-xs text-cream/60">
             <input
@@ -320,7 +320,8 @@ export default function RecordsSection() {
             {excludedCount > 0 && `：${excludedCount}件`}）
           </label>
         </div>
-        <div className="flex gap-2">
+        {/* スマホでは1行に均等に並べる。3つが入りきらない幅では文字を詰め、横にはみ出さないようにする */}
+        <div className="flex w-full gap-1.5 sm:w-auto sm:gap-2 [&>button]:min-w-0 [&>button]:whitespace-nowrap [&>button]:px-2 sm:[&>button]:px-4">
           {simpleButtons ? (
             <button
               className="btn-pill-outline px-3 py-2 text-base"
@@ -331,16 +332,16 @@ export default function RecordsSection() {
               ➕
             </button>
           ) : (
-            <button className="btn-pill-outline text-sm" onClick={() => setShowAddRecord(true)}>
+            <button className="btn-pill flex-1 text-xs sm:flex-none" onClick={() => setShowAddRecord(true)}>
               + 実績を追加
             </button>
           )}
           {showCsvTools && (
             <>
-              <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+              <button className="btn-pill-outline flex-1 text-xs sm:flex-none" onClick={exportCsv}>
                 CSVエクスポート
               </button>
-              <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+              <button className="btn-pill-outline flex-1 text-xs sm:flex-none" onClick={() => fileInputRef.current?.click()}>
                 CSVインポート
               </button>
               <input
@@ -373,7 +374,7 @@ export default function RecordsSection() {
           className="flex w-full items-center justify-between text-left"
           onClick={() => setJournalCollapsedStr(journalCollapsed ? "false" : "true")}
         >
-          <h3 className="font-display text-sm font-bold text-cream/80">
+          <h3 className="section-title font-display">
             📓 記録の履歴（本日タブの「今日の記録」）
             {journalCollapsed && <span className="ml-1 font-normal text-cream/40">（{journalEntries.length}件）</span>}
           </h3>
@@ -382,7 +383,7 @@ export default function RecordsSection() {
         {!journalCollapsed && (
           <div className="mt-3 space-y-3">
             {journalEntries.length === 0 ? (
-              <p className="text-sm text-cream/50">
+              <p className="empty-state">
                 まだ記録がありません。「本日の作業」タブの「今日の記録」に書くと、ここに一覧で表示されます。
               </p>
             ) : (
@@ -431,8 +432,8 @@ export default function RecordsSection() {
       </div>
 
       <div className="panel flex flex-wrap items-center gap-2 p-4">
-        <h3 className="font-display text-sm font-bold text-cream/80">📼 一日のリプレイ</h3>
-        <p className="w-full text-xs text-cream/40 sm:w-auto sm:flex-1">
+        <h3 className="section-title font-display">📼 一日のリプレイ</h3>
+        <p className="section-sub w-full sm:w-auto sm:flex-1">
           選んだ日の実績を、朝から順にタイムラプス風に再生します。
         </p>
         <input
@@ -454,7 +455,7 @@ export default function RecordsSection() {
           className="flex w-full items-center justify-between text-left"
           onClick={() => setReflectionCollapsedStr(reflectionCollapsed ? "false" : "true")}
         >
-          <h3 className="font-display text-sm font-bold text-cream/80">
+          <h3 className="section-title font-display">
             🌙 終業の振り返りの履歴（本日タブの「終業の振り返り」）
             {reflectionCollapsed && <span className="ml-1 font-normal text-cream/40">（{reflectionEntries.length}件）</span>}
           </h3>
@@ -463,7 +464,7 @@ export default function RecordsSection() {
         {!reflectionCollapsed && (
           <div className="mt-3 space-y-3">
             {reflectionEntries.length === 0 ? (
-              <p className="text-sm text-cream/50">
+              <p className="empty-state">
                 まだ記録がありません。「本日の作業」タブの「終業の振り返り」に答えると、ここに一覧で表示されます。
               </p>
             ) : (
@@ -512,7 +513,7 @@ export default function RecordsSection() {
         </datalist>
       )}
 
-      <div className="panel divide-y divide-cream/10">
+      <div className="panel list-rows">
         {visibleRecords.map((r) =>
           // 1件ごとに全部の入力欄を開いていると、スマホでは1件で約200px・40件で8,000px以上になっていた。
           // ふだんは1行の要約にし、押した1件だけ編集欄を開く
@@ -520,7 +521,7 @@ export default function RecordsSection() {
             <button
               key={r.id}
               onClick={() => setEditingRecordId(r.id)}
-              className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-cream/5"
+              className="list-row"
               data-testid="record-row"
               title="押すと編集できます"
             >
@@ -533,8 +534,12 @@ export default function RecordsSection() {
                 {workCtx.label(r)}
                 {r.method && <span className="text-cream/45">（{r.method}）</span>}
               </span>
-              {r.excludedFromStats && <span className="shrink-0 text-[10px] font-bold text-alert">除外中</span>}
-              <span className="shrink-0 text-xs tabular-nums text-cream/80">{formatHms(r.seconds)}</span>
+              {r.excludedFromStats && (
+                <span className="chip shrink-0" data-tone="alert">
+                  除外中
+                </span>
+              )}
+              <span className="num shrink-0 text-sm text-cream/90">{formatHms(r.seconds)}</span>
               <span className="shrink-0 text-xs text-cream/40" aria-hidden>
                 ✎
               </span>

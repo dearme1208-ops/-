@@ -659,7 +659,7 @@ export default function SettingsSection() {
       {/* データはこの端末の中にしかないので、最後に控えを取った日を設定の一番上に出し、
           機種変更・2台目への引き継ぎを手順どおりに進められる入口を置く */}
       <div
-        className={`panel flex flex-wrap items-center justify-between gap-2 p-3 text-sm ${
+        className={`panel flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm ${
           staleBackupDays === null || staleBackupDays >= 14 ? "border border-alert/50" : ""
         }`}
         data-testid="backup-status"
@@ -745,7 +745,12 @@ export default function SettingsSection() {
           </button>
         </div>
         {/* 分類で絞り込む。35項目を1列に並べると目的の項目を探すのに何画面もスクロールするため */}
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="設定の分類">
+        {/* スマホでは横にすべらせる1行にし、最初の設定項目が画面の上の方に来るようにする */}
+        <div
+          className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap [&>button]:shrink-0 [&>button]:whitespace-nowrap"
+          role="group"
+          aria-label="設定の分類"
+        >
           {[{ key: "all", label: "すべて" }, ...SETTINGS_CATEGORIES].map((c) => (
             <button
               key={c.key}
@@ -780,8 +785,8 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">時間割（タイムボックス）</h3>
-        <p className="text-xs text-cream/65">
+        <h3 className="section-title font-display">時間割（タイムボックス）</h3>
+        <p className="section-sub">
           本日の作業の「⏱ 時間割」で作業ごとに時間の枠を決めると、枠の始まりで自動的に計測を始め、終わりで音と通知で知らせます。
         </p>
         <button
@@ -793,13 +798,13 @@ export default function SettingsSection() {
         >
           枠の終わりで確認せずに止める: {timeboxAutoStop ? "ON" : "OFF"}
         </button>
-        <p className="text-[11px] text-cream/45">OFFのときは「止める・5分延長・このまま続ける」を選べます。</p>
+        <p className="text-[11px] text-cream/55">OFFのときは「止める・5分延長・このまま続ける」を選べます。</p>
         {/* Claudeに時間割を組んでもらうときの頼み方(仕事用と家庭用で工程表を分けて使う人向け) */}
         <LifeContextSelect />
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">未計測時間の自動計測</h3>
+        <h3 className="section-title font-display">未計測時間の自動計測</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             role="switch"
@@ -913,7 +918,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">位置情報による移動検知</h3>
+        <h3 className="section-title font-display">位置情報による移動検知</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             role="switch"
@@ -979,7 +984,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">位置情報による地点到着検知（自動開始）</h3>
+        <h3 className="section-title font-display">位置情報による地点到着検知（自動開始）</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             role="switch"
@@ -1108,7 +1113,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">天気変化の通知（降水確率）</h3>
+        <h3 className="section-title font-display">天気変化の通知（降水確率）</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             role="switch"
@@ -1232,7 +1237,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">ホーム画面のクイック起動</h3>
+        <h3 className="section-title font-display">ホーム画面のクイック起動</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             role="switch"
@@ -1250,7 +1255,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">音声での開始/終了</h3>
+        <h3 className="section-title font-display">音声での開始/終了</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             role="switch"
@@ -1286,7 +1291,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">コスト換算（時給/単価）</h3>
+        <h3 className="section-title font-display">コスト換算（時給/単価）</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <label className="text-xs text-cream/60">デフォルト単価</label>
           <input
@@ -1338,7 +1343,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">本日の作業の表示</h3>
+        <h3 className="section-title font-display">本日の作業の表示</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             role="switch"
@@ -1372,7 +1377,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">作業の追加画面</h3>
+        <h3 className="section-title font-display">作業の追加画面</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             className={addTaskStyle === "tabs" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1409,7 +1414,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">本日タブのパネル表示</h3>
+        <h3 className="section-title font-display">本日タブのパネル表示</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             role="switch"
@@ -1570,7 +1575,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">基本労働時間</h3>
+        <h3 className="section-title font-display">基本労働時間</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <input
             type="time"
@@ -1593,7 +1598,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">アクセントカラー</h3>
+        <h3 className="section-title font-display">アクセントカラー</h3>
         <div className="flex flex-wrap gap-2">
           {ACCENT_PRESETS.map((p) => (
             <button
@@ -1617,7 +1622,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">文字サイズ・見やすさ</h3>
+        <h3 className="section-title font-display">文字サイズ・見やすさ</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             className={fontScale === "sm" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1655,7 +1660,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">📆 カレンダーの週表示</h3>
+        <h3 className="section-title font-display">📆 カレンダーの週表示</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             className={weekViewMode === "fixedStart" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1695,14 +1700,14 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-2 p-4">
-        <h3 className="font-display text-base font-bold text-cream">🎭 演出テーマ</h3>
-        <p className="text-xs text-cream/65">
+        <h3 className="section-title font-display">🎭 演出テーマ</h3>
+        <p className="section-sub">
           モードの選択はタブ列の「モード選択」に移りました。アクセントカラー・文字サイズなど、モードに関わらない全体設定はこのまま設定タブに残っています。
         </p>
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">日・週・月の目標時間</h3>
+        <h3 className="section-title font-display">日・週・月の目標時間</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <span>日の目標</span>
           <input
@@ -1748,7 +1753,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">朝の自動ダイジェスト通知</h3>
+        <h3 className="section-title font-display">朝の自動ダイジェスト通知</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             role="switch"
@@ -1777,7 +1782,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">1日の終わりの自動サマリー通知</h3>
+        <h3 className="section-title font-display">1日の終わりの自動サマリー通知</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             role="switch"
@@ -1820,7 +1825,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">使用頻度の低い作業マスタの検出基準</h3>
+        <h3 className="section-title font-display">使用頻度の低い作業マスタの検出基準</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <span>最終実績から</span>
           <input
@@ -1835,7 +1840,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">体調の記録</h3>
+        <h3 className="section-title font-display">体調の記録</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={conditionEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1879,7 +1884,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">タブの並べ方</h3>
+        <h3 className="section-title font-display">タブの並べ方</h3>
         <label className="flex items-center gap-2 text-sm text-cream/85">
           <input
             type="checkbox"
@@ -1895,7 +1900,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">各タブのボタン表示</h3>
+        <h3 className="section-title font-display">各タブのボタン表示</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={!simpleButtons ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1918,7 +1923,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">下部固定タブバー</h3>
+        <h3 className="section-title font-display">下部固定タブバー</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={tabBarStyle === "pill" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1992,7 +1997,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">本日の育成度表示</h3>
+        <h3 className="section-title font-display">本日の育成度表示</h3>
         <div className="flex flex-wrap gap-2">
           <button
             role="switch"
@@ -2010,7 +2015,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">実績編集で名称・区分を変更した時の挙動</h3>
+        <h3 className="section-title font-display">実績編集で名称・区分を変更した時の挙動</h3>
         <div className="flex flex-wrap gap-2">
           <button
             className={masterEditModeStr === "relink" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -2033,7 +2038,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">ToDoの対応状況の選択肢</h3>
+        <h3 className="section-title font-display">ToDoの対応状況の選択肢</h3>
         <TagPriorityEditor presets={tagPresets} onAdd={addTagPreset} onRemove={removeTagPreset} onMove={moveTagPreset} />
         <p className="text-xs text-cream/65">
           ToDoの「対応状況」ドロップダウン・かんばんの列に出てくる選択肢です。ここでの増減とは別に、ToDo登録・編集時は自由入力（「＋
@@ -2105,7 +2110,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">ToDoの期日リマインダー</h3>
+        <h3 className="section-title font-display">ToDoの期日リマインダー</h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             role="switch"
@@ -2134,7 +2139,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">ToDoの分類の選択肢</h3>
+        <h3 className="section-title font-display">ToDoの分類の選択肢</h3>
         <PresetListEditor presets={categoryPresets} onAdd={addCategoryPreset} onRemove={removeCategoryPreset} placeholder="分類名" />
         <p className="text-xs text-cream/65">
           分類には既定値はありません。ここで登録したものだけがドロップダウン・かんばんの列に出てきます（自由入力でタスクに設定はできますが、ここで登録するまで選択肢やかんばんの列にはなりません）。
@@ -2142,7 +2147,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">トラブル対応の部署・項目候補</h3>
+        <h3 className="section-title font-display">トラブル対応の部署・項目候補</h3>
         <PresetListEditor
           presets={troubleDetailOptions}
           onAdd={addTroubleDetailOption}
@@ -2155,7 +2160,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">完了済みのサブタスク・段階の表示</h3>
+        <h3 className="section-title font-display">完了済みのサブタスク・段階の表示</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             role="switch"
@@ -2185,7 +2190,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">モード選択メニュー</h3>
+        <h3 className="section-title font-display">モード選択メニュー</h3>
         <div className="flex flex-wrap items-center gap-2">
           <button
             role="switch"
@@ -2212,7 +2217,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">タブごとのCSVインポート/エクスポート/テンプレート表示</h3>
+        <h3 className="section-title font-display">タブごとのCSVインポート/エクスポート/テンプレート表示</h3>
         <div className="flex flex-wrap items-center gap-2">
           {csvToolSettings.map(({ label, valueStr, setValueStr }) => {
             const visible = valueStr === "true";
@@ -2233,7 +2238,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">週報・月報の「定時以降の業務」判定基準</h3>
+        <h3 className="section-title font-display">週報・月報の「定時以降の業務」判定基準</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <span>定時（終業時刻）</span>
           <input
@@ -2274,7 +2279,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">全データのバックアップ・復元</h3>
+        <h3 className="section-title font-display">全データのバックアップ・復元</h3>
         <div className="flex flex-wrap gap-2">
           <button className="btn-pill-outline text-sm" onClick={downloadBackup}>
             バックアップをダウンロード
@@ -2308,7 +2313,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">自動バックアップ</h3>
+        <h3 className="section-title font-display">自動バックアップ</h3>
         {autoBackupSupported ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
@@ -2353,7 +2358,7 @@ export default function SettingsSection() {
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold text-cream">実績データの月次アーカイブ</h3>
+        <h3 className="section-title font-display">実績データの月次アーカイブ</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <input
             type="month"

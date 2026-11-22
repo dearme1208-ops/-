@@ -22,12 +22,13 @@ export default function ToastHost() {
     >
       {/* 完了のお知らせ(元に戻す付き)を先頭に、その下に通知を積む */}
       <CompletionPopupHost />
+      {/* toast: 操作が効いたことに気づけるよう、地を濃く・縁をアクセント色に灯す(globals.css) */}
       {items.map((t) => (
         <div
           key={t.id}
-          className="panel toast-in pointer-events-auto flex max-w-full items-center gap-3 rounded-full px-4 py-2 text-sm shadow-panel"
+          className="toast panel toast-in pointer-events-auto flex max-w-full items-center gap-3 px-4 py-2.5 text-sm"
         >
-          <span className="text-cream/80">{t.message}</span>
+          <span className="text-cream">{t.message}</span>
           {t.onUndo && (
             <button
               className="btn-pill-outline shrink-0 whitespace-nowrap text-xs"

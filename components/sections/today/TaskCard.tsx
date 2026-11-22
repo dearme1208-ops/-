@@ -326,38 +326,42 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                   {riskBadgeLabel(riskTier, wordingThemedMode)}
                 </span>
               )}
-              {task.status === "paused" && <span className="text-cream/70">‖ 一時停止中</span>}
+              {task.status === "paused" && <span className="chip" data-tone="caution">‖ 一時停止中</span>}
               {task.status === "done" && (
-                <span className="rounded-full border border-cream/30 px-1.5 py-px font-bold text-cream/80">✅ 完了</span>
+                <span className="chip" data-tone="accent">✅ 完了</span>
               )}
-              <span className="rounded-full bg-cream/10 px-2 py-px text-[11px] text-cream/75">{task.category}</span>
-              {task.isSpontaneous && <span className="rounded-full border border-alert/40 px-1.5 py-px text-[10px] text-alert">突発</span>}
-              {isNext && task.status === "pending" && <span className="ml-2 text-cream">▶ 次の作業</span>}
+              <span className="chip">{task.category}</span>
+              {/* 突発は「予定外」なだけで遅れではないため、警告の珊瑚色ではなく注意の琥珀色にする */}
+              {task.isSpontaneous && <span className="chip" data-tone="caution">突発</span>}
+              {isNext && task.status === "pending" && <span className="chip" data-tone="accent">▶ 次の作業</span>}
             </span>
-            <button
-              onClick={() => toggleTaskFavorite(task)}
-              // 押せる範囲だけを広げる(見た目の位置は変えない)。小さすぎて押しにくかった
-              className={`-m-1.5 p-1.5 ${favoriteMasterIds.has(task.masterTaskId ?? "") ? "text-alert" : "text-cream/40 hover:text-cream"}`}
-              aria-label={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
-              title={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
-            >
-              {favoriteMasterIds.has(task.masterTaskId ?? "") ? "★" : "☆"}
-            </button>
-            <button
-              onClick={() => setEditingTask(task)}
-              className="-m-1.5 p-1.5 text-cream/40 hover:text-cream"
-              aria-label="編集"
-            >
-              ✎
-            </button>
-            <button
-              onClick={() => setSecondaryProjectsTask(task)}
-              className={`-m-1.5 p-1.5 ${(task.secondaryProjectIds?.length ?? 0) > 0 ? "text-alert" : "text-cream/40 hover:text-cream"}`}
-              aria-label="追加の案件タグ"
-              title="兼務・並行作業向けに、主案件以外の案件にも時間を按分できます"
-            >
-              🏷️{(task.secondaryProjectIds?.length ?? 0) > 0 ? task.secondaryProjectIds!.length : ""}
-            </button>
+            {/* 操作の印(☆・✎・🏷️)は札と混ざらないよう、右端にひとまとめにする */}
+            <span className="ml-auto flex items-center gap-2.5">
+              <button
+                onClick={() => toggleTaskFavorite(task)}
+                // 押せる範囲だけを広げる(見た目の位置は変えない)。小さすぎて押しにくかった
+                className={`-m-1.5 p-1.5 ${favoriteMasterIds.has(task.masterTaskId ?? "") ? "text-alert" : "text-cream/40 hover:text-cream"}`}
+                aria-label={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
+                title={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
+              >
+                {favoriteMasterIds.has(task.masterTaskId ?? "") ? "★" : "☆"}
+              </button>
+              <button
+                onClick={() => setEditingTask(task)}
+                className="-m-1.5 p-1.5 text-cream/40 hover:text-cream"
+                aria-label="編集"
+              >
+                ✎
+              </button>
+              <button
+                onClick={() => setSecondaryProjectsTask(task)}
+                className={`-m-1.5 p-1.5 ${(task.secondaryProjectIds?.length ?? 0) > 0 ? "text-alert" : "text-cream/40 hover:text-cream"}`}
+                aria-label="追加の案件タグ"
+                title="兼務・並行作業向けに、主案件以外の案件にも時間を按分できます"
+              >
+                🏷️{(task.secondaryProjectIds?.length ?? 0) > 0 ? task.secondaryProjectIds!.length : ""}
+              </button>
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* 計測中の作業は、何を計っているかが一目で分かるよう名前を一回り大きくする */}
@@ -367,7 +371,7 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
               {task.name}
             </span>
             {topRank !== undefined && (
-              <span className="rounded-full bg-alert/20 px-2 py-0.5 text-[10px] font-bold text-alert">
+              <span className="chip" data-tone="caution">
                 {RANK_MEDALS[topRank]} 集計ランキング{topRank + 1}位
               </span>
             )}
@@ -528,10 +532,11 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
               進み具合の帯を通す(以前は右寄せの時間と丸い目盛りで、左側が大きく空いていた) */}
           {(task.status === "running" || task.status === "paused") && (
             <div>
-              <div className={`flex justify-between gap-3 ${showClock ? "items-center" : "items-end"}`}>
+              {/* 広い画面では時計を経過時間のすぐ右に寄せる(右端まで離れると、二つが同じ作業のものに見えない) */}
+              <div className={`flex justify-between gap-3 ${showClock ? "items-center sm:justify-start sm:gap-12" : "items-end"}`}>
                 <div className={showClock ? "min-w-0 space-y-1.5" : "contents"}>
                   <div
-                    className={`font-display font-bold leading-none tabular-nums ${task.status === "running" ? "text-4xl" : "text-2xl"} ${
+                    className={`num leading-none ${task.status === "running" ? "text-4xl sm:text-5xl" : "text-2xl"} ${
                       overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : task.status === "paused" ? "text-cream/70" : "text-cream"
                     } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
                   >
@@ -720,7 +725,7 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                     {formatClock(task.startedAt)}〜{formatClock(task.endedAt)}
                   </button>
                 )}
-                <span className="font-display text-lg font-bold tabular-nums text-cream/80">{formatMsClock(elapsedMs)}</span>
+                <span className="num text-lg text-cream/80">{formatMsClock(elapsedMs)}</span>
                 {!!task.guessSeconds &&
                   (() => {
                     const actualSeconds = Math.round(baseAccumulatedMs(task) / 1000);

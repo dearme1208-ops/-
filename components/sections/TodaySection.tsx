@@ -3027,7 +3027,7 @@ export default function TodaySection({
       )}
 
       {taskViewTab === "pending" && (
-        <div className="panel flex flex-wrap gap-x-6 gap-y-2 p-3 text-xs">
+        <div className="panel flex flex-wrap gap-x-6 gap-y-2 px-4 py-3 text-xs">
           {(() => {
             const hasTodo = pendingDueSummary.todoOverdue > 0 || pendingDueSummary.todoDueToday > 0;
             const Wrapper = hasTodo ? "button" : "div";
@@ -3038,12 +3038,12 @@ export default function TodaySection({
               >
                 <span className="text-cream/50">✅ ToDo</span>
                 {pendingDueSummary.todoOverdue > 0 && (
-                  <span className="rounded-full bg-alert/15 px-2 py-0.5 font-bold text-alert">
+                  <span className="chip" data-tone="alert" data-size="lg">
                     期限切れ {pendingDueSummary.todoOverdue}件
                   </span>
                 )}
                 {pendingDueSummary.todoDueToday > 0 && (
-                  <span className="rounded-full bg-cream/10 px-2 py-0.5 text-cream/80">
+                  <span className="chip" data-tone="caution" data-size="lg">
                     本日期限 {pendingDueSummary.todoDueToday}件
                   </span>
                 )}
@@ -3061,12 +3061,12 @@ export default function TodaySection({
               >
                 <span className="text-cream/50">📁 案件</span>
                 {pendingDueSummary.projectOverdue > 0 && (
-                  <span className="rounded-full bg-alert/15 px-2 py-0.5 font-bold text-alert">
+                  <span className="chip" data-tone="alert" data-size="lg">
                     期限切れ {pendingDueSummary.projectOverdue}件
                   </span>
                 )}
                 {pendingDueSummary.projectDueToday > 0 && (
-                  <span className="rounded-full bg-cream/10 px-2 py-0.5 text-cream/80">
+                  <span className="chip" data-tone="caution" data-size="lg">
                     本日期限 {pendingDueSummary.projectDueToday}件
                   </span>
                 )}
@@ -3170,7 +3170,7 @@ export default function TodaySection({
 
       <div className="space-y-3">
         {visibleTasks.length === 0 && (
-          <p className="panel p-4 text-center text-sm text-cream/50">
+          <p className="empty-state">
             {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
             {taskViewTab === "pending" && "予定している作業はありません"}
             {taskViewTab === "done" && "完了した作業はまだありません"}
@@ -3195,18 +3195,20 @@ export default function TodaySection({
 
       {/* 作業の開始に使うもの(テンプレート・お気に入り・提案など)と、状況の表示(作業状況・
           チャレンジ・自動配分・通知など)は、作業リストの下にまとめる。以前は作業リストの上に
-          並んでいて、スマホでは作業リストが数画面下に埋もれていた。まとめて折りたためる */}
-      <div className="space-y-4">
+          並んでいて、スマホでは作業リストが数画面下に埋もれていた。まとめて折りたためる
+          広い画面では1列だと横に間延びするため、中のパネルを2列に並べる(区切りと今日の記録は横いっぱい) */}
+      <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4 lg:space-y-0">
+        {/* 箱ではなく区切り線にする。説明は折り返さず1行で切る(2行になると見出しの位置がずれていた) */}
         <button
-          className="flex w-full items-center justify-between rounded-lg border border-cream/15 px-3 py-2 text-left text-sm font-bold text-cream/70 hover:text-cream"
+          className="fold-head lg:col-span-2"
           onClick={() => setExtrasCollapsedStr(extrasCollapsed ? "false" : "true")}
           aria-expanded={!extrasCollapsed}
         >
-          <span className="min-w-0">
-            🧰 そのほかの表示
-            <span className="ml-1 text-[11px] font-normal text-cream/40">お気に入り・提案・作業状況 など</span>
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="section-title shrink-0">🧰 そのほかの表示</span>
+            <span className="min-w-0 truncate text-[11px] font-normal text-cream/50">お気に入り・提案・作業状況 など</span>
           </span>
-          <span className="shrink-0 whitespace-nowrap text-xs text-cream/40">{extrasCollapsed ? "▶ 開く" : "▼ たたむ"}</span>
+          <span>{extrasCollapsed ? "▶ 開く" : "▼ たたむ"}</span>
         </button>
         {!extrasCollapsed && (
           <>
@@ -3236,7 +3238,7 @@ export default function TodaySection({
                   className="flex w-full items-center justify-between text-left"
                   onClick={() => setFavoritesCollapsedStr(favoritesCollapsed ? "false" : "true")}
                 >
-                  <h3 className="font-display text-sm font-bold text-cream/80">
+                  <h3 className="section-title font-display">
                     ★ お気に入り（ワンタップで追加+開始）
                     {favoritesCollapsed && <span className="ml-1 font-normal text-cream/40">（{favorites.length}件）</span>}
                   </h3>
@@ -3248,7 +3250,7 @@ export default function TodaySection({
                       {favorites.map((f) => (
                         <div
                           key={f.id}
-                          className="flex items-center gap-1 rounded-full border border-cream/30 bg-ink py-1 pl-1 pr-2"
+                          className="flex items-center gap-1 rounded-full border border-cream/20 bg-ink py-1 pl-1 pr-2"
                         >
                           <button
                             onClick={() => addFavoriteAndStart(f.id)}
@@ -3291,13 +3293,13 @@ export default function TodaySection({
 
             {!isPanelFolded("doneRestart") && doneTodayUnique.length > 0 && (
               <div data-panel-id="doneRestart" className="panel p-4">
-                <h3 className="font-display text-sm font-bold text-cream/80">✅ 完了した業務から再開</h3>
+                <h3 className="section-title font-display">✅ 完了した業務から再開</h3>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {doneTodayUnique.map((d) => (
                     <button
                       key={d.id}
                       onClick={() => setRestartChoice(d)}
-                      className="rounded-full border border-cream/30 bg-ink px-3 py-1.5 text-sm text-cream hover:bg-cream/10"
+                      className="rounded-full border border-cream/20 bg-ink px-3 py-1.5 text-sm text-cream hover:bg-cream/10"
                     >
                       ✅ {d.category} / {workLabel(d)}
                     </button>
@@ -3308,10 +3310,11 @@ export default function TodaySection({
 
 
             {!isPanelFolded("nextMove") && showNextMovePick && nextTaskPick && (
-              <div data-panel-id="nextMove" className="panel flex flex-wrap items-center justify-between gap-2 border border-alert/40 bg-alert/5 p-4">
+              // 提案であって警告ではないため、珊瑚色(遅れ・超過の色)ではなく「今できること」の緑にする
+              <div data-panel-id="nextMove" className="panel flex flex-wrap items-center justify-between gap-2 border border-accent/45 bg-accent/[0.06] p-4">
                 <div>
-                  <h3 className="font-display text-sm font-bold text-alert">🎯 今この一手</h3>
-                  <p className="text-xs text-cream/50">{nextTaskPick.reason}</p>
+                  <h3 className="section-title font-display text-accent">🎯 今この一手</h3>
+                  <p className="section-sub">{nextTaskPick.reason}</p>
                   <p className="mt-1 text-sm text-cream">
                     {nextTaskPick.category} / {nextTaskPick.name}
                   </p>
@@ -3325,8 +3328,8 @@ export default function TodaySection({
             {!isPanelFolded("suggested") && showSuggestedTask && suggestedTask && (
               <div data-panel-id="suggested" className="panel flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
-                  <h3 className="font-display text-sm font-bold text-cream/80">💡 そろそろこの作業では?</h3>
-                  <p className="text-xs text-cream/50">
+                  <h3 className="section-title font-display">💡 そろそろこの作業では?</h3>
+                  <p className="section-sub">
                     同じ曜日のこの時間帯によく行っている作業です（{suggestedTask.count}回）
                   </p>
                   <p className="mt-1 text-sm text-cream">
@@ -3341,7 +3344,7 @@ export default function TodaySection({
 
             {!isPanelFolded("condition") && conditionEnabled && (
               <div data-panel-id="condition" className="panel p-4">
-                <h3 className="mb-2 font-display text-sm font-bold text-cream/80">今の体調</h3>
+                <h3 className="section-title mb-2 font-display">今の体調</h3>
                 <div className="flex flex-wrap gap-2">
                   {CONDITION_LEVELS.map((c) => (
                     <button
@@ -3386,8 +3389,8 @@ export default function TodaySection({
             <TodayMemoPanel onOpenMemo={onOpenMemo} />
             {startedForceStopRanges.length > 0 && (
               <div className="panel space-y-2 p-4">
-                <h3 className="font-display text-sm font-bold text-cream/80">☕ 本日の休憩</h3>
-                <p className="text-xs text-cream/50">
+                <h3 className="section-title font-display">☕ 本日の休憩</h3>
+                <p className="section-sub">
                   この時間帯になると計測中の作業を自動で一時停止します。移動やミーティングなどで実際には
                   作業していた場合は、後からその作業に割り当てられます。
                 </p>
@@ -3441,9 +3444,10 @@ export default function TodaySection({
               </details>
             )}
             {notifPermission !== "granted" && notifPermission !== "unsupported" && (
-              <div className="panel flex items-center justify-between p-4">
+              <div className="panel flex items-center justify-between gap-3 p-4">
                 <p className="text-sm text-cream/80">予定超過を通知でお知らせできます。</p>
-                <button className="btn-pill-outline text-sm" onClick={enableNotifications}>
+                {/* 狭い画面でボタンの文字が2行に折れていたため、ボタンは縮めず折り返さない */}
+                <button className="btn-pill-outline shrink-0 whitespace-nowrap text-sm" onClick={enableNotifications}>
                   通知を許可
                 </button>
               </div>
@@ -3495,8 +3499,8 @@ export default function TodaySection({
               </div>
             )}
 
-            <div className="panel space-y-2 p-4">
-              <h3 className="font-display text-sm font-bold text-cream/80">📓 今日の記録</h3>
+            <div className="panel space-y-2 p-4 lg:col-span-2">
+              <h3 className="section-title font-display">📓 今日の記録</h3>
               <textarea
                 value={dailyJournal}
                 onChange={(e) => setDailyJournal(e.target.value)}

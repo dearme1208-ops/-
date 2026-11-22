@@ -74,7 +74,7 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
       </span>
     </>
   );
-  const className = `panel mb-1 flex w-full items-center gap-2 px-3 py-1.5 shadow-lg backdrop-blur ${
+  const className = `panel mb-1 flex w-full items-center sm:mx-auto sm:max-w-3xl gap-2 px-3 py-1.5 shadow-lg backdrop-blur ${
     overrun ? `border-alert ring-2 ring-alert/70 bg-alert/[0.06] ${running.overrunAnimClass ?? "card-overrun"}` : ""
   }`;
   const actions = (running.onPause || running.onFinish) && (
@@ -177,14 +177,16 @@ export default function BottomTabBar({
     ) : null;
 
   return (
-    <div className="sticky bottom-2 z-[45] pt-2" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+    // bottom-dock: 下から地の色で塗り、ボタンの隙間から本文の文字が透けないようにする(globals.css)。
+    // 画面の最下端に貼り付け、ホームバーの分(safe-area)に少し足した余白を下に取る
+    <div className="bottom-dock sticky bottom-0 z-[45] pt-3" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.5rem)" }}>
       {above}
       {running && (
         <RunningStrip running={running} />
       )}
 
       {showProgress && (
-        <div className="mb-1 flex h-1.5 overflow-hidden rounded-full bg-ink/50">
+        <div className="mb-1 flex h-1.5 overflow-hidden rounded-full bg-ink/50 sm:mx-auto sm:max-w-3xl">
           {progress!.map(
             (p) =>
               p.ratio > 0 && <div key={p.key} className={p.className} style={{ width: `${Math.round(p.ratio * 100)}%` }} />
@@ -192,7 +194,8 @@ export default function BottomTabBar({
         </div>
       )}
 
-      <div className={leading ? "flex items-stretch gap-1.5" : ""}>
+      {/* PCの広い画面では、帯・進み具合・タブを幅いっぱいに伸ばさず中央に寄せる(親指ではなくマウスで届く幅に) */}
+      <div className={leading ? "flex items-stretch gap-1.5 sm:mx-auto sm:max-w-3xl" : "sm:mx-auto sm:max-w-3xl"}>
       {leading}
       <div className={leading ? "min-w-0 flex-1" : ""}>
       {style === "segment" && (

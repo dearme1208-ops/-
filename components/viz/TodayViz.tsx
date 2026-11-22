@@ -90,8 +90,8 @@ export function DayRing({
   const pickedGap = gapData.gaps.find((g) => gapKey(g) === openGap) ?? null;
   return (
     <section className="panel p-4" data-testid="day-ring">
-      <h3 className="font-display text-sm font-bold text-cream/85">🕰 今日のリング</h3>
-      <p className="text-[11px] text-cream/50">
+      <h3 className="section-title font-display">🕰 今日のリング</h3>
+      <p className="section-sub">
         24時間の輪に、今日計った時間を区分の色で並べています。
         {gapData.gaps.length > 0 && "点線は記録のない時間です。押すと、その時間にした作業を選べます。"}
       </p>
@@ -206,7 +206,7 @@ export function HourglassPanel({
   return (
     <section className="panel space-y-2 p-4" data-testid="hourglass">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="font-display text-sm font-bold text-cream/85">⏳ {workEnd}までに収まる？</h3>
+        <h3 className="section-title font-display">⏳ {workEnd}までに収まる？</h3>
         <span className={`text-xs font-bold ${fits ? "text-cream/80" : "text-alert"}`}>
           {h.leftMs === 0 ? "終業の時刻を過ぎています" : fits ? `収まる（${hm(-overflow)}の余裕）` : `${hm(overflow)}あふれそう`}
         </span>
@@ -288,8 +288,8 @@ export function PlanActualPanel({ tasks }: { tasks: DailyTask[] }) {
   const max = Math.max(...rows.map((t) => Math.max(t.estimatedSeconds * 1000, t.accumulatedMs)));
   return (
     <section className="panel space-y-2 p-4" data-testid="plan-actual">
-      <h3 className="font-display text-sm font-bold text-cream/85">📏 予定と実績</h3>
-      <p className="text-[11px] text-cream/50">細い線が予定、太い棒が実績です。予定をはみ出した分は赤で示します。</p>
+      <h3 className="section-title font-display">📏 予定と実績</h3>
+      <p className="section-sub">細い線が予定、太い棒が実績です。予定をはみ出した分は赤で示します。</p>
       <ul className="space-y-2">
         {rows.map((t) => {
           const plan = t.estimatedSeconds * 1000;
@@ -337,7 +337,7 @@ export function WeekBlocks({ today }: { today: string }) {
   const wd = ["日", "月", "火", "水", "木", "金", "土"];
   return (
     <section className="panel space-y-2 p-4" data-testid="week-blocks">
-      <h3 className="font-display text-sm font-bold text-cream/85">🧱 この1週間</h3>
+      <h3 className="section-title font-display">🧱 この1週間</h3>
       <div className="flex h-36 items-end gap-2">
         {days.map((d) => (
           <div key={d.date} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
@@ -374,8 +374,8 @@ export function ConditionHeatmapPanel({ today }: { today: string }) {
   if (filled < 3) return null;
   return (
     <section className="panel space-y-2 p-4" data-testid="condition-heatmap">
-      <h3 className="font-display text-sm font-bold text-cream/85">🌡 時間帯ごとの調子</h3>
-      <p className="text-[11px] text-cream/50">この2か月、予定どおりに終えた割合です。濃いほど予定どおり、空白は記録なし。</p>
+      <h3 className="section-title font-display">🌡 時間帯ごとの調子</h3>
+      <p className="section-sub">この2か月、予定どおりに終えた割合です。濃いほど予定どおり、空白は記録なし。</p>
       <div className="overflow-x-auto">
         <table className="w-full border-separate border-spacing-[3px] text-[10px]">
           <thead>

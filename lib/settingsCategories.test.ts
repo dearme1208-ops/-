@@ -6,7 +6,7 @@ import { SETTINGS_CATEGORIES, settingCategoryOf } from "@/lib/settingsCategories
 // 設定画面のソースから見出しを拾い、どれも分類表のどこか1つに入っていることを確かめる
 // (設定を足したときに分類表への追加を忘れると、ここで気づける)
 const source = readFileSync(path.resolve(__dirname, "../components/sections/SettingsSection.tsx"), "utf-8");
-const headings = [...source.matchAll(/<h3 className="font-display text-base font-bold text-cream">([^<]+)<\/h3>/g)].map((m) => m[1].trim());
+const headings = [...source.matchAll(/<h3 className="section-title font-display">([^<]+)<\/h3>/g)].map((m) => m[1].trim());
 
 describe("設定の分類", () => {
   it("設定画面のすべての見出しが、ちょうど1つの分類に属している", () => {

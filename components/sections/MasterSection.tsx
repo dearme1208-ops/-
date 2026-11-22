@@ -415,35 +415,65 @@ export default function MasterSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <input
-          placeholder="区分・作業名で検索"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-cream/50">並び替え:</span>
-          {SORT_OPTIONS.map((opt) => (
+      {/* 上部の操作を「探す・追加」「絞り込み」「道具」の3段に分け、押したい札をすぐ見つけられるようにする */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <input
+            placeholder="区分・作業名で検索"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream sm:max-w-xs"
+          />
+          {simpleButtons ? (
             <button
-              key={opt.key}
-              onClick={() => setSortKey(opt.key)}
-              className={sortKey === opt.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              className="btn-pill shrink-0 px-3 py-2 text-base"
+              onClick={() => setShowNew((v) => !v)}
+              title="新規作業を追加"
+              aria-label="新規作業を追加"
             >
-              {opt.label}
+              ➕
             </button>
-          ))}
+          ) : (
+            <button className="btn-pill shrink-0 text-sm" onClick={() => setShowNew((v) => !v)}>
+              + 新規作業を追加
+            </button>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="caption">並び替え:</span>
+          <div className="seg" role="group" aria-label="並び替え">
+            {SORT_OPTIONS.map((opt) => (
+              <button key={opt.key} onClick={() => setSortKey(opt.key)} aria-pressed={sortKey === opt.key}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button
+            className={showArchived ? "btn-pill px-3 py-1.5 text-xs" : "btn-pill-outline px-3 py-1.5 text-xs"}
+            onClick={() => setShowArchived((v) => !v)}
+            aria-pressed={showArchived}
+          >
+            アーカイブ済みを表示
+          </button>
+          <button
+            className={showFavoritesOnly ? "btn-pill px-3 py-1.5 text-xs" : "btn-pill-outline px-3 py-1.5 text-xs"}
+            onClick={() => setShowFavoritesOnly((v) => !v)}
+            aria-pressed={showFavoritesOnly}
+          >
+            ★ お気に入りのみ
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="caption">道具</span>
           {showCsvTools && (
             <>
-              <button className="btn-pill-outline text-sm" onClick={downloadTemplate}>
+              <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={downloadTemplate}>
                 CSVテンプレート
               </button>
-              <button className="btn-pill-outline text-sm" onClick={exportCsv}>
+              <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={exportCsv}>
                 CSVエクスポート
               </button>
-              <button className="btn-pill-outline text-sm" onClick={() => fileInputRef.current?.click()}>
+              <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={() => fileInputRef.current?.click()}>
                 CSVインポート
               </button>
               <input
@@ -459,35 +489,9 @@ export default function MasterSection() {
               />
             </>
           )}
-          <button className="btn-pill-outline text-sm" onClick={recalcEstimates}>
+          <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={recalcEstimates}>
             想定時間を再計算
           </button>
-          <button
-            className={showArchived ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-            onClick={() => setShowArchived((v) => !v)}
-          >
-            アーカイブ済みを表示
-          </button>
-          <button
-            className={showFavoritesOnly ? "btn-pill text-sm" : "btn-pill-outline text-sm"}
-            onClick={() => setShowFavoritesOnly((v) => !v)}
-          >
-            ★ お気に入りのみ
-          </button>
-          {simpleButtons ? (
-            <button
-              className="btn-pill px-3 py-2 text-base"
-              onClick={() => setShowNew((v) => !v)}
-              title="新規作業を追加"
-              aria-label="新規作業を追加"
-            >
-              ➕
-            </button>
-          ) : (
-            <button className="btn-pill text-sm" onClick={() => setShowNew((v) => !v)}>
-              + 新規作業を追加
-            </button>
-          )}
         </div>
       </div>
 

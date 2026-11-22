@@ -25,8 +25,8 @@ export default function ChorePanel({ today, onStart }: { today: string; onStart:
   if (items.length === 0) return null;
   return (
     <section className="panel p-4" data-testid="chore-panel">
-      <h3 className="font-display text-sm font-bold text-cream/85">🧺 そろそろの家事</h3>
-      <p className="mt-0.5 text-[11px] text-cream/50">いつもの間隔より空いてきたものです。気が向いたらどうぞ。</p>
+      <h3 className="section-title font-display">🧺 そろそろの家事</h3>
+      <p className="section-sub">いつもの間隔より空いてきたものです。気が向いたらどうぞ。</p>
       <ul className="mt-2 space-y-1.5">
         {items.map((c) => (
           <li key={c.master.id} className="flex items-center gap-2">

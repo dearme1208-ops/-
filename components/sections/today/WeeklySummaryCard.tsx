@@ -31,8 +31,8 @@ export default function WeeklySummaryCard({ today }: { today: string }) {
     <section className="panel space-y-3 p-4" data-testid="weekly-summary">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className="font-display text-sm font-bold text-cream/85">📅 {s.label}のまとめ</h3>
-          <p className="text-[11px] text-cream/50">
+          <h3 className="section-title font-display">📅 {s.label}のまとめ</h3>
+          <p className="section-sub">
             {formatDateJp(s.weekStart)}〜{formatDateJp(s.weekEnd)}・記録 <b className="tabular-nums text-cream/80">{formatHms(s.totalSeconds)}</b>
           </p>
         </div>

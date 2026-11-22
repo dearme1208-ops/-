@@ -71,11 +71,11 @@ function CompletionCard({
 
   return (
     <div className="completion-popup-card panel pointer-events-auto flex items-start gap-3 p-3.5 shadow-panel">
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm text-accent">✓</span>
+      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-bold text-ink">✓</span>
       <div className="min-w-0 flex-1">
         <div className="text-[10px] font-bold uppercase tracking-widest text-accent">{completionLabel(mode)}</div>
         <div className="truncate text-sm font-bold text-cream">{item.name}</div>
-        <div className="truncate text-xs text-cream/50">[{item.category}]</div>
+        <div className="truncate text-xs text-cream/60">[{item.category}]</div>
         <div className="mt-1 flex items-center justify-between text-xs">
           <span className="tabular-nums text-cream/70">実績 {formatHms(item.seconds)}</span>
           {compareLabel && (

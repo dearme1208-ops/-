@@ -51,6 +51,10 @@
   --forest-dew-rgb: 150 205 214;
   --forest-amber-rgb: 208 162 84;
   --forest-rust-rgb: 168 88 56;
+  /* 「そろそろ注意」(本日期限・一時停止・突発・催促どき)。期限切れ・超過の alert とは分ける。
+     alert(=遅れ・超過)と同じ色にすると、まだ間に合うものまで警報に見えて本当の警報が埋もれるため。
+     モードごとの差し替えは「共通の部品」の段(ファイル後半)にまとめて置く */
+  --caution-rgb: 201 133 0;
 }
 
 html,
@@ -163,6 +167,17 @@ html[data-high-contrast="true"] :focus-visible {
 
 * {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* キーボード操作の焦点の輪郭(全モード共通の土台)。ブラウザ既定の輪郭はモードの配色と合わず、
+   暗い地では見えないこともあったため、そのモードのアクセント色にそろえる。
+   森モード(露の色)・ハイコントラストの html[...] :focus-visible の方が詳細度が高く、そちらが勝つ。
+   outline-none を付けた要素(ダイアログの枠など)はユーティリティが後に出るので、そのまま輪郭なし */
+@layer base {
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent-rgb) / 0.8);
+    outline-offset: 2px;
+  }
 }
 
 ::-webkit-scrollbar {
@@ -623,6 +638,11 @@ html[data-high-contrast="true"] :focus-visible {
   }
   html[data-visual-mode="home"] .panel[data-running-card="true"] {
     border-color: rgb(var(--accent-rgb) / 0.7);
+  }
+  /* 予定を超過して計測中のカード。上の計測中の緑の枠が border-alert より後に効くため、
+     超過中なのに「緑の枠・琥珀の光暈・珊瑚色の数字」の3色が同時に出ていた。超過中は警告の枠にそろえる */
+  html[data-visual-mode="home"] .panel[data-running-card="true"][class*="border-alert"] {
+    border-color: rgb(var(--alert-rgb) / 0.6);
   }
   /* --- ここから森モードのUI。丸ピルの並びをやめ、「林床に並べた木札」に作り替える --- */
 
@@ -4701,7 +4721,320 @@ html[data-visual-mode="zen"] {
     --viz-4: #c98500;
   }
 }
+/* 森モード: 区分の色を森の色調に寄せる(並び順・見分けやすさは既定の段と同じ考え方で、明度差を保つ)。
+   既定の段の鮮やかなウェブの青(#3987e5)が、24時間の輪・週の積み木・期限の地形の中で森から浮いていたため */
+html[data-visual-mode="home"] {
+  --viz-1: #5f9fc4; /* 露の青 */
+  --viz-2: #d9824a; /* 落ち葉の橙 */
+  --viz-3: #3fae86; /* 苔の青緑 */
+  --viz-4: #c9a23e; /* 琥珀 */
+  --viz-other: rgb(var(--cream-rgb) / 0.26);
+}
 
+/* ══ 共通の部品(見出し・小見出し・数字・札(チップ)・一覧の行・切り替え・畳む見出し・画面下の地・知らせ) ══
+   タブごとに見出しの大きさや状態の札の書き方がばらばらで、同じ意味のものが別の見た目になっていた。
+   各タブはここの部品を使い、見た目の決まりを1か所にまとめる。
+   - 土台の規則は --cream / --ink / --accent / --alert / --caution / --panel の変数だけを使うので、
+     明るい地のモード(なつやすみ・Claude・禅など)でもそのモードの配色で読める
+   - 森モードだけの形(切り出した板の角丸など)は html[data-visual-mode="home"] に限って足す
+   - @layer components なので、呼び出し側で付けた Tailwind のユーティリティ(ml-2・text-lg など)が後から勝つ */
+@layer components {
+  /* --- 「そろそろ注意」の色のモード別の差し替え(土台の値は :root) ---
+     森は落ち葉の琥珀。明るい地のモードは、白地で文字として読める濃さまで沈めた山吹にする */
+  html[data-visual-mode="home"] {
+    --caution-rgb: var(--forest-amber-rgb);
+  }
+  html[data-visual-mode="natsuyasumi"],
+  html[data-visual-mode="adventurer"],
+  html[data-visual-mode="library"],
+  html[data-visual-mode="powerpro"],
+  html[data-visual-mode="origin"],
+  html[data-visual-mode="claude"],
+  html[data-visual-mode="zen"] {
+    --caution-rgb: 150 96 0;
+  }
+  @media (prefers-color-scheme: dark) {
+    html[data-visual-mode="claude"],
+    html[data-visual-mode="zen"] {
+      --caution-rgb: 214 158 60;
+    }
+  }
+
+  /* --- 見出しの3段(ページ見出しは既存の h2.font-display、その下がこの2つ) --- */
+  /* パネルの見出し。全タブで同じ大きさ・濃さにそろえる(h3.font-display と併用する。
+     森モードの年輪の下線や各モードの見出しの飾りは h3.font-display を狙っているので、そちらもそのまま効く) */
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9375rem; /* 15px */
+    line-height: 1.35;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: rgb(var(--cream-rgb) / 0.92);
+  }
+  /* 見出しのすぐ下の説明文 */
+  .section-sub {
+    margin-top: 0.125rem;
+    font-size: 0.75rem;
+    line-height: 1.55;
+    color: rgb(var(--cream-rgb) / 0.62);
+  }
+  /* 札の下の小見出し(ツールバーの「いま」等)・表の項目名 */
+  .caption {
+    font-size: 0.6875rem;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    color: rgb(var(--cream-rgb) / 0.6);
+  }
+  /* 時間・件数。桁をそろえ、数字だけ表示用の書体にする */
+  .num {
+    font-family: var(--font-oswald), var(--font-noto-sans-jp), sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  /* --- 状態の札(チップ)。区分・突発・完了・本日期限・期限切れ・対応状況を1つの形にそろえる ---
+     data-tone なし=ふつう / accent=選択・完了・次 / alert=期限切れ・超過 / caution=本日期限・一時停止・突発・催促どき /
+     strong=対応状況・客先など最初に目で探すもの。文字は色の濃いまま、地は14%の薄塗りなので 4.5:1 以上を保つ */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    height: 1.375rem;
+    padding: 0 0.5rem;
+    border: 1px solid rgb(var(--cream-rgb) / 0.18);
+    border-radius: 999px;
+    background-color: rgb(var(--cream-rgb) / 0.06);
+    color: rgb(var(--cream-rgb) / 0.82);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .chip[data-size="lg"] {
+    height: 1.5rem;
+    padding: 0 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .chip[data-tone="accent"] {
+    border-color: rgb(var(--accent-rgb) / 0.5);
+    background-color: rgb(var(--accent-rgb) / 0.14);
+    color: rgb(var(--accent-rgb));
+  }
+  .chip[data-tone="alert"] {
+    border-color: rgb(var(--alert-rgb) / 0.5);
+    background-color: rgb(var(--alert-rgb) / 0.14);
+    color: rgb(var(--alert-rgb));
+  }
+  .chip[data-tone="caution"] {
+    border-color: rgb(var(--caution-rgb) / 0.5);
+    background-color: rgb(var(--caution-rgb) / 0.14);
+    color: rgb(var(--caution-rgb));
+  }
+  .chip[data-tone="strong"] {
+    border-color: rgb(var(--cream-rgb) / 0.4);
+    background-color: rgb(var(--cream-rgb) / 0.12);
+    color: rgb(var(--cream-rgb));
+  }
+  /* スマホでは 11px が小さすぎるので1段大きくする(全体の text-[11px] の底上げと同じ考え方) */
+  @media (max-width: 639.98px) {
+    .chip {
+      font-size: 0.75rem;
+    }
+    .chip[data-size="lg"] {
+      font-size: 0.8125rem;
+    }
+  }
+  /* 森モード: 札もボタンと同じ「切り出した小さな板」の角にする */
+  html[data-visual-mode="home"] .chip {
+    border-radius: 0.7rem 0.3rem 0.7rem 0.3rem;
+  }
+
+  /* --- 一覧の行。小さなカードを並べるのではなく、同じ高さの行を区切り線で並べる --- */
+  /* 一覧の1行(記録・案件など、枠の中で区切り線で並べるもの)。親に .list-rows、各行に .list-row を付ける */
+  .list-rows > * + * {
+    border-top: 1px solid rgb(var(--cream-rgb) / 0.08);
+  }
+  .list-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.5rem 1rem;
+    text-align: left;
+    transition: background-color 0.15s ease;
+  }
+  .list-row:active {
+    background-color: rgb(var(--cream-rgb) / 0.08);
+  }
+  /* 1件ずつ独立した札として積むもの(ToDo) */
+  .list-row-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgb(var(--cream-rgb) / 0.1);
+    border-radius: 0.75rem;
+    background-color: rgb(var(--cream-rgb) / 0.03);
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .list-row-card:active {
+    background-color: rgb(var(--cream-rgb) / 0.07);
+  }
+  /* スマホでは押した後も :hover が貼り付くので、マウスのある端末だけにする */
+  @media (hover: hover) {
+    .list-row:hover {
+      background-color: rgb(var(--cream-rgb) / 0.05);
+    }
+    .list-row-card:hover {
+      background-color: rgb(var(--cream-rgb) / 0.06);
+      border-color: rgb(var(--cream-rgb) / 0.22);
+    }
+    html[data-visual-mode="home"] .list-row-card:hover {
+      border-color: rgb(var(--accent-rgb) / 0.4);
+    }
+  }
+  html[data-visual-mode="home"] .list-row-card {
+    border-color: rgb(var(--accent-rgb) / 0.14);
+    border-radius: 0.9rem 0.4rem 0.9rem 0.4rem;
+  }
+  html[data-visual-mode="home"] .list-rows > * + * {
+    border-top-color: rgb(var(--accent-rgb) / 0.1);
+  }
+
+  /* --- 「どれか1つ」の切り替え(日報/週報/月報・並び替えなど)。押した札だけ塗る ---
+     中のボタンには btn-pill 系を付けず、aria-pressed で選択中を示す(見た目も読み上げも同じ1つの印に従う) */
+  .seg {
+    display: inline-flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid rgb(var(--cream-rgb) / 0.14);
+    border-radius: 999px;
+    background-color: rgb(var(--ink-rgb) / 0.4);
+  }
+  .seg > button {
+    min-height: 2.25rem;
+    padding: 0.375rem 0.875rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: rgb(var(--cream-rgb) / 0.75);
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .seg > button[aria-pressed="true"] {
+    background-color: rgb(var(--accent-rgb));
+    color: rgb(var(--ink-rgb));
+  }
+  @media (hover: hover) {
+    .seg > button:not([aria-pressed="true"]):hover {
+      background-color: rgb(var(--cream-rgb) / 0.08);
+      color: rgb(var(--cream-rgb));
+    }
+  }
+  html[data-visual-mode="home"] .seg {
+    border-color: rgb(var(--accent-rgb) / 0.22);
+    border-radius: 1.1rem 0.45rem 1.1rem 0.45rem;
+  }
+  html[data-visual-mode="home"] .seg > button {
+    border-radius: 0.9rem 0.35rem 0.9rem 0.35rem;
+  }
+  html[data-visual-mode="home"] .seg > button[aria-pressed="true"] {
+    background-image: linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(158 206 128));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28);
+  }
+
+  /* --- 開け閉めする区切りの見出し(「そのほかの表示」など) ---
+     箱ではなく「ここから下は別の段」という区切り線にする。最後の子(▶ 開く/▼ たたむ)は右端に小さく */
+  .fold-head {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.25rem 0.5rem;
+    border-top: 1px dashed rgb(var(--cream-rgb) / 0.16);
+    text-align: left;
+    color: rgb(var(--cream-rgb) / 0.85);
+  }
+  .fold-head > :last-child {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    color: rgb(var(--cream-rgb) / 0.6);
+  }
+  @media (hover: hover) {
+    .fold-head:hover {
+      color: rgb(var(--cream-rgb));
+    }
+  }
+  html[data-visual-mode="home"] .fold-head {
+    border-top-color: rgb(var(--accent-rgb) / 0.3);
+  }
+
+  /* --- 空の知らせ(.empty-state 本体はファイル末尾)。森モードでは枠も切り出した板の角にする --- */
+  html[data-visual-mode="home"] .empty-state {
+    border-color: rgb(var(--accent-rgb) / 0.22);
+    border-radius: 1.2rem 0.5rem 1.2rem 0.5rem;
+  }
+
+  /* --- 画面下の固定の操作の地(components/ui/BottomTabBar.tsx) ---
+     ボタンの隙間から本文の文字が透けて読みにくかったので、下から地の色で塗る。
+     main の左右の余白(px-4 / sm:px-8)と同じだけ外へ広げ、画面の端まで地を敷く */
+  .bottom-dock {
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    background: linear-gradient(to top, rgb(var(--ink-rgb) / 0.96) 60%, rgb(var(--ink-rgb) / 0));
+  }
+  @media (min-width: 640px) {
+    .bottom-dock {
+      margin-inline: -2rem;
+      padding-inline: 2rem;
+    }
+  }
+
+  /* --- 知らせ(components/ui/ToastHost.tsx)。操作が効いたことに気づけるよう、地を濃くし縁を灯す ---
+     .panel と併用する。.panel より後ろに書いてあるので、同じ詳細度の角丸・枠・地・影はこちらが勝つ */
+  .toast {
+    border-radius: 999px;
+    border: 1px solid rgb(var(--accent-rgb) / 0.4);
+    background-color: rgb(var(--panel-rgb) / 0.97);
+    box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(var(--accent-rgb) / 0.12);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  /* 森モードの .panel(枠・影の指定が強い)に負けないよう、詳細度を上げて同じ内容を当て直す */
+  html[data-visual-mode="home"] .panel.toast {
+    border-radius: 1.1rem 0.45rem 1.1rem 0.45rem;
+    border-color: rgb(var(--accent-rgb) / 0.45);
+    box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(var(--accent-rgb) / 0.12);
+  }
+
+  /* --- 森モード・スマホのヘッダーとタブ列 ---
+     ヘッダー(96px)とタブ列(約70px)で画面の2割を使っていたので、林の帯を少し低くし、タブ列を詰める。
+     林の Canvas は ResizeObserver で測り直すので、高さを変えても絵は崩れない。
+     分類の2段表示(GroupedTabNav)の上段は、狭い画面では5等分・アイコンを上に積む専用の詰め方が
+     あるので、その段と下段(.tab-nav-sub)はこの札の大きさの対象から外す */
+  @media (max-width: 639.98px) {
+    html[data-visual-mode="home"] header canvas {
+      height: 5rem;
+    }
+    html[data-visual-mode="home"] .tab-nav {
+      padding-bottom: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    html[data-visual-mode="home"] .tab-nav:not(.tab-nav-sub):not(.tab-nav-groups) .tab-chip {
+      min-height: 2.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+    }
+  }
+}
 
 /* ══ 設定タブのON/OFFスイッチ(components/sections/SettingsSection.tsx の button[data-toggle]) ══
    設定タブはピル型のボタンが90個近く並び、切り替え(ON/OFF)と、押すと何かが起きる操作
@@ -4867,6 +5200,25 @@ html[data-visual-mode="natsuyasumi"] button[data-toggle]:not(#_) {
     to {
       opacity: 1;
       transform: scale(1);
+    }
+  }
+  /* スマホではダイアログを画面の下から出す(Modal.tsx が items-end にしている)。親指の届く所に
+     出てくるので、広がるより「下から少しせり上がる」動きの方が出どころと合う。
+     上の .modal-scrim > .panel の animation の一括指定より後ろに置かないと名前が上書きされる。
+     下の動きを減らす設定の animation: none はさらに後ろなので、そちらが勝つ */
+  @media (max-width: 639.98px) {
+    .modal-scrim > .panel {
+      animation-name: modal-sheet-in;
+    }
+  }
+  @keyframes modal-sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
     }
   }
 

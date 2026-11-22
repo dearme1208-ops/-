@@ -23,7 +23,7 @@ function Fold({ settingKey, title, children, testId }: { settingKey: string; tit
   return (
     <section className="panel p-4" data-testid={testId}>
       <button className="flex w-full items-center justify-between text-left" onClick={() => setOpenStr(open ? "false" : "true")} aria-expanded={open}>
-        <h3 className="min-w-0 font-display text-sm font-bold text-cream/85">{title}</h3>
+        <h3 className="section-title min-w-0 font-display">{title}</h3>
         <span className="shrink-0 whitespace-nowrap text-xs text-cream/60">{open ? "▼ たたむ" : "▶ 開く"}</span>
       </button>
       {open && <div className="mt-2">{children}</div>}
@@ -39,7 +39,7 @@ export function ProjectClimbPanel({ onOpen }: { onOpen?: (id: string) => void })
   if (rows.length === 0) return null;
   return (
     <Fold settingKey="viz.projectClimbOpen" title="⛰ 案件の山登り" testId="project-climb">
-      <p className="mb-2 text-[11px] text-cream/50">
+      <p className="section-sub mb-2">
         ● が段階の進み具合、縦線が今日(登録から期日までのどこにいるか)、⚑ が期日です。縦線が ● より先なら遅れ気味です。
       </p>
       <ul className="space-y-3">
@@ -103,7 +103,7 @@ export function DueTerrainPanel() {
   const sel = days.find((d) => d.date === picked);
   return (
     <Fold settingKey="viz.dueTerrainOpen" title="🏔 これから2週間の期日" testId="due-terrain">
-      <div className="flex h-28 items-end gap-1">
+      <div className="flex h-20 items-end gap-1 sm:h-28">
         {days.map((d) => {
           const n = d.todos.length + d.projects.length;
           const dow = new Date(`${d.date}T00:00:00`).getDay();
@@ -209,7 +209,7 @@ export function WaitingHourglassPanel({ kind, onOpen }: { kind: "todo" | "projec
         {items.length}件待ち
         {overdueCount > 0 && <span className="ml-1 font-bold text-alert">・催促どき {overdueCount}件 ⏰</span>}
       </p>
-      <p className="mb-2 text-[11px] text-cream/50">
+      <p className="section-sub mb-2">
         待ち始めてから{nudgeDays}日で砂が落ちきり、催促の目安です(点線)。目安を過ぎた分は赤で伸びます。
       </p>
       <ul className="space-y-2.5">

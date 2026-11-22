@@ -53,19 +53,21 @@ export default function Modal({
   }, []);
   const maxWidthClass = size === "xl" ? "max-w-6xl" : size === "lg" ? "max-w-2xl" : "max-w-md";
   // 本日の作業は他のタブを見ている間も裏で動き続け(app/page.tsx)、予定の時刻などで
-  // 確認のダイアログを出す。裏に隠した画面の中にあっても見えるよう、ダイアログは画面の直下に出す
+  // 確認のダイアログを出す。裏に隠した画面の中にあっても見えるよう、ダイアログは画面の直下に出す。
+  // スマホでは画面の下寄せ(親指の届く所)に出し、広い画面では中央に出す。見出しの下に区切り線を引き、
+  // 見出しと中身の境目を分かりやすくする(見出しは各タブのパネル見出しと同じ section-title)
   const node = (
-    <div ref={scrimRef} className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div ref={scrimRef} className="modal-scrim fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-2 sm:items-center sm:p-4">
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`panel flex max-h-[90vh] w-full ${maxWidthClass} flex-col p-5 outline-none`}
+        className={`panel flex max-h-[88dvh] w-full sm:max-h-[90vh] ${maxWidthClass} flex-col p-4 outline-none sm:p-5`}
       >
-        <div className="mb-3 flex shrink-0 items-center justify-between">
-          <h3 id={titleId} className="font-display text-lg font-bold text-cream">{title}</h3>
+        <div className="mb-3 flex shrink-0 items-center justify-between gap-2 border-b border-cream/10 pb-2">
+          <h3 id={titleId} className="section-title font-display text-lg">{title}</h3>
           {onClose && (
             <button onClick={onClose} className="-mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-cream/70 hover:bg-cream/10 hover:text-cream" aria-label="閉じる">
               ✕

@@ -65,7 +65,7 @@ export function DayGapsList({
   const count = gaps.length + longSpans.length + pendingStamps;
   return (
     <div className="space-y-3 text-sm" data-testid="day-gaps">
-      <h4 className="font-display text-sm font-bold text-cream/85">
+      <h4 className="section-title font-display">
         🧩 抜けを埋める{count > 0 ? `（${count}）` : ""}
       </h4>
       {count === 0 && <p className="empty-state">埋める所はありません。今日の記録はつながっています。</p>}
