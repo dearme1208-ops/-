@@ -24,7 +24,13 @@ export function subscribeToasts(listener: Listener): () => void {
   };
 }
 
-export function showUndoToast(message: string, onUndo?: () => void, durationMs = 6000) {
+// 表示時間を省いた時の既定。「元に戻す」付きは押すかどうか考える間が要るので長めに出す
+// (6秒では読み終える前に消えることがあった)。知らせだけのものは従来どおり6秒
+export const DEFAULT_TOAST_MS = 6000;
+export const DEFAULT_UNDO_TOAST_MS = 10000;
+
+export function showUndoToast(message: string, onUndo?: () => void, durationMs?: number) {
+  durationMs ??= onUndo ? DEFAULT_UNDO_TOAST_MS : DEFAULT_TOAST_MS;
   // 同じ知らせが既に出ていれば重ねて出さない(複数の画面が同じ出来事に反応した時に2つ並ばないように)
   if (!onUndo && toasts.some((t) => t.message === message && !t.onUndo)) return;
   const id = crypto.randomUUID();

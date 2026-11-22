@@ -1,7 +1,7 @@
 "use client";
 
 import { readTextFile } from "@/lib/csv";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   DndContext,
@@ -271,9 +271,11 @@ export default function TodoSection({
       return [];
     }
   }, [savedViewsJson]);
-  function saveCurrentAsView() {
-    const name = prompt("この条件に名前を付けて保存します");
-    if (!name || !name.trim()) return;
+  // 名前は小さな窓で聞く(prompt()はスマホのPWAで出ないことがあるため)。開いている間だけtrue
+  const [namingView, setNamingView] = useState(false);
+  function saveCurrentAsView(name: string) {
+    setNamingView(false);
+    if (!name.trim()) return;
     const view: SavedTodoView =
       filterTagsMulti.length > 0
         ? { id: uid(), name: name.trim(), filterTag: "", filterCategory, filterCustomer, filterTags: filterTagsMulti }
@@ -1576,10 +1578,11 @@ export default function TodoSection({
             </div>
           ))}
           {(filterTag || filterTagsMulti.length > 0 || filterCategory || filterCustomer) && (
-            <button className="btn-pill-outline text-xs" onClick={saveCurrentAsView}>
+            <button className="btn-pill-outline text-xs" onClick={() => setNamingView(true)}>
               + この条件を保存
             </button>
           )}
+          {namingView && <SavedViewNameDialog onSubmit={saveCurrentAsView} onClose={() => setNamingView(false)} />}
         </div>
       )}
 
@@ -2541,7 +2544,8 @@ function SubtaskRow({
   // スマホでは添付(画像・メール)の追加ボタンを「📎」を押したときだけ出す
   const [showAttach, setShowAttach] = useState(false);
   const subMailInputRef = useRef<HTMLInputElement>(null);
-  const [subMailError, setSubMailError] = useState(false);
+  // 読み込めなかった理由(空なら失敗していない)。大きすぎる等の理由が分かる時はそれを出す
+  const [subMailError, setSubMailError] = useState("");
   return (
     <div
       className={`rounded-lg border border-cream/15 bg-cream/[0.025] px-2 py-1.5 transition-colors hover:border-cream/25 hover:bg-cream/[0.05] ${
@@ -2646,10 +2650,10 @@ function SubtaskRow({
             if (!file) return;
             e.target.value = "";
             try {
-              setSubMailError(false);
+              setSubMailError("");
               onUpdateSubtaskMail(sub, await attachMailFile(file));
-            } catch {
-              setSubMailError(true);
+            } catch (err) {
+              setSubMailError(err instanceof Error ? err.message : "読み込み失敗");
             }
           }}
         />
@@ -2680,7 +2684,7 @@ function SubtaskRow({
             📧
           </button>
         )}
-        {subMailError && <span className="text-[9px] text-alert">読み込み失敗</span>}
+        {subMailError && <span className="text-[9px] text-alert">{subMailError}</span>}
         <input
           key={sub.id + (sub.dueDate ?? "")}
           type="date"
@@ -3373,11 +3377,12 @@ function TaskMailField({ task }: { task: TodoTask }) {
       ? { mailFileDataUrl: task.mailFileDataUrl, mailFileName: task.mailFileName ?? "mail.msg", mailSubject: task.mailSubject ?? "" }
       : undefined
   );
-  const [error, setError] = useState(false);
+  // 読み込めなかった理由(空なら失敗していない)。大きすぎる等の理由が分かる時はそれを出す
+  const [error, setError] = useState("");
 
   async function handleFile(file: File) {
     try {
-      setError(false);
+      setError("");
       const attached = await attachMailFile(file);
       setMail(attached);
       await db.todoTasks.update(task.id, {
@@ -3385,8 +3390,8 @@ function TaskMailField({ task }: { task: TodoTask }) {
         mailFileName: attached.mailFileName,
         mailSubject: attached.mailSubject,
       });
-    } catch {
-      setError(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "読み込み失敗(.msg形式か確認してください)");
     }
   }
   async function removeMail() {
@@ -3429,7 +3434,7 @@ function TaskMailField({ task }: { task: TodoTask }) {
           📧 メールを添付 (.msg)
         </button>
       )}
-      {error && <span className="text-xs text-alert">読み込み失敗(.msg形式か確認してください)</span>}
+      {error && <span className="text-xs text-alert">{error}</span>}
     </div>
   );
 }
@@ -4390,5 +4395,43 @@ function KanbanCard({ task, locked, onOpenDetail }: { task: TodoTask; locked: bo
         {task.dueDate && <span>{formatDateJp(task.dueDate)}</span>}
       </div>
     </button>
+  );
+}
+
+// 保存する条件に名前を付けてもらう小さな窓(prompt()の代わり)。Enterで保存、Esc(Modal側)・キャンセルで閉じる
+function SavedViewNameDialog({ onSubmit, onClose }: { onSubmit: (name: string) => void; onClose: () => void }) {
+  const [value, setValue] = useState("");
+  const inputId = useId();
+  const canSave = value.trim() !== "";
+  return (
+    <Modal title="この条件を保存" onClose={onClose}>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSave) onSubmit(value.trim());
+        }}
+      >
+        <label htmlFor={inputId} className="block text-sm text-cream/70">
+          この条件の名前
+        </label>
+        <input
+          id={inputId}
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          autoFocus
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-pill-outline text-sm" onClick={onClose}>
+            キャンセル
+          </button>
+          <button type="submit" className="btn-pill text-sm" disabled={!canSave}>
+            保存
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

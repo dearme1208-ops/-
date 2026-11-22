@@ -16,6 +16,8 @@ import {
 import { formatDateJp, formatHms, todayStr } from "@/lib/time";
 import { cardOverrunClass, useVisualMode } from "@/lib/theme";
 import Modal from "@/components/ui/Modal";
+import { db } from "@/lib/db";
+import { showUndoToast } from "@/lib/toast";
 import { useWorkContext } from "@/lib/useWorkContext";
 
 // 「計測中」「一時停止中」のまま日をまたいで放置された作業をアプリ起動時に検出し、
@@ -114,10 +116,15 @@ export default function OrphanTaskModal() {
                 )}
                 <button
                   className="btn-pill-outline text-xs text-alert"
-                  onClick={() => {
-                    if (confirm(`「${workCtx.label(task)}」を実績に反映せず削除しますか?この操作は取り消せません。`)) {
-                      discardOrphanedDailyTask(task);
-                    }
+                  onClick={async () => {
+                    // 確認は出さずに消し、「元に戻す」で消す前の作業(計測の区切りも含めて)をそのまま戻す
+                    const snapshot = await db.dailyTasks.get(task.id);
+                    await discardOrphanedDailyTask(task);
+                    if (!snapshot) return;
+                    showUndoToast(`「${workCtx.label(task)}」を記録せず削除しました`, async () => {
+                      // 同じ作業がもう作り直されていたら、古い控えで上書きしない
+                      if (!(await db.dailyTasks.get(snapshot.id))) await db.dailyTasks.add(snapshot);
+                    });
                   }}
                 >
                   記録せず削除

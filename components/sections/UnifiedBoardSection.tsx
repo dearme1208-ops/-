@@ -749,8 +749,8 @@ export default function UnifiedBoardSection({
     const segments = [...task.segments, { start: Date.now() }];
     await db.dailyTasks.update(task.id, { segments, status: "running" });
   }
-  async function completeTask(task: DailyTask, skipConfirm = false) {
-    if (!skipConfirm && !confirm(`「${task.category} / ${workLabel(task)}」を完了にしますか?`)) return;
+  // 確認は呼び出し元の盤面内ダイアログ(completeTarget)で済ませているので、ここでは聞き直さない
+  async function completeTask(task: DailyTask) {
     await finishDailyTask(task);
   }
 
@@ -767,8 +767,8 @@ export default function UnifiedBoardSection({
     const target = completeTarget;
     if (!target) return;
     setCompleteTarget(null);
-    if (target.kind === "task") await completeTask(target.task, true);
-    else if (target.kind === "todo") await completeTodo(target.todo, true);
+    if (target.kind === "task") await completeTask(target.task);
+    else if (target.kind === "todo") await completeTodo(target.todo);
     else await toggleProjectStage(target.project, target.stageId);
   }
 
@@ -846,8 +846,8 @@ export default function UnifiedBoardSection({
   async function moveTodo(id: string, x: number, y: number) {
     await db.todoTasks.update(id, { boardX: x, boardY: y });
   }
-  async function completeTodo(task: TodoTask, skipConfirm = false) {
-    if (!skipConfirm && !confirm(`「${task.title}」を完了にしますか?`)) return;
+  // completeTaskと同じく、確認は盤面内ダイアログ側で済んでいる
+  async function completeTodo(task: TodoTask) {
     await completeTodoTask(task, today);
   }
   // カードの中のサブタスクは1タップで切り替える。親タスクの完了と違って取り消しが
@@ -899,8 +899,15 @@ export default function UnifiedBoardSection({
   }
   async function clearStrokes() {
     if (!selectedBoardId || !strokes || strokes.length === 0) return;
-    if (!confirm("このボードの手書きをすべて消去します。よろしいですか?")) return;
-    await db.memoStrokes.where("boardId").equals(selectedBoardId).delete();
+    // 確認ダイアログを挟む代わりに、消した線をまるごと控えておき「元に戻す」で戻せるようにする
+    const boardId = selectedBoardId;
+    const removed = await db.memoStrokes.where("boardId").equals(boardId).toArray();
+    await db.memoStrokes.where("boardId").equals(boardId).delete();
+    showUndoToast("このボードの手書きを消去しました", async () => {
+      // 取り消すまでの間に描き足した線は残したまま、消した線のうちまだ無いものだけを戻す
+      const existing = new Set((await db.memoStrokes.where("boardId").equals(boardId).primaryKeys()) as string[]);
+      await db.memoStrokes.bulkAdd(removed.filter((st) => !existing.has(st.id)));
+    });
   }
 
   // ------------------------------------------------------------
@@ -982,9 +989,19 @@ export default function UnifiedBoardSection({
   async function moveShape(id: string, x: number, y: number) {
     await db.boardShapes.update(id, { x, y });
   }
-  async function removeShape(id: string, skipConfirm = false) {
-    if (!skipConfirm && !confirm("この図形を削除します。よろしいですか?")) return;
+  // 削除は確認を挟まずにすぐ行い、トーストの「元に戻す」で戻せるようにする。
+  // 戻す処理を返すので、まとめて消す(Deleteキー)ときは呼び出し側でトーストを1つにまとめる
+  async function removeShape(id: string, silent = false): Promise<(() => Promise<void>) | undefined> {
+    const snapshot = await db.boardShapes.get(id);
+    if (!snapshot) return undefined;
     await db.boardShapes.delete(id);
+    const undo = async () => {
+      // 既に同じidが戻っていれば(二重に押された等)何もしない
+      if (await db.boardShapes.get(id)) return;
+      await db.boardShapes.add(snapshot);
+    };
+    if (!silent) showUndoToast("図形を削除しました", undo);
+    return undo;
   }
   async function setShapeColor(id: string, color: string) {
     await db.boardShapes.update(id, { color });
@@ -1032,13 +1049,41 @@ export default function UnifiedBoardSection({
   // ToDoを下げるときはマイデイからも外し、boardHiddenを立てる。myDayDateだけ外しても
   // 「重要」等の自動表示条件に該当していると自動配置がすぐ置き直してしまうため、
   // 明示的に「下げた」状態を覚えておく(再度「一覧から置く」で置くとクリアされる)
-  async function removeTodo(todo: TodoTask, skipConfirm = false) {
-    if (!skipConfirm && !confirm(`「${todo.title}」をボードから下げますか?(マイデイからも外れます。ToDo自体は消えません)`)) return;
-    await db.todoTasks.update(todo.id, { boardX: undefined, boardY: undefined, myDayDate: undefined, boardHidden: true });
+  // マイデイから外すのはユーザー自身の操作なので、myDayDismissedDateも今日にする。付けないと、
+  // 今日が期日のToDoはToDoタブのマイデイ自動追加ですぐ戻り、盤面にも載り直してしまう。
+  // 確認は挟まず、トーストの「元に戻す」で下げる前の状態に戻せるようにする
+  async function removeTodo(todo: TodoTask, silent = false): Promise<(() => Promise<void>) | undefined> {
+    const before = await db.todoTasks.get(todo.id);
+    if (!before) return undefined;
+    const removedOn = todayStr();
+    await db.todoTasks.update(todo.id, { boardX: undefined, boardY: undefined, myDayDate: undefined, myDayDismissedDate: removedOn, boardHidden: true });
+    const undo = async () => {
+      // 取り消すまでの間に置き直された・マイデイへ入れ直された場合は、そちらの新しい状態を優先して触らない
+      const row = await db.todoTasks.get(todo.id);
+      if (!row || row.boardX !== undefined || !row.boardHidden || row.myDayDate !== undefined) return;
+      await db.todoTasks.update(todo.id, {
+        boardX: before.boardX,
+        boardY: before.boardY,
+        myDayDate: before.myDayDate,
+        myDayDismissedDate: before.myDayDismissedDate,
+        boardHidden: before.boardHidden,
+      });
+    };
+    if (!silent) showUndoToast(`「${todo.title}」をボードから下げました（マイデイからも外しました。ToDoは残っています）`, undo);
+    return undo;
   }
-  async function removeProject(project: ProjectItem, skipConfirm = false) {
-    if (!skipConfirm && !confirm(`「${project.title}」をボードから下げますか?(案件自体は消えません)`)) return;
+  async function removeProject(project: ProjectItem, silent = false): Promise<(() => Promise<void>) | undefined> {
+    const before = await db.projects.get(project.id);
+    if (!before) return undefined;
     await db.projects.update(project.id, { boardX: undefined, boardY: undefined });
+    const undo = async () => {
+      // 取り消すまでの間に別の場所へ置き直されていれば、その位置を優先する
+      const row = await db.projects.get(project.id);
+      if (!row || row.boardX !== undefined) return;
+      await db.projects.update(project.id, { boardX: before.boardX, boardY: before.boardY });
+    };
+    if (!silent) showUndoToast(`「${project.title}」をボードから下げました（案件は残っています）`, undo);
+    return undo;
   }
 
   // ------------------------------------------------------------
@@ -1246,9 +1291,15 @@ export default function UnifiedBoardSection({
       });
     }
   }
-  async function removeStamp(id: string, skipConfirm = false) {
-    if (!skipConfirm && !confirm("このスタンプを削除します。よろしいですか?")) return;
+  // 図形と同じく、確認の代わりに消したスタンプを控えておき「元に戻す」で戻せるようにする
+  async function removeStamp(id: string) {
+    const snapshot = await db.boardStamps.get(id);
+    if (!snapshot) return;
     await db.boardStamps.delete(id);
+    showUndoToast("スタンプを削除しました", async () => {
+      if (await db.boardStamps.get(id)) return;
+      await db.boardStamps.add(snapshot);
+    });
   }
   async function setStampColor(id: string, color: string) {
     await db.boardStamps.update(id, { color });
@@ -1512,19 +1563,28 @@ export default function UnifiedBoardSection({
           (it) => selectedIds.has(it.id) && !it.locked && (it.kind === "todo" || it.kind === "project" || it.kind === "shape")
         );
         if (targets.length === 0) return;
-        // 複数選択している場合、1件ずつ確認すると煩雑なのでまとめて1回だけ確認する
-        if (!confirm(`選択中の${targets.length}件をボードから下げる/削除します。よろしいですか?`)) return;
-        for (const it of targets) {
-          if (it.kind === "todo") {
-            const todo = todos.find((t) => t.id === it.id);
-            if (todo) removeTodo(todo, true);
-          } else if (it.kind === "project") {
-            const project = projects.find((p) => p.id === it.id);
-            if (project) removeProject(project, true);
-          } else if (it.kind === "shape") {
-            removeShape(it.id, true);
+        // 確認ダイアログは出さずにすぐ下げる/消し、1件ずつトーストを出すと煩雑なので
+        // 「元に戻す」1回で全件を戻せるトーストにまとめる
+        const count = targets.length;
+        void (async () => {
+          const undos: (() => Promise<void>)[] = [];
+          for (const it of targets) {
+            let undo: (() => Promise<void>) | undefined;
+            if (it.kind === "todo") {
+              const todo = todos.find((t) => t.id === it.id);
+              if (todo) undo = await removeTodo(todo, true);
+            } else if (it.kind === "project") {
+              const project = projects.find((p) => p.id === it.id);
+              if (project) undo = await removeProject(project, true);
+            } else if (it.kind === "shape") {
+              undo = await removeShape(it.id, true);
+            }
+            if (undo) undos.push(undo);
           }
-        }
+          showUndoToast(`選択中の${count}件をボードから外しました（ToDo・案件そのものは残っています）`, async () => {
+            for (const undo of undos) await undo();
+          });
+        })();
         setSelectedIds(new Set());
       }
     }
@@ -3520,7 +3580,7 @@ export default function UnifiedBoardSection({
                   className={addWorkMode === "pending" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
                   onClick={() => setAddWorkMode("pending")}
                 >
-                  📋 追加のみ（未着手）
+                  📋 予定に入れるだけ
                 </button>
                 <button
                   className={`${addWorkMode === "afterLast" ? "btn-pill" : "btn-pill-outline"} text-xs disabled:opacity-40`}

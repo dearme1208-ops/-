@@ -60,8 +60,8 @@ test("「時間を足す」した分は実績に含まれる", async ({ page }) 
   // たまにしか使わない操作はカードの「⋯」に畳んである
   await page.getByRole("button", { name: "そのほかの操作" }).first().click();
   await clickButton(page, "時間を足す");
-  await page.getByText("手動で加算する時間").locator("..").locator("input").fill("00:05:00");
-  await clickButton(page, /^加算する$/);
+  await page.getByText("足す時間 (hh:mm:ss)").locator("..").locator("input").fill("00:05:00");
+  await clickButton(page, /^足す$/);
   await clickButton(page, /^終了$/);
   const [rec] = await readAll<Rec>(page, "records");
   near(rec.seconds * 1000, 15 * MIN);
@@ -92,7 +92,7 @@ test("未着手の作業を「かかった時間だけ記録」すると、入�
   await page.getByRole("button", { name: "そのほかの操作" }).first().click();
   await clickButton(page, "かかった時間だけ記録");
   await page.getByPlaceholder("所要時間 hh:mm:ss").fill("00:25:00");
-  await clickButton(page, "この時間で終了");
+  await clickButton(page, "この時間で記録して完了");
   const d = (await readOne<Daily>(page, "dailyTasks", "d1"))!;
   expect(d.status).toBe("done");
   const [rec] = await readAll<Rec>(page, "records");

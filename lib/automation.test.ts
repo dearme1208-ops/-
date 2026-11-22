@@ -75,6 +75,26 @@ describe("findProvisionalStart", () => {
     expect(findProvisionalStart({ ...p, now: at("13:02") })).toBeNull();
     expect(findProvisionalStart({ ...p, now: at("13:03") })).toBe(at("11:58"));
   });
+
+  it("放置から戻った時刻があれば、そこから数え直す(放置の間を未計測に含めない)", () => {
+    const p = { ...base, lastStopTime: at("12:00"), effectiveLastStopTime: at("12:00"), resumeAnchor: at("16:00") };
+    // 戻った直後は、しきい値(5分)に届くまで始めない
+    expect(findProvisionalStart({ ...p, now: at("16:00") })).toBeNull();
+    expect(findProvisionalStart({ ...p, now: at("16:04") })).toBeNull();
+    expect(findProvisionalStart({ ...p, now: at("16:05") })).toBe(at("16:00"));
+  });
+
+  it("戻った時刻より後に作業を止めていれば、そちらを起点にする", () => {
+    const p = { ...base, lastStopTime: at("16:30"), effectiveLastStopTime: at("16:30"), resumeAnchor: at("16:00") };
+    expect(findProvisionalStart({ ...p, now: at("16:40") })).toBe(at("16:30"));
+  });
+
+  it("戻った時刻が休憩中なら、休憩の終わりから数える", () => {
+    const breakRanges = [{ start: "16:00", end: "16:30" }];
+    const p = { ...base, breakRanges, lastStopTime: at("12:00"), effectiveLastStopTime: at("12:00"), resumeAnchor: at("16:10") };
+    expect(findProvisionalStart({ ...p, now: at("16:34") })).toBeNull();
+    expect(findProvisionalStart({ ...p, now: at("16:35") })).toBe(at("16:30"));
+  });
 });
 
 describe("inactivityCutoff", () => {

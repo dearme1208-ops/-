@@ -36,9 +36,16 @@ export default function WeeklyReviewModal({ onClose }: { onClose: () => void }) 
 
   async function handleMyDay() {
     if (!current || current.kind !== "todo") return;
-    await db.todoTasks.update(current.id, { myDayDate: today });
+    // 以前マイデイから外した印(myDayDismissedDate)が残っていると、自分で入れ直したのに
+    // 「外した扱い」のままになるため、追加するときは印を消しておく
+    await db.todoTasks.update(current.id, { myDayDate: today, myDayDismissedDate: undefined });
     showUndoToast(`「${current.title}」を本日のマイデイに追加しました`, async () => {
-      await db.todoTasks.update(current.id, { myDayDate: undefined });
+      // 取り消すまでの間に別の画面で外された・日付が変わった場合は、そちらを優先して触らない
+      const row = await db.todoTasks.get(current.id);
+      if (!row || row.myDayDate !== today) return;
+      // ユーザーが「今日はやらない」と取り消したので外した印を付ける。付けないと、
+      // 今日が期日のToDoはマイデイの自動追加ですぐ戻ってきてしまう
+      await db.todoTasks.update(current.id, { myDayDate: undefined, myDayDismissedDate: today });
     });
     advance();
   }

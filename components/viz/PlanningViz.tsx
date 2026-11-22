@@ -24,7 +24,7 @@ function Fold({ settingKey, title, children, testId }: { settingKey: string; tit
     <section className="panel p-4" data-testid={testId}>
       <button className="flex w-full items-center justify-between text-left" onClick={() => setOpenStr(open ? "false" : "true")} aria-expanded={open}>
         <h3 className="min-w-0 font-display text-sm font-bold text-cream/85">{title}</h3>
-        <span className="shrink-0 whitespace-nowrap text-xs text-cream/45">{open ? "▼ たたむ" : "▶ 開く"}</span>
+        <span className="shrink-0 whitespace-nowrap text-xs text-cream/60">{open ? "▼ たたむ" : "▶ 開く"}</span>
       </button>
       {open && <div className="mt-2">{children}</div>}
     </section>
@@ -143,7 +143,7 @@ export function DueTerrainPanel() {
       {sel && (
         <div className="mt-2 rounded-lg border border-cream/10 p-2 text-xs" data-testid="due-terrain-day">
           <div className="mb-1 font-bold text-cream">{formatDateJp(sel.date)}の期日</div>
-          {sel.projects.length + sel.todos.length === 0 && <div className="text-cream/50">ありません</div>}
+          {sel.projects.length + sel.todos.length === 0 && <div className="empty-state">ありません</div>}
           {sel.projects.map((p) => (
             <div key={p} className="truncate text-cream/80">📁 {p}</div>
           ))}

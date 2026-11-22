@@ -42,7 +42,8 @@ export async function parseMsgFile(file: File): Promise<ParsedMailFile> {
   const reader = new MsgReader(buffer);
   const data = reader.getFileData();
   if (data.error) {
-    throw new Error(data.error);
+    // 読み取りライブラリの英語のエラー文はそのまま見せず、何が起きたか分かる日本語にする
+    throw new Error(`メールのファイルとして読み取れませんでした（.msg形式か確認してください）`);
   }
   const subject = data.subject?.trim() || "(件名なし)";
   const from = data.senderName?.trim() || data.senderEmail?.trim() || "";

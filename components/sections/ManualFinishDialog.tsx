@@ -15,10 +15,11 @@ export default function ManualFinishDialog({
 }) {
   const [duration, setDuration] = useState("00:10:00");
 
+  // 文言はカードの「かかった時間だけ記録」にそろえる(「終了」と書くと、計測を止める操作と取り違えやすい)
   return (
     <Modal title={`「${taskName}」のかかった時間だけ記録`} onClose={onClose}>
       <p className="mb-2 text-xs text-cream/60">
-        計測し忘れていた場合、実際にかかった時間を直接入力して終了できます。
+        計測し忘れていた場合、実際にかかった時間だけを入力して記録し、完了にできます。
       </p>
       <input
         placeholder="所要時間 hh:mm:ss"
@@ -29,7 +30,7 @@ export default function ManualFinishDialog({
       />
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn-pill text-sm" onClick={() => onConfirm(parseHmsToSeconds(duration))}>
-          この時間で終了
+          この時間で記録して完了
         </button>
       </div>
     </Modal>

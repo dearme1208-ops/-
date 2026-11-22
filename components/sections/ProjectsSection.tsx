@@ -1,7 +1,7 @@
 "use client";
 
 import { readTextFile } from "@/lib/csv";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
@@ -374,25 +374,39 @@ export default function ProjectsSection({
     });
   }
 
-  // 取引先マスタの追加・リネーム・削除。既存の付箋ボード管理(MemoSection)と同じ
-  // prompt()ベースの簡易UIにして、専用の画面を増やさず案件タブ内で完結させる
-  async function addClient() {
-    const name = prompt("取引先名");
-    if (!name || !name.trim()) return;
-    const order = clients?.length ?? 0;
-    await db.clients.add({ id: uid(), name: name.trim(), order, createdAt: Date.now() });
-  }
-  async function renameClient(client: { id: string; name: string }) {
-    const name = prompt("取引先名を変更", client.name);
-    if (!name || !name.trim()) return;
-    await db.clients.update(client.id, { name: name.trim() });
+  // 取引先マスタの追加・リネーム・削除。専用の画面は増やさず、名前を1つ入れる小さな窓だけで
+  // 案件タブ内で完結させる(以前のprompt()はスマホのPWAで出ないことがあったため窓に置き換えた)
+  const [clientDialog, setClientDialog] = useState<{ kind: "add" } | { kind: "rename"; id: string; current: string } | null>(null);
+  async function submitClientDialog(name: string) {
+    const d = clientDialog;
+    setClientDialog(null);
+    if (!d) return;
+    if (d.kind === "add") {
+      const order = clients?.length ?? 0;
+      await db.clients.add({ id: uid(), name, order, createdAt: Date.now() });
+    } else {
+      await db.clients.update(d.id, { name });
+    }
   }
   async function deleteClient(client: { id: string; name: string }) {
-    if (!confirm(`取引先「${client.name}」を削除します。この取引先が付いている案件・ToDoからはタグが外れます。よろしいですか?`)) return;
-    await db.transaction("rw", db.clients, db.projects, db.todoTasks, async () => {
+    // 確認は出さずに消し、外したタグの付け先を控えておいて「元に戻す」で取引先ごと戻せるようにする
+    const removed = await db.clients.get(client.id);
+    if (!removed) return;
+    const { projectIds, todoIds } = await db.transaction("rw", db.clients, db.projects, db.todoTasks, async () => {
+      const projectIds = await db.projects.filter((p) => p.clientId === client.id).primaryKeys();
+      const todoIds = await db.todoTasks.filter((t) => t.clientId === client.id).primaryKeys();
       await db.clients.delete(client.id);
-      await db.projects.filter((p) => p.clientId === client.id).modify({ clientId: undefined });
-      await db.todoTasks.filter((t) => t.clientId === client.id).modify({ clientId: undefined });
+      await db.projects.where("id").anyOf(projectIds).modify({ clientId: undefined });
+      await db.todoTasks.where("id").anyOf(todoIds).modify({ clientId: undefined });
+      return { projectIds, todoIds };
+    });
+    showUndoToast(`取引先「${removed.name}」を削除しました`, async () => {
+      await db.transaction("rw", db.clients, db.projects, db.todoTasks, async () => {
+        if (!(await db.clients.get(removed.id))) await db.clients.add(removed);
+        // 消したあとで別の取引先を付け直した案件・ToDoはそのままにし、タグが外れたままのものだけ戻す
+        await db.projects.where("id").anyOf(projectIds).filter((p) => !p.clientId).modify({ clientId: removed.id });
+        await db.todoTasks.where("id").anyOf(todoIds).filter((t) => !t.clientId).modify({ clientId: removed.id });
+      });
     });
   }
 
@@ -880,7 +894,7 @@ export default function ProjectsSection({
               {(clients ?? []).map((c) => (
                 <span key={c.id} className="flex items-center gap-1 rounded-full border border-cream/20 px-3 py-1.5 text-sm">
                   {c.name}
-                  <button onClick={() => renameClient(c)} className="text-cream/50 hover:text-cream" aria-label={`${c.name}の名前を変更`}>
+                  <button onClick={() => setClientDialog({ kind: "rename", id: c.id, current: c.name })} className="text-cream/50 hover:text-cream" aria-label={`${c.name}の名前を変更`}>
                     ✎
                   </button>
                   <button onClick={() => deleteClient(c)} className="text-cream/50 hover:text-alert" aria-label={`${c.name}を削除`}>
@@ -888,7 +902,7 @@ export default function ProjectsSection({
                   </button>
                 </span>
               ))}
-              <button className="btn-pill-outline text-sm" onClick={addClient}>
+              <button className="btn-pill-outline text-sm" onClick={() => setClientDialog({ kind: "add" })}>
                 + 取引先を追加
               </button>
             </div>
@@ -900,6 +914,15 @@ export default function ProjectsSection({
           </>
         )}
       </div>
+      {clientDialog && (
+        <ClientNameDialog
+          key={clientDialog.kind === "rename" ? clientDialog.id : "add"}
+          title={clientDialog.kind === "add" ? "取引先を追加" : "取引先名を変更"}
+          initialValue={clientDialog.kind === "rename" ? clientDialog.current : ""}
+          onSubmit={submitClientDialog}
+          onClose={() => setClientDialog(null)}
+        />
+      )}
 
       {clientSummaries.length > 0 && (
         <div className="panel p-4">
@@ -2046,5 +2069,53 @@ function ProjectRow({
       />
     )}
     </>
+  );
+}
+
+// 取引先名を1つ入れてもらう小さな窓(prompt()の代わり)。Enterで保存、Esc(Modal側)・キャンセルで閉じる
+function ClientNameDialog({
+  title,
+  initialValue,
+  onSubmit,
+  onClose,
+}: {
+  title: string;
+  initialValue: string;
+  onSubmit: (name: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const inputId = useId();
+  const canSave = value.trim() !== "";
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSave) onSubmit(value.trim());
+        }}
+      >
+        <label htmlFor={inputId} className="block text-sm text-cream/70">
+          取引先名
+        </label>
+        <input
+          id={inputId}
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          autoFocus
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-pill-outline text-sm" onClick={onClose}>
+            キャンセル
+          </button>
+          <button type="submit" className="btn-pill text-sm" disabled={!canSave}>
+            保存
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

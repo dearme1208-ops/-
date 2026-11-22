@@ -10,6 +10,7 @@ import { hmToMin, layoutTimeboxes, minToHm } from "@/lib/timebox";
 import { useWorkContext } from "@/lib/useWorkContext";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import { showUndoToast } from "@/lib/toast";
 import PromptCopyButton from "@/components/ai/PromptCopyButton";
 import UpdateImporter from "@/components/ai/UpdateImporter";
 import LifeContextSelect from "@/components/ai/LifeContextSelect";
@@ -136,13 +137,29 @@ export default function TimeboxModal({ today, onClose }: { today: string; onClos
   }
 
   async function clearAll() {
-    if (!confirm(`${formatDateJp(date)}の時間割を外しますか?(作業そのものは残ります)`)) return;
+    // 確認は出さずに外し、外す前の枠(予定時刻・枠の終わり・「時間です」済みか)を控えて
+    // 「元に戻す」で戻せるようにする。作業そのものは消えない
+    const before: Pick<DailyTask, "id" | "scheduledTime" | "timeboxEnd" | "timeboxEndHandled">[] = [];
     await db.transaction("rw", db.dailyTasks, async () => {
       for (const t of candidates) {
-        if (t.timeboxEnd) await db.dailyTasks.update(t.id, { scheduledTime: undefined, timeboxEnd: undefined, timeboxEndHandled: undefined });
+        const cur = await db.dailyTasks.get(t.id);
+        if (!cur?.timeboxEnd) continue;
+        before.push({ id: cur.id, scheduledTime: cur.scheduledTime, timeboxEnd: cur.timeboxEnd, timeboxEndHandled: cur.timeboxEndHandled });
+        await db.dailyTasks.update(t.id, { scheduledTime: undefined, timeboxEnd: undefined, timeboxEndHandled: undefined });
       }
     });
     onClose();
+    if (before.length === 0) return;
+    showUndoToast(`${formatDateJp(date)}の時間割を外しました`, async () => {
+      await db.transaction("rw", db.dailyTasks, async () => {
+        for (const b of before) {
+          // 外したあとで新しく時間割を組んだ・時刻を入れた作業は、そちらを優先して戻さない
+          const cur = await db.dailyTasks.get(b.id);
+          if (!cur || cur.scheduledTime !== undefined || cur.timeboxEnd !== undefined) continue;
+          await db.dailyTasks.update(b.id, { scheduledTime: b.scheduledTime, timeboxEnd: b.timeboxEnd, timeboxEndHandled: b.timeboxEndHandled });
+        }
+      });
+    });
   }
 
   return (

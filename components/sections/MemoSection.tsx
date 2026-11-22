@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
@@ -37,15 +37,19 @@ import {
   serializeMemoBoard,
 } from "@/lib/memo";
 import { formatMailNoteText, openMailAttachment, parseMsgFile, readFileAsDataUrl } from "@/lib/mailImport";
-import type { BoardStamp, MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
+import type { BoardStamp, MemoBoard, MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
 import StrokeLayer from "@/components/memo/StrokeLayer";
+import Modal from "@/components/ui/Modal";
 
-// 直前に削除した付箋/手書き/連結を一時的に保持しておき、トーストから元に戻せるようにする
+// 削除した付箋/手書き/連結/スタンプ/ボードを控えておき、トーストから元に戻せるようにする
+// (ボードは中の付箋・手書き・連結・スタンプもまとめて消えるので、全部を控える)
 type MemoUndoEntry =
   | { type: "note"; note: MemoNote; connectors: MemoConnector[] }
   | { type: "strokes"; strokes: MemoStroke[]; label: string }
-  | { type: "connector"; connector: MemoConnector };
+  | { type: "connector"; connector: MemoConnector }
+  | { type: "stamp"; stamp: BoardStamp }
+  | { type: "board"; board: MemoBoard; notes: MemoNote[]; strokes: MemoStroke[]; connectors: MemoConnector[]; stamps: BoardStamp[] };
 
 const MEMO_MINIMAP_WIDTH = 140;
 const MEMO_MINIMAP_HEIGHT = Math.round((MEMO_MINIMAP_WIDTH * MEMO_BOARD_HEIGHT) / MEMO_BOARD_WIDTH);
@@ -142,38 +146,63 @@ export default function MemoSection() {
     await db.memoConnectors.delete(id);
     if (connector) pushUndo({ type: "connector", connector });
   }
-  async function editConnectorLabel(c: MemoConnector) {
-    const label = prompt("線のラベル(空欄で削除)", c.label ?? "");
-    if (label === null) return;
-    await db.memoConnectors.update(c.id, { label: label.trim() });
+  function editConnectorLabel(c: MemoConnector) {
+    setNameDialog({ kind: "connectorLabel", connector: c });
   }
 
-  // 誤って消してしまった付箋・手書き・連結線を、トーストの「元に戻す」から復元できるようにする
-  const [undoEntry, setUndoEntry] = useState<MemoUndoEntry | null>(null);
-  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 誤って消してしまった付箋・手書き・連結線などを、トーストの「元に戻す」から復元できるようにする。
+  // 以前はメモタブの中だけに帯を出していたが、ほかのタブの「元に戻す」と同じ知らせ(と操作の履歴)に揃える
   function pushUndo(entry: MemoUndoEntry) {
-    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
-    setUndoEntry(entry);
-    undoTimeoutRef.current = setTimeout(() => setUndoEntry(null), 8000);
+    showUndoToast(undoMessage(entry), () => void restoreUndo(entry));
   }
-  async function restoreUndo() {
-    if (!undoEntry) return;
-    if (undoEntry.type === "note") {
-      await db.memoNotes.add(undoEntry.note);
-      if (undoEntry.connectors.length > 0) await db.memoConnectors.bulkAdd(undoEntry.connectors);
-    } else if (undoEntry.type === "strokes") {
-      await db.memoStrokes.bulkAdd(undoEntry.strokes);
-    } else if (undoEntry.type === "connector") {
-      await db.memoConnectors.add(undoEntry.connector);
-    }
-    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
-    setUndoEntry(null);
+  async function restoreUndo(entry: MemoUndoEntry) {
+    // 戻すまでの間に、同じものが取り込み等で作り直されていたり、つなぎ先の付箋やボードが
+    // 消されていたりすることがある。新しい状態を古い控えで上書きしない・宙に浮いた線を作らないよう、
+    // 今は無いものだけを、つなぎ先が残っている時だけ戻す
+    await db.transaction("rw", [db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, db.boardStamps], async () => {
+      if (entry.type === "board") {
+        if (!(await db.memoBoards.get(entry.board.id))) await db.memoBoards.add(entry.board);
+      }
+      const boardIds = new Set<string>();
+      const boardExists = async (id: string) => {
+        if (boardIds.has(id)) return true;
+        const ok = !!(await db.memoBoards.get(id));
+        if (ok) boardIds.add(id);
+        return ok;
+      };
+      const notesToAdd = entry.type === "note" ? [entry.note] : entry.type === "board" ? entry.notes : [];
+      for (const n of notesToAdd) {
+        if ((await boardExists(n.boardId)) && !(await db.memoNotes.get(n.id))) await db.memoNotes.add(n);
+      }
+      const strokesToAdd = entry.type === "strokes" ? entry.strokes : entry.type === "board" ? entry.strokes : [];
+      for (const st of strokesToAdd) {
+        if ((await boardExists(st.boardId)) && !(await db.memoStrokes.get(st.id))) await db.memoStrokes.add(st);
+      }
+      const connectorsToAdd =
+        entry.type === "note" || entry.type === "board" ? entry.connectors : entry.type === "connector" ? [entry.connector] : [];
+      for (const c of connectorsToAdd) {
+        if (await db.memoConnectors.get(c.id)) continue;
+        if (!(await db.memoNotes.get(c.fromNoteId)) || !(await db.memoNotes.get(c.toNoteId))) continue;
+        await db.memoConnectors.add(c);
+      }
+      const stampsToAdd = entry.type === "stamp" ? [entry.stamp] : entry.type === "board" ? entry.stamps : [];
+      for (const st of stampsToAdd) {
+        if ((await boardExists(st.boardId)) && !(await db.boardStamps.get(st.id))) await db.boardStamps.add(st);
+      }
+    });
+    if (entry.type === "board") setSelectedBoardId(entry.board.id);
   }
   function undoMessage(entry: MemoUndoEntry): string {
     if (entry.type === "note") return "付箋を削除しました";
     if (entry.type === "connector") return "連結を削除しました";
+    if (entry.type === "stamp") return "スタンプを削除しました";
+    if (entry.type === "board") return `「${entry.board.title}」を削除しました`;
     return entry.label;
   }
+  // 名前を入れてもらう窓(prompt()の代わり)。どの名前を聞いているかで中身と保存先を切り替える
+  const [nameDialog, setNameDialog] = useState<
+    { kind: "newBoard" } | { kind: "renameBoard"; boardId: string; current: string } | { kind: "connectorLabel"; connector: MemoConnector } | null
+  >(null);
   const [penColor, setPenColor] = useState(DEFAULT_MEMO_PEN_COLOR);
   const [penWidth, setPenWidth] = useState(DEFAULT_MEMO_PEN_WIDTH);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -351,7 +380,7 @@ export default function MemoSection() {
 
   async function clearStrokes() {
     if (!selectedBoardId || !strokes || strokes.length === 0) return;
-    if (!confirm("この手書きをすべて消去します。よろしいですか?")) return;
+    // 確認は出さず、すぐ消して「元に戻す」で戻せるようにする(消した手書きはすべて控えてある)
     const removed = [...strokes];
     await db.memoStrokes.where("boardId").equals(selectedBoardId).delete();
     pushUndo({ type: "strokes", strokes: removed, label: "手書きを全消去しました" });
@@ -413,8 +442,9 @@ export default function MemoSection() {
         mailFileName: file.name,
       };
       await db.memoNotes.add(note);
-    } catch {
-      setMailImportError("メールファイルの読み込みに失敗しました。Outlookの.msg形式のファイルか確認してください。");
+    } catch (e) {
+      // 大きすぎる等、理由が分かっている失敗はその理由を出す
+      setMailImportError(e instanceof Error ? e.message : "メールファイルの読み込みに失敗しました。Outlookの.msg形式のファイルか確認してください。");
     } finally {
       setMailImportBusy(false);
     }
@@ -444,11 +474,8 @@ export default function MemoSection() {
   }
   async function deleteNote(id: string) {
     const note = notesById.get(id);
-    // 空の付箋(書きかけで放置されただけのもの)は確認なしで消せるようにする。
-    // 中身があるものは誤タップでの消失を防ぐため確認する(元に戻すトーストはあるが、
-    // 消してから気づくより消す前に止められる方が安心なため)
-    const hasContent = note && (note.isChecklist ? (note.checklistItems ?? []).some((i) => i.text.trim()) : note.text.trim());
-    if (hasContent && !confirm("この付箋を削除しますか?")) return;
+    // 確認は出さず、すぐ消す。付箋とつながっていた線は控えておき、「元に戻す」でまとめて戻す
+    // (確認の窓は毎回押す手間になるうえ、慣れると読まずに押してしまい守りにならないため)
     const relatedConnectors = (connectors ?? []).filter((c) => c.fromNoteId === id || c.toNoteId === id);
     await db.transaction("rw", db.memoNotes, db.memoConnectors, async () => {
       await db.memoNotes.delete(id);
@@ -481,7 +508,7 @@ export default function MemoSection() {
     await db.memoNotes.update(note.id, { autoSize, width, height });
   }
   async function duplicateNote(note: MemoNote) {
-    if (!confirm("この付箋を複製しますか?")) return;
+    // 複製は何も消さないので確認せずに作り、要らなければ「元に戻す」で消せるようにする
     maxOrderRef.current += 1;
     const copy: MemoNote = {
       ...note,
@@ -494,23 +521,45 @@ export default function MemoSection() {
       checklistItems: note.checklistItems?.map((item) => ({ ...item, id: uid() })),
     };
     await db.memoNotes.add(copy);
+    showUndoToast("付箋を複製しました", async () => {
+      // 複製のあとで書き込まれていたら、その内容ごと消してしまわないよう残す
+      const current = await db.memoNotes.get(copy.id);
+      if (current && current.updatedAt === copy.updatedAt) await db.memoNotes.delete(copy.id);
+    });
   }
   async function toggleChecklistMode(note: MemoNote) {
     const next = !note.isChecklist;
     // 表示モードを切り替えると、切り替え前の内容(テキスト⇔チェックリスト)は
-    // データとしては残るものの画面上は見えなくなる。中身がある場合だけ確認する
+    // データとしては残るものの画面上は見えなくなる。確認はせず切り替え、中身が隠れる時だけ
+    // 「元に戻す」付きで知らせる(戻せば隠れていた内容はそのまま見える)
     const hasContentToHide = next ? !!note.text.trim() : (note.checklistItems ?? []).some((i) => i.text.trim());
-    if (hasContentToHide) {
-      const message = next
-        ? "チェックリスト表示に切り替えますか?(今のテキストは非表示になります)"
-        : "テキスト表示に切り替えますか?(チェックリストの項目は非表示になります)";
-      if (!confirm(message)) return;
-    }
     const items = next && (!note.checklistItems || note.checklistItems.length === 0) ? [{ id: uid(), text: "", done: false }] : note.checklistItems;
     await db.memoNotes.update(note.id, { isChecklist: next, checklistItems: items });
+    if (!hasContentToHide) return;
+    showUndoToast(
+      next ? "チェックリスト表示にしました(テキストは隠れています)" : "テキスト表示にしました(チェックリストは隠れています)",
+      async () => {
+        // そのあとで自分でまた切り替えていたら、そちらを優先する
+        const current = await db.memoNotes.get(note.id);
+        if (current && !!current.isChecklist === next) await db.memoNotes.update(note.id, { isChecklist: !next });
+      }
+    );
   }
   async function updateChecklistItems(id: string, items: MemoChecklistItem[]) {
     await db.memoNotes.update(id, { checklistItems: items, updatedAt: Date.now() });
+  }
+  function notifyChecklistItemDeleted(noteId: string, item: MemoChecklistItem, index: number) {
+    showUndoToast(`「${item.text}」を削除しました`, async () => {
+      // 消したあとに項目を足したり並べ替えたりしていても、それを壊さないよう、
+      // 戻す時点の項目に、無くなっている1行だけを元の位置(を超えるなら末尾)へ差し込む
+      const current = await db.memoNotes.get(noteId);
+      if (!current) return;
+      const list = current.checklistItems ?? [];
+      if (list.some((i) => i.id === item.id)) return;
+      const next = [...list];
+      next.splice(Math.min(index, next.length), 0, item);
+      await db.memoNotes.update(noteId, { checklistItems: next, updatedAt: Date.now() });
+    });
   }
 
   // ------------------------------------------------------------
@@ -588,9 +637,11 @@ export default function MemoSection() {
       });
     }
   }
-  async function removeStamp(id: string, skipConfirm = false) {
-    if (!skipConfirm && !confirm("このスタンプを削除します。よろしいですか?")) return;
+  async function removeStamp(id: string) {
+    // 確認は出さず、すぐ消して「元に戻す」で戻せるようにする
+    const stamp = await db.boardStamps.get(id);
     await db.boardStamps.delete(id);
+    if (stamp) pushUndo({ type: "stamp", stamp });
   }
   async function setStampColor(id: string, color: string) {
     await db.boardStamps.update(id, { color });
@@ -623,7 +674,7 @@ export default function MemoSection() {
   async function convertNoteToTodo(note: MemoNote) {
     const title = noteTextForConvert(note);
     if (!title) return;
-    if (!confirm(`「${title}」をToDoとして追加しますか?`)) return;
+    // 確認はせずに追加し、間違えた時は知らせの「元に戻す」で取り消してもらう
     let list = await db.todoLists.orderBy("order").first();
     if (!list) {
       list = { id: uid(), title: "タスク", order: 0, createdAt: Date.now() };
@@ -650,7 +701,7 @@ export default function MemoSection() {
   async function convertNoteToProject(note: MemoNote) {
     const title = noteTextForConvert(note);
     if (!title) return;
-    if (!confirm(`「${title}」を案件として追加しますか?`)) return;
+    // 確認はせずに追加し、間違えた時は知らせの「元に戻す」で取り消してもらう
     const id = uid();
     await db.projects.add({
       id,
@@ -810,19 +861,22 @@ export default function MemoSection() {
     setStatusMessage(`付箋${data.notes.length}件・手書き${data.strokes.length}件・連結${data.connectors.length}件を読み込みました`);
   }
 
-  async function addBoard() {
-    const title = prompt("新しいメモのタイトル");
-    if (!title || !title.trim()) return;
+  async function addBoard(title: string) {
     const count = boards?.length ?? 0;
     const id = uid();
-    await db.memoBoards.add({ id, title: title.trim(), order: count, createdAt: Date.now() });
+    await db.memoBoards.add({ id, title, order: count, createdAt: Date.now() });
     setSelectedBoardId(id);
   }
-  async function renameBoard() {
-    if (!currentBoard) return;
-    const title = prompt("メモのタイトルを変更", currentBoard.title);
-    if (!title || !title.trim()) return;
-    await db.memoBoards.update(currentBoard.id, { title: title.trim() });
+  async function renameBoard(boardId: string, title: string) {
+    await db.memoBoards.update(boardId, { title });
+  }
+  async function submitNameDialog(value: string) {
+    const d = nameDialog;
+    setNameDialog(null);
+    if (!d) return;
+    if (d.kind === "newBoard") await addBoard(value);
+    else if (d.kind === "renameBoard") await renameBoard(d.boardId, value);
+    else await db.memoConnectors.update(d.connector.id, { label: value });
   }
   async function deleteBoard() {
     if (!currentBoard || !boards) return;
@@ -830,14 +884,28 @@ export default function MemoSection() {
       setStatusMessage("最後の1件は削除できません");
       return;
     }
-    if (!confirm(`「${currentBoard.title}」を削除します。付箋・手書きもすべて削除されます。よろしいですか?`)) return;
-    const boardId = currentBoard.id;
-    await db.transaction("rw", db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, async () => {
+    // 確認は出さず、ボードと中身(付箋・手書き・連結・スタンプ)をすべて控えてから消し、
+    // 「元に戻す」でまとめて戻せるようにする
+    const board = currentBoard;
+    const boardId = board.id;
+    const snapshot = await db.transaction("rw", [db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, db.boardStamps], async () => {
+      const snap: MemoUndoEntry = {
+        type: "board",
+        board,
+        notes: await db.memoNotes.where("boardId").equals(boardId).toArray(),
+        strokes: await db.memoStrokes.where("boardId").equals(boardId).toArray(),
+        connectors: await db.memoConnectors.where("boardId").equals(boardId).toArray(),
+        stamps: await db.boardStamps.where("boardId").equals(boardId).toArray(),
+      };
       await db.memoNotes.where("boardId").equals(boardId).delete();
       await db.memoStrokes.where("boardId").equals(boardId).delete();
       await db.memoConnectors.where("boardId").equals(boardId).delete();
+      // スタンプも一緒に消す(以前は残っていて、どのボードからも見えないまま溜まっていた)
+      await db.boardStamps.where("boardId").equals(boardId).delete();
       await db.memoBoards.delete(boardId);
+      return snap;
     });
+    pushUndo(snapshot);
   }
 
   return (
@@ -854,12 +922,15 @@ export default function MemoSection() {
             {b.title}
           </button>
         ))}
-        <button className="btn-pill-outline text-sm" onClick={addBoard}>
+        <button className="btn-pill-outline text-sm" onClick={() => setNameDialog({ kind: "newBoard" })}>
           + 新しいメモ
         </button>
         {currentBoard && (
           <>
-            <button className="btn-pill-outline text-xs" onClick={renameBoard}>
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={() => setNameDialog({ kind: "renameBoard", boardId: currentBoard.id, current: currentBoard.title })}
+            >
               名前を変更
             </button>
             <button className="btn-pill-outline text-xs text-alert" onClick={deleteBoard}>
@@ -1013,14 +1084,6 @@ export default function MemoSection() {
       )}
       {eraseMode && <p className="text-xs text-cream/50">消したい手書きの上をなぞってください</p>}
       {statusMessage && <p className="text-xs text-cream/50">{statusMessage}</p>}
-      {undoEntry && (
-        <div className="panel flex flex-wrap items-center gap-2 p-2 text-xs">
-          <span className="text-cream/70">{undoMessage(undoEntry)}</span>
-          <button className="btn-pill-outline text-xs" onClick={restoreUndo}>
-            元に戻す
-          </button>
-        </div>
-      )}
 
       <div className="panel flex flex-wrap items-center gap-2 p-3">
         <input
@@ -1136,6 +1199,7 @@ export default function MemoSection() {
                   onDuplicate={() => duplicateNote(note)}
                   onToggleChecklist={() => toggleChecklistMode(note)}
                   onUpdateChecklistItems={(items) => updateChecklistItems(note.id, items)}
+                  onChecklistItemDeleted={(item, index) => notifyChecklistItemDeleted(note.id, item, index)}
                 />
               ))}
               {/* スタンプは付箋に重ねてくっ付けるものなので、付箋より後(DOM上でも手前)に描く */}
@@ -1242,7 +1306,74 @@ export default function MemoSection() {
       <p className="text-[10px] text-cream/40">
         ボードは横{MEMO_BOARD_WIDTH}px×縦{MEMO_BOARD_HEIGHT}pxの固定サイズです(無限キャンバスではありません)。パネルをスクロールして全体を確認できます。
       </p>
+      {nameDialog && (
+        <TextInputDialog
+          key={nameDialog.kind}
+          title={nameDialog.kind === "newBoard" ? "新しいメモ" : nameDialog.kind === "renameBoard" ? "メモの名前を変更" : "線のラベル"}
+          label={nameDialog.kind === "connectorLabel" ? "ラベル(空欄にするとラベルを外します)" : "メモのタイトル"}
+          initialValue={
+            nameDialog.kind === "renameBoard" ? nameDialog.current : nameDialog.kind === "connectorLabel" ? nameDialog.connector.label ?? "" : ""
+          }
+          allowEmpty={nameDialog.kind === "connectorLabel"}
+          onSubmit={submitNameDialog}
+          onClose={() => setNameDialog(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// prompt()の代わりに、名前や短い文を1つ入れてもらう小さな窓。prompt()はスマホのPWAでは
+// 出ないことがあり、見た目もアプリから浮くため。Enterで保存、Esc(Modal側)・キャンセルで閉じる
+function TextInputDialog({
+  title,
+  label,
+  initialValue = "",
+  allowEmpty = false,
+  onSubmit,
+  onClose,
+}: {
+  title: string;
+  label: string;
+  initialValue?: string;
+  // 空欄での保存を許す(線のラベルのように「空欄=外す」の意味がある時)
+  allowEmpty?: boolean;
+  onSubmit: (value: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const inputId = useId();
+  const canSave = allowEmpty || value.trim() !== "";
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSave) onSubmit(value.trim());
+        }}
+      >
+        <label htmlFor={inputId} className="block text-sm text-cream/70">
+          {label}
+        </label>
+        <input
+          id={inputId}
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          autoFocus
+          className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-pill-outline text-sm" onClick={onClose}>
+            キャンセル
+          </button>
+          <button type="submit" className="btn-pill text-sm" disabled={!canSave}>
+            保存
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -1269,6 +1400,7 @@ function StickyNoteCard({
   onDuplicate,
   onToggleChecklist,
   onUpdateChecklistItems,
+  onChecklistItemDeleted,
 }: {
   note: MemoNote;
   penMode: boolean;
@@ -1292,6 +1424,7 @@ function StickyNoteCard({
   onDuplicate: () => void;
   onToggleChecklist: () => void;
   onUpdateChecklistItems: (items: MemoChecklistItem[]) => void;
+  onChecklistItemDeleted: (item: MemoChecklistItem, index: number) => void;
 }) {
   // テキストはローカルの下書きとして保持し、フォーカスが外れた時だけDBへ確定する。
   // Dexieの書き込みのたびにliveQueryのechoで再レンダーされる値をcontrolledな
@@ -1548,6 +1681,7 @@ function StickyNoteCard({
           connectMode={connectMode}
           onFocus={onFocusNote}
           onUpdate={onUpdateChecklistItems}
+          onItemDeleted={onChecklistItemDeleted}
         />
       ) : (
         <textarea
@@ -1790,11 +1924,13 @@ function ChecklistBody({
   connectMode,
   onFocus,
   onUpdate,
+  onItemDeleted,
 }: {
   items: MemoChecklistItem[];
   connectMode: boolean;
   onFocus: () => void;
   onUpdate: (items: MemoChecklistItem[]) => void;
+  onItemDeleted: (item: MemoChecklistItem, index: number) => void;
 }) {
   function toggleDone(id: string) {
     onUpdate(items.map((i) => (i.id === id ? { ...i, done: !i.done } : i)));
@@ -1803,10 +1939,12 @@ function ChecklistBody({
     onUpdate(items.map((i) => (i.id === id ? { ...i, text } : i)));
   }
   function deleteItem(id: string) {
-    // 空の項目(まだ何も書いていない行)は確認なしで消せるようにする
-    const item = items.find((i) => i.id === id);
-    if (item?.text.trim() && !confirm(`「${item.text}」を削除しますか?`)) return;
+    // 確認は出さずに消し、書いてあった項目だけ「元に戻す」付きで知らせる
+    // (空の項目は消えても困らないので知らせない)
+    const index = items.findIndex((i) => i.id === id);
+    const item = items[index];
     onUpdate(items.filter((i) => i.id !== id));
+    if (item?.text.trim()) onItemDeleted(item, index);
   }
   function addItem() {
     onUpdate([...items, { id: uid(), text: "", done: false }]);

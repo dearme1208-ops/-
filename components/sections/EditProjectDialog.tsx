@@ -58,7 +58,8 @@ function StageRow({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [imageExpanded, setImageExpanded] = useState(false);
   const mailInputRef = useRef<HTMLInputElement>(null);
-  const [mailImportError, setMailImportError] = useState(false);
+  // 読み込めなかった理由(空なら失敗していない)。大きすぎる等の理由が分かる時はそれを出す
+  const [mailImportError, setMailImportError] = useState("");
   return (
     <div className="space-y-1.5 rounded-lg bg-ink/50 px-2 py-1.5">
       {/* 1行目: 並び替え・チェック・件名・削除だけの最小限。項目数が多いこの行を
@@ -139,10 +140,10 @@ function StageRow({
             if (!file) return;
             e.target.value = "";
             try {
-              setMailImportError(false);
+              setMailImportError("");
               onSetMail(stage.id, await attachMailFile(file));
-            } catch {
-              setMailImportError(true);
+            } catch (err) {
+              setMailImportError(err instanceof Error ? err.message : "読み込み失敗");
             }
           }}
         />
@@ -173,7 +174,7 @@ function StageRow({
             📧
           </button>
         )}
-        {mailImportError && <span className="text-[9px] text-alert">読み込み失敗</span>}
+        {mailImportError && <span className="text-[9px] text-alert">{mailImportError}</span>}
         {isCountBased ? (
           <div className="flex shrink-0 items-center gap-1 text-[11px] text-cream/70">
             <input
@@ -310,7 +311,8 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       ? { mailFileDataUrl: project.mailFileDataUrl, mailFileName: project.mailFileName ?? "mail.msg", mailSubject: project.mailSubject ?? "" }
       : undefined
   );
-  const [mailImportError, setMailImportError] = useState(false);
+  // 読み込めなかった理由(空なら失敗していない)。大きすぎる等の理由が分かる時はそれを出す
+  const [mailImportError, setMailImportError] = useState("");
   const mailInputRef = useRef<HTMLInputElement>(null);
   const [predecessorProjectIds, setPredecessorProjectIds] = useState<string[]>(project.predecessorProjectIds ?? []);
   function togglePredecessor(id: string) {
@@ -589,10 +591,10 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
               if (!file) return;
               e.target.value = "";
               try {
-                setMailImportError(false);
+                setMailImportError("");
                 setMail(await attachMailFile(file));
-              } catch {
-                setMailImportError(true);
+              } catch (err) {
+                setMailImportError(err instanceof Error ? err.message : "読み込み失敗(.msg形式か確認してください)");
               }
             }}
           />
@@ -615,7 +617,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
               📧 メールを添付 (.msg)
             </button>
           )}
-          {mailImportError && <span className="text-xs text-alert">読み込み失敗(.msg形式か確認してください)</span>}
+          {mailImportError && <span className="text-xs text-alert">{mailImportError}</span>}
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs text-cream/60">この案件専用の単価</label>

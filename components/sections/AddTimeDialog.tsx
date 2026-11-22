@@ -17,10 +17,11 @@ export default function AddTimeDialog({
 }) {
   const [manualTime, setManualTime] = useState("00:10:00");
 
+  // 文言はカードの「時間を足す」にそろえる(ボタンとダイアログで「足す」「加算」と言い方が違うと別の操作に見える)
   return (
-    <Modal title="計測時間に加算" onClose={onClose}>
+    <Modal title="時間を足す" onClose={onClose}>
       <p className="mb-3 text-sm text-cream/70">
-        「{taskName}」を完了にせず、計測時間だけ加算します。
+        「{taskName}」を完了にせず、計測時間だけ足します。
       </p>
       {gapSeconds > 0 && (
         <div className="mb-4 rounded-lg bg-ink/50 p-3">
@@ -29,12 +30,12 @@ export default function AddTimeDialog({
             <span className="font-bold text-cream">{formatHms(gapSeconds)}</span>
           </p>
           <button className="btn-pill mt-2 text-sm" onClick={() => onConfirm(gapSeconds)}>
-            この時間を加算する
+            この時間を足す
           </button>
         </div>
       )}
       <div>
-        <label className="mb-1 block text-xs text-cream/60">手動で加算する時間 (hh:mm:ss)</label>
+        <label className="mb-1 block text-xs text-cream/60">足す時間 (hh:mm:ss)</label>
         <div className="flex items-center gap-2">
           <input
             value={manualTime}
@@ -42,7 +43,7 @@ export default function AddTimeDialog({
             className="flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream tabular-nums"
           />
           <button className="btn-pill-outline text-sm" onClick={() => onConfirm(parseHmsToSeconds(manualTime))}>
-            加算する
+            足す
           </button>
         </div>
       </div>

@@ -119,7 +119,9 @@ export async function placeTodoOnBoard(todoId: string): Promise<void> {
 }
 
 export async function removeTodoFromBoard(todoId: string): Promise<void> {
-  await db.todoTasks.update(todoId, { boardX: undefined, boardY: undefined, myDayDate: undefined, boardHidden: true });
+  // ボードから下げるのはユーザー自身の操作なので「今日はマイデイから外した」印も付ける。
+  // 付けないと、今日が期日のToDoはToDoタブのマイデイ自動追加ですぐ戻り、ボードにも再び載ってしまう
+  await db.todoTasks.update(todoId, { boardX: undefined, boardY: undefined, myDayDate: undefined, myDayDismissedDate: todayStr(), boardHidden: true });
 }
 
 export async function placeProjectOnBoard(projectId: string): Promise<void> {

@@ -1,4 +1,4 @@
-import { computeEffectiveElapsedMs, isWithinBreak } from "@/lib/breaks";
+import { adjustStopTimeForBreaks, computeEffectiveElapsedMs, isWithinBreak } from "@/lib/breaks";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { haversineDistanceMeters } from "@/lib/geo";
 import { formatHms, parseHourStr } from "@/lib/time";
@@ -25,14 +25,26 @@ export function findProvisionalStart(p: {
   date: string;
   breakRanges: BreakRange[];
   thresholdMinutes: number;
+  /**
+   * 放置(操作のない状態)から戻ってきた時刻。放置の間は誰も作業していないので、
+   * その間を「未計測」に数えると、戻った瞬間に何時間もの仮計測ができてしまう。
+   * 直近の停止時刻より後なら、ここを起点に数え直す(しきい値の判定もここから)
+   */
+  resumeAnchor?: number | null;
 }): number | null {
   if (p.tasks.some((t) => t.isProvisional)) return null;
   if (p.tasks.some((t) => t.status === "running")) return null;
   if (p.lastStopTime === null || p.effectiveLastStopTime === null) return null;
   if (isWithinBreak(p.now, p.date, p.breakRanges)) return null;
-  const realElapsedMs = computeEffectiveElapsedMs(p.lastStopTime, p.now, p.date, p.breakRanges);
+  let lastStop = p.lastStopTime;
+  let effectiveStop = p.effectiveLastStopTime;
+  if (p.resumeAnchor != null && p.resumeAnchor > lastStop) {
+    lastStop = p.resumeAnchor;
+    effectiveStop = adjustStopTimeForBreaks(p.resumeAnchor, p.now, p.date, p.breakRanges);
+  }
+  const realElapsedMs = computeEffectiveElapsedMs(lastStop, p.now, p.date, p.breakRanges);
   if (realElapsedMs < p.thresholdMinutes * 60000) return null;
-  return p.effectiveLastStopTime;
+  return effectiveStop;
 }
 
 // 放置検知・移動の停止検知の共通部分: 最後の動き(操作・位置の変化)からthresholdMs以上

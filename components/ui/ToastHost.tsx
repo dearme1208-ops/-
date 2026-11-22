@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { subscribeToasts, dismissToast, type ToastItem } from "@/lib/toast";
+import { openHistory } from "@/lib/globalPanels";
 import CompletionPopupHost from "./CompletionPopupHost";
 
 export default function ToastHost() {
@@ -36,6 +37,20 @@ export default function ToastHost() {
               }}
             >
               元に戻す
+            </button>
+          )}
+          {/* トーストは数秒で消えるが、操作の履歴からは後でも戻せる。その入口が本日の作業の
+              操作の列にしか無く、ほかのタブでは気づけないので、取り消せる知らせの横にも置く */}
+          {t.onUndo && (
+            <button
+              className="shrink-0 whitespace-nowrap text-xs text-cream/60 underline-offset-2 hover:text-cream hover:underline"
+              onClick={() => {
+                openHistory();
+                dismissToast(t.id);
+              }}
+              title="操作の履歴を開く(さっきの操作を一覧から戻せます)"
+            >
+              履歴
             </button>
           )}
         </div>

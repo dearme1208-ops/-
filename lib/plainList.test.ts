@@ -68,3 +68,22 @@ describe("完了済みも含める", () => {
     expect(all).toContain("- 関連するToDo: 済んだこと（完了）");
   });
 });
+
+describe("件数管理の段階", () => {
+  it("目標件数に達した段階は、completedが立っていなくても完了として数え、チェックを付ける", () => {
+    const now = new Date("2026-10-05T10:00:00").getTime();
+    const projects = [
+      { id: "p1", title: "見積の案件", category: "営業", workName: "見積", dueDate: "2026-10-20", createdAt: now, stages: [
+        { id: "s1", title: "見積", completed: false, targetCount: 10, completedCount: 10, completedAt: now },
+        { id: "s2", title: "チーム移籍", completed: false, targetCount: 20, completedCount: 5 },
+      ] },
+    ] as unknown as ProjectItem[];
+    const snap = buildSnapshot({ projects, todoTasks: [], todoLists: [], tagOptions: [], now });
+    // 手で作ったスナップショットや古い書き出しでは completed が false のまま届くこともあるので、それも再現する
+    for (const s of snap.projects[0].stages) s.completed = false;
+    const text = snapshotToPlainList(snap);
+    expect(text).toContain("- 段階（1/2 完了）");
+    expect(text).toMatch(/- \[x\] 見積（完了.*10\/10件）/);
+    expect(text).toContain("  - [ ] チーム移籍（");
+  });
+});

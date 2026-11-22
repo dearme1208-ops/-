@@ -1,4 +1,5 @@
 import type { ProgressSnapshot, SnapshotSubtask } from "./progressSync";
+import { isStageDone } from "./projectStage";
 
 // 「今アプリに登録してある案件・ToDo」を、頼みごとや仕様書を付けずに、人もAIもそのまま読める
 // 一覧(Markdown)にする。アプリでの管理はそのままに、AIとの会話で整理・相談する材料として渡すためのもの。
@@ -40,12 +41,15 @@ function projectBlock(lines: string[], p: Snap["projects"][number], snap: Snap) 
   ].filter(Boolean) as string[];
   lines.push(...meta);
   if (p.stages.length > 0) {
-    const done = p.stages.filter((s) => s.completed).length;
+    // 件数管理の段階は目標件数に達しても completed が立たないことがある(古い書き出しや
+    // 手で作ったスナップショットなど)ため、アプリ本体と同じ isStageDone で「済み」を決める
+    const done = p.stages.filter((s) => isStageDone(s)).length;
     lines.push(`- 段階（${done}/${p.stages.length} 完了）`);
     for (const s of p.stages) {
+      const finished = isStageDone(s);
       const count = s.targetCount ? `${s.completedCount ?? 0}/${s.targetCount}件` : undefined;
-      const m = joinMeta([s.completed ? (s.completedDate ? `完了 ${s.completedDate}` : "完了") : due(s.dueDate, today), !s.completed && s.tag, count]);
-      lines.push(`  - [${s.completed ? "x" : " "}] ${md(s.title)}${m ? `（${m}）` : ""}`);
+      const m = joinMeta([finished ? (s.completedDate ? `完了 ${s.completedDate}` : "完了") : due(s.dueDate, today), !finished && s.tag, count]);
+      lines.push(`  - [${finished ? "x" : " "}] ${md(s.title)}${m ? `（${m}）` : ""}`);
     }
   }
   const related = snap.todos.filter((t) => t.projectId === p.id);

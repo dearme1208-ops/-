@@ -15,7 +15,7 @@ import {
   parseBreakRanges,
   timeToMsOfDay,
 } from "@/lib/breaks";
-import { useDraftSetting, useSetting } from "@/lib/settings";
+import { useDraftSetting, useSetting, useSettingsLoaded } from "@/lib/settings";
 import { cardOverrunClass, emphasisTextClass, getRiskTier, overrunLabel, useVisualMode } from "@/lib/theme";
 import {
   baseAccumulatedMs,
@@ -280,7 +280,7 @@ export default function TodaySection({
     [now, date, forceStopBreakRanges]
   );
   // 本日、強制ストップ済みの休憩帯のキー一覧。1つの休憩帯につき1回だけ強制停止を行うためのガード
-  const [breakStopHandledStr, setBreakStopHandledStr] = useSetting(`today.breakStopHandled.${date}`, "[]");
+  const [breakStopHandledStr] = useSetting(`today.breakStopHandled.${date}`, "[]");
   const breakStopHandled = useMemo<Set<string>>(() => {
     try {
       const parsed = JSON.parse(breakStopHandledStr);
@@ -328,6 +328,9 @@ export default function TodaySection({
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [conditionEnabledStr] = useSetting("condition.enabled", "true");
   const conditionEnabled = conditionEnabledStr === "true";
+  // 計測中のカードに時計を出すか。作業カードごとに読むと、カードの数だけDBの見張りができるのでここで読む
+  const [showTaskClockStr] = useSetting("today.showTaskClock", "true");
+  const showTaskClock = showTaskClockStr === "true";
   const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
   const simpleButtons = simpleButtonsStr === "true";
   // 下部タブバーに出す「今なにを計測しているか」。件数だけでは中身が分からないため、
@@ -341,8 +344,26 @@ export default function TodaySection({
   const growthStageEnabled = growthStageEnabledStr === "true";
   const [shortcutsEnabledStr] = useSetting("today.shortcutsEnabled", "true");
   const shortcutsEnabled = shortcutsEnabledStr === "true";
+  // 時間で自動に動く処理(時間割の終わり・休憩の強制停止・仮計測の開始・放置の打ち切り・予定の自動開始)が
+  // 見る設定が、DBから読み終わったか。読み終わる前のuseSettingは既定値を返すので、作業一覧だけ先に
+  // 届いた瞬間に「時間割で自動停止しない」「休憩の強制停止はまだ」「休憩帯なし」と誤って判断し、
+  // 止めずに確認を出す・手で再開した作業をまた止める・休憩中に仮計測を始める、が起きていた。
+  // 上の各useSettingより後に呼ぶ(同じ順に読み出すので、これが読み終わった時には上の値も届いている)
+  const automationSettingsLoaded = useSettingsLoaded([
+    "today.timeboxAutoStop",
+    "today.provisionalBreakRanges",
+    `today.breakStopHandled.${date}`,
+    "today.provisionalEnabled",
+    "today.untrackedThresholdMinutes",
+    "today.provisionalIdleThresholdHours",
+  ]);
   // 直近でマウス/キーボード操作があった時刻。放置検知で未計測を打ち切る起点に使う
   const lastActivityRef = useRef(Date.now());
+  // 放置検知に引っかかった(しばらく操作がなかった)か。戻ってきた最初の周回で、戻った時刻を
+  // 未計測の起点(resumeAnchorRef)にする。放置の間を未計測に数えると、12:00に打ち切った仮計測の後、
+  // 16:00に戻った瞬間に「12:00からの仮計測(4時間)」がまたできていた
+  const wasIdleRef = useRef(false);
+  const resumeAnchorRef = useRef<number | null>(null);
   const idleFinishInFlightRef = useRef(false);
   // 本日まだ一度も作業を停止していない場合の未計測起点。ページを開いた/日付が変わった時刻を仮の起点とする
   const sessionAnchorRef = useRef(Date.now());
@@ -626,17 +647,19 @@ export default function TodaySection({
   // (設定で、確認せずにその場で止めることもできる)
   const timeboxes = useMemo(() => timeboxesOf(tasks ?? [], date), [tasks, date]);
   const [timeboxEndPrompt, setTimeboxEndPrompt] = useState<DailyTask | null>(null);
-  const [timeboxAutoStopStr] = useSetting("today.timeboxAutoStop", "false");
   useEffect(() => {
-    if (!tasks) return;
+    if (!tasks || !automationSettingsLoaded) return;
     const ended = findEndedTimeboxes(tasks, date, now);
     if (ended.length === 0) return;
     (async () => {
+      // 「枠の終わりで止める」は、画面の値ではなくその時点のDBの値で判断する(読み込み前の既定値
+      // "false"で判断して、止めるはずの作業に確認を出していたため)
+      const autoStop = ((await db.settings.get("today.timeboxAutoStop"))?.value ?? "false") === "true";
       for (const task of ended) {
         await db.dailyTasks.update(task.id, { timeboxEndHandled: true });
         playChime();
         notify("時間です", `「${workLabel(task)}」の枠が終わりました。途中でも止めて次へ`, `timebox-${task.id}`);
-        if (timeboxAutoStopStr === "true") {
+        if (autoStop) {
           await pauseTask(task);
           showUndoToast(`⏰ 時間です。「${workLabel(task)}」を止めました`);
         } else {
@@ -645,7 +668,7 @@ export default function TodaySection({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now, tasks, date]);
+  }, [now, tasks, date, automationSettingsLoaded]);
 
   async function resolveTimeboxEnd(choice: "stop" | "extend" | "continue") {
     const target = timeboxEndPrompt;
@@ -665,7 +688,9 @@ export default function TodaySection({
 
   // 予定インポートで登録した作業(scheduledTime)が指定時刻になったら自動的に差し込み開始する
   useEffect(() => {
-    if (!tasks) return;
+    // 予定の自動開始そのものは設定を見ないが、休憩の強制停止や仮計測と同じ周回で動くため、
+    // それらの設定が読み終わってから始める(読み込み前に始めた計測を、直後に休憩の停止が止める等を避ける)
+    if (!tasks || !automationSettingsLoaded) return;
     // 同時に時刻が来た予定をまとめて始めると、どれも「何も計っていない」と見て一斉に計測中になる。
     // 1つずつ(前のが終わってから次の周回で)扱う
     const due = findDueScheduledTasks(tasks, date, now)[0];
@@ -676,7 +701,7 @@ export default function TodaySection({
       scheduleStartInFlightRef.current = false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now, tasks, date]);
+  }, [now, tasks, date, automationSettingsLoaded]);
 
   const nextTaskId = useMemo(() => {
     if (!tasks) return null;
@@ -947,11 +972,20 @@ export default function TodaySection({
   // 除外時間帯（休憩など）の最中は開始しない。しきい値の判定は休憩時間を差し引いた正味の経過時間で行うため、
   // 休憩をまたいでも休憩前に経過していた時間が無駄にならず、休憩が終わった時点で正しく超過を判定できる
   useEffect(() => {
+    if (!automationSettingsLoaded) return;
     if (!provisionalEnabled) return;
     if (!tasks) return;
     // 放置(操作のない状態が放置検知の時間を超えている)の間は始めない。始めてもすぐ放置検知が
     // 「最後の操作時刻」で打ち切って長さ0の完了になり、それが繰り返されて完了が何百件もできていた
-    if (now - lastActivityAt(lastActivityRef.current) >= provisionalIdleMs) return;
+    if (now - lastActivityAt(lastActivityRef.current) >= provisionalIdleMs) {
+      wasIdleRef.current = true;
+      return;
+    }
+    // 放置から戻った最初の周回: 戻った今を未計測の起点にする(放置の間は未計測に数えない)
+    if (wasIdleRef.current) {
+      wasIdleRef.current = false;
+      resumeAnchorRef.current = now;
+    }
     // 昨日から計り続けている作業がある間(日付をまたいだ直後)は始めない。今日の作業だけを見て
     // 「何も計っていない」と判断すると、その作業と仮計測が二重に進んでいた
     if ((allRunning ?? []).some((t) => !t.isProvisional)) return;
@@ -963,6 +997,7 @@ export default function TodaySection({
       date,
       breakRanges,
       thresholdMinutes,
+      resumeAnchor: resumeAnchorRef.current,
     });
     if (gapStart === null) return;
     (async () => {
@@ -982,32 +1017,63 @@ export default function TodaySection({
       if (!added) return;
       setTaskViewTab("running");
     })();
-  }, [provisionalEnabled, tasks, now, provisionalAnchorTime, effectiveProvisionalAnchorTime, thresholdMinutes, date, breakRanges, provisionalIdleMs]);
+  }, [automationSettingsLoaded, provisionalEnabled, tasks, now, provisionalAnchorTime, effectiveProvisionalAnchorTime, thresholdMinutes, date, breakRanges, provisionalIdleMs]);
 
   // 強制ストップ付きの休憩帯に入ったら、計測中の作業(仮計測含む)を一時停止し、
   // チェックリストを表示する。1つの休憩帯につき1回だけ行い(breakStopHandledで判定)、
   // その後は本人が休憩中に手動で計測を再開しても再度は割り込まない
+  const breakStopInFlightRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!automationSettingsLoaded) return;
     if (!activeForceStopRange || !tasks) return;
     const key = breakRangeKey(activeForceStopRange);
     if (breakStopHandled.has(key)) return;
+    if (breakStopInFlightRef.current === key) return;
+    breakStopInFlightRef.current = key;
+    const range = activeForceStopRange;
     const runningTasks = tasks.filter((t) => t.status === "running");
+    const handledKey = `today.breakStopHandled.${date}`;
     (async () => {
+      // 「止めた」の記録は、画面の値ではなくその時点のDBの値に足し込む(lib/panelUsage.tsと同じ)。
+      // 画面の値は読み込み前だと既定の"[]"なので、それを元に書くと記録が消え、手で再開した作業を
+      // また止めていた。既に記録があれば(別の窓・直前の周回で止め済み)何もしない
+      const alreadyHandled = await db.transaction("rw", db.settings, async () => {
+        let list: unknown[] = [];
+        try {
+          const parsed = JSON.parse((await db.settings.get(handledKey))?.value ?? "[]");
+          if (Array.isArray(parsed)) list = parsed;
+        } catch {
+          // 壊れた記録は空として扱う
+        }
+        if (list.includes(key)) return true;
+        await db.settings.put({ key: handledKey, value: JSON.stringify([...list, key]) });
+        return false;
+      });
+      if (alreadyHandled) return;
       for (const t of runningTasks) await pauseTask(t);
-    })();
-    setBreakStopHandledStr(JSON.stringify([...breakStopHandled, key]));
-    setBreakChecklistRange(activeForceStopRange);
-  }, [activeForceStopRange, tasks, breakStopHandled]);
+      setBreakChecklistRange(range);
+    })()
+      .catch((e) => console.error("休憩の強制停止に失敗しました", e))
+      .finally(() => {
+        breakStopInFlightRef.current = null;
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [automationSettingsLoaded, activeForceStopRange, tasks, breakStopHandled, date]);
 
   // 放置検知: マウス/キーボード操作もタブの表示もない状態が一定時間続いたら、
   // 未計測の計測を「最後に操作していた時刻」で自動的に打ち切る。定時後・休日に
   // PCを開いたまま放置しても、際限なく計測され続けないようにするための保険
   useEffect(() => {
+    // 放置検知の時間(provisionalIdleThresholdHours)が読み込み前の既定値(3時間)のままだと、
+    // 短く設定している人の仮計測を打ち切れず、長く設定している人の仮計測を早く打ち切ってしまう
+    if (!automationSettingsLoaded) return;
     if (!provisionalTask || provisionalTask.status !== "running") return;
     const cutoff = inactivityCutoff(provisionalTask, lastActivityAt(lastActivityRef.current), now, provisionalIdleMs);
     if (cutoff === null) return;
     if (idleFinishInFlightRef.current) return;
     idleFinishInFlightRef.current = true;
+    // 放置で打ち切ったので、戻ってきた時は戻った時刻から未計測を数え直す(上の仮計測の自動開始)
+    wasIdleRef.current = true;
     stopProvisionalAt(provisionalTask, cutoff).then(() => {
       idleFinishInFlightRef.current = false;
       const hoursLabel = Math.round((provisionalIdleMs / 3600000) * 10) / 10;
@@ -1017,7 +1083,7 @@ export default function TodaySection({
         "provisional-idle-stop"
       );
     });
-  }, [now, provisionalTask, provisionalIdleMs]);
+  }, [automationSettingsLoaded, now, provisionalTask, provisionalIdleMs]);
 
   // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する
   // （オフの場合や、トラブル対応などで一時停止中の場合は何もしない）
@@ -1351,9 +1417,16 @@ export default function TodaySection({
   // ボタンを押した時点では中身を確認するだけで、実際の生成(既存の削除・追加)は
   // 確認モーダルで「生成する」を押すまで行わない。ネイティブのconfirm/alertは
   // テーマの見た目に合わず浮いてしまうため、他の確認と同じ自前のModalに揃えた
-  const [templateConfirm, setTemplateConfirm] = useState<{ items: TemplateItem[]; existingCount: number } | null>(
+  const [templateConfirm, setTemplateConfirm] = useState<{ items: TemplateItem[]; replaceCount: number } | null>(
     null
   );
+
+  // テンプレートで置き換えるのは、未着手・一時停止中の作業だけ。完了した作業は時間が既に実績に入っており、
+  // 消すと後から編集・取り消しができなくなる。計測中の作業と仮計測(未計測の時間)も、消すと計った時間が
+  // 失われるので残す
+  function isReplacedByTemplate(t: DailyTask): boolean {
+    return !t.isProvisional && (t.status === "pending" || t.status === "paused");
+  }
 
   async function requestGenerateFromTemplate() {
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
@@ -1361,31 +1434,62 @@ export default function TodaySection({
       showUndoToast(`${WEEKDAY_LABELS[weekday]}曜日のテンプレートが空です。先に「曜日別テンプレート」で登録してください。`);
       return;
     }
-    const existingCount = await db.dailyTasks.where("date").equals(date).count();
-    setTemplateConfirm({ items, existingCount });
+    const existing = (await db.dailyTasks.where("date").equals(date).toArray()).filter((t) => !t.isProvisional);
+    // 仮計測のほかに作業が無ければ、消えるものが無いので確認せずにそのまま作る(後から「元に戻す」もできる)
+    if (existing.length === 0) {
+      await generateFromTemplate(items);
+      return;
+    }
+    setTemplateConfirm({ items, replaceCount: existing.filter(isReplacedByTemplate).length });
   }
 
   async function confirmGenerateFromTemplate() {
     if (!templateConfirm) return;
-    const existing = await db.dailyTasks.where("date").equals(date).toArray();
-    if (existing.length > 0) {
-      await db.dailyTasks.bulkDelete(existing.map((e) => e.id));
-    }
-    const newTasks: DailyTask[] = templateConfirm.items.map((item, idx) => ({
-      id: uid(),
-      date,
-      order: idx,
-      masterTaskId: item.masterTaskId,
-      category: item.category,
-      name: item.name,
-      estimatedSeconds: item.estimatedSeconds,
-      status: "pending",
-      segments: [],
-      accumulatedMs: 0,
-      isSpontaneous: false,
-    }));
-    await db.dailyTasks.bulkAdd(newTasks);
+    const { items } = templateConfirm;
     setTemplateConfirm(null);
+    await generateFromTemplate(items);
+  }
+
+  async function generateFromTemplate(items: TemplateItem[]) {
+    // 確認を出した後に状態が変わっていることがあるので、消す対象はこの時点のDBから選び直す
+    const { removed, created } = await db.transaction("rw", db.dailyTasks, async () => {
+      const existing = await db.dailyTasks.where("date").equals(date).toArray();
+      const removed = existing.filter(isReplacedByTemplate);
+      const kept = existing.filter((t) => !isReplacedByTemplate(t));
+      if (removed.length > 0) await db.dailyTasks.bulkDelete(removed.map((t) => t.id));
+      // 残した作業(計測中・完了)と並び順が重ならないよう、その後ろに並べる
+      const baseOrder = kept.reduce((m, t) => Math.max(m, t.order + 1), 0);
+      const created: DailyTask[] = items.map((item, idx) => ({
+        id: uid(),
+        date,
+        order: baseOrder + idx,
+        masterTaskId: item.masterTaskId,
+        category: item.category,
+        name: item.name,
+        estimatedSeconds: item.estimatedSeconds,
+        status: "pending",
+        segments: [],
+        accumulatedMs: 0,
+        isSpontaneous: false,
+      }));
+      await db.dailyTasks.bulkAdd(created);
+      return { removed, created };
+    });
+    showUndoToast(`テンプレートから${created.length}件作りました`, async () => {
+      await db.transaction("rw", db.dailyTasks, async () => {
+        // 作った作業のうち、その後に始めた・直したものは残す(作ったときのままのものだけ消す)
+        for (const t of created) {
+          const current = await db.dailyTasks.get(t.id);
+          if (current && current.status === "pending" && JSON.stringify(current) === JSON.stringify(t)) {
+            await db.dailyTasks.delete(t.id);
+          }
+        }
+        // 置き換えで消した作業を、消す前の姿に戻す(同じIDが既にあれば、そちらを優先して触らない)
+        for (const t of removed) {
+          if (!(await db.dailyTasks.get(t.id))) await db.dailyTasks.put(t);
+        }
+      });
+    });
   }
 
   // 当日まだ何も開始しておらず、体調記録も未設定の状態で最初の作業を開始しようとした場合、
@@ -2707,6 +2811,8 @@ export default function TodaySection({
   const taskCardCtx: TaskCardContext = {
     methodSuggestions,
     durationRangeByMaster,
+    showTaskClock,
+    conditionLogs,
     now,
     themedMode,
     va11hallaMode,
@@ -3506,7 +3612,7 @@ export default function TodaySection({
         <TemplateConfirmDialog
           weekday={weekday}
           itemCount={templateConfirm.items.length}
-          existingCount={templateConfirm.existingCount}
+          replaceCount={templateConfirm.replaceCount}
           onConfirm={confirmGenerateFromTemplate}
           onClose={() => setTemplateConfirm(null)}
         />

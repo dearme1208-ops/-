@@ -20,6 +20,21 @@ export function useSettingLoaded(key: string): boolean {
   return row !== undefined;
 }
 
+// いくつかの設定が、まとめてIndexedDBから読み終わったかどうか(行が無い設定も「読み終わった」に数える)。
+// useSettingは読み終わるまで既定値を返すので、設定を見て自動で記録を書き換える処理(時間割の終わり・
+// 休憩の強制停止・仮計測など)は、これがtrueになるまで待たせる。作業一覧はDexieのキャッシュで先に
+// 届くことがあり、そのまま動くと「既定値の設定」で判断して誤った停止・開始をしていた。
+// 戻り値に読み込んだキーの組を持たせ、キーが変わった(日付が変わった等)直後に古い結果で
+// 「読み終わった」と判断しないようにする
+export function useSettingsLoaded(keys: string[]): boolean {
+  const keysKey = keys.join("\n");
+  const loadedFor = useLiveQuery(async () => {
+    await db.settings.bulkGet(keysKey.split("\n"));
+    return keysKey;
+  }, [keysKey]);
+  return loadedFor === keysKey;
+}
+
 // 起動直後の一瞬だけ、まだIndexedDBから読めていない設定の代わりに
 // localStorageの控え(lib/boot.ts)を使う版。見た目を決めてしまう設定にだけ使う。
 // これがないと、最初の描画が必ずOFFモードの姿になってしまう

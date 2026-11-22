@@ -14,13 +14,14 @@ import ConditionGlyph from "@/components/ui/ConditionGlyph";
 export function TemplateConfirmDialog({
   weekday,
   itemCount,
-  existingCount,
+  replaceCount,
   onConfirm,
   onClose,
 }: {
   weekday: Weekday;
   itemCount: number;
-  existingCount: number;
+  /** テンプレートで置き換える(消える)未着手・一時停止中の作業の件数。完了・計測中・仮計測は残る */
+  replaceCount: number;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -30,10 +31,13 @@ export function TemplateConfirmDialog({
         <p>
           {WEEKDAY_LABELS[weekday]}曜日のテンプレート（{itemCount}件）から、本日の作業リストを作成します。
         </p>
-        {existingCount > 0 && (
+        {/* 何が消えて何が残るかを件数で正確に伝える(以前は「全部消える」と読める文で、実際にも全部消していた) */}
+        {replaceCount > 0 ? (
           <p className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2 text-alert">
-            本日の作業リストには既に{existingCount}件あります。作ると、これらは削除され進行中の記録も失われます。
+            未着手・一時停止中の作業{replaceCount}件を、テンプレートの内容に置き換えます。完了・計測中の作業はそのまま残ります。
           </p>
+        ) : (
+          <p>完了・計測中の作業はそのまま残ります。</p>
         )}
         <div className="flex justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={onClose}>

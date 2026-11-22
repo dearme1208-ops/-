@@ -180,12 +180,12 @@ html[data-high-contrast="true"] :focus-visible {
 @layer components {
   .btn-pill {
     @apply inline-flex items-center justify-center gap-2 rounded-full bg-cream px-5 py-2.5
-      font-sans font-bold text-ink shadow-pill transition-transform active:scale-95
+      font-sans font-bold text-ink shadow-pill transition active:scale-95
       disabled:opacity-40 disabled:pointer-events-none;
   }
   .btn-pill-outline {
     @apply inline-flex items-center justify-center gap-2 rounded-full border border-cream/40 px-5 py-2.5
-      font-sans font-bold text-cream transition-colors hover:bg-cream/10 active:scale-95
+      font-sans font-bold text-cream transition hover:bg-cream/10 active:scale-95
       disabled:opacity-40 disabled:pointer-events-none;
   }
   .btn-pill-danger {
@@ -4822,4 +4822,78 @@ html[data-high-contrast="true"] button[data-toggle]:not([aria-checked="true"]):n
 /* なつやすみモードは枠を破線にしているが、スイッチの行は実線にそろえる */
 html[data-visual-mode="natsuyasumi"] button[data-toggle]:not(#_) {
   border-style: solid;
+}
+
+/* ══ 空の状態・ダイアログの入場・ボタンのホバー(見た目の統一) ══
+   - .empty-state: 「ありません」「埋める所はありません」などの空の知らせ。ただの小さな文字だと
+     読み込み途中や表示崩れと見分けにくいため、点線の枠で「ここは空です」と分かる形にそろえる。
+     色は --cream-rgb だけを使い、どのモードでもそのモードの文字色に従う
+   - ダイアログ: Modal.tsx は触らず CSS だけで、暗幕をふわっと出し、パネルを少し小さい所から
+     広げる。いきなり全面が切り替わると、何が開いたのか目で追えないため
+   - .btn-pill のホバー: 押せる所だと分かるよう少し明るくする。スマホでは押した後も
+     :hover が残って明るいままになるので、マウスのある端末(hover: hover)だけにする。
+     filter を使うのは、森モードのグラデーション塗り・Claudeモードの単色など、
+     モードごとの背景の上書きと喧嘩せずに効くため */
+@layer components {
+  .empty-state {
+    border-radius: 1rem;
+    border: 1px dashed rgb(var(--cream-rgb) / 0.15);
+    padding: 1.5rem 1rem;
+    text-align: center;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: rgb(var(--cream-rgb) / 0.65);
+  }
+
+  .modal-scrim {
+    animation: modal-scrim-in 160ms ease-out;
+  }
+  .modal-scrim > .panel {
+    animation: modal-panel-in 180ms ease-out;
+  }
+  @keyframes modal-scrim-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes modal-panel-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @media (hover: hover) {
+    .btn-pill:not(:disabled):hover {
+      filter: brightness(1.07);
+    }
+  }
+
+  /* 動きを減らす設定の人には、ダイアログはその場で出す(末尾の全体の指定でも縮むが、明示しておく) */
+  @media (prefers-reduced-motion: reduce) {
+    .modal-scrim,
+    .modal-scrim > .panel {
+      animation: none;
+    }
+  }
+}
+
+/* ══ 横スクロールの続きの合図(本日の作業の操作の列 data-testid="today-toolbar-sub") ══
+   スマホでは操作の列が横にスクロールするが、右端で切れているだけでは続きがあると気づけない。
+   右端を少し透けさせて「まだ右にある」と示し、最後までスクロールしたら(data-at-end="true")消す。
+   色ではなく mask で薄くするので、どのモードの背景の上でもそのまま効く。
+   幅の広い画面(sm以上)では折り返して全部見えるので付けない。
+   古いAndroidのWebViewは接頭辞付きしか分からないため -webkit- も書く */
+@media (max-width: 639.98px) {
+  .scroll-fade-right:not([data-at-end="true"]) {
+    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
+    mask-image: linear-gradient(to right, #000 88%, transparent);
+  }
 }

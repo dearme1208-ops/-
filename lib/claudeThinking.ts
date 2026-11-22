@@ -1,4 +1,5 @@
 import type { MasterTask, ProjectItem, TodoTask, WorkRecord } from "./types";
+import { isStageDone } from "./projectStage";
 
 // Claudeモードの中核。記録から「気づき」を組み立てる推論エンジン。
 //
@@ -356,7 +357,8 @@ function analyzeProjects(projects: ProjectItem[], records: WorkRecord[], today: 
   const risky = active
     .map((p) => {
       const stages = p.stages ?? [];
-      const done = stages.filter((s) => s.completed).length;
+      // 件数管理の段階は completed が立たないので、目標件数到達も完了として数える
+      const done = stages.filter((s) => isStageDone(s)).length;
       const progress = stages.length > 0 ? done / stages.length : 0;
       const daysLeft = Math.round(
         (new Date(p.dueDate + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000

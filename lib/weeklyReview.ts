@@ -1,6 +1,7 @@
 import { summarizePostpones } from "./changeTracking";
 import type { ProjectItem, TodoList, TodoTask } from "./types";
 import { daysBetweenDateStrs, todayStr } from "./time";
+import { isStageDone } from "./projectStage";
 
 // 停滞している項目を1件ずつ見せて「今日やる/期日を変える/アーカイブ」を決めていく
 // 週次レビュー用の対象抽出。件数が多いほど個々の項目が埋もれて見逃されがちなため、
@@ -72,7 +73,8 @@ export function buildWeeklyReviewQueue(
   const ctx = (t: TodoTask) => todoContext(t, todoById, projectById, listById);
   const projectCtx = (p: ProjectItem) => ({
     groupName: p.groupName,
-    openStages: (p.stages ?? []).filter((s) => !s.completed).slice(0, 3).map((s) => s.title),
+    // 件数管理の段階は目標件数に達しても completed が立たないため、isStageDoneで「済み」を判定する
+    openStages: (p.stages ?? []).filter((s) => !isStageDone(s)).slice(0, 3).map((s) => s.title),
   });
 
   for (const t of todoTasks) {

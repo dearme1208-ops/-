@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { buzz } from "@/lib/haptics";
@@ -14,7 +14,6 @@ import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import TaskClock from "@/components/ui/TaskClock";
 import { RangeBand } from "@/components/viz/RangeBand";
 import type { DurationRange } from "@/lib/visuals";
-import { useSetting } from "@/lib/settings";
 import type { AutoAllocationResult } from "@/lib/allocate";
 import type { ThemedMode } from "@/lib/theme";
 import type { ConditionLog, DailyTask, ProjectItem, TodoTask } from "@/lib/types";
@@ -74,6 +73,12 @@ export interface TaskCardContext {
   methodSuggestions: string[];
   /** 作業マスタごとの、これまでの所要時間の幅(計測中のカードに「いつもの幅」として描く) */
   durationRangeByMaster: Map<string, DurationRange>;
+  /** 計測中のカードに時計(TaskClock)を出すか(設定 today.showTaskClock)。カードごとに設定を読むと、
+   *  400件並ぶ日にDBの見張りが400個になるので、本日の作業タブでまとめて読んで渡す */
+  showTaskClock: boolean;
+  /** 本日の体調ログ。完了カードの体調表示(taskOwnConditionLog等)が依存するので、
+   *  完了カードの描き直しを省く判定(下のmemo)で、変わったかどうかを見るために渡す */
+  conditionLogs: ConditionLog[] | undefined;
 }
 
 // 手段(この作業をどんなやり方でしているか: Excel・マクロ・Claudeなど)の行。計測中・一時停止中・予定の
@@ -142,7 +147,7 @@ function MethodRow({ task, suggestions }: { task: DailyTask; suggestions: string
 }
 
 // 本日の作業タブの作業カード1枚(状態・経過・予測・紐づく案件/ToDo・操作ボタン)
-export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
+function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
   const {
     now,
     themedMode,
@@ -197,8 +202,7 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
   const predMs = predictedSecondsForTask * 1000;
   const overEstimate = predictedSecondsForTask > 0 && elapsedMs > predMs;
   const remainingMs = predMs - elapsedMs;
-  const [showClockStr] = useSetting("today.showTaskClock", "true");
-  const showClock = showClockStr === "true" && task.status === "running";
+  const showClock = ctx.showTaskClock && task.status === "running";
   const isNext = task.id === nextTaskId;
   const taskRankKey = task.masterTaskId ?? `${task.category}::${task.name}`;
   const topRank = topRankedKeys.get(taskRankKey);
@@ -793,6 +797,49 @@ export default function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCard
       </div>
     </div>
   );}
+
+// 完了したカードは1秒ごとの描き直しを省く。ctxは本日の作業タブの描画ごとに作り直される(nowが毎秒進む)ため、
+// そのままだと完了が400件並ぶ日は毎秒400枚を描き直していた。完了カードが実際に読む値だけを比べ、
+// どれも同じなら描き直さない。作業そのもの(task)はDBの変更で新しいオブジェクトになるので、
+// 編集・時刻の修正などは必ず描き直される。計測中・一時停止中・予定のカードは経過時間や
+// 「◯時から開始」がnowで変わるので、これまでどおり毎回描き直す。
+// 描き直さない間のカードは、前の描画のctxの操作(関数)を持ち続ける。完了カードの操作は
+// state setter・DBへの書き込み・下で比べている値(todoTaskMap・conditionLogsなど)しか使わないので、
+// 古い関数でも結果は変わらない
+function sameForDoneCard(a: { task: DailyTask; ctx: TaskCardContext }, b: { task: DailyTask; ctx: TaskCardContext }): boolean {
+  const t = b.task;
+  const x = a.ctx;
+  const y = b.ctx;
+  return (
+    x.themedMode === y.themedMode &&
+    x.va11hallaMode === y.va11hallaMode &&
+    x.wordingThemedMode === y.wordingThemedMode &&
+    x.conditionEnabled === y.conditionEnabled &&
+    x.conditionLogs === y.conditionLogs &&
+    (x.conditionEditTaskId === t.id) === (y.conditionEditTaskId === t.id) &&
+    (x.nextTaskId === t.id) === (y.nextTaskId === t.id) &&
+    (x.draggingTaskId === t.id) === (y.draggingTaskId === t.id) &&
+    x.standardWorkEnd === y.standardWorkEnd &&
+    x.runningTaskKeys.has(`${t.category}::${t.name}`) === y.runningTaskKeys.has(`${t.category}::${t.name}`) &&
+    x.favoriteMasterIds.has(t.masterTaskId ?? "") === y.favoriteMasterIds.has(t.masterTaskId ?? "") &&
+    x.topRankedKeys.get(t.masterTaskId ?? `${t.category}::${t.name}`) === y.topRankedKeys.get(t.masterTaskId ?? `${t.category}::${t.name}`) &&
+    x.predictedSecondsByTaskId.get(t.id) === y.predictedSecondsByTaskId.get(t.id) &&
+    x.projectedFinishByTaskId.get(t.id) === y.projectedFinishByTaskId.get(t.id) &&
+    x.effectiveAllocation?.allocatedMsByTaskId.get(t.id) === y.effectiveAllocation?.allocatedMsByTaskId.get(t.id) &&
+    x.projectMap === y.projectMap &&
+    x.projectTotalSeconds === y.projectTotalSeconds &&
+    x.todoTaskMap === y.todoTaskMap &&
+    x.onOpenTodoDetail === y.onOpenTodoDetail &&
+    x.onOpenProjectEdit === y.onOpenProjectEdit
+  );
+}
+
+export default memo(TaskCard, (prev, next) => {
+  if (prev.task !== next.task) return false;
+  if (prev.ctx === next.ctx) return true;
+  // 完了したまま(状態が変わっていない)カードだけ、読む値を比べて描き直しを省く
+  return next.task.status === "done" && sameForDoneCard(prev, next);
+});
 
 // 「終了」と、止め忘れた時の「少し前に終わってた」。
 // 終了を長押し、または「⏪」を押すと「5分前・10分前・15分前・最後の打刻・時刻を指定」が並び、

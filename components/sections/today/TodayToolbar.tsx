@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { computeGrowthStage } from "@/lib/growth";
 import { DEFAULT_IMPORT_DAYS } from "@/lib/icsImport";
 import type { ThemedMode } from "@/lib/theme";
@@ -99,6 +99,27 @@ export default function TodayToolbar(props: TodayToolbarProps) {
   // スマホでは9個のボタンが作業リストの前に約260pxも並び、リストが下へ押し出されていた
   const [moreOpenStr, setMoreOpenStr] = useSetting("today.toolbarMoreOpen", "false");
   const moreOpen = moreOpenStr === "true";
+  // 操作の列の右端フェード(globals.css の .scroll-fade-right)を、最後までスクロールしたら消す。
+  // スクロールのたびに再描画しないよう、state ではなく要素の data 属性を直接書き換える
+  const subRowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = subRowRef.current;
+    if (!el) return;
+    const update = () => {
+      const atEnd = el.scrollWidth - el.clientWidth - el.scrollLeft <= 4;
+      el.dataset.atEnd = atEnd ? "true" : "false";
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    // ボタンの増減(音声操作の有無・簡易表示の切り替え)や画面の回転でも、はみ出すかどうかが変わる
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    for (const child of Array.from(el.children)) ro.observe(child);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, []);
 
   return (
     // 右のボタン群が多いので、狭い画面では折り返して段を分ける。折り返しがないと
@@ -143,7 +164,11 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           区別は段ではなく、細い区切り線と小さな見出し、「いま」だけ塗りつぶしにすることで付ける。
           狭い画面では1行の横スクロール(よく使う「いま」が左端) */}
       <div className="flex w-full flex-col gap-2 sm:w-auto">
-      <div className="-mx-1 flex items-start gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible" data-testid="today-toolbar-sub">
+      <div
+        ref={subRowRef}
+        className="scroll-fade-right -mx-1 flex items-start gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible"
+        data-testid="today-toolbar-sub"
+      >
         <ToolGroup caption="いま">
           <ModeButton simple={simple} compact danger icon="⚡" label="⚡ トラブル発生" title="トラブル発生" onClick={props.onTrouble} />
           <ModeButton simple={simple} compact primary icon="➕" label="+ 作業を追加" title="作業を追加" onClick={props.onAddTask} />
@@ -220,7 +245,15 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           aria-label="その他の操作"
           title="予定の取り込み・テンプレートでの作り直しなど"
         >
-          {simple ? "⋯" : `⋯ その他 ${moreOpen ? "▲" : "▼"}`}
+          {/* 開閉の矢印は、ほかの「▶ 開く / ▼ たたむ」と同じく控えめな濃さにする。
+              塗り(開いた時)と枠だけ(閉じた時)で文字色が変わるので、色ではなく不透明度で薄める */}
+          {simple ? (
+            "⋯"
+          ) : (
+            <>
+              ⋯ その他 <span className="opacity-60">{moreOpen ? "▲" : "▼"}</span>
+            </>
+          )}
         </button>
         </ToolGroup>
       </div>

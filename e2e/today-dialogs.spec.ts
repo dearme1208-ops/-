@@ -102,8 +102,8 @@ test("曜日のテンプレートから今日の作業を作れる", async ({ pa
   ]);
   await seed(page, { stores: { templateItems: templates } });
   await clickButton(page, "テンプレートから生成");
-  await expect(page.locator(".modal-scrim").last().getByText("テンプレートから今日の作業を作る")).toBeVisible();
-  await clickButton(page, /^作る$/);
+  // 今日の作業が空なら、消えるものが無いので確認を出さずにそのまま作る
+  await expect(page.getByText("テンプレートから2件作りました").first()).toBeVisible();
   const names = (await readAll<Daily & { order: number }>(page, "dailyTasks")).sort((a, b) => a.order - b.order).map((t) => t.name);
   expect(names).toEqual(["朝会", "日報"]);
 });
@@ -128,7 +128,7 @@ test("突発作業の追加(＋)の一番上から、曜日のテンプレート
   await page.getByRole("button", { name: /曜日のテンプレートから今日の作業を作る/ }).click();
   const confirm = page.locator(".modal-scrim").last();
   await expect(confirm.getByText("テンプレートから今日の作業を作る")).toBeVisible();
-  await expect(confirm).toContainText("既に1件あります");
+  await expect(confirm).toContainText("未着手・一時停止中の作業1件を、テンプレートの内容に置き換えます。完了・計測中の作業はそのまま残ります。");
   await clickButton(page, /^作る$/);
   await expect.poll(async () => (await readAll<Daily>(page, "dailyTasks")).map((t) => t.name)).toEqual(["朝会"]);
 });
