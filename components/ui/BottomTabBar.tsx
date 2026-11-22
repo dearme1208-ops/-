@@ -42,7 +42,7 @@ export interface BottomTabBarRunning {
   overrunLabel?: string;
   /** 超過時のテーマに応じた光彩アニメーションのクラス名(例: card-overrun-forest)。省略時は既定の光彩 */
   overrunAnimClass?: string;
-  /** 帯からそのまま一時停止・完了する(親指の届く画面下で止められるように)。無ければボタンを出さない */
+  /** 帯からそのまま一時停止・終了する(親指の届く画面下で止められるように)。無ければボタンを出さない */
   onPause?: () => void;
   onFinish?: () => void;
 }
@@ -94,8 +94,9 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
         <button
           className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgb(var(--accent-rgb))] text-sm font-bold text-ink [&_.ico-svg]:h-[1.3em] [&_.ico-svg]:w-[1.3em]"
           onClick={running.onFinish}
-          aria-label="完了"
-          title="完了"
+          // カードの「終了」と同じ言葉にする(「完了」はタブの名前と紛らわしい)
+          aria-label="終了"
+          title="終了"
         >
           <Icon emoji="✓" />
         </button>

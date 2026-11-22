@@ -16,10 +16,12 @@ export default function GlobalPanelsHost({
   onOpenTodo,
   onOpenProject,
   onOpenTab,
+  tabs = [],
 }: {
   onOpenTodo: (id: string) => void;
   onOpenProject: (id: string) => void;
   onOpenTab: (tab: string) => void;
+  tabs?: { key: string; label: string }[];
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -59,6 +61,7 @@ export default function GlobalPanelsHost({
             setSearchOpen(false);
             onOpenTab(tab);
           }}
+          tabs={tabs}
         />
       )}
       {historyOpen && <HistoryModal onClose={() => setHistoryOpen(false)} />}
@@ -73,11 +76,13 @@ function SearchModal({
   onOpenTodo,
   onOpenProject,
   onOpenTab,
+  tabs,
 }: {
   onClose: () => void;
   onOpenTodo: (id: string) => void;
   onOpenProject: (id: string) => void;
   onOpenTab: (tab: string) => void;
+  tabs: { key: string; label: string }[];
 }) {
   const [q, setQ] = useState("");
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
@@ -89,6 +94,7 @@ function SearchModal({
   const result = useMemo(() => {
     if (!key) return null;
     const hit = (...xs: (string | undefined)[]) => xs.some((x) => x && norm(x).includes(key));
+    const tabHits = tabs.filter((t) => hit(t.label, t.key)).slice(0, 6);
     const todoHits = (todos ?? [])
       .filter((t) => !t.archived && hit(t.title, t.notes, t.category, t.tag))
       .sort((a, b) => Number(a.completed) - Number(b.completed))
@@ -110,10 +116,10 @@ function SearchModal({
     const noteHits = (notes ?? [])
       .filter((n) => hit(n.text, ...(n.checklistItems ?? []).map((c) => c.text)))
       .slice(0, 6);
-    return { todoHits, projectHits, workHits, noteHits };
-  }, [key, todos, projects, records, notes]);
+    return { tabHits, todoHits, projectHits, workHits, noteHits };
+  }, [key, tabs, todos, projects, records, notes]);
 
-  const total = result ? result.todoHits.length + result.projectHits.length + result.workHits.length + result.noteHits.length : 0;
+  const total = result ? result.tabHits.length + result.todoHits.length + result.projectHits.length + result.workHits.length + result.noteHits.length : 0;
   const row = "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-cream/10";
 
   return (
@@ -125,9 +131,28 @@ function SearchModal({
           onChange={(e) => setQ(e.target.value)}
           placeholder="例: A社、見積、請求書"
           aria-label="さがす言葉"
+          onKeyDown={(e) => {
+            // Enter で、いちばん上に出たタブへ移動(キーボードだけでタブを切り替えられる)
+            // 日本語変換を確定する Enter では移動しない
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && result && result.tabHits.length > 0) {
+              e.preventDefault();
+              onOpenTab(result.tabHits[0].key);
+            }
+          }}
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
         {result && total === 0 && <p className="text-center text-sm text-cream/55">見つかりませんでした</p>}
+        {result && result.tabHits.length > 0 && (
+          <section>
+            <h4 className="mb-1 text-[11px] font-bold tracking-wider text-cream/50">タブ</h4>
+            {result.tabHits.map((t) => (
+              <button key={t.key} className={row} onClick={() => onOpenTab(t.key)}>
+                <span className="min-w-0 truncate text-cream">🗂 {t.label}</span>
+                <span className="shrink-0 text-[11px] text-cream/50">タブへ移動</span>
+              </button>
+            ))}
+          </section>
+        )}
         {result && result.projectHits.length > 0 && (
           <section>
             <h4 className="mb-1 text-[11px] font-bold tracking-wider text-cream/50">案件</h4>
@@ -173,7 +198,7 @@ function SearchModal({
             ))}
           </section>
         )}
-        {!result && <p className="text-[11px] text-cream/45">ToDo・案件(段階も)・これまでの実績・メモをまとめて探します。Ctrl+K でも開けます。</p>}
+        {!result && <p className="text-[11px] text-cream/45">タブ・ToDo・案件(段階も)・これまでの実績・メモをまとめて探します。Ctrl+K でも開けます。</p>}
       </div>
     </Modal>
   );

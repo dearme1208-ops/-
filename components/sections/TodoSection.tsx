@@ -32,6 +32,7 @@ import { useWaitingSettings } from "@/lib/waitingSettings";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
+import { parseCompose } from "@/lib/claudeCompose";
 import { cardOverrunClass, emphasisTextClass, overrunLabel, useVisualMode } from "@/lib/theme";
 import {
   daysBetweenDateStrs,
@@ -222,6 +223,9 @@ export default function TodoSection({
   // まとめて開く(常時表示だと入力欄が多く、狭い画面では特に圧迫感があったため)
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
+  const [listMenuOpen, setListMenuOpen] = useState(false);
+  const [quickTitle, setQuickTitle] = useState("");
+  const quickAddBusyRef = useRef(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   // 「追加して続ける」で件名欄へ戻すための参照
   const newTaskTitleRef = useRef<HTMLInputElement>(null);
@@ -1383,13 +1387,50 @@ export default function TodoSection({
     el.scrollLeft = ganttAnchor === "today" ? Math.max(0, ganttTodayIndex * pxPerDay - el.clientWidth / 2) : 0;
   }, [displayMode, ganttAnchor, ganttTodayIndex, pxPerDay, ganttTotalDays]);
 
+  // パネル見出しの「⚙ リスト」(スマホだけ畳む)の中身
+  const showSortControl = visibleTasks.length > 0 && displayMode === "list" && !!currentListId && !searchActive;
+  const hasListMenu = showSortControl || archivedCount > 0 || showArchived || (!!currentListId && !searchActive);
+
+  // 一覧の上の1行追加。Enterで今のビュー・リストへ足す。「明日」「金曜まで」「@分類」「！」は parseCompose で受け取る
+  async function quickAdd() {
+    const raw = quickTitle.trim();
+    if (!raw || quickAddBusyRef.current) return;
+    const targetListId = currentListId || lists?.[0]?.id;
+    if (!targetListId) return;
+    // 連打したEnterで同じタスクが2件入らないよう、書き込みが終わるまで次を受け付けない
+    quickAddBusyRef.current = true;
+    try {
+      await quickAddInner(raw, targetListId);
+    } finally {
+      quickAddBusyRef.current = false;
+    }
+  }
+
+  async function quickAddInner(raw: string, targetListId: string) {
+    const parsed = parseCompose(raw, today);
+    const title = parsed.title || raw;
+    const id = uid();
+    const dueDate = parsed.dueDate;
+    const order = dueDate ? await computeDateOrderedPosition(targetListId, id, dueDate) : await shiftSiblingsForTopInsert(targetListId);
+    const task: TodoTask = {
+      id,
+      listId: targetListId,
+      title,
+      category: parsed.category,
+      dueDate,
+      important: parsed.important || view === "important",
+      completed: false,
+      order,
+      createdAt: Date.now(),
+      // 期日を今日にしたもの・マイデイで足したものはマイデイに入れる
+      myDayDate: view === "myday" || dueDate === today ? today : undefined,
+    };
+    await db.todoTasks.add(task);
+    setQuickTitle("");
+  }
+
   return (
-    <div className="space-y-4">
-      {/* 期日の地形と返事待ちの砂時計は、PCでは横に並べて幅を使い、タスク一覧を上へ寄せる */}
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <DueTerrainPanel />
-        <WaitingHourglassPanel kind="todo" onOpen={(id) => setDetailTaskId(id)} />
-      </div>
+    <div className="flex flex-col gap-4">
       {/* 表示の切り替え(マイデイ・重要・リスト…)。スマホでは何段にも折り返してタスクが下へ押し出されて
           いたので、狭い画面では1行の横スクロールにする */}
       <div className="scroll-fade-right -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap [&>*]:shrink-0 [&_button]:whitespace-nowrap">
@@ -1686,8 +1727,36 @@ export default function TodoSection({
                     完了済みも表示
                   </label>
                 )}
-                {displayMode === "list" && currentListId && !searchActive && (
-                  <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
+                {displayMode === "list" && view !== "overdue" && (
+                  <button
+                    onClick={() => {
+                      setBulkSelectionMode((v) => !v);
+                      setSelectedTaskIds(new Set());
+                    }}
+                    className={bulkSelectionMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                  >
+                    ☑ 選択モード
+                  </button>
+                )}
+              </>
+            )}
+            {/* 並び替え・アーカイブ済み・リストの削除はたまにしか使わないので、スマホでは「⚙ リスト」に畳む。
+                広い画面(sm以上)では display:contents で従来どおり同じ行に並べる */}
+            {hasListMenu && (
+              <button
+                className={`${listMenuOpen ? "btn-pill" : "btn-pill-outline"} text-xs sm:hidden`}
+                onClick={() => setListMenuOpen((v) => !v)}
+                aria-expanded={listMenuOpen}
+              >
+                ⚙ リスト {listMenuOpen ? "▲" : "▼"}
+              </button>
+            )}
+            {hasListMenu && (
+              <div
+                className={`${listMenuOpen ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 rounded-lg border border-cream/10 p-2 sm:contents`}
+              >
+                {showSortControl && (
+                  <label className="flex items-center gap-1.5 text-xs text-cream/60 sm:ml-2">
                     並び替え:
                     <select
                       value={sortMode}
@@ -1702,38 +1771,40 @@ export default function TodoSection({
                     </select>
                   </label>
                 )}
-                {displayMode === "list" && view !== "overdue" && (
+                {(archivedCount > 0 || showArchived) && (
                   <button
-                    onClick={() => {
-                      setBulkSelectionMode((v) => !v);
-                      setSelectedTaskIds(new Set());
-                    }}
-                    className={bulkSelectionMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    onClick={() => setShowArchivedStr(showArchived ? "false" : "true")}
+                    className={showArchived ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                    title="完了後にアーカイブしたタスクを、通常の一覧・検索に含めるかどうかを切り替えます"
                   >
-                    ☑ 選択モード
+                    🗄 アーカイブ済み（{archivedCount}）: {showArchived ? "表示中" : "非表示"}
                   </button>
                 )}
-              </>
-            )}
-            {(archivedCount > 0 || showArchived) && (
-              <button
-                onClick={() => setShowArchivedStr(showArchived ? "false" : "true")}
-                className={showArchived ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                title="完了後にアーカイブしたタスクを、通常の一覧・検索に含めるかどうかを切り替えます"
-              >
-                🗄 アーカイブ済み（{archivedCount}）: {showArchived ? "表示中" : "非表示"}
-              </button>
-            )}
-            {currentListId && !searchActive && (
-              <button className="text-xs text-alert" onClick={() => deleteList(currentListId)}>
-                このリストを削除
-              </button>
+                {currentListId && !searchActive && (
+                  <button className="text-xs text-alert" onClick={() => deleteList(currentListId)}>
+                    このリストを削除
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        <div className="mb-3">
-          <button className="btn-pill-outline text-sm" onClick={() => setShowAddTaskForm(true)}>
+        <div className="mb-3 flex items-center gap-2">
+          {/* いつも出しておく1行追加。細かく決めたい時は右の「+ タスクを追加」で窓を開く */}
+          <input
+            value={quickTitle}
+            onChange={(e) => setQuickTitle(e.target.value)}
+            onKeyDown={(e) => {
+              // 日本語変換の確定のEnterでは追加しない
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) void quickAdd();
+            }}
+            placeholder="＋ すぐ追加（Enter）"
+            aria-label="すばやく追加"
+            title="「明日」「金曜まで」などの期限、「@分類」、末尾の「！」(重要)も読み取ります"
+            className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+          />
+          <button className="btn-pill-outline shrink-0 text-sm" onClick={() => setShowAddTaskForm(true)}>
             + タスクを追加
           </button>
         </div>
@@ -2289,6 +2360,13 @@ export default function TodoSection({
         )}
       </div>
 
+      {/* 期日の地形と返事待ちの砂時計。スマホでは一覧の後ろに置き、タスクを先に見せる。
+          PC(lg)では従来どおり一番上に横並び(order-first) */}
+      <div className="grid gap-4 lg:order-first lg:grid-cols-2 lg:items-start">
+        <DueTerrainPanel />
+        <WaitingHourglassPanel kind="todo" onOpen={(id) => setDetailTaskId(id)} />
+      </div>
+
       {bottomViewBar && (
         <BottomTabBar
           items={[
@@ -2328,6 +2406,13 @@ export default function TodoSection({
           today={today}
           linkedProjectTitle={detailTask.projectId ? projectTitleById.get(detailTask.projectId) : undefined}
           onClose={() => setDetailTaskId(null)}
+          onComplete={async () => {
+            // 詳細で直した分を書き込んだ後の姿で完了にする(繰り返しの次回期日も新しい値から決める)
+            const id = detailTask.id;
+            setDetailTaskId(null);
+            const fresh = await db.todoTasks.get(id);
+            if (fresh) await toggleComplete(fresh);
+          }}
           onToggleMyDay={() => toggleMyDay(detailTask)}
           onDelete={() => deleteTask(detailTask)}
           onArchive={() => toggleArchiveTask(detailTask)}
@@ -2991,6 +3076,9 @@ function SortableTaskBlock(props: {
   );
 }
 
+// 行の右端の小さなアイコン。見た目はそのまま、押せる範囲を40px角にする(負の余白で行の高さ・幅を抑える)
+const ROW_ICON_HIT = "-mx-1 -my-2.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full";
+
 function TaskRow({
   task,
   subtasks,
@@ -3093,20 +3181,25 @@ function TaskRow({
           />
         </div>
       )}
+      {/* 丸は20pxのまま、押せる範囲だけ40pxに広げる(負の余白で行の高さは変えない) */}
       <button
         onClick={onToggleComplete}
         aria-label="完了"
-        className={`todo-check flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-          task.completed ? "border-cream bg-cream text-ink" : task.important ? "border-alert" : "border-cream/40"
-        }`}
+        className="todo-check -my-2.5 -ml-2.5 -mr-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
       >
-        {/* 印は文字の✓ではなく線画にし、付いた瞬間に線で描かれる(todo-check-mark)。
-            完了→未完了→完了で要素が作り直されるので、描く動きは「付けた時」だけ走る */}
-        {task.completed ? (
-          <svg className="todo-check-mark h-3.5 w-3.5" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4.5 10.5l3.5 3.5 7.5-8" />
-          </svg>
-        ) : null}
+        <span
+          className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+            task.completed ? "border-cream bg-cream text-ink" : task.important ? "border-alert" : "border-cream/40"
+          }`}
+        >
+          {/* 印は文字の✓ではなく線画にし、付いた瞬間に線で描かれる(todo-check-mark)。
+              完了→未完了→完了で要素が作り直されるので、描く動きは「付けた時」だけ走る */}
+          {task.completed ? (
+            <svg className="todo-check-mark h-3.5 w-3.5" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4.5 10.5l3.5 3.5 7.5-8" />
+            </svg>
+          ) : null}
+        </span>
       </button>
       <button className="min-w-0 flex-1 text-left" onClick={onOpenDetail}>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -3238,27 +3331,27 @@ function TaskRow({
           onClick={() => window.open(normalizeUrl(task.url!), "_blank", "noopener,noreferrer")}
           aria-label="リンクを開く"
           title={task.url}
-          className="shrink-0 text-lg text-cream/50 hover:text-cream"
+          className={`${ROW_ICON_HIT} text-lg text-cream/50 hover:text-cream`}
         >
           🔗
         </button>
       )}
-      {!task.parentTaskId && (
+      {/* 行の🗂はボードに置いてある印(押すと外す)。置くのは詳細の「統合ボードに置く」から */}
+      {!task.parentTaskId && task.boardX !== undefined && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (task.boardX !== undefined) removeTodoFromBoard(task.id);
-            else placeTodoOnBoard(task.id);
+            removeTodoFromBoard(task.id);
           }}
-          aria-label={task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}
-          title={task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}
-          className={`shrink-0 text-lg ${task.boardX !== undefined ? "text-cream" : "text-cream/30 hover:text-cream/60"}`}
+          aria-label="統合ボードから外す"
+          title="統合ボードから外す"
+          className={`${ROW_ICON_HIT} text-lg text-cream`}
         >
           🗂
         </button>
       )}
       {!task.completed && <QuickDueButton task={task} />}
-      <button onClick={onToggleImportant} aria-label="重要" className="shrink-0 text-lg">
+      <button onClick={onToggleImportant} aria-label="重要" className={`${ROW_ICON_HIT} -mr-2 text-lg`}>
         {task.important ? <span className="text-alert">★</span> : <span className="text-cream/30">☆</span>}
       </button>
     </div>
@@ -3289,7 +3382,7 @@ function QuickDueButton({ task }: { task: TodoTask }) {
     );
   }
   return (
-    <span className="relative shrink-0">
+    <span className="relative flex shrink-0">
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -3298,7 +3391,7 @@ function QuickDueButton({ task }: { task: TodoTask }) {
         aria-label="期日を動かす"
         aria-expanded={open}
         title="期日を今日・明日・来週月曜などへ動かす"
-        className={`text-base ${open ? "text-cream" : "text-cream/30 hover:text-cream/70"}`}
+        className={`${ROW_ICON_HIT} text-base ${open ? "text-cream" : "text-cream/30 hover:text-cream/70"}`}
       >
         ⏩
       </button>
@@ -3474,6 +3567,7 @@ function TaskDetailModal({
   linkedProjectTitle,
   copiedFromTitle,
   onClose,
+  onComplete,
   onArchive,
   onToggleMyDay,
   onDelete,
@@ -3494,6 +3588,8 @@ function TaskDetailModal({
   /** 「コピーして追加」で作った直後なら、元のタスクの名前 */
   copiedFromTitle?: string;
   onClose: () => void;
+  /** 完了にする(未完了に戻す)。閉じるのは呼ぶ側で行う */
+  onComplete: () => void;
   onArchive: () => void;
   onToggleMyDay: () => void;
   onDelete: () => void;
@@ -3558,8 +3654,63 @@ function TaskDetailModal({
     return customerMode || undefined;
   }
 
+  // 開いた時の入力内容。✕・背景・Escで閉じた時に、変わっていれば黙って捨てずに保存する
+  const editSnapshot = JSON.stringify([
+    title, listId, action, url, notes, startDate, dueDate, tagMode, customTag, categoryMode, customCategory,
+    customerMode, customCustomer, clientId, recurrenceEnabled, recurrenceEnabled ? recurrence : null,
+  ]);
+  const [initialSnapshot] = useState(editSnapshot);
+  // 開いた時点の各項目の値(保存時に、触っていない項目を書き込まないための比較用)
+  const initialValues = useRef<Partial<Record<keyof TodoTask, string>>>({});
+  if (Object.keys(initialValues.current).length === 0) {
+    const init0 = !(subtasks.length > 0) ? resolveTag() : undefined;
+    initialValues.current = {
+      title: JSON.stringify(title.trim()),
+      action: JSON.stringify(action.trim() || undefined),
+      url: JSON.stringify(url.trim() || undefined),
+      notes: JSON.stringify(notes.trim() || undefined),
+      startDate: JSON.stringify(startDate || undefined),
+      dueDate: JSON.stringify(dueDate || undefined),
+      category: JSON.stringify(resolveCategory()),
+      customer: JSON.stringify(resolveCustomer()),
+      clientId: JSON.stringify(clientId || undefined),
+      recurrence: JSON.stringify(recurrenceEnabled ? rec : undefined),
+      ...(subtasks.length > 0 ? {} : { tag: JSON.stringify(init0) }),
+    };
+  }
+  const dirty = editSnapshot !== initialSnapshot;
+
+  // 閉じる: 変更があれば保存してから閉じる(件名が空なら保存できないのでそのまま閉じる)
+  function requestClose() {
+    if (closingRef.current) return;
+    if (dirty && title.trim()) void save();
+    else onClose();
+  }
+
+  // 保存して閉じる・完了にするの途中で、もう一度押されたり Esc されたりしても二重に書き込まない
+  const closingRef = useRef(false);
+
+  // 完了にする: 直した分を先に書き込んでから完了にする
+  async function completeFromDetail() {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    if (dirty && title.trim()) await writeUpdates();
+    onComplete();
+  }
+
   async function save() {
-    if (!title.trim()) return;
+    if (!title.trim() || closingRef.current) return;
+    closingRef.current = true;
+    try {
+      await writeUpdates();
+    } catch (e) {
+      closingRef.current = false;
+      throw e;
+    }
+    onClose();
+  }
+
+  async function writeUpdates() {
     // サブタスクを持つ場合、対応状況はサブタスク側から自動算出されるため手動では上書きしない
     // (この場合tagModeのUIも読み取り専用のため、resolveTag()の値はそもそも使わない)
     const hasSubtasks = subtasks.length > 0;
@@ -3578,6 +3729,12 @@ function TaskDetailModal({
     };
     if (!hasSubtasks) {
       updates.tag = tag;
+    }
+    // 開いてから触っていない項目は書き込まない。開いている間にほかの所(本日の作業の完了で
+    // 繰り返しの期日が進んだ等)で変わった値を、開いた時の古い値で上書きしないため
+    const init = initialValues.current;
+    for (const key of Object.keys(init) as (keyof typeof init)[]) {
+      if (key in updates && JSON.stringify(updates[key]) === init[key]) delete updates[key];
     }
     // 設定で指定したタグが選択されていれば自動的に重要にする（タグを外しても重要フラグは自動では解除しない）
     if (autoImportantTag && tag === autoImportantTag) {
@@ -3613,7 +3770,6 @@ function TaskDetailModal({
         for (const sub of subtasks) await db.todoTasks.update(sub.id, { listId });
       });
     }
-    onClose();
   }
 
   // 通知(リマインダー)は他のフィールドと違い「保存」ボタンを待たず即座に反映する
@@ -3690,7 +3846,7 @@ function TaskDetailModal({
   ].filter(Boolean);
 
   return (
-    <Modal title={copiedFromTitle !== undefined ? "タスクの詳細（コピー）" : "タスクの詳細"} onClose={onClose}>
+    <Modal title={copiedFromTitle !== undefined ? "タスクの詳細（コピー）" : "タスクの詳細"} onClose={requestClose}>
       <div className="max-h-[70vh] space-y-3 overflow-y-auto">
         {copiedFromTitle !== undefined && (
           <p className="rounded-lg border border-cream/30 bg-cream/10 px-3 py-2 text-sm text-cream" role="status" data-testid="todo-copied-notice">
@@ -4239,9 +4395,16 @@ function TaskDetailModal({
             {task.archived ? "🗄 アーカイブを解除" : "🗄 アーカイブする"}
           </button>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button className="btn-pill-outline text-sm" onClick={onCopy} title="内容をコピーして新しいタスクを追加します">
             コピーして追加
+          </button>
+          <button
+            className="btn-pill-outline text-sm"
+            onClick={() => void completeFromDetail()}
+            title={task.completed ? "未完了に戻します" : "直した内容を保存して、完了にします"}
+          >
+            {task.completed ? "↺ 未完了に戻す" : "✓ 完了にする"}
           </button>
           <button className="btn-pill text-sm" onClick={save}>
             保存

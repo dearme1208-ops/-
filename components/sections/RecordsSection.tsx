@@ -59,6 +59,8 @@ export default function RecordsSection() {
   // 選んだ1日をタイムラプス風に再生するモーダルの対象日(nullなら非表示)
   const [replayDate, setReplayDate] = useState<string | null>(null);
   const [replayPickerDate, setReplayPickerDate] = useState("");
+  // CSVの取り込み・書き出しボタンを出すか(ふだんは畳む)
+  const [csvMenuOpen, setCsvMenuOpen] = useState(false);
 
   const recordsRaw = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
@@ -298,11 +300,8 @@ export default function RecordsSection() {
 
   return (
     <div className="space-y-4">
-      {/* 記録を振り返る図(本日の作業から移した)。1週間の積み木と、曜日×時間帯の調子 */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <WeekBlocks today={todayStr()} />
-        <ConditionHeatmapPanel today={todayStr()} />
-      </div>
+      {/* 記録を振り返る図(本日の作業から移した)。いちばん上は1週間の積み木。曜日×時間帯の調子は一覧の後 */}
+      <WeekBlocks today={todayStr()} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <input
@@ -339,28 +338,34 @@ export default function RecordsSection() {
             </button>
           )}
           {showCsvTools && (
-            <>
-              <button className="btn-pill-outline flex-1 text-xs sm:flex-none" onClick={exportCsv}>
-                CSVエクスポート
-              </button>
-              <button className="btn-pill-outline flex-1 text-xs sm:flex-none" onClick={() => fileInputRef.current?.click()}>
-                CSVインポート
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) importCsv(file);
-                  e.target.value = "";
-                }}
-              />
-            </>
+            <button className="btn-pill-outline flex-1 text-xs sm:flex-none" onClick={() => setCsvMenuOpen((v) => !v)} aria-expanded={csvMenuOpen}>
+              📂 取り込み・書き出し {csvMenuOpen ? "▲" : "▼"}
+            </button>
           )}
         </div>
       </div>
+      {/* CSVの取り込み・書き出しはふだん使わないので畳んでおく(ToDoタブと同じ) */}
+      {showCsvTools && csvMenuOpen && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <button className="btn-pill-outline text-xs" onClick={exportCsv}>
+            CSVエクスポート
+          </button>
+          <button className="btn-pill-outline text-xs" onClick={() => fileInputRef.current?.click()}>
+            CSVインポート
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importCsv(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      )}
 
       {importStatus && <p className="text-xs text-cream/70">{importStatus}</p>}
       {importErrors.length > 0 && (
@@ -370,145 +375,6 @@ export default function RecordsSection() {
           ))}
         </div>
       )}
-
-      <div className="panel p-4">
-        <button
-          className="flex w-full items-center justify-between text-left"
-          onClick={() => setJournalCollapsedStr(journalCollapsed ? "false" : "true")}
-        >
-          <h3 className="section-title font-display">
-            <IconLabel text="📓 記録の履歴（本日タブの「今日の記録」）" />
-            {journalCollapsed && <span className="ml-1 font-normal text-cream/40">（{journalEntries.length}件）</span>}
-          </h3>
-          <span className="text-xs text-cream/40">{journalCollapsed ? "▶" : "▼"}</span>
-        </button>
-        {!journalCollapsed && (
-          <div className="mt-3 space-y-3">
-            {journalEntries.length === 0 ? (
-              // 森モードでは開いた手帳の線画を添える(文言は<p>のまま)
-              <div className="empty-state">
-                <EmptyArt name="records" />
-                <p>まだ記録がありません。「本日の作業」タブの「今日の記録」に書くと、ここに一覧で表示されます。</p>
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    placeholder="日付・内容で検索"
-                    value={journalSearch}
-                    onChange={(e) => setJournalSearch(e.target.value)}
-                    className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-                  />
-                  {showCsvTools && (
-                    <button className="btn-pill-outline text-xs" onClick={exportJournalCsv}>
-                      記録CSVエクスポート
-                    </button>
-                  )}
-                </div>
-                <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
-                  {filteredJournal.map((e) => (
-                    <div key={e.date} className="space-y-1 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-cream/60 tabular-nums">{e.date}</span>
-                        <button
-                          className="text-xs text-alert"
-                          aria-label={`${e.date}の記録を削除`}
-                          onClick={() => deleteJournalEntry(e.date)}
-                        >
-                          削除
-                        </button>
-                      </div>
-                      <textarea
-                        key={`journal-${e.date}`}
-                        defaultValue={e.text}
-                        rows={2}
-                        onBlur={(ev) => updateJournalText(e.date, ev.target.value)}
-                        className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-                      />
-                    </div>
-                  ))}
-                  {filteredJournal.length === 0 && <p className="px-3 py-4 text-sm text-cream/50">該当する記録がありません。</p>}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="panel flex flex-wrap items-center gap-2 p-4">
-        <h3 className="section-title font-display">📼 一日のリプレイ</h3>
-        <p className="section-sub w-full sm:w-auto sm:flex-1">
-          選んだ日の実績を、朝から順にタイムラプス風に再生します。
-        </p>
-        <input
-          type="date"
-          value={replayPickerDate || records?.[0]?.date || ""}
-          onChange={(e) => setReplayPickerDate(e.target.value)}
-          className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
-        />
-        <button
-          className="btn-pill text-sm"
-          onClick={() => setReplayDate(replayPickerDate || records?.[0]?.date || todayStr())}
-        >
-          📼 この日を再生
-        </button>
-      </div>
-
-      <div className="panel p-4">
-        <button
-          className="flex w-full items-center justify-between text-left"
-          onClick={() => setReflectionCollapsedStr(reflectionCollapsed ? "false" : "true")}
-        >
-          <h3 className="section-title font-display">
-            🌙 終業の振り返りの履歴（本日タブの「終業の振り返り」）
-            {reflectionCollapsed && <span className="ml-1 font-normal text-cream/40">（{reflectionEntries.length}件）</span>}
-          </h3>
-          <span className="text-xs text-cream/40">{reflectionCollapsed ? "▶" : "▼"}</span>
-        </button>
-        {!reflectionCollapsed && (
-          <div className="mt-3 space-y-3">
-            {reflectionEntries.length === 0 ? (
-              <div className="empty-state">
-                <EmptyArt name="records" />
-                <p>まだ記録がありません。「本日の作業」タブの「終業の振り返り」に答えると、ここに一覧で表示されます。</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
-                {reflectionEntries.map((e) => {
-                  const c = CONDITION_LEVELS.find((c) => Number(c.level) === e.reflection.satisfaction);
-                  return (
-                    <div key={e.date} className="space-y-1 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-1.5 text-xs font-bold text-cream/60 tabular-nums">
-                          {e.date}
-                          {c && (
-                            <span className="font-normal text-cream/50" title={c.label}>
-                              {c.emoji} {c.label}
-                            </span>
-                          )}
-                        </span>
-                        <button
-                          className="text-xs text-alert"
-                          aria-label={`${e.date}の振り返りを削除`}
-                          onClick={() => deleteReflection(e.date)}
-                        >
-                          削除
-                        </button>
-                      </div>
-                      {e.reflection.bestThing && (
-                        <p className="text-sm text-cream/80">👍 {e.reflection.bestThing}</p>
-                      )}
-                      {e.reflection.carryOver && (
-                        <p className="text-sm text-cream/60">➡️ {e.reflection.carryOver}</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
       {methodSuggestions.length > 0 && (
         <datalist id="method-suggestions">
@@ -662,6 +528,148 @@ export default function RecordsSection() {
         )}
         {filtered.length > 0 && filtered.length === visibleRecords.length && filtered.length > PAGE_SIZE && (
           <p className="px-4 py-3 text-center text-xs text-cream/40 tabular-nums">全{filtered.length}件を表示中</p>
+        )}
+      </div>
+
+      {/* 一覧の後に、振り返り用の図・リプレイ・各履歴 */}
+      <ConditionHeatmapPanel today={todayStr()} />
+
+      <div className="panel flex flex-wrap items-center gap-2 p-4">
+        <h3 className="section-title font-display">📼 一日のリプレイ</h3>
+        <p className="section-sub w-full sm:w-auto sm:flex-1">
+          選んだ日の実績を、朝から順にタイムラプス風に再生します。
+        </p>
+        <input
+          type="date"
+          value={replayPickerDate || records?.[0]?.date || ""}
+          onChange={(e) => setReplayPickerDate(e.target.value)}
+          className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+        />
+        <button
+          className="btn-pill text-sm"
+          onClick={() => setReplayDate(replayPickerDate || records?.[0]?.date || todayStr())}
+        >
+          📼 この日を再生
+        </button>
+      </div>
+
+      <div className="panel p-4">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setJournalCollapsedStr(journalCollapsed ? "false" : "true")}
+        >
+          <h3 className="section-title font-display">
+            <IconLabel text="📓 記録の履歴（本日タブの「今日の記録」）" />
+            {journalCollapsed && <span className="ml-1 font-normal text-cream/40">（{journalEntries.length}件）</span>}
+          </h3>
+          <span className="text-xs text-cream/40">{journalCollapsed ? "▶" : "▼"}</span>
+        </button>
+        {!journalCollapsed && (
+          <div className="mt-3 space-y-3">
+            {journalEntries.length === 0 ? (
+              // 森モードでは開いた手帳の線画を添える(文言は<p>のまま)
+              <div className="empty-state">
+                <EmptyArt name="records" />
+                <p>まだ記録がありません。「本日の作業」タブの「今日の記録」に書くと、ここに一覧で表示されます。</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    placeholder="日付・内容で検索"
+                    value={journalSearch}
+                    onChange={(e) => setJournalSearch(e.target.value)}
+                    className="w-64 max-w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                  />
+                  {showCsvTools && (
+                    <button className="btn-pill-outline text-xs" onClick={exportJournalCsv}>
+                      記録CSVエクスポート
+                    </button>
+                  )}
+                </div>
+                <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
+                  {filteredJournal.map((e) => (
+                    <div key={e.date} className="space-y-1 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-cream/60 tabular-nums">{e.date}</span>
+                        <button
+                          className="text-xs text-alert"
+                          aria-label={`${e.date}の記録を削除`}
+                          onClick={() => deleteJournalEntry(e.date)}
+                        >
+                          削除
+                        </button>
+                      </div>
+                      <textarea
+                        key={`journal-${e.date}`}
+                        defaultValue={e.text}
+                        rows={2}
+                        onBlur={(ev) => updateJournalText(e.date, ev.target.value)}
+                        className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                      />
+                    </div>
+                  ))}
+                  {filteredJournal.length === 0 && <p className="px-3 py-4 text-sm text-cream/50">該当する記録がありません。</p>}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="panel p-4">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setReflectionCollapsedStr(reflectionCollapsed ? "false" : "true")}
+        >
+          <h3 className="section-title font-display">
+            🌙 終業の振り返りの履歴（本日タブの「終業の振り返り」）
+            {reflectionCollapsed && <span className="ml-1 font-normal text-cream/40">（{reflectionEntries.length}件）</span>}
+          </h3>
+          <span className="text-xs text-cream/40">{reflectionCollapsed ? "▶" : "▼"}</span>
+        </button>
+        {!reflectionCollapsed && (
+          <div className="mt-3 space-y-3">
+            {reflectionEntries.length === 0 ? (
+              <div className="empty-state">
+                <EmptyArt name="records" />
+                <p>まだ記録がありません。「本日の作業」タブの「終業の振り返り」に答えると、ここに一覧で表示されます。</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
+                {reflectionEntries.map((e) => {
+                  const c = CONDITION_LEVELS.find((c) => Number(c.level) === e.reflection.satisfaction);
+                  return (
+                    <div key={e.date} className="space-y-1 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-cream/60 tabular-nums">
+                          {e.date}
+                          {c && (
+                            <span className="font-normal text-cream/50" title={c.label}>
+                              {c.emoji} {c.label}
+                            </span>
+                          )}
+                        </span>
+                        <button
+                          className="text-xs text-alert"
+                          aria-label={`${e.date}の振り返りを削除`}
+                          onClick={() => deleteReflection(e.date)}
+                        >
+                          削除
+                        </button>
+                      </div>
+                      {e.reflection.bestThing && (
+                        <p className="text-sm text-cream/80">👍 {e.reflection.bestThing}</p>
+                      )}
+                      {e.reflection.carryOver && (
+                        <p className="text-sm text-cream/60">➡️ {e.reflection.carryOver}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

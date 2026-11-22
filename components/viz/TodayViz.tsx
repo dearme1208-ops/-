@@ -283,10 +283,9 @@ export function NextScheduleBar({
           />
         )}
       </div>
-      {overlap !== undefined && (
-        <p className={`text-[11px] ${overlap > 0 ? "font-bold text-alert" : "text-cream/55"}`}>
-          {overlap > 0 ? `今の作業は予定に${hm(overlap)}食い込みそうです` : `今の作業は予定の${hm(-overlap)}前に終わる見込みです`}
-        </p>
+      {/* 間に合う時は帯だけで足りる(終わる見込みはカードの時計にも出ている)。食い込む時だけ文で知らせる */}
+      {overlap !== undefined && overlap > 0 && (
+        <p className="text-[11px] font-bold text-alert">今の作業は予定に{hm(overlap)}食い込みそうです</p>
       )}
     </div>
   );

@@ -35,7 +35,11 @@ const TOP_N = 10;
 const MEDALS = ["🥇", "🥈", "🥉"];
 
 export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?: (taskId: string) => void } = {}) {
-  const [kind, setKind] = useState<"day" | "week" | "month">("week");
+  // 最後に見た期間を覚えておく
+  const [kindRaw, setKindRaw] = useSetting("report.kind", "week");
+  const kind: "day" | "week" | "month" = kindRaw === "day" || kindRaw === "month" ? kindRaw : "week";
+  const setKind = (k: "day" | "week" | "month") => setKindRaw(k);
+  const [moreExportsOpen, setMoreExportsOpen] = useState(false);
   const [afterHoursCutoff] = useSetting("report.afterHoursCutoff", "18:00");
   const [standardHoursStr] = useSetting("overtime.standardDailyHours", "8");
   const standardDailySeconds = Math.max(0, Number(standardHoursStr) || 0) * 3600;
@@ -60,6 +64,8 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
 
   const title = kind === "week" ? "週報" : kind === "month" ? "月報" : "日報";
   const periodLabel = kind === "week" ? "週" : kind === "month" ? "月" : "日";
+  // 比較は前の期間の「同じ経過時点まで」。月曜に先週まるごとと比べると必ず大きく減って見えるため
+  const prevLabel = kind === "week" ? "先週の同じ曜日まで" : kind === "month" ? "先月の同じ日まで" : "昨日の同じ時刻まで";
   // ランキングの棒をクリックした際、その期間内でその作業に該当する実績の内訳を見せるためのモーダル。
   // ランキング以外(トップ3カード・定時以降・要注意項目・案件MVP)でも同じ形で使い回す
   const [viewingRanking, setViewingRanking] = useState<{ label: string; sublabel?: string; records: WorkRecord[]; note?: string } | null>(null);
@@ -117,9 +123,16 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
     const totalSeconds = ranking.reduce((s, r) => s + r.totalSeconds, 0);
     const totalCount = ranking.reduce((s, r) => s + r.count, 0);
 
-    // 前日/前週/前月との比較（自動サマリー文章用）
-    const prevNow = kind === "week" ? subWeeks(new Date(), 1) : kind === "month" ? subMonths(new Date(), 1) : subDays(new Date(), 1);
-    const prevRanking = aggregateRecords(records, filter, "total", false, prevNow);
+    // 前の期間の同じ経過時点(同じ曜日・同じ日・同じ時刻)までとの比較。
+    // 境目の日は今と同じ時刻までに始めた実績だけを数える(月末は date-fns が月末日にそろえる)
+    const nowDate = new Date();
+    const prevNow = kind === "week" ? subWeeks(nowDate, 1) : kind === "month" ? subMonths(nowDate, 1) : subDays(nowDate, 1);
+    const prevCutoffDate = todayStr(prevNow);
+    // 月末(3/31など)で前月に同じ日が無く月末日へ丸められた時は、前月はまるごと数える
+    const prevMonthClamped = kind === "month" && prevNow.getDate() !== nowDate.getDate();
+    const prevCutoffMs = prevMonthClamped ? Number.POSITIVE_INFINITY : prevNow.getTime();
+    const prevRecords = records.filter((r) => r.date < prevCutoffDate || (r.date === prevCutoffDate && r.startedAt <= prevCutoffMs));
+    const prevRanking = aggregateRecords(prevRecords, filter, "total", false, prevNow);
     const prevTotalSeconds = prevRanking.reduce((s, r) => s + r.totalSeconds, 0);
     const prevByKey = new Map(prevRanking.map((r) => [r.key, r.totalSeconds]));
     let topGainer: { category: string; name: string; deltaSeconds: number } | null = null;
@@ -435,10 +448,22 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             月報
           </button>
         </div>
+        {/* よく使う.txtだけ常に出し、ほかの書き出しはたたんでおく */}
         <div className="flex flex-wrap gap-2">
           <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={download} disabled={!data}>
             ダウンロード (.txt)
           </button>
+          <button
+            className="btn-pill-outline px-3 py-1.5 text-xs print:hidden"
+            onClick={() => setMoreExportsOpen((v) => !v)}
+            aria-expanded={moreExportsOpen}
+          >
+            その他の書き出し {moreExportsOpen ? "▲" : "▼"}
+          </button>
+        </div>
+      </div>
+      {moreExportsOpen && (
+        <div className="flex flex-wrap justify-end gap-2 print:hidden">
           <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={downloadPdf} disabled={!data || pdfExporting}>
             {pdfExporting ? "PDF作成中..." : "ダウンロード (.pdf)"}
           </button>
@@ -462,7 +487,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             実績をカレンダーへ (.ics)
           </button>
         </div>
-      </div>
+      )}
 
       {!data ? (
         <p className="text-sm text-cream/50">読み込み中...</p>
@@ -484,7 +509,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             </div>
             {(data.prevTotalSeconds > 0 || data.totalSeconds > 0) && (
               <p className="mt-3 border-t border-cream/10 pt-3 text-sm text-cream/80">
-                前{periodLabel}比{" "}
+                {prevLabel}比{" "}
                 {/* 作業時間が増えたこと自体は警告ではないので、alert(赤系)ではなく accent で示す */}
                 <span className={data.totalSeconds - data.prevTotalSeconds >= 0 ? "num text-accent" : "num text-cream"}>
                   {data.totalSeconds - data.prevTotalSeconds >= 0 ? "+" : "-"}
@@ -492,12 +517,30 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
                 </span>
                 {data.topGainer && data.topGainer.deltaSeconds > 0 && (
                   <>
-                    。特に「{data.topGainer.category} / {data.topGainer.name}」が前{periodLabel}より
+                    。特に「{data.topGainer.category} / {data.topGainer.name}」が{prevLabel}より
                     <span className="font-bold text-cream">{formatHms(data.topGainer.deltaSeconds)}</span>増えました。
                   </>
                 )}
               </p>
             )}
+          </div>
+
+          {/* 要の数字(合計作業時間など)は見出しのすぐ下に置く */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <StatTile label="合計作業時間" value={formatHms(data.totalSeconds)} />
+            <StatTile label="記録件数" value={`${data.totalCount}件`} />
+            <StatTile label="対象タスク数" value={`${data.ranking.length}種類`} />
+            <StatTile
+              label={`${afterHoursCutoff}以降`}
+              value={formatHms(data.afterHours.totalSeconds)}
+              accent={data.afterHours.totalSeconds > 0}
+            />
+            <StatTile
+              label="要注意項目"
+              value={`${data.attention.length}件`}
+              accent={data.attention.length > 0}
+            />
+            {totalCost !== null && <StatTile label="💰 概算コスト" value={formatYen(totalCost)} />}
           </div>
 
           {narrative && (
@@ -541,23 +584,6 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
               </p>
             </div>
           )}
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <StatTile label="合計作業時間" value={formatHms(data.totalSeconds)} />
-            <StatTile label="記録件数" value={`${data.totalCount}件`} />
-            <StatTile label="対象タスク数" value={`${data.ranking.length}種類`} />
-            <StatTile
-              label={`${afterHoursCutoff}以降`}
-              value={formatHms(data.afterHours.totalSeconds)}
-              accent={data.afterHours.totalSeconds > 0}
-            />
-            <StatTile
-              label="要注意項目"
-              value={`${data.attention.length}件`}
-              accent={data.attention.length > 0}
-            />
-            {totalCost !== null && <StatTile label="💰 概算コスト" value={formatYen(totalCost)} />}
-          </div>
 
           {data.ranking.length > 0 && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

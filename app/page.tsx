@@ -19,7 +19,6 @@ import AutoBackupInit from "@/components/AutoBackupInit";
 import LobotomyOverrunWatcher from "@/components/LobotomyOverrunWatcher";
 import ToastHost from "@/components/ui/ToastHost";
 import ConfettiHost from "@/components/ui/ConfettiHost";
-import CommandPalette from "@/components/CommandPalette";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import RunningNowPill from "@/components/RunningNowPill";
 import RunningNotifier from "@/components/RunningNotifier";
@@ -267,18 +266,6 @@ export default function HomePage() {
       <ToastHost />
       <ConfettiHost />
       <OnboardingGuide />
-      <CommandPalette
-        tabs={tabs}
-        onChangeTab={setActive}
-        onOpenTodoDetail={(taskId) => {
-          setPendingTodoDetailId(taskId);
-          setActive("todo");
-        }}
-        onOpenProjectEdit={(projectId) => {
-          setPendingProjectEditId(projectId);
-          setActive("projects");
-        }}
-      />
       <OrphanTaskModal />
       <RunningNotifier />
       <QuickCaptureHost />
@@ -293,6 +280,7 @@ export default function HomePage() {
           setActive("projects");
         }}
         onOpenTab={(tab) => setActive(tab)}
+        tabs={tabs}
       />
       <TodoReminderModal
         onViewDetail={(taskId) => {
@@ -491,7 +479,7 @@ export default function HomePage() {
       )}
       {active === "records" && <RecordsSection />}
       {active === "appearance" && <AppearanceSection />}
-      {active === "settings" && <SettingsSection />}
+      {active === "settings" && <SettingsSection onOpenTab={(tab) => setActive(tab)} />}
       </div>
       </SectionBoundary>
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
@@ -16,6 +16,22 @@ import { IconLabel } from "@/components/ui/Icon";
 
 const daysLeft = (due: string, today: string) =>
   Math.round((new Date(`${due}T00:00:00`).getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000);
+
+/**
+ * 使い方の一言は最初の1回だけ見せる(その画面を開いている間は出したまま)。2回目からは title だけに残す。
+ * active が false の間(枠そのものが出ていない間)は「見た」に数えない
+ */
+function useHintOnce(key: string, active: boolean): boolean {
+  const row = useLiveQuery(async () => ({ value: (await db.settings.get(key))?.value ?? null }), [key]);
+  const [show, setShow] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!active || row === undefined || show !== null) return;
+    const first = row.value !== "true";
+    setShow(first);
+    if (first) void db.settings.put({ key, value: "true" });
+  }, [active, row, show, key]);
+  return show === true;
+}
 
 /** 開閉を覚えておく見出し付きの枠。見出しは森モードで先頭の絵文字を線画にするため、文字列ではなく要素で受ける */
 function Fold({ settingKey, title, children, testId }: { settingKey: string; title: React.ReactNode; children: React.ReactNode; testId: string }) {
@@ -99,7 +115,9 @@ export function DueTerrainPanel() {
   const days = useMemo(() => dueTerrain(todos ?? [], projects ?? [], today), [todos, projects, today]);
   const [picked, setPicked] = useState<string | null>(null);
   const max = Math.max(...days.map((d) => d.todos.length + d.projects.length), 1);
-  if (days.every((d) => d.todos.length + d.projects.length === 0)) return null;
+  const empty = days.every((d) => d.todos.length + d.projects.length === 0);
+  const showTapHint = useHintOnce("hint.seen.dueTerrainTap", !empty);
+  if (empty) return null;
   const wd = ["日", "月", "火", "水", "木", "金", "土"];
   const sel = days.find((d) => d.date === picked);
   return (
@@ -130,7 +148,7 @@ export function DueTerrainPanel() {
           );
         })}
       </div>
-      <ul className="mt-2 flex gap-3 text-[11px] text-cream/70">
+      <ul className="mt-2 flex gap-3 text-[11px] text-cream/70" title="日付を押すと中身が出ます">
         <li className="flex items-center gap-1">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "var(--viz-1)" }} />
           ToDo
@@ -139,7 +157,7 @@ export function DueTerrainPanel() {
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "var(--viz-2)" }} />
           案件・段階
         </li>
-        <li className="text-cream/45">日付を押すと中身が出ます</li>
+        {showTapHint && <li className="caption">日付を押すと中身が出ます</li>}
       </ul>
       {sel && (
         <div className="mt-2 rounded-lg border border-cream/10 p-2 text-xs" data-testid="due-terrain-day">
@@ -201,16 +219,17 @@ export function WaitingHourglassPanel({ kind, onOpen }: { kind: "todo" | "projec
     [todos, projects, priority, waitingTags, nudgeDays, today]
   );
   const sands = useMemo(() => waitingSand(items.map((i) => i.days), nudgeDays), [items, nudgeDays]);
+  const nudgeAt = sands.find((x) => x)?.nudgeAt;
+  const showSettingHint = useHintOnce("hint.seen.waitingNudgeSetting", items.length > 0 && nudgeAt !== undefined);
   if (items.length === 0) return null;
   const overdueCount = items.filter((i) => i.overdue).length;
-  const nudgeAt = sands.find((x) => x)?.nudgeAt;
   return (
     <Fold settingKey={`viz.waitingOpen.${kind}`} title={<IconLabel text="⏳ 相手待ちの砂時計" />} testId="waiting-hourglass">
       <p className="text-xs text-cream/80">
         {items.length}件待ち
         {overdueCount > 0 && <span className="ml-1 font-bold text-caution">・催促どき {overdueCount}件 ⏰</span>}
       </p>
-      <p className="section-sub mb-2">
+      <p className="section-sub mb-2" title="催促の目安の日数は設定タブで変えられます">
         待ち始めてから{nudgeDays}日で砂が落ちきり、催促の目安です(点線)。目安を過ぎた分は赤で伸びます。
       </p>
       <ul className="space-y-2.5">
@@ -254,7 +273,7 @@ export function WaitingHourglassPanel({ kind, onOpen }: { kind: "todo" | "projec
         })}
       </ul>
       {items.length > 10 && <p className="mt-2 text-[11px] text-cream/45">ほか{items.length - 10}件</p>}
-      {nudgeAt !== undefined && <p className="mt-2 text-[11px] text-cream/45">催促の目安の日数は設定タブで変えられます。</p>}
+      {nudgeAt !== undefined && showSettingHint && <p className="caption mt-2">催促の目安の日数は設定タブで変えられます。</p>}
     </Fold>
   );
 }

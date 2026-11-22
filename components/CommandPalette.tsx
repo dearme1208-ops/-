@@ -13,34 +13,41 @@ interface CommandItem {
   onSelect: () => void;
 }
 
-// Ctrl/Cmd+Kで開く全体検索。タブ切り替えと、ToDo/案件のタイトル検索からのジャンプをまとめて行える
+// タブ切り替えと、ToDo/案件のタイトル検索からのジャンプをまとめて行える一覧。
+// Ctrl/⌘+K は「🔍 さがす」(GlobalPanelsHost)に一本化したので、ここでは開閉を呼び出し側に任せる
 export default function CommandPalette({
+  open: openProp = false,
+  onClose,
   tabs,
   onChangeTab,
   onOpenTodoDetail,
   onOpenProjectEdit,
 }: {
+  open?: boolean;
+  onClose?: () => void;
   tabs: TabDef[];
   onChangeTab: (key: string) => void;
   onOpenTodoDetail: (id: string) => void;
   onOpenProjectEdit: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(openProp);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  useEffect(() => setOpenState(openProp), [openProp]);
+  const setOpen = (v: boolean) => {
+    setOpenState(v);
+    if (!v) onClose?.();
+  };
 
   useEffect(() => {
+    if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setOpen((v) => !v);
-      } else if (e.key === "Escape") {
-        setOpen(false);
-      }
+      if (e.key === "Escape") setOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (open) setQuery("");
@@ -140,7 +147,7 @@ export default function CommandPalette({
           ))}
         </div>
         <p className="border-t border-cream/10 px-4 py-2 text-[10px] text-cream/30">
-          ↑↓ で選択 / Enter で決定 / Ctrl(⌘)+K でいつでも開閉
+          ↑↓ で選択 / Enter で決定 / Escで閉じる
         </p>
       </div>
     </div>

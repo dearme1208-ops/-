@@ -52,16 +52,17 @@ function ModeButton({
   );
 }
 
-/** 用途ごとのまとまり。下に小さく見出しを添え、まとまりの間は細い縦線で区切る */
+/** 用途ごとのまとまり。下に小さく見出しを添え、まとまりの間は細い縦線で区切る。
+ *  狭い画面では見出しを出さない(ボタンの行が2段になり、本文が下へ押されていた)。グループ名はaria-labelに残す */
 function ToolGroup({ caption, children }: { caption: string; children: ReactNode }) {
   return (
     <div role="group" aria-label={caption} className="flex shrink-0 flex-col items-center gap-0.5">
       <div className="flex items-center gap-1.5">{children}</div>
-      <span className="text-[10px] leading-none tracking-wider text-cream/60">{caption}</span>
+      <span aria-hidden="true" className="hidden text-[10px] leading-none tracking-wider text-cream/60 sm:inline">{caption}</span>
     </div>
   );
 }
-const GroupDivider = () => <span aria-hidden="true" className="mx-1 mb-3 w-px shrink-0 self-stretch bg-cream/15" />;
+const GroupDivider = () => <span aria-hidden="true" className="mx-1 w-px sm:mb-3 shrink-0 self-stretch bg-cream/15" />;
 
 export interface TodayToolbarProps {
   date: string;

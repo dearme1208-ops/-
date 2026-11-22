@@ -244,6 +244,10 @@ export default function TodaySection({
   const showStatusPanel = showStatusPanelStr === "true";
   const [showAutoAllocateStr] = useSetting("today.showAutoAllocate", "true");
   const showAutoAllocate = showAutoAllocateStr === "true";
+  // オフのまま「自動配分を使う…」を押して切り替えの枠を開いたか(この画面の間だけ)
+  const [autoAllocateOpened, setAutoAllocateOpened] = useState(false);
+  // 「通知を許可」の案内を「今はしない」で閉じたか
+  const [notifyAskDismissedStr, setNotifyAskDismissedStr] = useSetting("today.notifyAskDismissed", "false");
   const [showSuggestedTaskStr] = useSetting("today.showSuggestedTask", "true");
   const showSuggestedTask = showSuggestedTaskStr === "true";
   const [showNextMovePickStr] = useSetting("today.showNextMovePick", "true");
@@ -2704,6 +2708,8 @@ export default function TodaySection({
   // 計測中のカードが画面に見えている間は、画面下の「計測中の帯」を出さない(同じ内容が二重になり、
   // 下に貼り付いた部分が大きくなってカードのボタンに重なっていた)。スクロールして見えなくなったら出す
   const [runningCardOnScreen, setRunningCardOnScreen] = useState(false);
+  // 画面下に計測中の帯を出しているか(上の超過の流れる帯と重ねないため)
+  const runningStripShown = !!runningStrip && !runningCardOnScreen;
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
     const visible = new Set<Element>();
@@ -2884,7 +2890,8 @@ export default function TodaySection({
       )}
       {/* 実行中タブでは、すぐ下の計測中のカードが同じことを(赤い帯・超過の時間で)出しているので重ねて出さない。
           ほかのタブを見ている時だけ、超過に気づけるよう流す */}
-      {themedMode && runningOverrunTasks.length > 0 && taskViewTab !== "running" && (
+      {/* 画面下の計測中の帯が出ている時も、帯が超過を(赤く)出しているので重ねない */}
+      {themedMode && runningOverrunTasks.length > 0 && taskViewTab !== "running" && !runningStripShown && (
         <div
           className={`warning-ticker panel px-3 py-2 text-xs font-bold ${
             va11hallaMode ? "border border-v11-pink/60 bg-v11-pink/10 text-v11-pink" : `border border-alert/60 bg-alert/10 ${emphasisTextClass(themedMode)}`
@@ -3036,7 +3043,13 @@ export default function TodaySection({
         />
       )}
 
-      {taskViewTab === "pending" && (
+      {/* 期限切れ・本日期限がどちらも0件なら、枠は出さず1行だけにする */}
+      {taskViewTab === "pending" &&
+        pendingDueSummary.todoOverdue + pendingDueSummary.todoDueToday + pendingDueSummary.projectOverdue + pendingDueSummary.projectDueToday === 0 && (
+          <p className="caption mb-2 px-1 text-cream/40">ToDo・案件とも、期限切れ・本日期限はありません</p>
+        )}
+      {taskViewTab === "pending" &&
+        pendingDueSummary.todoOverdue + pendingDueSummary.todoDueToday + pendingDueSummary.projectOverdue + pendingDueSummary.projectDueToday > 0 && (
         <div className="panel flex flex-wrap gap-x-6 gap-y-2 px-4 py-3 text-xs">
           {(() => {
             const hasTodo = pendingDueSummary.todoOverdue > 0 || pendingDueSummary.todoDueToday > 0;
@@ -3117,6 +3130,32 @@ export default function TodaySection({
           })()}
         />
       )}
+      <div className="space-y-3">
+        {visibleTasks.length === 0 && (
+          // 文言は <p> に残し(getByText で探せるように)、森モードだけ空き地(完了タブは土の中の種)の線画を添える
+          <div className="empty-state">
+            <EmptyArt name={taskViewTab === "done" ? "done" : "today"} />
+            <p>
+              {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
+              {taskViewTab === "pending" && "予定している作業はありません"}
+              {taskViewTab === "done" && "完了した作業はまだありません"}
+            </p>
+          </div>
+        )}
+        {/* 完了が多い日(数百件)に全部を描くと開くのも操作も重いので、新しい方から30件だけ出す。
+            並びは終えた順のまま(下ほど新しい)で、古い分は上のボタンで開く */}
+        {hiddenDoneCount > 0 && (
+          <button className="btn-pill-outline w-full text-sm" onClick={() => setDoneShown((n) => n + 60)}>
+            ▲ それより前の{hiddenDoneCount}件を表示
+          </button>
+        )}
+        {(hiddenDoneCount > 0 ? visibleTasks.slice(hiddenDoneCount) : visibleTasks).map((task) => (
+          <TaskCard key={task.id} task={task} ctx={taskCardCtx} />
+        ))}
+      </div>
+      {/* 完了タブは、直すことの多いカードを先に出し、予定と実績・ガントはその下にする */}
+      {taskViewTab === "done" && (
+        <div className="mt-4 space-y-4">
       {taskViewTab === "done" && !background && <PlanActualPanel tasks={tasks ?? []} />}
       {taskViewTab === "done" && (
         // 1件1行なので、完了が多い日は縦に何画面分にもなり、下の作業の一覧にたどり着けなかった。高さを区切る
@@ -3177,30 +3216,8 @@ export default function TodaySection({
         />
         </div>
       )}
-
-      <div className="space-y-3">
-        {visibleTasks.length === 0 && (
-          // 文言は <p> に残し(getByText で探せるように)、森モードだけ空き地(完了タブは土の中の種)の線画を添える
-          <div className="empty-state">
-            <EmptyArt name={taskViewTab === "done" ? "done" : "today"} />
-            <p>
-              {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
-              {taskViewTab === "pending" && "予定している作業はありません"}
-              {taskViewTab === "done" && "完了した作業はまだありません"}
-            </p>
-          </div>
-        )}
-        {/* 完了が多い日(数百件)に全部を描くと開くのも操作も重いので、新しい方から30件だけ出す。
-            並びは終えた順のまま(下ほど新しい)で、古い分は上のボタンで開く */}
-        {hiddenDoneCount > 0 && (
-          <button className="btn-pill-outline w-full text-sm" onClick={() => setDoneShown((n) => n + 60)}>
-            ▲ それより前の{hiddenDoneCount}件を表示
-          </button>
-        )}
-        {(hiddenDoneCount > 0 ? visibleTasks.slice(hiddenDoneCount) : visibleTasks).map((task) => (
-          <TaskCard key={task.id} task={task} ctx={taskCardCtx} />
-        ))}
-      </div>
+        </div>
+      )}
         </div>
       )}
 
@@ -3229,26 +3246,7 @@ export default function TodaySection({
         </button>
         {!extrasCollapsed && (
           <>
-            {!background && <WeeklySummaryCard today={date} />}
-            {!background && !isPanelFolded("dayRing") && (
-              <div data-panel-id="dayRing">
-                <DayRing tasks={tasks ?? []} date={date} now={now} onEditTask={(t) => setEditingTask(t)} />
-              </div>
-            )}
-            {!background && !isPanelFolded("hourglass") && (
-              <div data-panel-id="hourglass">
-                <HourglassPanel
-                  tasks={tasks ?? []}
-                  predictedSecondsByTaskId={predictedSecondsByTaskId}
-                  elapsedMsOf={(t) => segmentsAccumulatedMs(t, now)}
-                  now={now}
-                  workEnd={standardWorkEnd}
-                />
-              </div>
-            )}
-            {themedMode === "home" && !background && <ChorePanel today={date} onStart={addFavoriteAndStart} />}
-            {themedMode === "persona5" && <PersonaStatsPanel today={date} />}
-
+            {/* 作業をすぐ始めるもの(お気に入り・再開・提案)は、輪・砂時計より先に出す */}
             {!isPanelFolded("favorites") && favorites && favorites.length > 0 && (
               <div data-panel-id="favorites" className="panel p-4">
                 <button
@@ -3327,7 +3325,6 @@ export default function TodaySection({
               </div>
             )}
 
-
             {!isPanelFolded("nextMove") && showNextMovePick && nextTaskPick && (
               // 提案であって警告ではないため、珊瑚色(遅れ・超過の色)ではなく「今できること」の緑にする
               <div data-panel-id="nextMove" className="panel flex flex-wrap items-center justify-between gap-2 border border-accent/45 bg-accent/[0.06] p-4">
@@ -3364,6 +3361,26 @@ export default function TodaySection({
                 </button>
               </div>
             )}
+
+            {!background && <WeeklySummaryCard today={date} />}
+            {!background && !isPanelFolded("dayRing") && (
+              <div data-panel-id="dayRing">
+                <DayRing tasks={tasks ?? []} date={date} now={now} onEditTask={(t) => setEditingTask(t)} />
+              </div>
+            )}
+            {!background && !isPanelFolded("hourglass") && (
+              <div data-panel-id="hourglass">
+                <HourglassPanel
+                  tasks={tasks ?? []}
+                  predictedSecondsByTaskId={predictedSecondsByTaskId}
+                  elapsedMsOf={(t) => segmentsAccumulatedMs(t, now)}
+                  now={now}
+                  workEnd={standardWorkEnd}
+                />
+              </div>
+            )}
+            {themedMode === "home" && !background && <ChorePanel today={date} onStart={addFavoriteAndStart} />}
+            {themedMode === "persona5" && <PersonaStatsPanel today={date} />}
 
             {!isPanelFolded("condition") && conditionEnabled && (
               <div data-panel-id="condition" className="panel p-4">
@@ -3440,7 +3457,15 @@ export default function TodaySection({
                 </div>
               </div>
             )}
-            {!isPanelFolded("autoAllocate") && showAutoAllocate && (
+            {/* オフ(初期値)の間は1行だけにし、押した時に切り替えの枠を開く */}
+            {!isPanelFolded("autoAllocate") && showAutoAllocate && autoAllocateMode === "off" && !autoAllocateOpened && (
+              <div data-panel-id="autoAllocate">
+                <button className="caption text-left text-cream/50 hover:text-cream/80" onClick={() => setAutoAllocateOpened(true)}>
+                  自動配分を使う…
+                </button>
+              </div>
+            )}
+            {!isPanelFolded("autoAllocate") && showAutoAllocate && (autoAllocateMode !== "off" || autoAllocateOpened) && (
               <div data-panel-id="autoAllocate">
                 <AutoAllocatePanel
                   mode={autoAllocateMode as AutoAllocateMode}
@@ -3468,13 +3493,19 @@ export default function TodaySection({
                 </div>
               </details>
             )}
-            {notifPermission !== "granted" && notifPermission !== "unsupported" && (
+            {notifPermission !== "granted" && notifPermission !== "unsupported" && notifyAskDismissedStr !== "true" && (
               <div className="panel flex items-center justify-between gap-3 p-4">
                 <p className="text-sm text-cream/80">予定超過を通知でお知らせできます。</p>
                 {/* 狭い画面でボタンの文字が2行に折れていたため、ボタンは縮めず折り返さない */}
-                <button className="btn-pill-outline shrink-0 whitespace-nowrap text-sm" onClick={enableNotifications}>
-                  通知を許可
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  {/* 毎日出っぱなしにならないよう、断ったら出さない(設定から許可はできる) */}
+                  <button className="whitespace-nowrap text-xs text-cream/50" onClick={() => setNotifyAskDismissedStr("true")}>
+                    今はしない
+                  </button>
+                  <button className="btn-pill-outline whitespace-nowrap text-sm" onClick={enableNotifications}>
+                    通知を許可
+                  </button>
+                </div>
               </div>
             )}
 
@@ -3564,7 +3595,7 @@ export default function TodaySection({
         leading={quickStampButtonStr === "true" ? <QuickStampButton onStamp={stampNow} /> : undefined}
         above={justStamped ? <QuickStampSheet key={justStamped.id} stamp={justStamped} onClose={closeStampSheet} /> : undefined}
         running={
-          runningStrip && !runningCardOnScreen
+          runningStrip && runningStripShown
             ? {
                 ...runningStrip,
                 onClick: () => setTaskViewTab("running"),

@@ -116,6 +116,7 @@ test("終わった案件を型にして、段階と過去の実績からの目�
   });
   await openTab(page, "案件");
   await page.locator("button", { hasText: "完了済み（1）" }).click();
+  await page.getByRole("button", { name: "そのほかの操作" }).first().click();
   await page.locator("button", { hasText: "📐 型にして作る" }).first().click();
   const dialog = page.locator(".modal-scrim").last();
   await expect(dialog.getByText("目安 01:00:00（1件の平均）")).toBeVisible();

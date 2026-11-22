@@ -34,7 +34,7 @@ import type { BreakRange } from "@/lib/types";
 import { WEEKDAY_JP } from "@/lib/types";
 import LifeContextSelect from "@/components/ai/LifeContextSelect";
 
-export default function SettingsSection() {
+export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: string) => void } = {}) {
   const [backupStatus, setBackupStatus] = useState("");
   const [autoBackupFolder, setAutoBackupFolder] = useState<string | null>(null);
   const [autoBackupStatus, setAutoBackupStatus] = useState("");
@@ -601,8 +601,18 @@ export default function SettingsSection() {
   // 絞り込みは各パネルのstyle.displayを直接切り替える方式にしてある
   const panelsRef = useRef<HTMLDivElement>(null);
   const [settingsQuery, setSettingsQuery] = useState("");
-  // 分類での絞り込み("all"=すべて)。分類は見出しから決まる(lib/settingsCategories.ts)
-  const [settingsCategory, setSettingsCategory] = useState("all");
+  // 分類での絞り込み("all"=すべて)。分類は見出しから決まる(lib/settingsCategories.ts)。
+  // 最後に選んだ分類を覚えておき、次に開いた時もそこから始める
+  // 押した瞬間に絞り込みを反映し(保存の完了を待たない)、次に開いた時のために覚えておく
+  const [savedCategory, saveCategory] = useSetting("settings.lastCategory", "all");
+  const [pickedCategory, setPickedCategory] = useState<string | null>(null);
+  const settingsCategoryRaw = pickedCategory ?? savedCategory;
+  function setSettingsCategory(key: string) {
+    setPickedCategory(key);
+    void saveCategory(key);
+  }
+  // 分類表から消えた分類を覚えていた時に、全部のパネルが隠れたままにならないよう「すべて」に戻す
+  const settingsCategory = SETTINGS_CATEGORIES.some((c) => c.key === settingsCategoryRaw) ? settingsCategoryRaw : "all";
   const [showSettingsIndex, setShowSettingsIndex] = useState(false);
   const [settingsHeadings, setSettingsHeadings] = useState<string[]>([]);
   const [matchedHeadings, setMatchedHeadings] = useState<string[]>([]);
@@ -1463,81 +1473,6 @@ export default function SettingsSection() {
           </button>
           <button
             role="switch"
-            aria-checked={hapticsStr === "true"}
-            data-toggle
-            className={hapticsStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setHapticsStr(hapticsStr === "true" ? "false" : "true")}
-            title="計測の開始・完了の時に、端末を軽く振動させます(対応する端末のみ)"
-          >
-            操作時の振動: {hapticsStr === "true" ? "ON" : "OFF"}
-          </button>
-          <button
-            role="switch"
-            aria-checked={runningNotificationStr === "true"}
-            data-toggle
-            className={runningNotificationStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setRunningNotificationStr(runningNotificationStr === "true" ? "false" : "true")}
-            title="アプリを閉じている間、計測中の作業を通知に出します。Androidでは通知から一時停止・完了できます(通知の許可が必要)"
-          >
-            計測中を通知に出す: {runningNotificationStr === "true" ? "ON" : "OFF"}
-          </button>
-          <button
-            role="switch"
-            aria-checked={autoFoldPanelsStr === "true"}
-            data-toggle
-            className={autoFoldPanelsStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setAutoFoldPanelsStr(autoFoldPanelsStr === "true" ? "false" : "true")}
-            title="30日以上触っていない表示を「しばらく使っていない表示」にまとめます"
-          >
-            使っていない表示を畳む: {autoFoldPanelsStr === "true" ? "ON" : "OFF"}
-          </button>
-          <button
-            role="switch"
-            aria-checked={showWeeklySummaryStr === "true"}
-            data-toggle
-            className={showWeeklySummaryStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowWeeklySummaryStr(showWeeklySummaryStr === "true" ? "false" : "true")}
-            title="金〜日に今週、月曜に先週のまとめを本日の作業に出します"
-          >
-            今週のまとめ: {showWeeklySummaryStr === "true" ? "ON" : "OFF"}
-          </button>
-          <button
-            role="switch"
-            aria-checked={showTaskClockStr === "true"}
-            data-toggle
-            className={showTaskClockStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowTaskClockStr(showTaskClockStr === "true" ? "false" : "true")}
-            title="計測中のカードに、今の時刻と終わる見込みを描いたアナログ時計を出します"
-          >
-            計測中の時計: {showTaskClockStr === "true" ? "ON" : "OFF"}
-          </button>
-          <button
-            role="switch"
-            aria-checked={dayPlanAtRiskStr === "true"}
-            data-toggle
-            className={dayPlanAtRiskStr === "true" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setDayPlanAtRiskStr(dayPlanAtRiskStr === "true" ? "false" : "true")}
-            title="「今日の段取り」に、期日に間に合わない見込みのToDo・案件の件数と一覧を出します"
-          >
-            段取りの「間に合わない見込み」: {dayPlanAtRiskStr === "true" ? "ON" : "OFF"}
-          </button>
-          <span className="flex flex-wrap items-center gap-1 text-xs text-cream/60" data-testid="text-scale">
-            文字の大きさ:
-            {(
-              [
-                ["compact", "ぎっしり"],
-                ["normal", "標準"],
-                ["large", "大きめ"],
-                ["xlarge", "特大"],
-              ] as const
-            ).map(([v, label]) => (
-              <button key={v} className={textScale === v ? "btn-pill px-3 py-1 text-xs" : "btn-pill-outline px-3 py-1 text-xs"} onClick={() => setTextScale(v)}>
-                {label}
-              </button>
-            ))}
-          </span>
-          <button
-            role="switch"
             aria-checked={showTodayHint}
             data-toggle
             className={showTodayHint ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1545,33 +1480,37 @@ export default function SettingsSection() {
           >
             今日効く助言: {showTodayHint ? "ON" : "OFF"}
           </button>
-          <button
-            role="switch"
-            aria-checked={showBackupNudge}
-            data-toggle
-            className={showBackupNudge ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setShowBackupNudgeStr(showBackupNudge ? "false" : "true")}
-          >
-            バックアップの催促: {showBackupNudge ? "ON" : "OFF"}
-          </button>
+        </div>
+        {/* 説明が要るスイッチは1行ずつ、下に短い説明を出す */}
+        <div className="space-y-2">
+          <SettingSwitch
+            on={autoFoldPanelsStr === "true"}
+            onToggle={() => setAutoFoldPanelsStr(autoFoldPanelsStr === "true" ? "false" : "true")}
+            label="使っていない表示を畳む"
+            caption="30日以上触っていない表示を「しばらく使っていない表示」にまとめます"
+          />
+          <SettingSwitch
+            on={showWeeklySummaryStr === "true"}
+            onToggle={() => setShowWeeklySummaryStr(showWeeklySummaryStr === "true" ? "false" : "true")}
+            label="今週のまとめ"
+            caption="金〜日に今週、月曜に先週のまとめを本日の作業に出します"
+          />
+          <SettingSwitch
+            on={showTaskClockStr === "true"}
+            onToggle={() => setShowTaskClockStr(showTaskClockStr === "true" ? "false" : "true")}
+            label="計測中の時計"
+            caption="計測中のカードに、今の時刻と終わる見込みを描いたアナログ時計を出します"
+          />
+          <SettingSwitch
+            on={dayPlanAtRiskStr === "true"}
+            onToggle={() => setDayPlanAtRiskStr(dayPlanAtRiskStr === "true" ? "false" : "true")}
+            label="段取りの「間に合わない見込み」"
+            caption="「今日の段取り」に、期日に間に合わない見込みのToDo・案件の件数と一覧を出します"
+          />
         </div>
         <p className="text-xs text-cream/65">
-          OFFにしたパネルは本日タブに表示されなくなります（記録や設定自体は消えません。自動配分はモード自体を「オフ」にしても止められますが、ここでOFFにするとパネルごと非表示にできます）。「今日効く助言」は要注意リストの分析から今の時間帯に効くものを1件だけ出すもので、OFFにしても要注意リストタブでは今までどおり見られます。「バックアップの催促」をOFFにすると、長く書き出していなくても本日タブでは報せません（このタブの「データのバックアップ」からはいつでも書き出せます）。
+          OFFにしたパネルは本日タブに表示されなくなります（記録や設定自体は消えません。自動配分はモード自体を「オフ」にしても止められますが、ここでOFFにするとパネルごと非表示にできます）。「今日効く助言」は要注意リストの分析から今の時間帯に効くものを1件だけ出すもので、OFFにしても要注意リストタブでは今までどおり見られます。通知・振動・文字の大きさ・バックアップの催促は、それぞれ「通知」「文字サイズ・見やすさ」「自動バックアップ」の欄へ移しました。
         </p>
-        <div className="border-t border-cream/10 pt-3">
-          <button
-            role="switch"
-            aria-checked={patternSuggestNotifyEnabled}
-            data-toggle
-            className={patternSuggestNotifyEnabled ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={() => setPatternSuggestNotifyEnabledStr(patternSuggestNotifyEnabled ? "false" : "true")}
-          >
-            パターン学習型の声かけ通知: {patternSuggestNotifyEnabled ? "ON" : "OFF"}
-          </button>
-          <p className="mt-2 text-xs text-cream/65">
-            「そろそろこの作業では?」の提案が出た最初のタイミングで、パネル表示に加えて通知も送ります（同じ提案は1日1回まで）。
-          </p>
-        </div>
       </div>
 
       <div className="panel space-y-3 p-4">
@@ -1654,6 +1593,22 @@ export default function SettingsSection() {
             ハイコントラスト: {highContrast ? "ON" : "OFF"}
           </button>
         </div>
+        {/* 本日タブのパネル表示から移した、文字の大きさ(4段階) */}
+        <div className="flex flex-wrap items-center gap-1 text-xs text-cream/60" data-testid="text-scale">
+          文字の大きさ:
+          {(
+            [
+              ["compact", "ぎっしり"],
+              ["normal", "標準"],
+              ["large", "大きめ"],
+              ["xlarge", "特大"],
+            ] as const
+          ).map(([v, label]) => (
+            <button key={v} className={textScale === v ? "btn-pill px-3 py-1 text-xs" : "btn-pill-outline px-3 py-1 text-xs"} onClick={() => setTextScale(v)}>
+              {label}
+            </button>
+          ))}
+        </div>
         <p className="text-xs text-cream/65">
           文字サイズはアプリ全体に反映されます。ハイコントラストは、薄い文字色・枠線をより濃く表示し、フォーカス時の輪郭も強調します。
         </p>
@@ -1701,6 +1656,11 @@ export default function SettingsSection() {
 
       <div className="panel space-y-2 p-4">
         <h3 className="section-title font-display">🎭 演出テーマ</h3>
+        {onOpenTab && (
+          <button className="btn-pill-outline text-xs" onClick={() => onOpenTab("appearance")}>
+            🎭 モード選択を開く
+          </button>
+        )}
         <p className="section-sub">
           モードの選択はタブ列の「モード選択」に移りました。アクセントカラー・文字サイズなど、モードに関わらない全体設定はこのまま設定タブに残っています。
         </p>
@@ -1821,6 +1781,27 @@ export default function SettingsSection() {
           <p className="mt-2 text-xs text-cream/65">
             月が変わって初めてアプリを開いたタイミングで、先月の合計作業時間と最も時間を使った業務区分を通知します（月1回）。
           </p>
+        </div>
+        {/* 本日タブのパネル表示から移した、通知・振動のスイッチ */}
+        <div className="space-y-2 border-t border-cream/10 pt-3" data-testid="notify-misc">
+          <SettingSwitch
+            on={runningNotificationStr === "true"}
+            onToggle={() => setRunningNotificationStr(runningNotificationStr === "true" ? "false" : "true")}
+            label="計測中を通知に出す"
+            caption="アプリを閉じている間、計測中の作業を通知に出します。Androidでは通知から一時停止・完了できます(通知の許可が必要)"
+          />
+          <SettingSwitch
+            on={patternSuggestNotifyEnabled}
+            onToggle={() => setPatternSuggestNotifyEnabledStr(patternSuggestNotifyEnabled ? "false" : "true")}
+            label="パターン学習型の声かけ通知"
+            caption="「そろそろこの作業では?」の提案が出た最初のタイミングで、通知も送ります(同じ提案は1日1回まで)"
+          />
+          <SettingSwitch
+            on={hapticsStr === "true"}
+            onToggle={() => setHapticsStr(hapticsStr === "true" ? "false" : "true")}
+            label="操作時の振動"
+            caption="計測の開始・完了の時に、端末を軽く振動させます(対応する端末のみ)"
+          />
         </div>
       </div>
 
@@ -2355,6 +2336,14 @@ export default function SettingsSection() {
         {staleBackupDays === null && (
           <p className="text-xs text-alert">この端末ではまだ一度もバックアップしていません。</p>
         )}
+        <div className="border-t border-cream/10 pt-3">
+          <SettingSwitch
+            on={showBackupNudge}
+            onToggle={() => setShowBackupNudgeStr(showBackupNudge ? "false" : "true")}
+            label="バックアップの催促"
+            caption="長く書き出していない時に本日タブで報せます。OFFでも、このタブからいつでも書き出せます"
+          />
+        </div>
       </div>
 
       <div className="panel space-y-3 p-4">
@@ -2520,3 +2509,14 @@ function PresetListEditor({
   );
 }
 
+// ON/OFFのスイッチ1つと、その下の短い説明(スマホでは title が出ないので文字で見せる)
+function SettingSwitch({ on, onToggle, label, caption }: { on: boolean; onToggle: () => void; label: string; caption?: string }) {
+  return (
+    <div>
+      <button role="switch" aria-checked={on} data-toggle className={on ? "btn-pill text-xs" : "btn-pill-outline text-xs"} onClick={onToggle}>
+        {label}: {on ? "ON" : "OFF"}
+      </button>
+      {caption && <p className="mt-1 text-[11px] leading-snug text-cream/55">{caption}</p>}
+    </div>
+  );
+}

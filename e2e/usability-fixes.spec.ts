@@ -18,6 +18,7 @@ test.describe("スマホ幅の表示崩れ", () => {
   test("案件カードの操作ボタンが縦1列に潰れず、横書きのまま折り返して並ぶ", async ({ page }) => {
     await seed(page, { stores: { projects: [{ id: "p1", title: "G社見積", category: "営業", workName: "見積", dueDate: jstDate(5), createdAt: 0 }] } });
     await openTab(page, "案件");
+    await page.getByRole("button", { name: "そのほかの操作" }).first().click();
     for (const label of ["本日の作業に追加", "📐 型にして作る", "ボードに置く", "🗄 アーカイブ"]) {
       const box = await page.locator("button", { hasText: label }).first().boundingBox();
       // 1行分の高さに収まっている(縦に潰れると文字数分の高さになる)

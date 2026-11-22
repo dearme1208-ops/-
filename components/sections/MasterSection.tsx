@@ -97,6 +97,8 @@ export default function MasterSection() {
   const simpleButtons = simpleButtonsStr === "true";
   const [showArchived, setShowArchived] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  // CSV・再計算の道具の折りたたみ
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [newName, setNewName] = useState("");
   const [newEstimate, setNewEstimate] = useState("00:10:00");
@@ -463,36 +465,43 @@ export default function MasterSection() {
             ★ お気に入りのみ
           </button>
         </div>
+        {/* CSV・再計算の道具はふだん使わないので畳む(ToDoタブと同じ) */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="caption">道具</span>
-          {showCsvTools && (
-            <>
-              <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={downloadTemplate}>
-                CSVテンプレート
-              </button>
-              <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={exportCsv}>
-                CSVエクスポート
-              </button>
-              <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={() => fileInputRef.current?.click()}>
-                CSVインポート
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) importCsv(file);
-                  e.target.value = "";
-                }}
-              />
-            </>
-          )}
-          <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={recalcEstimates}>
-            想定時間を再計算
+          <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={() => setToolsOpen((v) => !v)} aria-expanded={toolsOpen}>
+            📂 取り込み・書き出し {toolsOpen ? "▲" : "▼"}
           </button>
         </div>
+        {toolsOpen && (
+          <div className="flex flex-wrap items-center gap-2">
+            {showCsvTools && (
+              <>
+                <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={downloadTemplate}>
+                  CSVテンプレート
+                </button>
+                <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={exportCsv}>
+                  CSVエクスポート
+                </button>
+                <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={() => fileInputRef.current?.click()}>
+                  CSVインポート
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) importCsv(file);
+                    e.target.value = "";
+                  }}
+                />
+              </>
+            )}
+            <button className="btn-pill-outline px-3 py-1.5 text-xs" onClick={recalcEstimates}>
+              想定時間を再計算
+            </button>
+          </div>
+        )}
       </div>
 
       {recalcStatus && <p className="text-xs text-cream/70">{recalcStatus}</p>}

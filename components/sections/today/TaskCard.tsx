@@ -244,6 +244,47 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
   // 計測中のカードで🎯予想を入れてある時は、入れた値が隠れないよう最初から開いておく
   const moreDefaultOpen = task.status === "running" && !!task.guessSeconds;
   const moreOpen = moreToggle?.status === task.status ? moreToggle.open : moreDefaultOpen;
+  // 「⏪ 少し前に終わってた」の開け閉め。計測の区切り(開始時刻)ごとに覚え、一時停止→再開で閉じた形に戻す
+  const openSegmentStart = task.segments.find((sg) => sg.end === undefined)?.start ?? null;
+  const [finishEarlierAt, setFinishEarlierAt] = useState<number | null>(null);
+  const finishEarlierOpen = task.status === "running" && openSegmentStart !== null && finishEarlierAt === openSegmentStart;
+  const guessInput = (
+    <div className="flex items-center gap-1 text-xs text-cream/40">
+      <span title="開始前後に自分で予想を立てておくと、完了時に的中度が見られます">🎯予想</span>
+      <input
+        type="number"
+        min={0}
+        value={task.guessSeconds ? Math.round(task.guessSeconds / 60) : ""}
+        onChange={(e) => {
+          const min = Number(e.target.value);
+          db.dailyTasks.update(task.id, {
+            guessSeconds: Number.isFinite(min) && min > 0 ? Math.round(min * 60) : undefined,
+          });
+        }}
+        placeholder="-"
+        className="w-12 rounded border border-cream/20 bg-ink px-1 py-0.5 text-right tabular-nums text-cream"
+      />
+      <span>分</span>
+    </div>
+  );
+  const moreButton = (
+    <button
+      type="button"
+      className={`-my-1 ml-auto rounded-full px-3 py-1 text-base leading-none ${moreOpen ? "text-cream" : "text-cream/50"} hover:text-cream`}
+      onClick={() => setMoreToggle({ status: task.status, open: !moreOpen })}
+      aria-label="そのほかの操作"
+      aria-expanded={moreOpen}
+      title="そのほかの操作"
+    >
+      ⋯
+    </button>
+  );
+  // 計測中・一時停止中の削除(「⋯」の中)。角の✕と同じくaria-labelは「削除」
+  const foldDeleteButton = (
+    <button className="btn-pill-outline text-xs text-cream/70 hover:text-alert" onClick={() => deleteTask(task)} aria-label="削除">
+      ✕ 削除
+    </button>
+  );
   return (
     <div
       key={task.id}
@@ -277,7 +318,8 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
       {isRunningOverrun && (
         <div className={`absolute inset-x-0 top-0 rounded-t-2xl ${themedMode ? hazardBarClass(themedMode) : "hazard-bar"}`} />
       )}
-      {task.status !== "done" && (
+      {/* 角の✕は予定のカードだけ。計測中・一時停止中は押し間違えると痛いので「⋯」の中に畳む */}
+      {task.status === "pending" && (
         <button
           onClick={() => deleteTask(task)}
           className="absolute right-1 top-1 flex h-9 w-9 items-center justify-center text-cream/40 hover:text-alert"
@@ -291,7 +333,7 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
           ⠿
         </span>
       )}
-      <div className={`flex flex-col gap-3 pr-6 ${isDraggable ? "pl-4" : ""}`}>
+      <div className={`flex flex-col gap-3 ${task.status === "pending" ? "pr-6" : ""} ${isDraggable ? "pl-4" : ""}`}>
         <div>
           {/* 狭い画面で、計測中の印や危険度バッジと並んだ「業務」「突発」が1文字ずつ縦に折り返していた。
               行ごと折り返し、言葉の途中では折り返さない */}
@@ -311,7 +353,9 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                   {overrunLabel(wordingThemedMode)}
                 </span>
               )}
-              {riskTier && themedMode && (
+              {/* 階級バッジはテーマの言い回し(森の「そよ風」など)がある時だけ。ふつうの言い回しでは
+                  「超過」の印・赤い帯と重なるだけなので出さない */}
+              {riskTier && themedMode && wordingThemedMode && (
                 <span
                   className={riskBadgeClasses(riskTier.level, themedMode)}
                   title={
@@ -511,7 +555,8 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                 目標 {durationLabel(estMs)}
               </span>
             )}
-            {projectedFinishByTaskId.has(task.id) && (
+            {/* 計測中で時計を出している時は、時計の下に同じ見込みが出るので省く */}
+            {projectedFinishByTaskId.has(task.id) && !showClock && (
               <span className="text-cream/70">
                 {formatClock(projectedFinishByTaskId.get(task.id)!)}ごろ終わる見込み
               </span>
@@ -581,39 +626,12 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
               )}
             </div>
           )}
-          {task.status !== "done" && (
-            // 🎯予想は開始の前に立てるものなので、予定・一時停止のカードではそのまま出し、計測中は「⋯」の中に畳む。
-            // 「⋯」はどの状態でも同じ位置(この行の右端)に置き、行を増やさない
+          {(task.status === "pending" || task.status === "paused") && (
+            // 🎯予想は開始の前に立てるものなので、予定・一時停止のカードではそのまま出す。
+            // 計測中は「⋯」の中に畳み、「⋯」はボタンの下の「⏪」と同じ行に置く
             <div className="flex min-h-[1.75rem] items-center justify-between gap-2">
-              {(task.status !== "running" || moreOpen) && (
-                <div className="flex items-center gap-1 text-xs text-cream/40">
-                  <span title="開始前後に自分で予想を立てておくと、完了時に的中度が見られます">🎯予想</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={task.guessSeconds ? Math.round(task.guessSeconds / 60) : ""}
-                    onChange={(e) => {
-                      const min = Number(e.target.value);
-                      db.dailyTasks.update(task.id, {
-                        guessSeconds: Number.isFinite(min) && min > 0 ? Math.round(min * 60) : undefined,
-                      });
-                    }}
-                    placeholder="-"
-                    className="w-12 rounded border border-cream/20 bg-ink px-1 py-0.5 text-right tabular-nums text-cream"
-                  />
-                  <span>分</span>
-                </div>
-              )}
-              <button
-                type="button"
-                className={`-my-1 ml-auto rounded-full px-3 py-1 text-base leading-none ${moreOpen ? "text-cream" : "text-cream/50"} hover:text-cream`}
-                onClick={() => setMoreToggle({ status: task.status, open: !moreOpen })}
-                aria-label="そのほかの操作"
-                aria-expanded={moreOpen}
-                title="そのほかの操作"
-              >
-                ⋯
-              </button>
+              {guessInput}
+              {moreButton}
             </div>
           )}
           {task.status !== "done" && (
@@ -656,16 +674,7 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                 <button className="btn-pill-outline text-xs" disabled={controlsDisabled} onClick={() => pauseTask(task)}>
                   一時停止
                 </button>
-                {moreOpen && (
-                  <button
-                    className="btn-pill-outline text-xs"
-                    disabled={controlsDisabled}
-                    onClick={() => setAddTimeTask(task)}
-                  >
-                    時間を足す
-                  </button>
-                )}
-                <FinishButton task={task} disabled={controlsDisabled} finishTask={finishTask} setFinishAtTask={setFinishAtTask} />
+                <FinishButton task={task} disabled={controlsDisabled} finishTask={finishTask} onLongPress={() => setFinishEarlierAt(openSegmentStart)} />
               </>
             )}
             {task.status === "paused" && (
@@ -712,9 +721,51 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                     かかった時間だけ記録
                   </button>
                 )}
+                {moreOpen && foldDeleteButton}
               </>
             )}
             </div>
+          )}
+          {task.status === "running" && (
+            <>
+              {/* 主ボタンの下の1行に、左に「⏪」、右に「⋯」をまとめる(以前は別々の行で、カードが縦に伸びていた) */}
+              <div className="flex min-h-[1.75rem] items-center justify-between gap-2">
+                <button
+                  className={`-my-1 rounded-full px-2 py-1 text-xs ${finishEarlierOpen ? "text-cream" : "text-cream/55"} hover:text-cream`}
+                  disabled={controlsDisabled}
+                  onClick={() => setFinishEarlierAt(finishEarlierOpen ? null : openSegmentStart)}
+                  aria-expanded={finishEarlierOpen}
+                  title="止め忘れていた時に、実際に終わった時刻で終了します(終了の長押しでも開きます)"
+                >
+                  ⏪ 少し前に終わってた
+                </button>
+                {moreButton}
+              </div>
+              {finishEarlierOpen && (
+                <FinishEarlierOptions
+                  task={task}
+                  finishTask={finishTask}
+                  onPickTime={() => {
+                    setFinishEarlierAt(null);
+                    setFinishAtTask(task);
+                  }}
+                />
+              )}
+              {/* 「⋯」で開く、たまにしか使わない操作 */}
+              {moreOpen && (
+                <div className="flex flex-wrap items-center gap-2 [&>button]:px-3 [&>button]:py-1.5">
+                  {guessInput}
+                  <button
+                    className="btn-pill-outline ml-auto text-xs"
+                    disabled={controlsDisabled}
+                    onClick={() => setAddTimeTask(task)}
+                  >
+                    時間を足す
+                  </button>
+                  {foldDeleteButton}
+                </div>
+              )}
+            </>
           )}
           {task.status === "done" && (
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -850,98 +901,88 @@ export default memo(TaskCard, (prev, next) => {
   return next.task.status === "done" && sameForDoneCard(prev, next);
 });
 
-// 「終了」と、止め忘れた時の「少し前に終わってた」。
-// 終了を長押し、または「⏪」を押すと「5分前・10分前・15分前・最後の打刻・時刻を指定」が並び、
+// 「終了」。長押しで「少し前に終わってた」の候補(5分前・10分前・15分前・最後の打刻・時刻を指定)を開き、
 // 時刻を打ち込まずに2タップで、実際に終わった時刻で終えられる
 function FinishButton({
   task,
   disabled,
   finishTask,
-  setFinishAtTask,
+  onLongPress,
 }: {
   task: DailyTask;
   disabled: boolean;
   finishTask: (task: DailyTask, endAtOverride?: number) => Promise<void>;
-  setFinishAtTask: (task: DailyTask | null) => void;
+  onLongPress: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressed = useRef(false);
+  return (
+    <button
+      className="btn-pill text-xs"
+      disabled={disabled}
+      onPointerDown={() => {
+        longPressed.current = false;
+        pressTimer.current = setTimeout(() => {
+          longPressed.current = true;
+          onLongPress();
+          buzz(15);
+        }, 500);
+      }}
+      onPointerUp={() => pressTimer.current && clearTimeout(pressTimer.current)}
+      onPointerLeave={() => pressTimer.current && clearTimeout(pressTimer.current)}
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => {
+        if (longPressed.current) return;
+        finishTask(task);
+      }}
+    >
+      終了
+    </button>
+  );
+}
+
+// 「⏪ 少し前に終わってた」で開く候補。開いている間だけ打刻を読む
+function FinishEarlierOptions({
+  task,
+  finishTask,
+  onPickTime,
+}: {
+  task: DailyTask;
+  finishTask: (task: DailyTask, endAtOverride?: number) => Promise<void>;
+  onPickTime: () => void;
+}) {
   const openStart = task.segments.find((s) => s.end === undefined)?.start ?? 0;
   // 計測を始めた後の打刻のうち最後のもの(「ここで終わった」と打刻しておいた時刻)
   const lastStamp = useLiveQuery(
     async () =>
-      open
-        ? await db.quickStamps
-            .where("date")
-            .equals(task.date)
-            .filter((s) => s.at > openStart && s.at < Date.now())
-            .sortBy("at")
-            .then((list) => list[list.length - 1])
-        : undefined,
-    [open, task.date, openStart]
+      await db.quickStamps
+        .where("date")
+        .equals(task.date)
+        .filter((s) => s.at > openStart && s.at < Date.now())
+        .sortBy("at")
+        .then((list) => list[list.length - 1]),
+    [task.date, openStart]
   );
   const now = Date.now();
   const options = [5, 10, 15]
     .map((m) => ({ label: `${m}分前`, at: now - m * 60_000 }))
     .filter((o) => o.at > openStart);
-
   return (
-    <>
-      <button
-        className="btn-pill text-xs"
-        disabled={disabled}
-        onPointerDown={() => {
-          longPressed.current = false;
-          pressTimer.current = setTimeout(() => {
-            longPressed.current = true;
-            setOpen(true);
-            buzz(15);
-          }, 500);
-        }}
-        onPointerUp={() => pressTimer.current && clearTimeout(pressTimer.current)}
-        onPointerLeave={() => pressTimer.current && clearTimeout(pressTimer.current)}
-        onContextMenu={(e) => e.preventDefault()}
-        onClick={() => {
-          if (longPressed.current) return;
-          finishTask(task);
-        }}
-      >
-        終了
-      </button>
-      <button
-        className={`col-span-full justify-self-end rounded-full px-2 py-1 text-xs ${open ? "text-cream" : "text-cream/55"} hover:text-cream`}
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        title="止め忘れていた時に、実際に終わった時刻で終了します(終了の長押しでも開きます)"
-      >
-        ⏪ 少し前に終わってた
-      </button>
-      {open && (
-        <div className="col-span-full flex w-full flex-wrap justify-end gap-1.5" data-testid="finish-earlier">
-          {options.map((o) => (
-            <button key={o.label} className="btn-pill-outline px-3 py-1 text-xs" onClick={() => finishTask(task, o.at)}>
-              {o.label}（{formatClock(o.at)}）
-            </button>
-          ))}
-          {lastStamp && (
-            <button className="btn-pill-outline px-3 py-1 text-xs" onClick={() => finishTask(task, lastStamp.at)}>
-              📍 打刻の{formatClock(lastStamp.at)}
-            </button>
-          )}
-          <button
-            className="btn-pill-outline px-3 py-1 text-xs"
-            onClick={() => {
-              setOpen(false);
-              setFinishAtTask(task);
-            }}
-          >
-            🕐 時刻を指定…
-          </button>
-        </div>
+    <div className="flex w-full flex-wrap gap-1.5" data-testid="finish-earlier">
+      {options.map((o) => (
+        <button key={o.label} className="btn-pill-outline px-3 py-1 text-xs" onClick={() => finishTask(task, o.at)}>
+          {o.label}（{formatClock(o.at)}）
+        </button>
+      ))}
+      {lastStamp && (
+        <button className="btn-pill-outline px-3 py-1 text-xs" onClick={() => finishTask(task, lastStamp.at)}>
+          📍 打刻の{formatClock(lastStamp.at)}
+        </button>
       )}
-    </>
+      <button className="btn-pill-outline px-3 py-1 text-xs" onClick={onPickTime}>
+        🕐 時刻を指定…
+      </button>
+    </div>
   );
 }
 

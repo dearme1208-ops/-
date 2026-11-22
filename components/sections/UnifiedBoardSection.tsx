@@ -2819,6 +2819,16 @@ export default function UnifiedBoardSection({
           </div>
         </div>
       </div>
+      {/* 何も置かれていない時の案内。盤面の操作を邪魔しないよう押せない重ね表示にする */}
+      {notes && strokes && shapes && stamps && dailyTasks && todoTasks && projectItems &&
+        notes.length === 0 && strokes.length === 0 && shapes.length === 0 && stamps.length === 0 &&
+        boardTasks.length === 0 && todos.length === 0 && projects.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
+            <div className="empty-state bg-ink/80">
+              まだ何も置かれていません — 「🗂 一覧から置く」から ToDo・案件を、「＋ 追加」から付箋を置けます
+            </div>
+          </div>
+        )}
       {hubMode && <HubHudFrame now={now} />}
       </div>
 

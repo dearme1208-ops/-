@@ -462,6 +462,13 @@ export default function ProjectsSection({
     const nowCompleting = !item.completedAt;
     const completedAt = nowCompleting ? Date.now() : undefined;
     await db.projects.update(item.id, { completedAt, autoCompletedByImport: false });
+    showUndoToast(nowCompleting ? `「${item.title}」を完了にしました` : `「${item.title}」を未完了に戻しました`, async () => {
+      // その後に別の操作で完了状態が変わっていれば、新しい方を優先して戻さない
+      const current = await db.projects.get(item.id);
+      if (!current || current.completedAt !== completedAt) return;
+      await db.projects.update(item.id, { completedAt: item.completedAt, autoCompletedByImport: item.autoCompletedByImport });
+      setCompletionReport((r) => (r?.project.id === item.id ? null : r));
+    });
     if (nowCompleting) {
       fireConfetti();
       const projectRecords = (records ?? []).filter((r) => recordBelongsToProject(r, item.id));
@@ -741,9 +748,19 @@ export default function ProjectsSection({
   }, [viewMode, ganttAnchor, todayIndex, pxPerDay, totalDays, centeringBufferDays]);
 
   return (
-    <div className="space-y-4">
-      {/* 右寄せのボタン1つだけの段が2つ続いて一覧を押し下げていたので、1段にまとめる */}
+    // 並び順をCSSのorderで変えるため(スマホではグラフを一覧の後へ)、space-yではなくflexのgapで間を取る
+    <div className="flex flex-col gap-4">
+      {/* 右寄せのボタン1つだけの段が2つ続いて一覧を押し下げていたので、1段にまとめる。
+          登録フォームも一覧の前に大きな枠を置かず、この段のボタンから開く */}
       <div className="flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          className={showForm ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          onClick={() => setShowForm((v) => !v)}
+          aria-expanded={showForm}
+        >
+          ＋ 案件を登録
+        </button>
         <button
           className="btn-pill-outline text-xs"
           onClick={() => setShowWeeklyReview(true)}
@@ -761,32 +778,9 @@ export default function ProjectsSection({
         </button>
       </div>
       {showProgressSync && <ProgressSyncModal onClose={() => setShowProgressSync(false)} />}
-      {/* 登山と返事待ちの砂時計は、PCでは横に並べて幅を使い、案件一覧を上へ寄せる */}
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <ProjectClimbPanel
-          onOpen={(id) => {
-            const target = projects?.find((p) => p.id === id);
-            if (target) setEditingProject(target);
-          }}
-        />
-        <WaitingHourglassPanel
-          kind="project"
-          onOpen={(id) => {
-            const target = projects?.find((p) => p.id === id);
-            if (target) setEditingProject(target);
-          }}
-        />
-      </div>
-
-      <div className="panel px-4 py-3">
-        <button
-          className="flex w-full items-center justify-between text-left"
-          onClick={() => setShowForm((v) => !v)}
-        >
+      {showForm && (
+        <div className="panel px-4 py-3">
           <h2 className="section-title font-display">案件を登録</h2>
-          <span className="text-xs text-cream/60">{showForm ? "▼" : "▶"}</span>
-        </button>
-        {showForm && (
           <div className="mt-2 space-y-2">
             <input
               placeholder="件名"
@@ -844,102 +838,26 @@ export default function ProjectsSection({
               追加
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="panel px-4 py-3">
-        <button
-          className="flex w-full items-center justify-between text-left"
-          onClick={() => setShowClients((v) => !v)}
-        >
-          <h2 className="section-title font-display">
-            取引先{(clients ?? []).length > 0 && `（${(clients ?? []).length}）`}
-          </h2>
-          <span className="text-xs text-cream/60">{showClients ? "▼" : "▶"}</span>
-        </button>
-        {showClients && (
-          <>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {(clients ?? []).map((c) => (
-                <span key={c.id} className="flex items-center gap-1 rounded-full border border-cream/20 px-3 py-1.5 text-sm">
-                  {c.name}
-                  <button onClick={() => setClientDialog({ kind: "rename", id: c.id, current: c.name })} className="text-cream/50 hover:text-cream" aria-label={`${c.name}の名前を変更`}>
-                    ✎
-                  </button>
-                  <button onClick={() => deleteClient(c)} className="text-cream/50 hover:text-alert" aria-label={`${c.name}を削除`}>
-                    ✕
-                  </button>
-                </span>
-              ))}
-              <button className="btn-pill-outline text-sm" onClick={() => setClientDialog({ kind: "add" })}>
-                + 取引先を追加
-              </button>
-            </div>
-            {(clients ?? []).length === 0 && (
-              <p className="mt-2 text-xs text-cream/50">
-                取引先を登録すると、案件・ToDoにタグ付けして、取引先ごとの案件数や作業時間をまとめて見られるようになります。
-              </p>
-            )}
-          </>
-        )}
-      </div>
-      {clientDialog && (
-        <ClientNameDialog
-          key={clientDialog.kind === "rename" ? clientDialog.id : "add"}
-          title={clientDialog.kind === "add" ? "取引先を追加" : "取引先名を変更"}
-          initialValue={clientDialog.kind === "rename" ? clientDialog.current : ""}
-          onSubmit={submitClientDialog}
-          onClose={() => setClientDialog(null)}
+      {/* 登山と返事待ちの砂時計は、PCでは横に並べて一覧の前に置く。スマホでは一覧を先に見せたいので
+          一覧(完了済みを含む)の後ろへ回す(畳まずに開いたまま) */}
+      <div className="grid gap-4 max-lg:order-1 lg:grid-cols-2 lg:items-start">
+        <ProjectClimbPanel
+          onOpen={(id) => {
+            const target = projects?.find((p) => p.id === id);
+            if (target) setEditingProject(target);
+          }}
         />
-      )}
-
-      {clientSummaries.length > 0 && (
-        <div className="panel p-4">
-          <h2 className="mb-2 font-display text-lg font-bold">取引先別サマリー</h2>
-          <div className="divide-y divide-cream/10">
-            {clientSummaries.map((s) => (
-              <div key={s.client.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <span className="font-bold">{s.client.name}</span>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-cream/70">
-                  <span>
-                    📁 案件 {s.activeProjectCount}件
-                    {s.overdueProjectCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueProjectCount})</span>}
-                  </span>
-                  <span>
-                    ✅ ToDo {s.activeTodoCount}件
-                    {s.overdueTodoCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueTodoCount})</span>}
-                  </span>
-                  <span>⏱ 実績 {formatHms(s.totalSeconds)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {groupSummaries.length > 0 && (
-        <div className="panel p-4">
-          <h2 className="mb-2 font-display text-lg font-bold">グループ別サマリー</h2>
-          <p className="mb-2 text-xs text-cream/50">
-            件名・詳細作業名が違っても、同じグループ名を付けた案件をまとめて進捗・実績を確認できます。
-          </p>
-          <div className="divide-y divide-cream/10">
-            {groupSummaries.map((s) => (
-              <div key={s.name} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <span className="font-bold">{s.name}</span>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-cream/70">
-                  <span>
-                    📁 案件 {s.projectCount}件
-                    {s.overdueProjectCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueProjectCount})</span>}
-                  </span>
-                  <span>📊 進捗 {s.progressPct}%</span>
-                  <span>⏱ 実績 {formatHms(s.totalSeconds)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        <WaitingHourglassPanel
+          kind="project"
+          onOpen={(id) => {
+            const target = projects?.find((p) => p.id === id);
+            if (target) setEditingProject(target);
+          }}
+        />
+      </div>
 
       {/* 育成選手モード: 一覧の前に順位表を置く。段階の消化を勝敗に見立てて勝率順に並べるので、
           走っている案件と止まっている案件が一列で分かる */}
@@ -1075,227 +993,325 @@ export default function ProjectsSection({
         </div>
       )}
 
-      {rows.length > 0 && (
-        <div>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <button
-              className={viewMode === "gantt" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setViewMode("gantt")}
-            >
-              ガントチャート
-            </button>
-            <button
-              className={viewMode === "calendar" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setViewMode("calendar")}
-            >
-              カレンダー
-            </button>
-            <button
-              className={viewMode === "tree" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setViewMode("tree")}
-            >
-              系統図
-            </button>
-            <button
-              className={viewMode === "ppm" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setViewMode("ppm")}
-            >
-              PPM分析
-            </button>
-            <button
-              className={viewMode === "progress" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-              onClick={() => setViewMode("progress")}
-              title="新規追加と完了のペースを月別に見比べたり、未完了の積み上がり具合を見られます"
-            >
-              📈 進捗グラフ
-            </button>
-            <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
-              <input
-                type="checkbox"
-                checked={showCompletedInTimeline}
-                onChange={(e) => setShowCompletedInTimeline(e.target.checked)}
-                className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+      {/* 一覧の後ろに回すもの(スマホでは登山・返事待ちのグラフよりさらに後ろ)。取引先の管理と
+          取引先別・グループ別のまとめは毎日は見ないので、一覧を押し下げないよう最後に置く */}
+      <div className="order-2 flex flex-col gap-4">
+        {rows.length > 0 && (
+          <div>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <button
+                className={viewMode === "gantt" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setViewMode("gantt")}
+              >
+                ガントチャート
+              </button>
+              <button
+                className={viewMode === "calendar" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setViewMode("calendar")}
+              >
+                カレンダー
+              </button>
+              <button
+                className={viewMode === "tree" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setViewMode("tree")}
+              >
+                系統図
+              </button>
+              <button
+                className={viewMode === "ppm" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setViewMode("ppm")}
+              >
+                PPM分析
+              </button>
+              <button
+                className={viewMode === "progress" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                onClick={() => setViewMode("progress")}
+                title="新規追加と完了のペースを月別に見比べたり、未完了の積み上がり具合を見られます"
+              >
+                📈 進捗グラフ
+              </button>
+              <label className="ml-2 flex items-center gap-1.5 text-xs text-cream/60">
+                <input
+                  type="checkbox"
+                  checked={showCompletedInTimeline}
+                  onChange={(e) => setShowCompletedInTimeline(e.target.checked)}
+                  className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
+                />
+                完了済みも表示
+              </label>
+            </div>
+
+            {viewMode === "progress" ? (
+              <ProjectProgressChart projects={projects ?? []} />
+            ) : timelineRows.length === 0 ? (
+              <p className="px-1 py-4 text-sm text-cream/50">
+                表示する案件がありません（完了済みのみのため。「完了済みも表示」をONにすると見られます）。
+              </p>
+            ) : viewMode === "calendar" ? (
+              <ProjectsCalendarView projects={timelineRows.map((r) => r.project)} today={today} />
+            ) : viewMode === "tree" ? (
+              <TreeView nodes={projectTree} />
+            ) : viewMode === "ppm" ? (
+              <ProjectPPMChart
+                items={timelineRows.map((r) => ({
+                  project: r.project,
+                  totalSeconds: projectTotalSeconds.get(r.project.id) ?? 0,
+                  hourlyRate: resolveProjectRate(r.project),
+                  today,
+                }))}
               />
-              完了済みも表示
-            </label>
-          </div>
-
-          {viewMode === "progress" ? (
-            <ProjectProgressChart projects={projects ?? []} />
-          ) : timelineRows.length === 0 ? (
-            <p className="px-1 py-4 text-sm text-cream/50">
-              表示する案件がありません（完了済みのみのため。「完了済みも表示」をONにすると見られます）。
-            </p>
-          ) : viewMode === "calendar" ? (
-            <ProjectsCalendarView projects={timelineRows.map((r) => r.project)} today={today} />
-          ) : viewMode === "tree" ? (
-            <TreeView nodes={projectTree} />
-          ) : viewMode === "ppm" ? (
-            <ProjectPPMChart
-              items={timelineRows.map((r) => ({
-                project: r.project,
-                totalSeconds: projectTotalSeconds.get(r.project.id) ?? 0,
-                hourlyRate: resolveProjectRate(r.project),
-                today,
-              }))}
-            />
-          ) : (
-            <>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-display text-base font-bold">期日ガントチャート</h3>
-                <div className="flex items-center gap-1">
-                  <span className="mr-1 text-xs text-cream/50">初期位置</span>
-                  <button
-                    className={ganttAnchor === "today" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                    onClick={() => setGanttAnchor("today")}
-                  >
-                    今日
-                  </button>
-                  <button
-                    className={ganttAnchor === "oldest" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                    onClick={() => setGanttAnchor("oldest")}
-                  >
-                    一番古い期日
-                  </button>
-                  <span className="mx-1 h-4 border-l border-cream/15" />
-                  <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
-                    －
-                  </button>
-                  <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomIn} aria-label="拡大">
-                    ＋
-                  </button>
-                  <button className="btn-pill-outline text-xs" onClick={fitToView}>
-                    全体表示
-                  </button>
-                </div>
-              </div>
-
-              <div className="panel flex p-4">
-            {/* 固定ラベル列 */}
-            <div className="w-28 shrink-0 pr-2 sm:w-40">
-              <div className="mb-2 h-6 border-b border-cream/20" />
-              {timelineRows.map((r) => (
-                <div
-                  key={r.project.id}
-                  className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
-                  style={{ height: ROW_H }}
-                  title={`${r.project.title} / ${r.project.workName}`}
-                >
-                  <span className="truncate">{r.project.title}</span>
-                  <span className="truncate text-cream/50">{r.project.workName}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* スクロール可能なタイムライン */}
-            <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
-              <div style={{ width: totalDays * pxPerDay + 24 }}>
-                <div className="relative mb-2 h-6 border-b border-cream/20 text-xs text-cream/50">
-                  {dayMarks
-                    .filter((d) => d % labelStepDays === 0)
-                    .map((d) => (
-                      <div
-                        key={d}
-                        className="absolute top-0 border-l border-cream/10 pl-1"
-                        style={{ left: d * pxPerDay }}
-                      >
-                        {formatDateJp(
-                          todayStr(new Date(new Date(rangeStartStr + "T00:00:00").getTime() + d * 86400000))
-                        )}
-                      </div>
-                    ))}
+            ) : (
+              <>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-display text-base font-bold">期日ガントチャート</h3>
+                  <div className="flex items-center gap-1">
+                    <span className="mr-1 text-xs text-cream/50">初期位置</span>
+                    <button
+                      className={ganttAnchor === "today" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                      onClick={() => setGanttAnchor("today")}
+                    >
+                      今日
+                    </button>
+                    <button
+                      className={ganttAnchor === "oldest" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+                      onClick={() => setGanttAnchor("oldest")}
+                    >
+                      一番古い期日
+                    </button>
+                    <span className="mx-1 h-4 border-l border-cream/15" />
+                    <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomOut} aria-label="縮小">
+                      －
+                    </button>
+                    <button className="btn-pill-outline px-3 py-1.5 text-sm" onClick={zoomIn} aria-label="拡大">
+                      ＋
+                    </button>
+                    <button className="btn-pill-outline text-xs" onClick={fitToView}>
+                      全体表示
+                    </button>
+                  </div>
                 </div>
 
-                <div className="relative" style={{ height: timelineRows.length * ROW_H }}>
-                  {dayMarks
-                    .filter((d) => d % labelStepDays === 0)
-                    .map((d) => (
-                      <div
-                        key={d}
-                        className="absolute top-0 bottom-0 border-l border-cream/5"
-                        style={{ left: d * pxPerDay }}
-                      />
-                    ))}
-                  {/* 今日の位置 */}
+                <div className="panel flex p-4">
+              {/* 固定ラベル列 */}
+              <div className="w-28 shrink-0 pr-2 sm:w-40">
+                <div className="mb-2 h-6 border-b border-cream/20" />
+                {timelineRows.map((r) => (
                   <div
-                    className="absolute top-0 bottom-0 border-l-2 border-alert/70"
-                    style={{ left: todayIndex * pxPerDay }}
-                  />
-                  {/* 先行案件の依存線。WBSの先行タスク矢印と同じ考え方で、案件単位で描く。
-                      日付の自動調整はせず、後続の開始(登録日)が先行の終了(期日)より前にある
-                      場合に赤で気づきとして示すだけ */}
-                  <svg
-                    className="pointer-events-none absolute inset-0"
-                    width={totalDays * pxPerDay}
-                    height={timelineRows.length * ROW_H}
+                    key={r.project.id}
+                    className="flex flex-col justify-center overflow-hidden text-[11px] leading-tight text-cream/70"
+                    style={{ height: ROW_H }}
+                    title={`${r.project.title} / ${r.project.workName}`}
                   >
-                    <defs>
-                      <marker id="project-gantt-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                        <path d="M0,0 L6,3 L0,6 Z" fill="rgb(var(--cream-rgb) / 0.5)" />
-                      </marker>
-                    </defs>
-                    {timelineRows.flatMap((row, idx) =>
-                      (row.project.predecessorProjectIds ?? []).map((predId) => {
-                        const predIdx = timelineRows.findIndex((r) => r.project.id === predId);
-                        if (predIdx === -1) return null; // 先行案件が完了済みで非表示、または削除済み
-                        const pred = timelineRows[predIdx];
-                        const y1 = predIdx * ROW_H + ROW_H / 2;
-                        const y2 = idx * ROW_H + ROW_H / 2;
-                        const x1 = pred.barEnd * pxPerDay;
-                        const x2 = row.barStart * pxPerDay;
-                        const conflict = x2 < x1;
-                        const midX = conflict ? x1 + 10 : x1 + Math.max(6, (x2 - x1) / 2);
-                        return (
-                          <path
-                            key={`${predId}->${row.project.id}`}
-                            d={`M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`}
-                            fill="none"
-                            stroke={conflict ? "rgb(var(--accent-rgb) / 0.8)" : "rgb(var(--cream-rgb) / 0.35)"}
-                            strokeWidth={1.5}
-                            markerEnd="url(#project-gantt-arrow)"
-                          />
-                        );
-                      })
-                    )}
-                  </svg>
-                  {timelineRows.map((r, idx) => {
-                    const top = idx * ROW_H;
-                    const left = r.barStart * pxPerDay;
-                    const width = Math.max((r.barEnd - r.barStart) * pxPerDay, 3);
-                    const progressPct = computeProjectProgress(r.project.stages);
-                    return (
-                      <div key={r.project.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
+                    <span className="truncate">{r.project.title}</span>
+                    <span className="truncate text-cream/50">{r.project.workName}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* スクロール可能なタイムライン */}
+              <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
+                <div style={{ width: totalDays * pxPerDay + 24 }}>
+                  <div className="relative mb-2 h-6 border-b border-cream/20 text-xs text-cream/50">
+                    {dayMarks
+                      .filter((d) => d % labelStepDays === 0)
+                      .map((d) => (
                         <div
-                          className={`absolute rounded ${
-                            r.project.completedAt ? "bg-cream/30" : r.overdue ? "bg-alert" : "bg-cream/70"
-                          }`}
-                          style={{ left, width, top: 9, height: 20 }}
-                          title={`${r.project.title} / ${r.project.workName}（期日 ${r.project.dueDate}）`}
+                          key={d}
+                          className="absolute top-0 border-l border-cream/10 pl-1"
+                          style={{ left: d * pxPerDay }}
+                        >
+                          {formatDateJp(
+                            todayStr(new Date(new Date(rangeStartStr + "T00:00:00").getTime() + d * 86400000))
+                          )}
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="relative" style={{ height: timelineRows.length * ROW_H }}>
+                    {dayMarks
+                      .filter((d) => d % labelStepDays === 0)
+                      .map((d) => (
+                        <div
+                          key={d}
+                          className="absolute top-0 bottom-0 border-l border-cream/5"
+                          style={{ left: d * pxPerDay }}
                         />
-                        {progressPct !== null && (
-                          <div
-                            className="absolute rounded bg-cream/10"
-                            style={{ left, width, top: 31, height: 4 }}
-                            title={`進捗 ${Math.round(progressPct * 100)}%`}
-                          >
-                            <div
-                              className="h-full rounded bg-alert"
-                              style={{ width: `${Math.max(progressPct * 100, progressPct > 0 ? 4 : 0)}%` }}
+                      ))}
+                    {/* 今日の位置 */}
+                    <div
+                      className="absolute top-0 bottom-0 border-l-2 border-alert/70"
+                      style={{ left: todayIndex * pxPerDay }}
+                    />
+                    {/* 先行案件の依存線。WBSの先行タスク矢印と同じ考え方で、案件単位で描く。
+                        日付の自動調整はせず、後続の開始(登録日)が先行の終了(期日)より前にある
+                        場合に赤で気づきとして示すだけ */}
+                    <svg
+                      className="pointer-events-none absolute inset-0"
+                      width={totalDays * pxPerDay}
+                      height={timelineRows.length * ROW_H}
+                    >
+                      <defs>
+                        <marker id="project-gantt-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                          <path d="M0,0 L6,3 L0,6 Z" fill="rgb(var(--cream-rgb) / 0.5)" />
+                        </marker>
+                      </defs>
+                      {timelineRows.flatMap((row, idx) =>
+                        (row.project.predecessorProjectIds ?? []).map((predId) => {
+                          const predIdx = timelineRows.findIndex((r) => r.project.id === predId);
+                          if (predIdx === -1) return null; // 先行案件が完了済みで非表示、または削除済み
+                          const pred = timelineRows[predIdx];
+                          const y1 = predIdx * ROW_H + ROW_H / 2;
+                          const y2 = idx * ROW_H + ROW_H / 2;
+                          const x1 = pred.barEnd * pxPerDay;
+                          const x2 = row.barStart * pxPerDay;
+                          const conflict = x2 < x1;
+                          const midX = conflict ? x1 + 10 : x1 + Math.max(6, (x2 - x1) / 2);
+                          return (
+                            <path
+                              key={`${predId}->${row.project.id}`}
+                              d={`M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`}
+                              fill="none"
+                              stroke={conflict ? "rgb(var(--accent-rgb) / 0.8)" : "rgb(var(--cream-rgb) / 0.35)"}
+                              strokeWidth={1.5}
+                              markerEnd="url(#project-gantt-arrow)"
                             />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          );
+                        })
+                      )}
+                    </svg>
+                    {timelineRows.map((r, idx) => {
+                      const top = idx * ROW_H;
+                      const left = r.barStart * pxPerDay;
+                      const width = Math.max((r.barEnd - r.barStart) * pxPerDay, 3);
+                      const progressPct = computeProjectProgress(r.project.stages);
+                      return (
+                        <div key={r.project.id} className="absolute left-0 right-0" style={{ top, height: ROW_H }}>
+                          <div
+                            className={`absolute rounded ${
+                              r.project.completedAt ? "bg-cream/30" : r.overdue ? "bg-alert" : "bg-cream/70"
+                            }`}
+                            style={{ left, width, top: 9, height: 20 }}
+                            title={`${r.project.title} / ${r.project.workName}（期日 ${r.project.dueDate}）`}
+                          />
+                          {progressPct !== null && (
+                            <div
+                              className="absolute rounded bg-cream/10"
+                              style={{ left, width, top: 31, height: 4 }}
+                              title={`進捗 ${Math.round(progressPct * 100)}%`}
+                            >
+                              <div
+                                className="h-full rounded bg-alert"
+                                style={{ width: `${Math.max(progressPct * 100, progressPct > 0 ? 4 : 0)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
+                </div>
+                <p className="mt-2 text-xs text-cream/40">赤い縦線が本日の位置です。バーは登録日から期日までの猶予を表します。</p>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="panel px-4 py-3">
+          <button
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setShowClients((v) => !v)}
+          >
+            <h2 className="section-title font-display">
+              取引先{(clients ?? []).length > 0 && `（${(clients ?? []).length}）`}
+            </h2>
+            <span className="text-xs text-cream/60">{showClients ? "▼" : "▶"}</span>
+          </button>
+          {showClients && (
+            <>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {(clients ?? []).map((c) => (
+                  <span key={c.id} className="flex items-center gap-1 rounded-full border border-cream/20 px-3 py-1.5 text-sm">
+                    {c.name}
+                    <button onClick={() => setClientDialog({ kind: "rename", id: c.id, current: c.name })} className="text-cream/50 hover:text-cream" aria-label={`${c.name}の名前を変更`}>
+                      ✎
+                    </button>
+                    <button onClick={() => deleteClient(c)} className="text-cream/50 hover:text-alert" aria-label={`${c.name}を削除`}>
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                <button className="btn-pill-outline text-sm" onClick={() => setClientDialog({ kind: "add" })}>
+                  + 取引先を追加
+                </button>
               </div>
-              <p className="mt-2 text-xs text-cream/40">赤い縦線が本日の位置です。バーは登録日から期日までの猶予を表します。</p>
+              {(clients ?? []).length === 0 && (
+                <p className="mt-2 text-xs text-cream/50">
+                  取引先を登録すると、案件・ToDoにタグ付けして、取引先ごとの案件数や作業時間をまとめて見られるようになります。
+                </p>
+              )}
             </>
           )}
         </div>
-      )}
+        {clientDialog && (
+          <ClientNameDialog
+            key={clientDialog.kind === "rename" ? clientDialog.id : "add"}
+            title={clientDialog.kind === "add" ? "取引先を追加" : "取引先名を変更"}
+            initialValue={clientDialog.kind === "rename" ? clientDialog.current : ""}
+            onSubmit={submitClientDialog}
+            onClose={() => setClientDialog(null)}
+          />
+        )}
+
+        {clientSummaries.length > 0 && (
+          <div className="panel p-4">
+            <h2 className="mb-2 font-display text-lg font-bold">取引先別サマリー</h2>
+            <div className="divide-y divide-cream/10">
+              {clientSummaries.map((s) => (
+                <div key={s.client.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                  <span className="font-bold">{s.client.name}</span>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-cream/70">
+                    <span>
+                      📁 案件 {s.activeProjectCount}件
+                      {s.overdueProjectCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueProjectCount})</span>}
+                    </span>
+                    <span>
+                      ✅ ToDo {s.activeTodoCount}件
+                      {s.overdueTodoCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueTodoCount})</span>}
+                    </span>
+                    <span>⏱ 実績 {formatHms(s.totalSeconds)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {groupSummaries.length > 0 && (
+          <div className="panel p-4">
+            <h2 className="mb-2 font-display text-lg font-bold">グループ別サマリー</h2>
+            <p className="mb-2 text-xs text-cream/50">
+              件名・詳細作業名が違っても、同じグループ名を付けた案件をまとめて進捗・実績を確認できます。
+            </p>
+            <div className="divide-y divide-cream/10">
+              {groupSummaries.map((s) => (
+                <div key={s.name} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                  <span className="font-bold">{s.name}</span>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-cream/70">
+                    <span>
+                      📁 案件 {s.projectCount}件
+                      {s.overdueProjectCount > 0 && <span className="ml-1 font-bold text-alert">(期限切れ{s.overdueProjectCount})</span>}
+                    </span>
+                    <span>📊 進捗 {s.progressPct}%</span>
+                    <span>⏱ 実績 {formatHms(s.totalSeconds)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {editingProject && <EditProjectDialog project={editingProject} onClose={() => setEditingProject(null)} />}
       {showWeeklyReview && <WeeklyReviewModal onClose={() => setShowWeeklyReview(false)} />}
@@ -1458,7 +1474,7 @@ export default function ProjectsSection({
       {/* CSVの入出力はたまにしか使わないのに一覧を押し下げていたので、画面のいちばん下へ置く。
           取り込みの結果・エラーも押したボタンのそばに出るよう一緒に移す */}
       {showCsvTools && (
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="order-3 flex flex-wrap justify-end gap-2">
           <span className="caption mr-auto self-center">CSV</span>
           <button className="btn-pill-outline text-xs" onClick={downloadTemplate}>
             CSVテンプレート
@@ -1483,9 +1499,9 @@ export default function ProjectsSection({
         </div>
       )}
 
-      {importResult && <p className="text-xs text-cream/70">{importResult}</p>}
+      {importResult && <p className="order-3 text-xs text-cream/70">{importResult}</p>}
       {importErrors.length > 0 && (
-        <div className="panel border border-alert/40 p-3 text-xs text-alert">
+        <div className="panel order-3 border border-alert/40 p-3 text-xs text-alert">
           {importErrors.map((e, i) => (
             <div key={i}>{e}</div>
           ))}
@@ -1555,6 +1571,8 @@ function ProjectRow({
   const showCompletedStages = showCompletedStagesStr === "true";
   const [stagesCollapsed, setStagesCollapsed] = useState(false);
   const [showStageDueDensity, setShowStageDueDensity] = useState(false);
+  // 毎日は使わない操作(分析・WBS・型・ボード・アーカイブ・削除)は「⋯」の中にしまう
+  const [moreOpen, setMoreOpen] = useState(false);
   // 進捗率・段階数の表示は全段階を対象にする一方、ここでの一覧描画だけ設定に応じて完了済みを間引く
   const visibleStages = showCompletedStages ? project.stages ?? [] : (project.stages ?? []).filter((s) => !isStageDone(s));
   // 完了した順番。定義順のままでは「どれを先に片付けたか」が読み取れないため、
@@ -1646,13 +1664,16 @@ function ProjectRow({
               案件全体としての状況(見積り中・受注確定 など)をここで持つ。
               段階を持つ案件は、対応状況が段階側から自動算出されるため読み取り専用にする */}
           {(project.stages ?? []).length > 0 ? (
-            <span
-              className="chip ml-2 align-middle"
-              data-tone="strong"
-              title="対応状況は段階から自動的に決まります"
-            >
-              {effectiveProjectTag(project, tagOptions) ?? "未設定"}
-            </span>
+            // 段階から決まらない時は「未設定」と出さず何も置かない(情報のない札が並ぶだけだった)
+            effectiveProjectTag(project, tagOptions) ? (
+              <span
+                className="chip ml-2 align-middle"
+                data-tone="strong"
+                title="対応状況は段階から自動的に決まります"
+              >
+                {effectiveProjectTag(project, tagOptions)}
+              </span>
+            ) : null
           ) : (
             <select
               value={project.tag ?? ""}
@@ -2039,40 +2060,54 @@ function ProjectRow({
         <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onEdit}>
           編集
         </button>
-        <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onAnalysis} title="SWOT・BSC・3C分析">
-          分析
-        </button>
-        <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onWbs} title="WBS(作業分解構成図)">
-          WBS
-        </button>
         <button
-          className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
-          onClick={onTemplate}
-          title="この案件の段階の構成を引き継いで、同じ種類の新しい案件を作ります(過去の実績から段階ごとの目安時間も出します)"
+          type="button"
+          className={`ml-auto rounded-full px-3 py-1 text-base leading-none ${moreOpen ? "text-cream" : "text-cream/50"} hover:text-cream`}
+          onClick={() => setMoreOpen((v) => !v)}
+          aria-label="そのほかの操作"
+          aria-expanded={moreOpen}
+          title="そのほかの操作"
         >
-          📐 型にして作る
-        </button>
-        <button
-          className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
-          onClick={() => {
-            if (project.boardX !== undefined) removeProjectFromBoard(project.id);
-            else placeProjectOnBoard(project.id);
-          }}
-        >
-          {project.boardX !== undefined ? "ボードから外す" : "ボードに置く"}
-        </button>
-        <button
-          className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
-          onClick={onArchive}
-          title={project.archived ? "通常の一覧・ガント・カレンダー等に戻します" : "削除せずに、通常の一覧・ガント・カレンダー等から外します"}
-        >
-          {project.archived ? "🗄 アーカイブ解除" : "🗄 アーカイブ"}
-        </button>
-        {/* 削除は他の操作から少し離し、押し間違えにくくする */}
-        <button className="ml-auto px-1 py-1.5 text-xs text-alert" onClick={onDelete}>
-          削除
+          ⋯
         </button>
       </div>
+      {moreOpen && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 [&>button]:whitespace-nowrap">
+          <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onAnalysis} title="SWOT・BSC・3C分析">
+            分析
+          </button>
+          <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onWbs} title="WBS(作業分解構成図)">
+            WBS
+          </button>
+          <button
+            className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
+            onClick={onTemplate}
+            title="この案件の段階の構成を引き継いで、同じ種類の新しい案件を作ります(過去の実績から段階ごとの目安時間も出します)"
+          >
+            📐 型にして作る
+          </button>
+          <button
+            className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
+            onClick={() => {
+              if (project.boardX !== undefined) removeProjectFromBoard(project.id);
+              else placeProjectOnBoard(project.id);
+            }}
+          >
+            {project.boardX !== undefined ? "ボードから外す" : "ボードに置く"}
+          </button>
+          <button
+            className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
+            onClick={onArchive}
+            title={project.archived ? "通常の一覧・ガント・カレンダー等に戻します" : "削除せずに、通常の一覧・ガント・カレンダー等から外します"}
+          >
+            {project.archived ? "🗄 アーカイブ解除" : "🗄 アーカイブ"}
+          </button>
+          {/* 削除は他の操作から少し離し、押し間違えにくくする */}
+          <button className="ml-auto px-1 py-1.5 text-xs text-alert" onClick={onDelete}>
+            削除
+          </button>
+        </div>
+      )}
     </div>
     {showStageDueDensity && (
       <StageDueDensityModal

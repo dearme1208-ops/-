@@ -210,6 +210,8 @@ export default function MemoSection() {
   // 実際の付箋・手書きの座標(x, y, points等)はズームに関わらず常にボード上の
   // 論理座標のまま保つ(ズームはあくまで表示上の話)
   const [zoom, setZoom] = useState(1);
+  // 名前を変更・削除は「⋯」の中にたたむ
+  const [boardMenuOpen, setBoardMenuOpen] = useState(false);
   const zoomRef = useRef(zoom);
   useEffect(() => {
     zoomRef.current = zoom;
@@ -910,7 +912,8 @@ export default function MemoSection() {
 
   return (
     <div className="space-y-4">
-      <h2 className="font-display text-lg font-bold">メモ</h2>
+      {/* 見出しはボードの札と重複するため、読み上げ用にだけ残す */}
+      <h2 className="sr-only">メモ</h2>
 
       <div className="flex flex-wrap items-center gap-2">
         {(boards ?? []).map((b) => (
@@ -928,14 +931,36 @@ export default function MemoSection() {
         {currentBoard && (
           <>
             <button
-              className="btn-pill-outline text-xs"
-              onClick={() => setNameDialog({ kind: "renameBoard", boardId: currentBoard.id, current: currentBoard.title })}
+              className={boardMenuOpen ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={() => setBoardMenuOpen((v) => !v)}
+              aria-expanded={boardMenuOpen}
+              aria-label="このメモの操作"
+              title="名前を変更・削除"
             >
-              名前を変更
+              ⋯
             </button>
-            <button className="btn-pill-outline text-xs text-alert" onClick={deleteBoard}>
-              削除
-            </button>
+            {boardMenuOpen && (
+              <>
+                <button
+                  className="btn-pill-outline text-xs"
+                  onClick={() => {
+                    setBoardMenuOpen(false);
+                    setNameDialog({ kind: "renameBoard", boardId: currentBoard.id, current: currentBoard.title });
+                  }}
+                >
+                  名前を変更
+                </button>
+                <button
+                  className="btn-pill-outline text-xs text-alert"
+                  onClick={() => {
+                    setBoardMenuOpen(false);
+                    deleteBoard();
+                  }}
+                >
+                  削除
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
@@ -1118,12 +1143,16 @@ export default function MemoSection() {
         <button className="btn-pill-outline text-sm" onClick={() => setZoom((z) => clampMemoZoom(z - 0.1))} aria-label="縮小">
           －
         </button>
-        <span className="w-12 text-center text-xs tabular-nums text-cream/60">{Math.round(zoom * 100)}%</span>
+        {/* 倍率の表示を押すと100%に戻す(表示と「100%」ボタンが並んで重複していたため1つにまとめた) */}
+        <button
+          className="btn-pill-outline w-14 text-center text-xs tabular-nums"
+          onClick={() => setZoom(1)}
+          title="100%に戻す"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
         <button className="btn-pill-outline text-sm" onClick={() => setZoom((z) => clampMemoZoom(z + 0.1))} aria-label="拡大">
           ＋
-        </button>
-        <button className="btn-pill-outline text-xs" onClick={() => setZoom(1)}>
-          100%
         </button>
         <button className="btn-pill-outline text-xs" onClick={fitToContent}>
           🔍 全体を表示
@@ -1265,6 +1294,14 @@ export default function MemoSection() {
             </div>
           </div>
         </div>
+        {/* 何も置かれていない時の案内。操作の邪魔をしないよう押せない重ね表示にする */}
+        {notes && strokes && stamps && notes.length === 0 && strokes.length === 0 && stamps.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
+            <div className="empty-state bg-black/50">
+              まだ何も置かれていません — 「+ 付箋を追加」か「✏️ 手書き」で書き始められます
+            </div>
+          </div>
+        )}
         <div
           className="absolute right-2 top-2 rounded border border-cream/20 bg-black/70 p-1"
           style={{ width: MEMO_MINIMAP_WIDTH + 4, height: MEMO_MINIMAP_HEIGHT + 4 }}
