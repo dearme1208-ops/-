@@ -65,6 +65,7 @@ import { mountainWordsFor } from "@/lib/mountainWords";
 import { Profile as MountainProfile, Signboard } from "@/components/mountain/MountainCanvas";
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { PennantBar, Standings } from "@/components/powerpro/PowerproCanvas";
+import EmptyArt from "@/components/ui/EmptyArt";
 
 // 案件を新しく登録するときの期日の初期値(今日から何日後か)
 const NEW_PROJECT_DUE_DAYS = 7;
@@ -1021,10 +1022,17 @@ export default function ProjectsSection({
           />
         ))}
         {activeRows.length === 0 && completedRows.length === 0 && (
-          <p className="px-4 py-6 text-sm text-cream/50">案件はまだ登録されていません。</p>
+          // 一覧の枠の内側なので、空の知らせ自身の枠は消す(border-0)。森モードでは山と旗の線画を添える
+          <div className="empty-state border-0">
+            <EmptyArt name="projects" />
+            <p>案件はまだ登録されていません。</p>
+          </div>
         )}
         {activeRows.length === 0 && completedRows.length > 0 && (
-          <p className="px-4 py-6 text-sm text-cream/50">未完了の案件はありません。</p>
+          <div className="empty-state border-0">
+            <EmptyArt name="projects" />
+            <p>未完了の案件はありません。</p>
+          </div>
         )}
       </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Icon from "@/components/ui/Icon";
 
 export interface TabDef {
   key: string;
@@ -90,7 +91,7 @@ export default function TabNav({
           >
             {t.icon ? (
               <>
-                <span className="tab-chip-icon">{t.icon}</span>{" "}
+                <span className="tab-chip-icon"><Icon emoji={t.icon} /></span>{" "}
                 <span className="tab-chip-label" data-short={t.shortLabel}>
                   {t.label}
                 </span>

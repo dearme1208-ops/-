@@ -8,6 +8,7 @@ import { formatClock, shiftDateStr } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
 import { gapKey } from "@/lib/dayGaps";
 import { DayGapsList, useDayGaps } from "@/components/DayGaps";
+import Icon, { IconLabel } from "@/components/ui/Icon";
 import {
   categorySlots,
   conditionHeatmap,
@@ -90,7 +91,9 @@ export function DayRing({
   const pickedGap = gapData.gaps.find((g) => gapKey(g) === openGap) ?? null;
   return (
     <section className="panel p-4" data-testid="day-ring">
-      <h3 className="section-title font-display">🕰 今日のリング</h3>
+      <h3 className="section-title font-display">
+        <IconLabel text="🕰 今日のリング" />
+      </h3>
       <p className="section-sub">
         24時間の輪に、今日計った時間を区分の色で並べています。
         {gapData.gaps.length > 0 && "点線は記録のない時間です。押すと、その時間にした作業を選べます。"}
@@ -98,6 +101,12 @@ export function DayRing({
       <div className="mt-2 flex flex-wrap items-center justify-center gap-4">
         <svg viewBox="0 0 200 200" width={200} height={200} role="img" aria-label={`今日の記録 合計${hm(total)}`}>
           <circle cx={100} cy={100} r={78} fill="none" stroke="rgb(var(--cream-rgb) / 0.08)" strokeWidth={18} />
+          {/* 森モードだけの年輪(切り株の断面に見立てる)。少しずつ中心をずらして手描きの揺らぎを出す */}
+          <g className="dr-rings" fill="none" stroke="rgb(var(--accent-rgb) / 0.09)" strokeWidth={1} aria-hidden="true">
+            <circle cx={100.8} cy={99.4} r={56} />
+            <circle cx={99.3} cy={100.6} r={47} />
+            <circle cx={100.4} cy={100.2} r={38} />
+          </g>
           {[0, 6, 12, 18].map((h) => {
             const [x, y] = polar(100, 100, 97, h * 15);
             return (
@@ -206,7 +215,9 @@ export function HourglassPanel({
   return (
     <section className="panel space-y-2 p-4" data-testid="hourglass">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="section-title font-display">⏳ {workEnd}までに収まる？</h3>
+        <h3 className="section-title font-display">
+          <Icon emoji="⏳" /> {workEnd}までに収まる？
+        </h3>
         <span className={`text-xs font-bold ${fits ? "text-cream/80" : "text-alert"}`}>
           {h.leftMs === 0 ? "終業の時刻を過ぎています" : fits ? `収まる（${hm(-overflow)}の余裕）` : `${hm(overflow)}あふれそう`}
         </span>
@@ -260,7 +271,7 @@ export function NextScheduleBar({
     <div className={`panel space-y-1 px-3 py-2 ${overlap !== undefined && overlap > 0 ? "border border-alert/50" : ""}`} data-testid="next-schedule">
       <div className="flex items-baseline justify-between gap-2 text-xs">
         <span className="min-w-0 truncate text-cream/80">
-          ⏰ 次の予定 <b className="text-cream">{next.task.scheduledTime} {next.task.name}</b> まで
+          <Icon emoji="⏰" /> 次の予定 <b className="text-cream">{next.task.scheduledTime} {next.task.name}</b> まで
         </span>
         <span className="shrink-0 font-bold tabular-nums text-cream">{hm(span)}</span>
       </div>

@@ -104,6 +104,8 @@ import TodayHandoffPanel from "@/components/TodayHandoffPanel";
 import TomorrowDraftModal from "@/components/TomorrowDraftModal";
 import TimeboxModal from "@/components/TimeboxModal";
 import Modal from "@/components/ui/Modal";
+import Icon, { IconLabel } from "@/components/ui/Icon";
+import EmptyArt from "@/components/ui/EmptyArt";
 import TimeboxBand from "@/components/sections/today/TimeboxBand";
 import { extendTimebox, findEndedTimeboxes, timeboxesOf } from "@/lib/timebox";
 import { playChime } from "@/lib/chime";
@@ -2985,6 +2987,12 @@ export default function TodaySection({
         </div>
       )}
 
+      {/* 1280px以上の広い画面では、左に作業(次の予定・カード・打刻)、右に「そのほかの表示」を
+          22remの細い列で並べる。1列だと横に間延びして、カードと輪・砂時計が数画面離れていたため。
+          右列は画面より背が高いので sticky にはしない。DOMの順序(カード → そのほかの表示)は変えない。
+          画面下の BottomTabBar はこの格子の外に置く(格子の中だと sticky がセルの中で止まるため) */}
+      <div className={`space-y-4 ${taskViewTab !== "board" ? "xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start xl:gap-x-6 xl:space-y-0" : ""}`}>
+      <div className="min-w-0 space-y-4">
       {taskViewTab === "board" && <UnifiedBoardSection onOpenTodo={onOpenTodoTab} />}
 
       {taskViewTab !== "board" && (
@@ -2993,7 +3001,9 @@ export default function TodaySection({
           以前は「そのほかの表示」の中(家事・お気に入りの下)にあって、探さないと見つからなかった */}
       {tasks && tasks.every((t) => t.isProvisional) && (taskViewTab === "running" || taskViewTab === "pending") && (
         <div className="panel mb-3 flex flex-wrap items-center gap-3 p-4" data-testid="template-generate">
-          <h2 className="w-full font-display text-base font-bold">📋 今日の作業をテンプレートから作る</h2>
+          <h2 className="w-full font-display text-base font-bold">
+            <IconLabel text="📋 今日の作業をテンプレートから作る" />
+          </h2>
           <select
             value={weekday}
             onChange={(e) => setWeekday(Number(e.target.value) as Weekday)}
@@ -3170,11 +3180,15 @@ export default function TodaySection({
 
       <div className="space-y-3">
         {visibleTasks.length === 0 && (
-          <p className="empty-state">
-            {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
-            {taskViewTab === "pending" && "予定している作業はありません"}
-            {taskViewTab === "done" && "完了した作業はまだありません"}
-          </p>
+          // 文言は <p> に残し(getByText で探せるように)、森モードだけ空き地(完了タブは土の中の種)の線画を添える
+          <div className="empty-state">
+            <EmptyArt name={taskViewTab === "done" ? "done" : "today"} />
+            <p>
+              {taskViewTab === "running" && "実行中・一時停止中の作業はありません"}
+              {taskViewTab === "pending" && "予定している作業はありません"}
+              {taskViewTab === "done" && "完了した作業はまだありません"}
+            </p>
+          </div>
         )}
         {/* 完了が多い日(数百件)に全部を描くと開くのも操作も重いので、新しい方から30件だけ出す。
             並びは終えた順のまま(下ほど新しい)で、古い分は上のボタンで開く */}
@@ -3192,20 +3206,23 @@ export default function TodaySection({
 
 
       <QuickStampPanel date={date} now={now} />
+      </div>
 
       {/* 作業の開始に使うもの(テンプレート・お気に入り・提案など)と、状況の表示(作業状況・
           チャレンジ・自動配分・通知など)は、作業リストの下にまとめる。以前は作業リストの上に
           並んでいて、スマホでは作業リストが数画面下に埋もれていた。まとめて折りたためる
           広い画面では1列だと横に間延びするため、中のパネルを2列に並べる(区切りと今日の記録は横いっぱい) */}
-      <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4 lg:space-y-0">
+      <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4 lg:space-y-0 xl:grid-cols-1">
         {/* 箱ではなく区切り線にする。説明は折り返さず1行で切る(2行になると見出しの位置がずれていた) */}
         <button
-          className="fold-head lg:col-span-2"
+          className="fold-head lg:col-span-2 xl:col-span-1"
           onClick={() => setExtrasCollapsedStr(extrasCollapsed ? "false" : "true")}
           aria-expanded={!extrasCollapsed}
         >
           <span className="flex min-w-0 items-baseline gap-2">
-            <span className="section-title shrink-0">🧰 そのほかの表示</span>
+            <span className="section-title shrink-0">
+              <Icon emoji="🧰" /> そのほかの表示
+            </span>
             <span className="min-w-0 truncate text-[11px] font-normal text-cream/50">お気に入り・提案・作業状況 など</span>
           </span>
           <span>{extrasCollapsed ? "▶ 開く" : "▼ たたむ"}</span>
@@ -3239,7 +3256,7 @@ export default function TodaySection({
                   onClick={() => setFavoritesCollapsedStr(favoritesCollapsed ? "false" : "true")}
                 >
                   <h3 className="section-title font-display">
-                    ★ お気に入り（ワンタップで追加+開始）
+                    <Icon emoji="★" filled /> お気に入り（ワンタップで追加+開始）
                     {favoritesCollapsed && <span className="ml-1 font-normal text-cream/40">（{favorites.length}件）</span>}
                   </h3>
                   <span className="text-xs text-cream/40">{favoritesCollapsed ? "▶" : "▼"}</span>
@@ -3293,7 +3310,9 @@ export default function TodaySection({
 
             {!isPanelFolded("doneRestart") && doneTodayUnique.length > 0 && (
               <div data-panel-id="doneRestart" className="panel p-4">
-                <h3 className="section-title font-display">✅ 完了した業務から再開</h3>
+                <h3 className="section-title font-display">
+                  <IconLabel text="✅ 完了した業務から再開" />
+                </h3>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {doneTodayUnique.map((d) => (
                     <button
@@ -3313,7 +3332,9 @@ export default function TodaySection({
               // 提案であって警告ではないため、珊瑚色(遅れ・超過の色)ではなく「今できること」の緑にする
               <div data-panel-id="nextMove" className="panel flex flex-wrap items-center justify-between gap-2 border border-accent/45 bg-accent/[0.06] p-4">
                 <div>
-                  <h3 className="section-title font-display text-accent">🎯 今この一手</h3>
+                  <h3 className="section-title font-display text-accent">
+                    <IconLabel text="🎯 今この一手" />
+                  </h3>
                   <p className="section-sub">{nextTaskPick.reason}</p>
                   <p className="mt-1 text-sm text-cream">
                     {nextTaskPick.category} / {nextTaskPick.name}
@@ -3328,7 +3349,9 @@ export default function TodaySection({
             {!isPanelFolded("suggested") && showSuggestedTask && suggestedTask && (
               <div data-panel-id="suggested" className="panel flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
-                  <h3 className="section-title font-display">💡 そろそろこの作業では?</h3>
+                  <h3 className="section-title font-display">
+                    <IconLabel text="💡 そろそろこの作業では?" />
+                  </h3>
                   <p className="section-sub">
                     同じ曜日のこの時間帯によく行っている作業です（{suggestedTask.count}回）
                   </p>
@@ -3389,7 +3412,9 @@ export default function TodaySection({
             <TodayMemoPanel onOpenMemo={onOpenMemo} />
             {startedForceStopRanges.length > 0 && (
               <div className="panel space-y-2 p-4">
-                <h3 className="section-title font-display">☕ 本日の休憩</h3>
+                <h3 className="section-title font-display">
+                  <IconLabel text="☕ 本日の休憩" />
+                </h3>
                 <p className="section-sub">
                   この時間帯になると計測中の作業を自動で一時停止します。移動やミーティングなどで実際には
                   作業していた場合は、後からその作業に割り当てられます。
@@ -3499,8 +3524,10 @@ export default function TodaySection({
               </div>
             )}
 
-            <div className="panel space-y-2 p-4 lg:col-span-2">
-              <h3 className="section-title font-display">📓 今日の記録</h3>
+            <div className="panel space-y-2 p-4 lg:col-span-2 xl:col-span-1">
+              <h3 className="section-title font-display">
+                <IconLabel text="📓 今日の記録" />
+              </h3>
               <textarea
                 value={dailyJournal}
                 onChange={(e) => setDailyJournal(e.target.value)}
@@ -3512,6 +3539,7 @@ export default function TodaySection({
             </div>
           </>
         )}
+      </div>
       </div>
 
       <BottomTabBar

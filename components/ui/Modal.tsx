@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
+import { IconLabel } from "./Icon";
 
 export default function Modal({
   title,
@@ -67,7 +68,7 @@ export default function Modal({
         className={`panel flex max-h-[88dvh] w-full sm:max-h-[90vh] ${maxWidthClass} flex-col p-4 outline-none sm:p-5`}
       >
         <div className="mb-3 flex shrink-0 items-center justify-between gap-2 border-b border-cream/10 pb-2">
-          <h3 id={titleId} className="section-title font-display text-lg">{title}</h3>
+          <h3 id={titleId} className="section-title font-display text-lg"><IconLabel text={title} /></h3>
           {onClose && (
             <button onClick={onClose} className="-mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-cream/70 hover:bg-cream/10 hover:text-cream" aria-label="閉じる">
               ✕

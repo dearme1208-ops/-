@@ -15,6 +15,22 @@ export type RGB = [number, number, number];
 export const rgba = (c: RGB, a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 export const rgbOf = (c: RGB) => `rgb(${c[0]},${c[1]},${c[2]})`;
 
+// 完了の瞬間に、ヘッダーの蛍と月を一度だけふわっと明るくする(CompletionPopupHost から呼ぶ)。
+// 描画ループの外から呼ばれるので、時刻だけを覚えて、描くときに強さ(0〜1)へ直す。
+// 新しい状態の受け渡し(ForestCanvasへのprops等)を作らず、既存のrAF描画が読むだけにしている
+let bloomAt = -Infinity;
+const BLOOM_MS = 1400;
+export function forestBloom(): void {
+  // 動きを減らす設定では1枚絵のまま。リサイズで描き直した1枚に明るさが焼き付かないよう、そもそも覚えない
+  if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  bloomAt = typeof performance !== "undefined" ? performance.now() : 0;
+}
+function bloomLevel(): number {
+  if (typeof performance === "undefined") return 0;
+  const x = (performance.now() - bloomAt) / BLOOM_MS;
+  return x <= 0 || x >= 1 ? 0 : Math.sin(Math.PI * x);
+}
+
 export function computeForestTimeBand(hour: number): ForestTimeBand {
   if (hour >= 5 && hour < 8) return "dawn";
   if (hour >= 8 && hour < 16) return "day";
@@ -519,14 +535,15 @@ function drawCelestial(ctx: CanvasRenderingContext2D, w: number, h: number, p: F
   const cx = w * c.x;
   const cy = h * c.y;
   const breathe = 0.86 + 0.14 * Math.sin(t * 0.27);
+  const b = bloomLevel();
 
-  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.r * 5.2 * breathe);
-  glow.addColorStop(0, rgba(c.glow, 0.5));
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.r * 5.2 * breathe * (1 + 0.35 * b));
+  glow.addColorStop(0, rgba(c.glow, 0.5 + 0.3 * b));
   glow.addColorStop(0.45, rgba(c.glow, 0.14));
   glow.addColorStop(1, rgba(c.glow, 0));
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(cx, cy, c.r * 5.2 * breathe, 0, Math.PI * 2);
+  ctx.arc(cx, cy, c.r * 5.2 * breathe * (1 + 0.35 * b), 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = rgba(c.body, c.kind === "moon" ? 0.92 : 0.85);
@@ -621,24 +638,26 @@ function drawMist(ctx: CanvasRenderingContext2D, w: number, h: number, p: Forest
 function drawFireflies(ctx: CanvasRenderingContext2D, flies: Firefly[], t: number, w: number, h: number) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
+  const b = bloomLevel();
   for (const f of flies) {
     const tt = t * f.speed;
     const x = f.x + Math.sin(tt * 0.32 + f.phase) * f.driftX + Math.sin(tt * 0.13 + f.phase * 2.1) * (f.driftX * 0.42);
     const y = f.y + Math.cos(tt * 0.24 + f.phase) * f.driftY + Math.sin(tt * 0.08 + f.phase) * (f.driftY * 0.5);
     if (x < -20 || x > w + 20 || y < -20 || y > h + 20) continue;
     const pulse = 0.25 + 0.75 * Math.pow(0.5 + 0.5 * Math.sin(tt * 1.9 + f.phase * 3), 2);
+    const lit = Math.min(1, pulse + 0.7 * b);
 
-    const glowR = f.r * 7.5;
+    const glowR = f.r * (7.5 + 4 * b);
     const g = ctx.createRadialGradient(x, y, 0, x, y, glowR);
-    g.addColorStop(0, rgba(FIREFLY_GLOW, 0.42 * pulse));
-    g.addColorStop(0.4, rgba(FIREFLY_GLOW, 0.12 * pulse));
+    g.addColorStop(0, rgba(FIREFLY_GLOW, 0.42 * lit));
+    g.addColorStop(0.4, rgba(FIREFLY_GLOW, 0.12 * lit));
     g.addColorStop(1, rgba(FIREFLY_GLOW, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(x, y, glowR, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = rgba(FIREFLY_CORE, 0.6 + 0.4 * pulse);
+    ctx.fillStyle = rgba(FIREFLY_CORE, 0.6 + 0.4 * lit);
     ctx.beginPath();
     ctx.arc(x, y, f.r, 0, Math.PI * 2);
     ctx.fill();

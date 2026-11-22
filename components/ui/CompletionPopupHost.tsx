@@ -6,6 +6,8 @@ import { formatHms } from "@/lib/time";
 import { completionLabel, useVisualMode } from "@/lib/theme";
 import { buzz } from "@/lib/haptics";
 import { recordHistory } from "@/lib/toast";
+import { forestBloom } from "@/lib/forestScene";
+import Icon from "./Icon";
 
 const DISPLAY_MS = 4500;
 // 「元に戻す」を押せるよう、取り消せる完了は少し長く出しておく
@@ -23,6 +25,8 @@ export default function CompletionPopupHost() {
     () =>
       subscribeCompletionPopup((info) => {
         buzz([12, 60, 12]);
+        // 森ではヘッダーの蛍と月が一度だけ明るくなる(森以外はキャンバスが無いので何も起きない)
+        forestBloom();
         if (info.undo) {
           // 完了の取り消しは操作の履歴からもできるように(お知らせのボタンと合わせて1回だけ効く)
           let done = false;
@@ -71,15 +75,15 @@ function CompletionCard({
 
   return (
     <div className="completion-popup-card panel pointer-events-auto flex items-start gap-3 p-3.5 shadow-panel">
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-bold text-ink">✓</span>
+      <span className="completion-seal mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-bold text-ink"><Icon emoji="✓" /></span>
       <div className="min-w-0 flex-1">
         <div className="text-[10px] font-bold uppercase tracking-widest text-accent">{completionLabel(mode)}</div>
-        <div className="truncate text-sm font-bold text-cream">{item.name}</div>
+        <div className="hero-name completion-name truncate text-sm font-bold text-cream">{item.name}</div>
         <div className="truncate text-xs text-cream/60">[{item.category}]</div>
         <div className="mt-1 flex items-center justify-between text-xs">
-          <span className="tabular-nums text-cream/70">実績 {formatHms(item.seconds)}</span>
+          <span className="num text-cream/85">実績 {formatHms(item.seconds)}</span>
           {compareLabel && (
-            <span className={`tabular-nums ${overSeconds > 0 ? "text-alert" : "text-cream/50"}`}>{compareLabel}</span>
+            <span className={`tabular-nums ${overSeconds > 0 ? "text-alert" : "font-bold text-accent"}`}>{compareLabel}</span>
           )}
         </div>
         {item.next && (
@@ -91,7 +95,7 @@ function CompletionCard({
             }}
             data-testid="completion-next"
           >
-            <span className="min-w-0 truncate">▶ 次：{item.next.name}</span>
+            <span className="min-w-0 truncate"><Icon emoji="▶" /> 次：{item.next.name}</span>
             <span className="shrink-0 text-[10px] font-normal opacity-75">{item.next.hint}</span>
           </button>
         )}

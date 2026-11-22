@@ -4856,6 +4856,13 @@ html[data-visual-mode="home"] {
     .chip[data-size="lg"] {
       font-size: 0.8125rem;
     }
+    /* 今日の見出しの横の札(TodayToolbar)は、見出しと1行に収まるようふつうの大きさにする */
+    .today-head .chip[data-size="lg"] {
+      height: 1.375rem;
+      padding: 0 0.5rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
   }
   /* 森モード: 札もボタンと同じ「切り出した小さな板」の角にする */
   html[data-visual-mode="home"] .chip {
@@ -5281,5 +5288,501 @@ html[data-visual-mode="terminal"] .num {
   }
   .modal-scrim {
     padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* ══ 第2弾: 月明かりの森の手帳(森モードのみ。土台の規則は変数だけ) ══
+   夜の森でつける作業手帳、という見立て。森はヘッダーと背景に残し、中身は「月明かりの下の切り出した板」にする。
+   - 物の名前(アプリ名・ページ・パネル・計測中の作業・ダイアログ)は明朝、数字は Oswald、本文は Noto Sans のまま
+   - 板の高さは3段: 畳む見出し=地面(e0)、ふつうのパネル=板(e1)、計測中のカード=浮いた板(e2)、ダイアログ・完了カード=宙(e3)
+   - ずっと動くのは計測中のカード(と時計)だけ。ほかの動きは「何かが変わった」ことの合図で、300ms以内・transform/opacityのみ
+   - 森だけの見た目は html[data-visual-mode="home"] に閉じ込める。ほかのモードに出るのは、変数だけで描く小さな合図
+     (.count-bump / .todo-check / .tab-enter / .timer-paused / .completion-seal / .completion-name)だけ
+   - 動きを減らす設定では、このブロックの動きはすべて止める(ブロック末尾。ファイル中ほどの全体の指定でも縮む)
+   書体は app/layout.tsx で読み込み済みの Noto Serif JP / Oswald を使う(新しい書体は足さない。CJKの明朝は重いため) */
+@layer components {
+  /* ─── 1. 書体と計測中の数字 ─── */
+
+  /* --- 書体: 物の名前は明朝、数字は Oswald --- */
+  html[data-visual-mode="home"] .app-title {
+    font-family: var(--font-noto-serif-jp), serif;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+  }
+  /* 英数字は Oswald、かな・漢字は明朝に落ちる並び(「2026-11-22 の作業リスト」= Oswald の日付 + 明朝の言葉) */
+  html[data-visual-mode="home"] h2.font-display,
+  html[data-visual-mode="home"] h3.font-display,
+  html[data-visual-mode="home"] .section-title,
+  html[data-visual-mode="home"] .hero-name {
+    font-family: var(--font-oswald), var(--font-noto-serif-jp), serif;
+    font-feature-settings: "palt" 1;
+    font-weight: 600;
+  }
+  html[data-visual-mode="home"] h2.font-display {
+    letter-spacing: 0.04em;
+  }
+  html[data-visual-mode="home"] .hero-name {
+    font-size: 1.375rem;
+    line-height: 1.3;
+    letter-spacing: 0.03em;
+  }
+
+  /* --- 計測中の大きな時間: 月明かりに照らされた数字。超過中(赤)には付けない(TaskCard 側で外す) --- */
+  html[data-visual-mode="home"] .timer-hero {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    background-image: linear-gradient(180deg, rgb(246 250 238) 0%, rgb(var(--cream-rgb)) 48%, rgb(172 212 152) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 12px rgb(var(--accent-rgb) / 0.3));
+  }
+  /* ハイコントラスト(強制色)では背景の塗りが消え、透明にした文字だけが残って数字が見えなくなる */
+  @media (forced-colors: active) {
+    html[data-visual-mode="home"] .timer-hero {
+      background-image: none;
+      color: CanvasText;
+      -webkit-text-fill-color: CanvasText;
+      filter: none;
+    }
+  }
+  /* 計測中の数字を一回り大きくするのは森だけ(ほかのモードは text-4xl sm:text-5xl / text-2xl のまま)。
+     超過で timer-hero が外れても大きさは変わらないよう、大きさは別のクラスで持つ */
+  html[data-visual-mode="home"] .timer-big {
+    font-size: 2.5rem;
+  }
+  @media (min-width: 640px) {
+    html[data-visual-mode="home"] .timer-big {
+      font-size: 3.75rem;
+    }
+  }
+  html[data-visual-mode="home"] .timer-big-provisional {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+  }
+  /* 一時停止した瞬間、数字が一段沈む(クラスが付いた時だけ1回) */
+  .timer-paused {
+    animation: timer-settle 260ms ease-out;
+  }
+  @keyframes timer-settle {
+    from {
+      opacity: 0.45;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  /* 超過中の数字: 森ではグリッチ(色ずれ)をやめ、熾火のようにゆっくり明滅するだけにする */
+  html[data-visual-mode="home"] .overrun-flicker-intense {
+    animation: forest-ember 2.8s ease-in-out infinite;
+  }
+  @keyframes forest-ember {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.78;
+    }
+  }
+
+  /* ─── 2. 素材と高さ ─── */
+
+  /* --- 素材: 苔のノイズを変数にして、板ごとに光と重ねられるようにする --- */
+  html[data-visual-mode="home"] {
+    --moss-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+    --elev-1: 0 0 0 1px rgb(var(--accent-rgb) / 0.08), 0 14px 28px -20px rgb(0 0 0 / 0.7),
+      inset 0 1px 0 rgb(var(--cream-rgb) / 0.06), inset 0 -1px 0 rgb(0 0 0 / 0.35);
+    --elev-1-hover: 0 0 0 1px rgb(var(--accent-rgb) / 0.16), 0 18px 34px -20px rgb(0 0 0 / 0.8),
+      inset 0 1px 0 rgb(var(--cream-rgb) / 0.09), inset 0 -1px 0 rgb(0 0 0 / 0.35);
+    --elev-2: 0 0 0 1px rgb(var(--accent-rgb) / 0.3), 0 28px 48px -22px rgb(0 0 0 / 0.9),
+      0 10px 18px -12px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(var(--cream-rgb) / 0.1), inset 0 -2px 0 rgb(0 0 0 / 0.4);
+    --elev-3: 0 -10px 40px -12px rgb(0 0 0 / 0.75), 0 24px 60px -20px rgb(0 0 0 / 0.9),
+      inset 0 1px 0 rgb(var(--accent-rgb) / 0.3);
+  }
+  /* e1: ふつうの板。上端に光、下端に板の厚みの影、上から差すごく淡い光。
+     警告の枠(border-alert)の板は、ファイル中ほどの .panel[class*="border-alert"] の方が詳細度が高く、そちらの影が残る */
+  html[data-visual-mode="home"] .panel {
+    background-image: linear-gradient(180deg, rgb(var(--cream-rgb) / 0.03), rgb(var(--cream-rgb) / 0) 40%), var(--moss-noise);
+    box-shadow: var(--elev-1);
+  }
+  @media (hover: hover) {
+    html[data-visual-mode="home"] .panel:hover {
+      box-shadow: var(--elev-1-hover);
+    }
+  }
+
+  /* e2: 計測中の板。浮かせ、右上から月の光の筋を落とし、縁だけがゆっくり呼吸する。
+     :not([class*="border-alert"]) は、超過中(警告の枠)の計測中カードを浮かせないため。
+     付けないと同じ詳細度で後ろにあるこちらが勝ち、超過の警告の影が浮きの影に上書きされてしまう */
+  html[data-visual-mode="home"] .panel[data-running-card="true"]:not([class*="border-alert"]) {
+    position: relative;
+    isolation: isolate;
+    box-shadow: var(--elev-2);
+    background-image:
+      radial-gradient(120% 70% at 88% -8%, rgb(var(--forest-dew-rgb) / 0.11), transparent 62%),
+      linear-gradient(180deg, rgb(var(--cream-rgb) / 0.035), rgb(var(--cream-rgb) / 0) 45%),
+      var(--moss-noise);
+  }
+  /* 月の光の筋。isolation で閉じた重なりの中の z-index:-1 なので、板の地の上・中身の下に敷かれる */
+  html[data-visual-mode="home"] .panel[data-running-card="true"]:not([class*="border-alert"])::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: repeating-linear-gradient(118deg, rgb(var(--forest-dew-rgb) / 0.05) 0 16px, transparent 16px 44px);
+    -webkit-mask-image: radial-gradient(90% 75% at 92% 0%, #000 0%, transparent 70%);
+    mask-image: radial-gradient(90% 75% at 92% 0%, #000 0%, transparent 70%);
+  }
+  /* 呼吸する縁(box-shadowを毎フレーム描き直さず、重ねた枠の不透明度だけを動かす=合成だけで済む) */
+  html[data-visual-mode="home"] .panel.card-running-forest::after,
+  html[data-visual-mode="home"] .panel.card-overrun-forest::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.55), 0 0 26px -4px rgb(var(--accent-rgb) / 0.5);
+    opacity: 0.35;
+    will-change: opacity;
+    animation: hero-breathe 4.6s ease-in-out infinite;
+  }
+  html[data-visual-mode="home"] .panel.card-overrun-forest::after {
+    box-shadow: 0 0 0 1px rgb(var(--alert-rgb) / 0.55), 0 0 24px -4px rgb(var(--caution-rgb) / 0.55);
+    animation-duration: 2.8s;
+  }
+  @keyframes hero-breathe {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+  /* 計測中のカードが現れる(開始した・実行中タブを開いた)時だけ、下から少しせり上がる。
+     縁の呼吸は ::after に移したので、ファイル中ほどの .card-running-forest の box-shadow のアニメーションは
+     ここで差し替えて止める(アニメーションの値はふつうの指定より強く、板の影を上書きしてしまうため)。
+     backwards なので終わった後に transform は残らない */
+  html[data-visual-mode="home"] .panel.card-running-forest {
+    animation: hero-rise 300ms cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+  }
+  /* 超過中の板(TaskCard と画面下の計測中の帯 RunningStrip)。::after の縁の基準にするため relative。
+     どちらも呼び出し側で sticky/fixed などの位置指定は付けていない */
+  html[data-visual-mode="home"] .panel.card-overrun-forest {
+    position: relative;
+    isolation: isolate;
+    animation: none;
+  }
+  @keyframes hero-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  /* 一時停止中の板: 光を落とし、夕暮れの琥珀を上端にうっすら残す(静かな状態) */
+  html[data-visual-mode="home"] .panel[data-status="paused"] {
+    border-color: rgb(var(--caution-rgb) / 0.35);
+    background-image: linear-gradient(180deg, rgb(var(--caution-rgb) / 0.05), transparent 45%), var(--moss-noise);
+  }
+  /* ToDoの期限切れの行: 何十行も光り続けると騒がしく重いので、森では止めて細い警告の縁にする。
+     一括操作の「期限切れ一覧」の行(.panel でも .list-row-card でもない)も同じ光り方をしていたので、
+     板以外の card-overrun-forest は動きだけ止める(その行は自前の警告の枠を持っている) */
+  /* 光り方(box-shadow のアニメーション)だけが期限切れの印だった行(案件一覧の行・段階の行)もあるので、
+     止めた代わりに動かない細い警告の縁を全部に残す */
+  html[data-visual-mode="home"] .card-overrun-forest:not(.panel) {
+    animation: none;
+    box-shadow: 0 0 0 1px rgb(var(--alert-rgb) / 0.45);
+  }
+
+  /* ─── 3. ヘッダーの境目・タブ列・画面下の操作・ダイアログ ─── */
+
+  /* ヘッダーの林の足元を、もう少し長く地へ溶かす */
+  html[data-visual-mode="home"] header::after {
+    height: 40px;
+  }
+  /* タブ列の地面の線を、両端で消える苔の線にする(分類2段の上段の破線はそのまま) */
+  html[data-visual-mode="home"] .tab-nav:not(.tab-nav-groups) {
+    border-bottom-color: transparent;
+    border-image: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.3) 12%, rgb(var(--accent-rgb) / 0.3) 88%, transparent) 1;
+  }
+  /* 画面下の操作: 地はすでに不透明なので、中のぼかし(backdrop-blur)は森では外す(スクロール中の負担だけ残るため) */
+  html[data-visual-mode="home"] .bottom-dock .panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* 影は警告の枠でない時だけ。超過中の帯は .panel[class*="border-alert"] の警告の影と ::after の縁のまま */
+  html[data-visual-mode="home"] .bottom-dock .panel:not([class*="border-alert"]) {
+    box-shadow: var(--elev-1), 0 -8px 24px -12px rgb(0 0 0 / 0.6);
+  }
+  /* ダイアログ(下からのシート): 一段上に浮かせ、上端に苔の光の縁 */
+  html[data-visual-mode="home"] .modal-scrim > .panel {
+    box-shadow: var(--elev-3);
+    background-image: radial-gradient(120% 60% at 50% 0%, rgb(var(--accent-rgb) / 0.07), transparent 60%), var(--moss-noise);
+  }
+
+  /* ─── 4. 線画アイコン(components/ui/Icon.tsx) ───
+     森以外は絵文字のまま、森は線画に差し替えて絵文字は読み上げ用に隠す。
+     仕様では .ico 自体を inline-flex にしていたが、それだとほかのモードでも絵文字の行の高さ・縦位置が
+     わずかに変わる。ほかのモードは今と同じ見た目にするため、形の指定は森の中だけにした */
+  .ico-svg {
+    display: none;
+    width: 1.15em;
+    height: 1.15em;
+    flex: none;
+  }
+  .ico[data-forest-only="true"] {
+    display: none;
+  }
+  html[data-visual-mode="home"] .ico {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: -0.15em;
+    line-height: 1;
+  }
+  html[data-visual-mode="home"] .ico-svg {
+    display: block;
+  }
+  html[data-visual-mode="home"] .ico-emoji {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* ─── 5. 計測中の時計(components/ui/TaskClock.tsx)の森の飾りと、今日のリングの年輪 ─── */
+  .tc-wrap {
+    position: relative;
+    display: block;
+  }
+  /* 包む前は svg が縦並びの flex の子(=ブロック扱い)だった。包みの中で行内のままだと
+     文字の下の隙間が数px増えるので、どのモードでもブロックにして今と同じ高さにする */
+  .tc-wrap > svg {
+    display: block;
+  }
+  .tc-flag-leaf,
+  .tc-firefly {
+    display: none;
+  }
+  html[data-visual-mode="home"] .tc-flag-leaf,
+  html[data-visual-mode="home"] .tc-firefly {
+    display: inline;
+  }
+  html[data-visual-mode="home"] .tc-flag-dot {
+    display: none;
+  }
+  html[data-visual-mode="home"] .tc-firefly {
+    filter: drop-shadow(0 0 2.5px rgb(150 235 120 / 0.95));
+  }
+  html[data-visual-mode="home"] .tc-remain {
+    filter: drop-shadow(0 0 2.5px rgb(var(--accent-rgb) / 0.75));
+  }
+  html[data-visual-mode="home"] .tc-face {
+    fill: rgb(var(--ink-rgb) / 0.7);
+    stroke: rgb(var(--accent-rgb) / 0.3);
+  }
+  /* 文字盤の後ろの月暈。カードの縁と同じ周期で、不透明度だけを動かす */
+  html[data-visual-mode="home"] .tc-wrap::before {
+    content: "";
+    position: absolute;
+    inset: -14%;
+    border-radius: 999px;
+    pointer-events: none;
+    background: radial-gradient(closest-side, rgb(var(--accent-rgb) / 0.32), rgb(var(--accent-rgb) / 0.08) 62%, transparent 100%);
+    opacity: 0.45;
+    will-change: opacity;
+    animation: hero-breathe 4.6s ease-in-out infinite;
+  }
+  html[data-visual-mode="home"] .tc-wrap > svg {
+    position: relative;
+  }
+  /* 今日のリング(viz/TodayViz.tsx の DayRing)の内側の年輪。森以外では出さない */
+  .dr-rings {
+    display: none;
+  }
+  html[data-visual-mode="home"] .dr-rings {
+    display: inline;
+  }
+
+  /* ─── 6. 操作が効いた合図(すべて300ms以内・transform/opacityのみ) ─── */
+  /* 件数が増えた数字を一度だけ弾ませる(BottomTabBar が key を変えて付け直すので1回だけ動く) */
+  .count-bump {
+    display: inline-block;
+    animation: count-bump 280ms cubic-bezier(0.3, 1.4, 0.5, 1);
+  }
+  @keyframes count-bump {
+    0% {
+      transform: scale(1);
+    }
+    40% {
+      transform: scale(1.32);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+  html[data-visual-mode="home"] .count-bump {
+    text-shadow: 0 0 10px rgb(var(--accent-rgb) / 0.9);
+  }
+  /* ToDoの完了の丸: 押すと沈み、付いた印は線で描かれる。
+     線を描く stroke-dashoffset は transform/opacity ではないが、描き直すのは26px以下のSVGだけなので許す */
+  .todo-check {
+    transition: transform 120ms ease-out;
+  }
+  .todo-check:active {
+    transform: scale(0.86);
+  }
+  .todo-check-mark path {
+    stroke-dasharray: 18;
+    stroke-dashoffset: 0;
+    animation: check-draw 260ms ease-out;
+  }
+  @keyframes check-draw {
+    from {
+      stroke-dashoffset: 18;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  /* タブを切り替えた時、中身が静かに現れる(位置は動かさない=テストの座標も変わらない) */
+  .tab-enter {
+    animation: tab-enter 180ms ease-out;
+  }
+  @keyframes tab-enter {
+    from {
+      opacity: 0.35;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* ─── 7. 空の知らせの絵・ごほうびの瞬間・砂時計 ─── */
+
+  /* --- 空の知らせの線画(components/ui/EmptyArt.tsx)。森モードだけ、文言の上に淡く添える --- */
+  .empty-art {
+    display: none;
+  }
+  html[data-visual-mode="home"] .empty-art {
+    display: block;
+    width: 6.5rem;
+    height: auto;
+    margin: 0 auto 0.625rem;
+    color: rgb(var(--accent-rgb) / 0.55);
+  }
+  html[data-visual-mode="home"] .empty-state {
+    background-image: radial-gradient(60% 80% at 50% 0%, rgb(var(--accent-rgb) / 0.05), transparent 70%);
+  }
+
+  /* --- ごほうびの瞬間 ---
+     .completion-name / .hero-name の森の指定は詳細度が同じなので、この段は書体の段(1.)より後ろに置く
+     (完了カードの名前は 1.0625rem になる) */
+  /* 完了のしるし: 印が線で描かれ、輪が一度だけ広がって消える */
+  .completion-seal {
+    position: relative;
+  }
+  .completion-seal::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 999px;
+    border: 2px solid rgb(var(--accent-rgb) / 0.7);
+    opacity: 0;
+    pointer-events: none;
+    animation: seal-ring 300ms ease-out 60ms;
+  }
+  @keyframes seal-ring {
+    from {
+      opacity: 0.9;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.9);
+    }
+  }
+  .completion-seal .ico-svg path {
+    stroke-width: 2.25;
+    stroke-dasharray: 18;
+    animation: check-draw 260ms ease-out 40ms backwards;
+  }
+  /* ほかのモードは今の text-sm と同じ大きさ */
+  .completion-name {
+    font-size: 0.875rem;
+  }
+  html[data-visual-mode="home"] .completion-name {
+    font-size: 1.0625rem;
+  }
+  /* 森の完了カード: 左上から若葉の光、e3の浮き */
+  html[data-visual-mode="home"] .panel.completion-popup-card {
+    border-color: rgb(var(--accent-rgb) / 0.5);
+    background-color: rgb(var(--panel-rgb) / 0.98);
+    background-image: radial-gradient(140% 120% at 0% 0%, rgb(var(--accent-rgb) / 0.16), transparent 55%), var(--moss-noise);
+    box-shadow: 0 18px 40px -16px rgb(0 0 0 / 0.85), 0 0 0 1px rgb(var(--accent-rgb) / 0.18), 0 0 32px -12px rgb(var(--accent-rgb) / 0.55);
+  }
+  /* 知らせ: 左に一枚の葉、地を若葉色に少しだけ染める */
+  html[data-visual-mode="home"] .panel.toast {
+    background-image: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.12), transparent 45%), var(--moss-noise);
+  }
+  .toast-leaf {
+    animation: toast-leaf 300ms ease-out;
+  }
+  @keyframes toast-leaf {
+    from {
+      transform: rotate(-24deg) scale(0.8);
+      opacity: 0;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+
+  /* --- 相手待ちの砂時計(viz/PlanningViz.tsx): 森では落ちている砂がさらさらと流れる(16pxの線だけを描き直す) --- */
+  html[data-visual-mode="home"] .sg-stream {
+    animation: sand-trickle 1.2s linear infinite;
+  }
+  @keyframes sand-trickle {
+    to {
+      stroke-dashoffset: -5;
+    }
+  }
+
+  /* ─── 動きを減らす設定: このブロックの動きをすべて止める(必ずブロックの最後に置く) ───
+     同じ詳細度なら後ろが勝つので、上の各指定と同じセレクタを並べる(砂時計は html 付きの指定に合わせる) */
+  @media (prefers-reduced-motion: reduce) {
+    .count-bump,
+    .todo-check-mark path,
+    .tab-enter,
+    .timer-paused,
+    html[data-visual-mode="home"] .panel.card-running-forest,
+    html[data-visual-mode="home"] .panel.card-running-forest::after,
+    html[data-visual-mode="home"] .panel.card-overrun-forest::after,
+    html[data-visual-mode="home"] .tc-wrap::before,
+    html[data-visual-mode="home"] .overrun-flicker-intense,
+    html[data-visual-mode="home"] .sg-stream,
+    .completion-seal::after,
+    .completion-seal .ico-svg path,
+    .toast-leaf {
+      animation: none;
+    }
+    .todo-check {
+      transition: none;
+    }
   }
 }

@@ -62,6 +62,8 @@ export default function TaskClock({
 
   return (
     <div className="flex shrink-0 flex-col items-center gap-0.5" data-testid="task-clock">
+      {/* 森モードの月暈(::before)を文字盤の後ろに敷くための包み。data-testid は外側の div のまま */}
+      <span className="tc-wrap">
       <svg
         viewBox="0 0 100 100"
         width={size}
@@ -71,7 +73,7 @@ export default function TaskClock({
         className="overflow-visible"
       >
         {/* 文字盤 */}
-        <circle cx={C} cy={C} r={48} fill="rgb(var(--ink-rgb) / 0.55)" stroke="rgb(var(--cream-rgb) / 0.2)" strokeWidth={1} />
+        <circle className="tc-face" cx={C} cy={C} r={48} fill="rgb(var(--ink-rgb) / 0.55)" stroke="rgb(var(--cream-rgb) / 0.2)" strokeWidth={1} />
         {Array.from({ length: 60 }, (_, i) => {
           const major = i % 5 === 0;
           const [x1, y1] = polar(major ? 40 : 43, i * 6);
@@ -103,15 +105,29 @@ export default function TaskClock({
             {/* 始めてから今まで(済んだ分)は薄く、今から見込みまで(残り)はくっきり */}
             <path d={arc(ringR, angle(startMs), angle(Math.min(now, endMs)))} fill="none" stroke="rgb(var(--accent-rgb) / 0.45)" strokeWidth={5} strokeLinecap="round" />
             {!overrun && (
-              <path d={arc(ringR, angle(now), angle(endMs))} fill="none" stroke="rgb(var(--accent-rgb))" strokeWidth={5} strokeLinecap="round" />
+              <path className="tc-remain" d={arc(ringR, angle(now), angle(endMs))} fill="none" stroke="rgb(var(--accent-rgb))" strokeWidth={5} strokeLinecap="round" />
             )}
             {overrun && (
               <path d={arc(ringR, angle(endMs), angle(now))} fill="none" stroke="rgb(var(--alert-rgb))" strokeWidth={5} strokeLinecap="round" />
             )}
             {/* 終わる見込みの位置の旗 */}
             {(() => {
-              const [x, y] = polar(ringR, angle(endMs));
-              return <circle cx={x} cy={y} r={4} fill={overrun ? "rgb(var(--alert-rgb))" : "rgb(var(--cream-rgb))"} stroke="rgb(var(--ink-rgb))" strokeWidth={1.2} />;
+              const a = angle(endMs);
+              const [x, y] = polar(ringR, a);
+              return (
+                <>
+                  <circle className="tc-flag-dot" cx={x} cy={y} r={4} fill={overrun ? "rgb(var(--alert-rgb))" : "rgb(var(--cream-rgb))"} stroke="rgb(var(--ink-rgb))" strokeWidth={1.2} />
+                  {/* 森モード: 終わる見込みの所に一枚の葉(丸い旗の代わり。ほかのモードでは CSS で隠す) */}
+                  <path
+                    className="tc-flag-leaf"
+                    d="M0 -6.5c3.3 1.7 3.8 5.4 0 8.8-3.8-3.4-3.3-7.1 0-8.8z"
+                    transform={`translate(${x} ${y}) rotate(${a})`}
+                    fill={overrun ? "rgb(var(--alert-rgb))" : "rgb(var(--cream-rgb))"}
+                    stroke="rgb(var(--ink-rgb))"
+                    strokeWidth={1}
+                  />
+                </>
+              );
             })()}
           </>
         )}
@@ -127,11 +143,14 @@ export default function TaskClock({
               <line x1={C} y1={C} x2={hx} y2={hy} stroke="rgb(var(--cream-rgb))" strokeWidth={3.4} strokeLinecap="round" />
               <line x1={C} y1={C} x2={mx} y2={my} stroke="rgb(var(--cream-rgb))" strokeWidth={2.2} strokeLinecap="round" />
               <line x1={tx} y1={ty} x2={sx} y2={sy} stroke="rgb(var(--alert-rgb))" strokeWidth={1} strokeLinecap="round" />
+              {/* 森モード: 秒針の先に蛍(ほかのモードでは CSS で隠す) */}
+              <circle className="tc-firefly" cx={sx} cy={sy} r={1.7} fill="rgb(214 255 176)" />
               <circle cx={C} cy={C} r={2.4} fill="rgb(var(--alert-rgb))" />
             </>
           );
         })()}
       </svg>
+      </span>
       <div className={`text-center text-[10px] leading-tight tabular-nums ${overrun ? "font-bold text-alert" : "text-cream/60"}`}>
         {endMs === undefined ? `今 ${formatClock(now)}` : overrun ? `${formatClock(endMs)}を過ぎた` : `●${formatClock(endMs)}に終わる見込み`}
       </div>

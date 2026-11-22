@@ -10,14 +10,15 @@ import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import { collectWaitingItems } from "@/lib/waiting";
 import { useWaitingSettings } from "@/lib/waitingSettings";
 import type { ProjectItem, TodoTask } from "@/lib/types";
+import { IconLabel } from "@/components/ui/Icon";
 
 // 案件タブ・ToDoタブに置く可視化。計算は lib/visuals.ts
 
 const daysLeft = (due: string, today: string) =>
   Math.round((new Date(`${due}T00:00:00`).getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000);
 
-/** 開閉を覚えておく見出し付きの枠 */
-function Fold({ settingKey, title, children, testId }: { settingKey: string; title: string; children: React.ReactNode; testId: string }) {
+/** 開閉を覚えておく見出し付きの枠。見出しは森モードで先頭の絵文字を線画にするため、文字列ではなく要素で受ける */
+function Fold({ settingKey, title, children, testId }: { settingKey: string; title: React.ReactNode; children: React.ReactNode; testId: string }) {
   const [openStr, setOpenStr] = useSetting(settingKey, "true");
   const open = openStr === "true";
   return (
@@ -38,7 +39,7 @@ export function ProjectClimbPanel({ onOpen }: { onOpen?: (id: string) => void })
   const rows = useMemo(() => projectClimbs(projects ?? [], today), [projects, today]);
   if (rows.length === 0) return null;
   return (
-    <Fold settingKey="viz.projectClimbOpen" title="⛰ 案件の山登り" testId="project-climb">
+    <Fold settingKey="viz.projectClimbOpen" title={<IconLabel text="⛰ 案件の山登り" />} testId="project-climb">
       <p className="section-sub mb-2">
         ● が段階の進み具合、縦線が今日(登録から期日までのどこにいるか)、⚑ が期日です。縦線が ● より先なら遅れ気味です。
       </p>
@@ -102,7 +103,7 @@ export function DueTerrainPanel() {
   const wd = ["日", "月", "火", "水", "木", "金", "土"];
   const sel = days.find((d) => d.date === picked);
   return (
-    <Fold settingKey="viz.dueTerrainOpen" title="🏔 これから2週間の期日" testId="due-terrain">
+    <Fold settingKey="viz.dueTerrainOpen" title={<IconLabel text="🏔 これから2週間の期日" />} testId="due-terrain">
       <div className="flex h-20 items-end gap-1 sm:h-28">
         {days.map((d) => {
           const n = d.todos.length + d.projects.length;
@@ -174,7 +175,7 @@ function SandGlass({ sandLeft, overdue }: { sandLeft: number; overdue: boolean }
       </defs>
       <rect x={2} y={13 - top} width={12} height={top} fill={sand} clipPath="url(#sg-top)" />
       <rect x={2} y={24 - bottom} width={12} height={bottom} fill={sand} clipPath="url(#sg-bottom)" />
-      {sandLeft > 0 && <line x1={8} y1={13} x2={8} y2={24} stroke={sand} strokeWidth={0.8} strokeDasharray="1 1.5" />}
+      {sandLeft > 0 && <line className="sg-stream" x1={8} y1={13} x2={8} y2={24} stroke={sand} strokeWidth={0.8} strokeDasharray="1 1.5" />}
       <path d="M2 2 H14 L8 13 L14 24 H2 L8 13 Z" fill="none" stroke="rgb(var(--cream-rgb) / 0.6)" strokeWidth={1} strokeLinejoin="round" />
       <line x1={1} y1={1.5} x2={15} y2={1.5} stroke="rgb(var(--cream-rgb) / 0.6)" strokeWidth={1.2} />
       <line x1={1} y1={24.5} x2={15} y2={24.5} stroke="rgb(var(--cream-rgb) / 0.6)" strokeWidth={1.2} />
@@ -204,7 +205,7 @@ export function WaitingHourglassPanel({ kind, onOpen }: { kind: "todo" | "projec
   const overdueCount = items.filter((i) => i.overdue).length;
   const nudgeAt = sands.find((x) => x)?.nudgeAt;
   return (
-    <Fold settingKey={`viz.waitingOpen.${kind}`} title="⏳ 相手待ちの砂時計" testId="waiting-hourglass">
+    <Fold settingKey={`viz.waitingOpen.${kind}`} title={<IconLabel text="⏳ 相手待ちの砂時計" />} testId="waiting-hourglass">
       <p className="text-xs text-cream/80">
         {items.length}件待ち
         {overdueCount > 0 && <span className="ml-1 font-bold text-caution">・催促どき {overdueCount}件 ⏰</span>}

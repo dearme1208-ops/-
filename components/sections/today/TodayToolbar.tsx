@@ -6,6 +6,7 @@ import { DEFAULT_IMPORT_DAYS } from "@/lib/icsImport";
 import type { ThemedMode } from "@/lib/theme";
 import { formatHms } from "@/lib/time";
 import { useSetting } from "@/lib/settings";
+import Icon from "@/components/ui/Icon";
 import type { WeekdayAverage } from "@/lib/weekday";
 import { openQuickCapture } from "@/lib/quickCapture";
 import { openHistory, openSearch } from "@/lib/globalPanels";
@@ -125,14 +126,13 @@ export default function TodayToolbar(props: TodayToolbarProps) {
     // 右のボタン群が多いので、狭い画面では折り返して段を分ける。折り返しがないと
     // 見出し側が押し潰されて「2026-」「09-06」「の作業」「リスト」の4行になっていた
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* today-head: スマホの幅では見出し横の札を大きい札(data-size="lg")からふつうの大きさに戻す(globals.css)。
+          大きいままだと 390px で札が見出しの下の段へ回り込んでいた */}
+      <div className="today-head flex flex-wrap items-center gap-2">
         <h2 className="font-display text-lg font-bold whitespace-nowrap">{date} の作業リスト</h2>
         {props.streakDays > 0 && (
-          <span
-            className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-bold text-accent"
-            title="実績が記録されている連続日数"
-          >
-            🔥 連続{props.streakDays}日
+          <span className="chip" data-size="lg" data-tone="accent" title="実績が記録されている連続日数">
+            <Icon emoji="🔥" /> 連続{props.streakDays}日
           </span>
         )}
         {props.growthStageEnabled &&
@@ -141,16 +141,19 @@ export default function TodayToolbar(props: TodayToolbarProps) {
             const { stage } = computeGrowthStage(props.themedMode, todayTotalSeconds);
             return (
               <span
-                className="rounded-full bg-cream/10 px-2 py-0.5 text-xs text-cream/70"
+                className="chip"
+                data-size="lg"
                 title={`本日の作業時間(${formatHms(todayTotalSeconds)})に応じた育成度`}
               >
-                {stage.icon} {stage.label}
+                {/* 対応する線画が無い段階(🌰 など)は Icon が絵文字のまま出す */}
+                <Icon emoji={stage.icon} /> {stage.label}
               </span>
             );
           })()}
         {todayTotalSeconds > 0 && sameWeekdayAvg && sameWeekdayAvg.dayCount >= 2 && (
           <span
-            className="rounded-full bg-cream/10 px-2 py-0.5 text-xs text-cream/70"
+            className="chip num"
+            data-size="lg"
             title={`過去の${sameWeekdayAvg.label}曜日${sameWeekdayAvg.dayCount}日分の平均との比較`}
           >
             {sameWeekdayAvg.label}曜平均比{" "}
@@ -170,23 +173,23 @@ export default function TodayToolbar(props: TodayToolbarProps) {
         data-testid="today-toolbar-sub"
       >
         <ToolGroup caption="いま">
-          <ModeButton simple={simple} compact danger icon="⚡" label="⚡ トラブル発生" title="トラブル発生" onClick={props.onTrouble} />
-          <ModeButton simple={simple} compact primary icon="➕" label="+ 作業を追加" title="作業を追加" onClick={props.onAddTask} />
+          <ModeButton simple={simple} compact danger icon={<Icon emoji="⚡" />} label={<><Icon emoji="⚡" /> トラブル発生</>} title="トラブル発生" onClick={props.onTrouble} />
+          <ModeButton simple={simple} compact primary icon={<Icon emoji="➕" />} label={<><Icon emoji="+" /> 作業を追加</>} title="作業を追加" onClick={props.onAddTask} />
         </ToolGroup>
         <GroupDivider />
         <ToolGroup caption="メモ">
-          <ModeButton simple={simple} compact icon="✏️" label="✏️ ひとこと" title="思いついたことを1行で入れる(キーボードの / でも開きます)" ariaLabel="ひとこと入力" onClick={() => openQuickCapture()} />
-          <ModeButton simple={simple} compact icon="🔍" label="🔍 さがす" title="ToDo・案件・実績・メモをまとめて探す" ariaLabel="さがす" onClick={() => openSearch()} />
+          <ModeButton simple={simple} compact icon={<Icon emoji="✏️" />} label={<><Icon emoji="✏️" /> ひとこと</>} title="思いついたことを1行で入れる(キーボードの / でも開きます)" ariaLabel="ひとこと入力" onClick={() => openQuickCapture()} />
+          <ModeButton simple={simple} compact icon={<Icon emoji="🔍" />} label={<><Icon emoji="🔍" /> さがす</>} title="ToDo・案件・実績・メモをまとめて探す" ariaLabel="さがす" onClick={() => openSearch()} />
         </ToolGroup>
         <GroupDivider />
         <ToolGroup caption="段取り">
-          <ModeButton simple={simple} compact icon="🧭" label="🧭 今日の段取り" title="今日の段取りを提案" onClick={props.onDayPlan} />
-          <ModeButton simple={simple} compact icon="🗓" label="🗓 明日の下書き" title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
+          <ModeButton simple={simple} compact icon={<Icon emoji="🧭" />} label={<><Icon emoji="🧭" /> 今日の段取り</>} title="今日の段取りを提案" onClick={props.onDayPlan} />
+          <ModeButton simple={simple} compact icon={<Icon emoji="🗓" />} label={<><Icon emoji="🗓" /> 明日の下書き</>} title="明日の下書きを作る" onClick={props.onTomorrowDraft} />
           <ModeButton
             simple={simple}
-            icon="⏱"
+            icon={<Icon emoji="⏱" />}
             compact
-            label="⏱ 時間割"
+            label={<><Icon emoji="⏱" /> 時間割</>}
             title="作業ごとに時間の枠を決める(タイムボックス)"
             ariaLabel="時間割を作る"
             onClick={props.onTimebox}
@@ -197,13 +200,13 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           <ModeButton
             simple={simple}
             compact
-            icon={props.reflectionAnsweredToday ? "🌙✓" : "🌙"}
-            label={`🌙 ${props.reflectionAnsweredToday ? "振り返り済み" : "終業の振り返り"}`}
+            icon={<><Icon emoji="🌙" />{props.reflectionAnsweredToday ? "✓" : ""}</>}
+            label={<><Icon emoji="🌙" /> {props.reflectionAnsweredToday ? "振り返り済み" : "終業の振り返り"}</>}
             title={props.reflectionAnsweredToday ? "終業の振り返り(回答済み)" : "終業の振り返り"}
             ariaLabel="終業の振り返り"
             onClick={props.onReflection}
           />
-          <ModeButton simple={simple} compact icon="🕘" label="🕘 操作の履歴" title="さっきの操作を一覧から戻す" ariaLabel="操作の履歴" onClick={() => openHistory()} />
+          <ModeButton simple={simple} compact icon={<Icon emoji="🕘" />} label={<><Icon emoji="🕘" /> 操作の履歴</>} title="さっきの操作を一覧から戻す" ariaLabel="操作の履歴" onClick={() => openHistory()} />
         </ToolGroup>
         <GroupDivider />
         <ToolGroup caption="ほか">

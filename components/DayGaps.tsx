@@ -10,6 +10,7 @@ import { useSetting } from "@/lib/settings";
 import { formatClock, formatHms } from "@/lib/time";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
+import EmptyArt from "@/components/ui/EmptyArt";
 
 // 「今日の抜けを埋める」。1日の記録を整えるのに、振り返り・打刻の一覧・実績編集を行き来していたのを
 // 今日のリング(components/viz/TodayViz.tsx)の下にまとめる。抜けはリングの上にも点線で描く。並べるのは次の3つ:
@@ -68,7 +69,13 @@ export function DayGapsList({
       <h4 className="section-title font-display">
         🧩 抜けを埋める{count > 0 ? `（${count}）` : ""}
       </h4>
-      {count === 0 && <p className="empty-state">埋める所はありません。今日の記録はつながっています。</p>}
+      {count === 0 && (
+        // 文言は <p> に残し(getByText で探せるように)、森モードだけ年輪の線画を添える
+        <div className="empty-state">
+          <EmptyArt name="rings" />
+          <p>埋める所はありません。今日の記録はつながっています。</p>
+        </div>
+      )}
 
       {gaps.length > 0 && (
         <section className="space-y-2">

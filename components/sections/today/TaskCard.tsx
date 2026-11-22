@@ -12,6 +12,7 @@ import { formatClock, formatHms, formatMsClock } from "@/lib/time";
 import { todoParentTitle } from "@/lib/todoLabel";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import TaskClock from "@/components/ui/TaskClock";
+import Icon from "@/components/ui/Icon";
 import { RangeBand } from "@/components/viz/RangeBand";
 import type { DurationRange } from "@/lib/visuals";
 import type { AutoAllocationResult } from "@/lib/allocate";
@@ -264,6 +265,8 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
       // (完了したカードは「完了」タブにしか並ばないので、ほかの作業と見分ける必要も小さい)
       data-done={task.status === "done" ? "true" : undefined}
       data-running-card={task.status === "running" ? "true" : undefined}
+      // 状態ごとの板の見た目(森の一時停止の琥珀など)をCSSだけで切り替えるための印。読むのはCSSだけ
+      data-status={task.status}
       className={`panel relative p-4 transition-opacity ${cardClass} ${
         task.status !== "done" && dimmed ? "opacity-40" : ""
       } ${isDraggable ? "cursor-grab active:cursor-grabbing" : ""} ${
@@ -344,14 +347,14 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                 aria-label={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
                 title={favoriteMasterIds.has(task.masterTaskId ?? "") ? "お気に入り解除" : "お気に入りに追加"}
               >
-                {favoriteMasterIds.has(task.masterTaskId ?? "") ? "★" : "☆"}
+                {favoriteMasterIds.has(task.masterTaskId ?? "") ? <Icon emoji="★" filled /> : <Icon emoji="☆" />}
               </button>
               <button
                 onClick={() => setEditingTask(task)}
                 className="-m-1.5 p-1.5 text-cream/40 hover:text-cream"
                 aria-label="編集"
               >
-                ✎
+                <Icon emoji="✎" />
               </button>
               <button
                 onClick={() => setSecondaryProjectsTask(task)}
@@ -359,14 +362,14 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                 aria-label="追加の案件タグ"
                 title="兼務・並行作業向けに、主案件以外の案件にも時間を按分できます"
               >
-                🏷️{(task.secondaryProjectIds?.length ?? 0) > 0 ? task.secondaryProjectIds!.length : ""}
+                <Icon emoji="🏷️" />{(task.secondaryProjectIds?.length ?? 0) > 0 ? task.secondaryProjectIds!.length : ""}
               </button>
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* 計測中の作業は、何を計っているかが一目で分かるよう名前を一回り大きくする */}
             <span
-              className={`font-display font-bold ${task.status === "running" ? "text-xl leading-snug" : "text-base"} ${task.status === "done" ? "text-cream/65" : ""}`}
+              className={`font-display font-bold ${task.status === "running" ? "hero-name text-xl leading-snug" : "text-base"} ${task.status === "done" ? "text-cream/65" : ""}`}
             >
               {task.name}
             </span>
@@ -387,7 +390,7 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                 <>
                   {/* 案件名は「元案件」の枠1か所にまとめる(以前は「案件: ◯◯」と二重に出ていた) */}
                   <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-cream/15 bg-ink/40 px-2.5 py-1.5 text-xs">
-                    <span className="text-cream/50">📁 元案件:</span>
+                    <span className="text-cream/50"><Icon emoji="📁" /> 元案件:</span>
                     <button
                       onClick={() => onOpenProjectEdit(linkedProject.id)}
                       className={`font-bold hover:underline ${
@@ -441,7 +444,7 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
               const linkedTodo = todoTaskMap.get(task.todoTaskId!)!;
               return (
                 <div className="mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-cream/15 bg-ink/40 px-2.5 py-1.5 text-xs">
-                  <span className="text-cream/50">📌 元Todo:</span>
+                  <span className="text-cream/50"><Icon emoji="📌" /> 元Todo:</span>
                   <button
                     onClick={() => onOpenTodoDetail(linkedTodo.id)}
                     className={`font-bold hover:underline ${
@@ -536,7 +539,7 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
               <div className={`flex justify-between gap-3 ${showClock ? "items-center sm:justify-start sm:gap-12" : "items-end"}`}>
                 <div className={showClock ? "min-w-0 space-y-1.5" : "contents"}>
                   <div
-                    className={`num leading-none ${task.status === "running" ? "text-4xl sm:text-5xl" : "text-2xl"} ${
+                    className={`num leading-none ${task.status === "running" ? "timer-big text-4xl sm:text-5xl" : "text-2xl"} ${task.status === "running" && !overEstimate && !va11hallaMode ? "timer-hero" : ""} ${task.status === "paused" ? "timer-paused" : ""} ${
                       overEstimate ? (va11hallaMode ? "text-v11-pink" : "text-alert") : task.status === "paused" ? "text-cream/70" : "text-cream"
                     } ${isRunningOverrun ? (themedMode ? "overrun-flicker-intense" : "overrun-flicker") : ""}`}
                   >
@@ -562,7 +565,8 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                 )}
               </div>
               {predictedSecondsForTask > 0 && (
-                <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-cream/10" aria-hidden="true">
+                // 超過中は珊瑚色の帯を森の苔の塗りで上書きしないよう、溝の飾り(progress-track)を外す
+                <div className={`relative mt-2 h-1.5 overflow-hidden rounded-full bg-cream/10 ${overEstimate ? "" : "progress-track"}`} aria-hidden="true">
                   <div
                     className={`h-full rounded-full transition-[width] duration-1000 ${
                       overEstimate ? (va11hallaMode ? "bg-v11-pink" : "bg-alert") : "bg-[rgb(var(--accent-rgb))]"

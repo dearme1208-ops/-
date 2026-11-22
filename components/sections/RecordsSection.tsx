@@ -27,6 +27,8 @@ import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import DayReplayModal from "@/components/DayReplayModal";
 import { ConditionHeatmapPanel, WeekBlocks } from "@/components/viz/TodayViz";
+import { IconLabel } from "@/components/ui/Icon";
+import EmptyArt from "@/components/ui/EmptyArt";
 
 // 時刻入力(HH:MM)の変更を、元のタイムスタンプの日付部分は保ったまま時刻だけ差し替える。
 // 日をまたいだ実績(例: 23:42開始〜翌7:02終了)でも、開始・終了それぞれの本来の日付がずれないようにする
@@ -375,7 +377,7 @@ export default function RecordsSection() {
           onClick={() => setJournalCollapsedStr(journalCollapsed ? "false" : "true")}
         >
           <h3 className="section-title font-display">
-            📓 記録の履歴（本日タブの「今日の記録」）
+            <IconLabel text="📓 記録の履歴（本日タブの「今日の記録」）" />
             {journalCollapsed && <span className="ml-1 font-normal text-cream/40">（{journalEntries.length}件）</span>}
           </h3>
           <span className="text-xs text-cream/40">{journalCollapsed ? "▶" : "▼"}</span>
@@ -383,9 +385,11 @@ export default function RecordsSection() {
         {!journalCollapsed && (
           <div className="mt-3 space-y-3">
             {journalEntries.length === 0 ? (
-              <p className="empty-state">
-                まだ記録がありません。「本日の作業」タブの「今日の記録」に書くと、ここに一覧で表示されます。
-              </p>
+              // 森モードでは開いた手帳の線画を添える(文言は<p>のまま)
+              <div className="empty-state">
+                <EmptyArt name="records" />
+                <p>まだ記録がありません。「本日の作業」タブの「今日の記録」に書くと、ここに一覧で表示されます。</p>
+              </div>
             ) : (
               <>
                 <div className="flex flex-wrap items-center gap-2">
@@ -464,9 +468,10 @@ export default function RecordsSection() {
         {!reflectionCollapsed && (
           <div className="mt-3 space-y-3">
             {reflectionEntries.length === 0 ? (
-              <p className="empty-state">
-                まだ記録がありません。「本日の作業」タブの「終業の振り返り」に答えると、ここに一覧で表示されます。
-              </p>
+              <div className="empty-state">
+                <EmptyArt name="records" />
+                <p>まだ記録がありません。「本日の作業」タブの「終業の振り返り」に答えると、ここに一覧で表示されます。</p>
+              </div>
             ) : (
               <div className="divide-y divide-cream/10 rounded-lg border border-cream/10">
                 {reflectionEntries.map((e) => {
@@ -635,7 +640,13 @@ export default function RecordsSection() {
           </div>
           )
         )}
-        {filtered.length === 0 && <p className="px-4 py-6 text-sm text-cream/50">実績データがありません。</p>}
+        {filtered.length === 0 && (
+          // 実績一覧の枠の内側なので、空の知らせの枠は消す
+          <div className="empty-state border-0">
+            <EmptyArt name="records" />
+            <p>実績データがありません。</p>
+          </div>
+        )}
         {filtered.length > visibleRecords.length && (
           <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-4">
             <span className="text-xs text-cream/50 tabular-nums">

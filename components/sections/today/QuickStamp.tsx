@@ -8,6 +8,7 @@ import { convertStampToRecord, recentStampNotes, stampSpans, type StampSpan } fr
 import { formatClock, todayStr } from "@/lib/time";
 import type { QuickStamp } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import Icon from "@/components/ui/Icon";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 
 // 打刻(📍)の画面部品。
@@ -23,7 +24,7 @@ export function QuickStampButton({ onStamp }: { onStamp: () => void }) {
       aria-label="打刻(今の時刻を残す)"
       title="今の時刻を残します。何をしていたかは後で記録に変えられます"
     >
-      <span className="text-base leading-none">📍</span>
+      <span className="text-base leading-none"><Icon emoji="📍" /></span>
       打刻
     </button>
   );

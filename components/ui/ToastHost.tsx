@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { subscribeToasts, dismissToast, type ToastItem } from "@/lib/toast";
 import { openHistory } from "@/lib/globalPanels";
 import CompletionPopupHost from "./CompletionPopupHost";
+import Icon from "./Icon";
 
 export default function ToastHost() {
   const [items, setItems] = useState<ToastItem[]>([]);
@@ -28,6 +29,8 @@ export default function ToastHost() {
           key={t.id}
           className="toast panel toast-in pointer-events-auto flex max-w-full items-center gap-3 px-4 py-2.5 text-sm"
         >
+          {/* 森だけに出る一枚の葉(emoji無しなので他のモードでは何も描かず、隙間も生まない) */}
+          <Icon name="leaf" className="toast-leaf shrink-0 text-accent" />
           <span className="text-cream">{t.message}</span>
           {t.onUndo && (
             <button

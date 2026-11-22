@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import Icon from "./Icon";
 
 // 「本日の作業」「ToDo」共通の下部固定タブバー。設定(today.tabBarStyle等)で
 // 見た目のスタイルを切り替えられるようにするため、見た目のバリエーションを
@@ -55,7 +56,7 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
     <>
       {overrun ? (
         <span className="shrink-0 animate-pulse font-bold text-alert" aria-hidden="true">
-          ⚠
+          <Icon emoji="⚠" />
         </span>
       ) : (
         <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden="true" />
@@ -68,7 +69,7 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
         <span className="shrink-0 text-[10px] text-cream/45">他{running.extraCount}件</span>
       )}
       <span
-        className={`shrink-0 font-display text-sm font-bold tabular-nums ${overrun ? "text-alert" : "text-cream"}`}
+        className={`num shrink-0 text-sm ${overrun ? "text-alert" : "text-cream"}`}
       >
         {running.elapsedLabel}
       </span>
@@ -86,17 +87,17 @@ function RunningStrip({ running }: { running: BottomTabBarRunning }) {
           aria-label="一時停止"
           title="一時停止"
         >
-          ⏸
+          <Icon emoji="⏸" />
         </button>
       )}
       {running.onFinish && (
         <button
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgb(var(--accent-rgb))] text-sm font-bold text-ink"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgb(var(--accent-rgb))] text-sm font-bold text-ink [&_.ico-svg]:h-[1.3em] [&_.ico-svg]:w-[1.3em]"
           onClick={running.onFinish}
           aria-label="完了"
           title="完了"
         >
-          ✓
+          <Icon emoji="✓" />
         </button>
       )}
     </span>
@@ -154,6 +155,24 @@ export default function BottomTabBar({
     0,
     items.findIndex((it) => it.key === activeKey)
   );
+  // 件数が「増えた」ときだけ、その数字を一度弾ませる(開始・追加・完了が効いたことの合図)。
+  // 実行中は経過時間の表示で毎秒描き直されるため、「増えた瞬間の描画」だけで判定すると次の描画で
+  // クラスが外れて弾みが途中で切れる。増えた先の件数を bumpedTo に覚え、その件数のあいだはクラスを残す
+  // (span は key で件数ごとに作り直すので、同じ span でアニメーションが繰り返されることはない)
+  const prevCounts = useRef<Record<string, number | undefined>>({});
+  const bumpedTo = useRef<Record<string, number | undefined>>({});
+  useEffect(() => {
+    for (const it of items) {
+      const prev = prevCounts.current[it.key];
+      if (it.count !== undefined && prev !== undefined && it.count > prev) bumpedTo.current[it.key] = it.count;
+      prevCounts.current[it.key] = it.count;
+    }
+  });
+  const bumped = (it: BottomTabBarItem) =>
+    it.count !== undefined &&
+    ((prevCounts.current[it.key] !== undefined && it.count > prevCounts.current[it.key]!) ||
+      bumpedTo.current[it.key] === it.count);
+  const countKey = (it: BottomTabBarItem) => `${it.key}-${it.count}`;
   const showProgress = !!progress && progress.some((p) => p.ratio > 0);
   // 5つ以上並ぶと(ToDoのマイデイ〜返事待ち)、スマホの幅では横1行に収まらず最後のタブが画面の外に
   // はみ出していた。その場合、狭い画面ではアイコンを上・名前を下の2段に積んで全部を収める
@@ -166,7 +185,7 @@ export default function BottomTabBar({
       <>
         {/* 狭い幅では件数をアイコンの横へ出し、ラベルは全文を見せる */}
         <span className="whitespace-nowrap leading-none">
-          {it.icon}
+          <Icon emoji={it.icon} />
           <span className="text-[10px] sm:hidden">{countNode}</span>
         </span>
         <span className="max-w-full truncate">
@@ -226,12 +245,12 @@ export default function BottomTabBar({
                   />
                 )}
                 {stacked ? (
-                  content(it, it.count !== undefined && <span className="ml-0.5 tabular-nums opacity-80">({it.count})</span>)
+                  content(it, it.count !== undefined && <span key={countKey(it)} className={`ml-0.5 tabular-nums opacity-80 ${bumped(it) ? "count-bump" : ""}`}>({it.count})</span>)
                 ) : (
                   <>
-                    <span>{it.icon}</span>
+                    <span><Icon emoji={it.icon} /></span>
                     <span className="truncate">{it.label}</span>
-                    {it.count !== undefined && <span className="tabular-nums opacity-80">({it.count})</span>}
+                    {it.count !== undefined && <span key={countKey(it)} className={`tabular-nums opacity-80 ${bumped(it) ? "count-bump" : ""}`}>({it.count})</span>}
                   </>
                 )}
               </button>
@@ -264,9 +283,9 @@ export default function BottomTabBar({
                   />
                 )}
                 <span className="relative text-lg leading-none">
-                  {it.icon}
+                  <Icon emoji={it.icon} />
                   {it.count !== undefined && it.count > 0 && (
-                    <span className="absolute -right-2.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-alert px-1 text-[9px] font-bold tabular-nums text-ink">
+                    <span key={countKey(it)} className={`${bumped(it) ? "count-bump " : ""}absolute -right-2.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-alert px-1 text-[9px] font-bold tabular-nums text-ink`}>
                       {it.count}
                     </span>
                   )}
@@ -313,13 +332,13 @@ export default function BottomTabBar({
                   />
                 )}
                 {stacked ? (
-                  content(it, it.count !== undefined && <span className="ml-0.5 font-mono tabular-nums opacity-85">[{it.count}]</span>)
+                  content(it, it.count !== undefined && <span key={countKey(it)} className={`ml-0.5 font-mono tabular-nums opacity-85 ${bumped(it) ? "count-bump" : ""}`}>[{it.count}]</span>)
                 ) : (
                   <>
                     <span>
-                      {it.icon} {it.label}
+                      <Icon emoji={it.icon} /> {it.label}
                     </span>
-                    {it.count !== undefined && <span className="ml-1 font-mono tabular-nums opacity-85">[{it.count}]</span>}
+                    {it.count !== undefined && <span key={countKey(it)} className={`ml-1 font-mono tabular-nums opacity-85 ${bumped(it) ? "count-bump" : ""}`}>[{it.count}]</span>}
                   </>
                 )}
               </button>
@@ -351,11 +370,11 @@ export default function BottomTabBar({
                   />
                 )}
                 {stacked ? (
-                  content(it, it.count !== undefined && <span className="ml-0.5 tabular-nums opacity-80">({it.count})</span>)
+                  content(it, it.count !== undefined && <span key={countKey(it)} className={`ml-0.5 tabular-nums opacity-80 ${bumped(it) ? "count-bump" : ""}`}>({it.count})</span>)
                 ) : (
                   <>
-                    {it.icon} {it.label}
-                    {it.count !== undefined && <span className={`tabular-nums ${active ? "opacity-80" : "opacity-75"}`}>({it.count})</span>}
+                    <Icon emoji={it.icon} /> {it.label}
+                    {it.count !== undefined && <span key={countKey(it)} className={`tabular-nums ${bumped(it) ? "count-bump" : ""} ${active ? "opacity-80" : "opacity-75"}`}>({it.count})</span>}
                   </>
                 )}
               </button>

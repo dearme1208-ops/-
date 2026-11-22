@@ -70,6 +70,8 @@ import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
 import ProgressSyncModal from "@/components/ProgressSyncModal";
 import { DueTerrainPanel, WaitingHourglassPanel } from "@/components/viz/PlanningViz";
+import Icon, { IconLabel } from "@/components/ui/Icon";
+import EmptyArt from "@/components/ui/EmptyArt";
 
 const DEFAULT_LIST_TITLE = "タスク";
 const CUSTOM_TAG_VALUE = "__custom__";
@@ -1400,7 +1402,7 @@ export default function TodoSection({
                 onClick={() => setView(v)}
                 className={view === v ? "btn-pill px-3.5 py-1.5 text-xs" : "btn-pill-outline px-3.5 py-1.5 text-xs"}
               >
-                {v === "myday" ? "☀ マイデイ" : v === "important" ? "★ 重要" : "📅 期限日"}
+                <IconLabel text={v === "myday" ? "☀ マイデイ" : v === "important" ? "★ 重要" : "📅 期限日"} />
                 {count > 0 && `（${count}）`}
               </button>
             );
@@ -1410,7 +1412,7 @@ export default function TodoSection({
             onClick={() => setView("overdue")}
             className={view === "overdue" ? "btn-pill px-3.5 py-1.5 text-xs" : "btn-pill-outline px-3.5 py-1.5 text-xs"}
           >
-            ⚠ 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
+            <Icon emoji="⚠" /> 期限切れ{overdueTasks.length > 0 && `（${overdueTasks.length}）`}
           </button>
         )}
         {!bottomViewBar && (
@@ -1419,7 +1421,7 @@ export default function TodoSection({
             className={view === "waiting" ? "btn-pill px-3.5 py-1.5 text-xs" : "btn-pill-outline px-3.5 py-1.5 text-xs"}
             title={`対応状況が「${waitingTags.join("・")}」のToDo(相手の返事待ち)を、待っている日数の長い順に並べます`}
           >
-            ⏳ 返事待ち{waitingTasks.length > 0 && `（${waitingTasks.length}）`}
+            <Icon emoji="⏳" /> 返事待ち{waitingTasks.length > 0 && `（${waitingTasks.length}）`}
           </button>
         )}
         {(lists ?? []).map((l) => (
@@ -2242,7 +2244,11 @@ export default function TodoSection({
                 ))
               )}
               {incompleteTasks.length === 0 && (
-                <p className="px-1 py-4 text-sm text-cream/50">タスクはありません。</p>
+                // 森モードでは切り株から双葉の線画を添える(文言は<p>に残すので、テストの文字列一致は同じ)
+                <div className="empty-state">
+                  <EmptyArt name="todo" />
+                  <p>タスクはありません。</p>
+                </div>
               )}
             </div>
 
@@ -2409,7 +2415,12 @@ function OverdueBulkList({
   const { themedMode, wordingThemedMode } = useVisualMode();
 
   if (tasks.length === 0) {
-    return <p className="px-1 py-4 text-sm text-cream/50">期限切れのタスクはありません。</p>;
+    return (
+      <div className="empty-state">
+        <EmptyArt name="todo" />
+        <p>期限切れのタスクはありません。</p>
+      </div>
+    );
   }
 
   return (
@@ -3085,11 +3096,17 @@ function TaskRow({
       <button
         onClick={onToggleComplete}
         aria-label="完了"
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+        className={`todo-check flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
           task.completed ? "border-cream bg-cream text-ink" : task.important ? "border-alert" : "border-cream/40"
         }`}
       >
-        {task.completed ? "✓" : ""}
+        {/* 印は文字の✓ではなく線画にし、付いた瞬間に線で描かれる(todo-check-mark)。
+            完了→未完了→完了で要素が作り直されるので、描く動きは「付けた時」だけ走る */}
+        {task.completed ? (
+          <svg className="todo-check-mark h-3.5 w-3.5" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4.5 10.5l3.5 3.5 7.5-8" />
+          </svg>
+        ) : null}
       </button>
       <button className="min-w-0 flex-1 text-left" onClick={onOpenDetail}>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -3135,7 +3152,7 @@ function TaskRow({
               data-tone="caution"
               title={`「${waiting.tag}」になってから${waiting.days}日目です。催促や状況確認の目安(${nudgeDays}日目)を過ぎています`}
             >
-              ⏰ 催促の目安
+              <Icon emoji="⏰" /> 催促の目安
             </span>
           )}
           {postpones && postpones.count > 0 && (

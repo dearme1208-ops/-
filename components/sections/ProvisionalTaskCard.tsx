@@ -105,12 +105,12 @@ export default function ProvisionalTaskCard({
             <span className="h-2 w-2 animate-pulse rounded-full bg-alert" />
             記録のない時間（何をしていたか未入力）
           </div>
-          <div className="font-display text-base font-bold">{task.name}</div>
+          <div className="font-display text-base font-bold hero-name">{task.name}</div>
           {task.startedAt && (
             <div className="text-xs text-cream/60">{formatClock(task.startedAt)}から、何をしていたかの記録がありません</div>
           )}
         </div>
-        <div className="font-display text-2xl font-bold tabular-nums text-alert">{formatMsClock(elapsedMs)}</div>
+        <div className="num timer-big-provisional text-2xl text-alert">{formatMsClock(elapsedMs)}</div>
       </div>
 
       <div className="mt-3 border-t border-cream/10 pt-3">

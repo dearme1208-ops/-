@@ -336,7 +336,8 @@ export default function HomePage() {
           予定の時刻の自動開始・時間割の終わり・休憩の強制停止・未計測の自動計測・位置情報・通知は
           この画面の中にあり、以前は「今日」を開いている間しか動いていなかった(戻った時刻に遅れて
           開始され、記録の時刻がずれていた) */}
-      <div hidden={!todaySectionShown}>
+      {/* 隠している間は裏で動かし続けるので作り直さない。見せるときにクラスを付け直してふわっと出す */}
+      <div hidden={!todaySectionShown} className={todaySectionShown ? "tab-enter" : undefined}>
         <SectionBoundary label="本日の作業">
         <TodaySection
           background={!todaySectionShown}
@@ -357,6 +358,8 @@ export default function HomePage() {
       // タブごとに失敗を受け止める(読み込みの失敗・1画面の不具合でアプリ全体と裏の自動処理を止めない)。
       // タブを切り替えると受け止めた状態もリセットされる
       <SectionBoundary key={active}>
+      {/* タブを切り替えるたびに中身がふわっと現れる。SectionBoundaryがkeyで作り直されるので毎回やり直る(不透明度だけ) */}
+      <div className="tab-enter">
       {active === "today" && mode === "claude" && <ClaudeWorkspaceSection onOpenInsights={() => setActive("aggregation")} />}
       {active === "today" && mode === "natsuyasumi" && (
         <div className="space-y-4">
@@ -489,6 +492,7 @@ export default function HomePage() {
       {active === "records" && <RecordsSection />}
       {active === "appearance" && <AppearanceSection />}
       {active === "settings" && <SettingsSection />}
+      </div>
       </SectionBoundary>
       )}
 
