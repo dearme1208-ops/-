@@ -977,8 +977,12 @@ export default function TodaySection({
     if (!tasks) return;
     // 放置(操作のない状態が放置検知の時間を超えている)の間は始めない。始めてもすぐ放置検知が
     // 「最後の操作時刻」で打ち切って長さ0の完了になり、それが繰り返されて完了が何百件もできていた
+    // 計測中の作業がある間(長い会議を計っている等)は操作が無くても放置ではないので、印を付けない。
+    // 付けると、後で「少し前に終わってた」で終わりを早めた時に、その間が未計測から抜け落ちていた
+    const realRunning = (allRunning ?? []).some((t) => !t.isProvisional);
+    if (realRunning) resumeAnchorRef.current = null;
     if (now - lastActivityAt(lastActivityRef.current) >= provisionalIdleMs) {
-      wasIdleRef.current = true;
+      if (!realRunning) wasIdleRef.current = true;
       return;
     }
     // 放置から戻った最初の周回: 戻った今を未計測の起点にする(放置の間は未計測に数えない)
@@ -1424,8 +1428,12 @@ export default function TodaySection({
   // テンプレートで置き換えるのは、未着手・一時停止中の作業だけ。完了した作業は時間が既に実績に入っており、
   // 消すと後から編集・取り消しができなくなる。計測中の作業と仮計測(未計測の時間)も、消すと計った時間が
   // 失われるので残す
+  // 置き換えるのは手を付けていない作業だけ。一時停止中でも計った時間がある作業は、消すとその時間が
+  // 失われるので残す(完了・計測中・仮計測と同じ扱い)
   function isReplacedByTemplate(t: DailyTask): boolean {
-    return !t.isProvisional && (t.status === "pending" || t.status === "paused");
+    if (t.isProvisional) return false;
+    if (t.status === "pending") return true;
+    return t.status === "paused" && t.segments.length === 0 && baseAccumulatedMs(t) === 0;
   }
 
   async function requestGenerateFromTemplate() {

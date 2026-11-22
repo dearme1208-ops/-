@@ -128,7 +128,7 @@ test("突発作業の追加(＋)の一番上から、曜日のテンプレート
   await page.getByRole("button", { name: /曜日のテンプレートから今日の作業を作る/ }).click();
   const confirm = page.locator(".modal-scrim").last();
   await expect(confirm.getByText("テンプレートから今日の作業を作る")).toBeVisible();
-  await expect(confirm).toContainText("未着手・一時停止中の作業1件を、テンプレートの内容に置き換えます。完了・計測中の作業はそのまま残ります。");
+  await expect(confirm).toContainText("手を付けていない作業1件を、テンプレートの内容に置き換えます。完了・計測中・計った時間のある作業はそのまま残ります。");
   await clickButton(page, /^作る$/);
   await expect.poll(async () => (await readAll<Daily>(page, "dailyTasks")).map((t) => t.name)).toEqual(["朝会"]);
 });

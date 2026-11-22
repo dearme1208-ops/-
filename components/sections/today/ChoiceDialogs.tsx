@@ -20,7 +20,7 @@ export function TemplateConfirmDialog({
 }: {
   weekday: Weekday;
   itemCount: number;
-  /** テンプレートで置き換える(消える)未着手・一時停止中の作業の件数。完了・計測中・仮計測は残る */
+  /** テンプレートで置き換える(消える)手付かずの作業の件数。完了・計測中・仮計測・計った時間のある作業は残る */
   replaceCount: number;
   onConfirm: () => void;
   onClose: () => void;
@@ -34,10 +34,10 @@ export function TemplateConfirmDialog({
         {/* 何が消えて何が残るかを件数で正確に伝える(以前は「全部消える」と読める文で、実際にも全部消していた) */}
         {replaceCount > 0 ? (
           <p className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2 text-alert">
-            未着手・一時停止中の作業{replaceCount}件を、テンプレートの内容に置き換えます。完了・計測中の作業はそのまま残ります。
+            手を付けていない作業{replaceCount}件を、テンプレートの内容に置き換えます。完了・計測中・計った時間のある作業はそのまま残ります。
           </p>
         ) : (
-          <p>完了・計測中の作業はそのまま残ります。</p>
+          <p>完了・計測中・計った時間のある作業はそのまま残ります。</p>
         )}
         <div className="flex justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={onClose}>

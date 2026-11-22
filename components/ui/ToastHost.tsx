@@ -30,7 +30,7 @@ export default function ToastHost() {
           <span className="text-cream/80">{t.message}</span>
           {t.onUndo && (
             <button
-              className="btn-pill-outline text-xs"
+              className="btn-pill-outline shrink-0 whitespace-nowrap text-xs"
               onClick={() => {
                 t.onUndo?.();
                 dismissToast(t.id);

@@ -1,5 +1,4 @@
 import MsgReader from "@kenjiuno/msgreader";
-import { showUndoToast } from "./toast";
 
 // Outlookの.msgファイル(メールをファイルとして保存した際の既定形式)を読み込み、
 // 付箋の本文として使える形に整形する。件名を見出しとして先頭に置くことで、
@@ -32,11 +31,8 @@ export function mailFileTooLargeMessage(file: { size: number }): string {
 export async function parseMsgFile(file: File): Promise<ParsedMailFile> {
   // メールの添付・付箋への取り込みは、どちらも最初にここを通る
   if (file.size > MAX_MAIL_FILE_BYTES) {
-    const message = mailFileTooLargeMessage(file);
-    // 呼び出し側の多くは失敗の理由を問わず「.msg形式か確認してください」としか出さないため、
-    // 本当の理由(大きすぎる)はここで直接知らせる
-    if (typeof window !== "undefined") showUndoToast(message, undefined, 10000);
-    throw new Error(message);
+    // 理由は呼び出し側がそのまま画面に出す
+    throw new Error(mailFileTooLargeMessage(file));
   }
   const buffer = await file.arrayBuffer();
   const reader = new MsgReader(buffer);
