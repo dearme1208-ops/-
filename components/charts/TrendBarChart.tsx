@@ -54,8 +54,13 @@ export default function TrendBarChart({
                   <div className="whitespace-nowrap text-[10px] font-bold text-cream" style={{ height: LABEL_H }}>
                     {showLabel ? formatValue(p.totalSeconds) : ""}
                   </div>
+                  {/* 森モードだけ、アクセント色のグラデーション(選んだ棒はアクセント色そのもの)にする */}
                   <div
-                    className={`w-full rounded-t bg-cream ${activeIdx === i ? "opacity-100" : "opacity-80"}`}
+                    className={`w-full rounded-t bg-cream [html[data-visual-mode=home]_&]:rounded-t-md ${
+                      activeIdx === i
+                        ? "opacity-100 [html[data-visual-mode=home]_&]:bg-accent"
+                        : "opacity-80 [html[data-visual-mode=home]_&]:bg-transparent [html[data-visual-mode=home]_&]:bg-gradient-to-t [html[data-visual-mode=home]_&]:from-accent/45 [html[data-visual-mode=home]_&]:to-accent/85 [html[data-visual-mode=home]_&]:opacity-100"
+                    }`}
                     style={{ height: h, maxWidth: BAR_MAX_W }}
                   />
                 </button>

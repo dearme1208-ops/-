@@ -63,7 +63,14 @@ export default function StackedComboChart({
       <div className="mb-2 flex flex-wrap items-center gap-4 text-[10px] text-cream/50">
         {barLegendItems.map((item) => (
           <span key={item.label} className="flex items-center gap-1">
-            <span className={`h-2.5 w-2.5 rounded-sm ${item.className}`} />
+            {/* 棒と同じfill-*を渡された場合はSVGで描く(fill-*はHTMLのspanには効かず見本が透明になるため) */}
+            {item.className.includes("fill-") ? (
+              <svg className="h-2.5 w-2.5 shrink-0" viewBox="0 0 10 10" aria-hidden>
+                <rect width={10} height={10} rx={2} className={item.className} />
+              </svg>
+            ) : (
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${item.className}`} />
+            )}
             {item.label}
           </span>
         ))}
@@ -133,9 +140,14 @@ export default function StackedComboChart({
             </div>
           ))}
       </div>
-      <div className="mt-2 flex text-[10px] text-cream/50">
-        {points.map((p) => (
-          <div key={p.key} className="text-center" style={{ width: `${slotWidth}%` }}>
+      <div className="mt-2 flex whitespace-nowrap text-[10px] tabular-nums text-cream/50">
+        {/* 点が多い(9個以上)と狭い画面で日付が重なるため、sm未満では1つおきに間引く(枠は残して位置を保つ) */}
+        {points.map((p, i) => (
+          <div
+            key={p.key}
+            className={`text-center ${n > 8 && i % 2 === 1 ? "invisible sm:visible" : ""}`}
+            style={{ width: `${slotWidth}%` }}
+          >
             {p.label}
           </div>
         ))}

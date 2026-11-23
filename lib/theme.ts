@@ -549,7 +549,8 @@ const GANTT_OVERRUN_CLASS: Record<ThemedMode, string> = {
   hayarigami: "gantt-bar-overrun-hyr",
   mountain: "gantt-bar-overrun-mtn",
   origin: "gantt-bar-overrun-claude",
-  home: "gantt-bar-overrun-forest",
+  // 森は縞の動きを止め、落ち着いた警告色の帯にする(地の bg-alert は呼び出し側で外す)
+  home: "bg-alert/80 ring-1 ring-alert/40",
 };
 export function ganttOverrunClass(mode: ThemedMode): string {
   return GANTT_OVERRUN_CLASS[mode];

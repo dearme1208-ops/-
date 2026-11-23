@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useSetting } from "@/lib/settings";
+import Icon, { IconLabel, type IconName } from "@/components/ui/Icon";
 
 // 「観測所」タブ。既存のタブが実績を表・グラフとして読ませる場所なのに対して、
 // ここは同じ実績データを全く別の姿(年輪・生体モニタ・新聞・鉄道ダイヤ等)に変換して
@@ -20,22 +21,35 @@ const ParallelWorldView = dynamic(() => import("@/components/observatory/Paralle
 interface ObservatoryDef {
   key: string;
   label: string;
+  /** 森モードで先頭の絵文字の代わりに出す線画(ほかのモードは絵文字のまま) */
+  icon: IconName;
   /** 一覧のタイルに出す一行の説明。何を何に変換して見せるのかだけを書く */
   summary: string;
 }
 
 const OBSERVATORIES: ObservatoryDef[] = [
-  { key: "treeRings", label: "🪵 年輪", summary: "これまでの全記録を1枚の木の断面図に。月ごとの年輪の太さが作業時間" },
-  { key: "vital", label: "💓 生体モニタ", summary: "今の負荷を心電図として常時表示。期限切れが増えると警報状態になる" },
-  { key: "newspaper", label: "📰 朝刊一面", summary: "その日の実績を新聞の一面として自動組版する" },
-  { key: "diagram", label: "🚆 運行図表", summary: "1日の作業を、鉄道のダイヤグラム(スジ)として引く" },
-  { key: "strata", label: "⛏ 地層", summary: "手つかずの期間が長いToDoほど深く埋まる、先送りの地層断面" },
-  { key: "weather", label: "🌦 業務天気予報", summary: "この先の期日の混み具合を週間天気予報として出す" },
-  { key: "orbit", label: "🪐 軌道", summary: "案件を惑星、ToDoを衛星として公転させる。期限切れは軌道が崩れる" },
-  { key: "soundtrack", label: "🎵 サウンドトラック", summary: "1日の実績を音楽に変換して再生する。カテゴリごとに音色が変わる" },
-  { key: "metro", label: "🚇 路線図", summary: "案件を路線、段階を駅として地下鉄の路線図に描く" },
-  { key: "parallel", label: "🌓 並行世界", summary: "理想通りに働いた並行世界の自分と、現実の自分の差を並べて見る" },
+  { key: "treeRings", label: "🪵 年輪", icon: "sprout", summary: "これまでの全記録を1枚の木の断面図に。月ごとの年輪の太さが作業時間" },
+  { key: "vital", label: "💓 生体モニタ", icon: "chart", summary: "今の負荷を心電図として常時表示。期限切れが増えると警報状態になる" },
+  { key: "newspaper", label: "📰 朝刊一面", icon: "journal", summary: "その日の実績を新聞の一面として自動組版する" },
+  { key: "diagram", label: "🚆 運行図表", icon: "ruler", summary: "1日の作業を、鉄道のダイヤグラム(スジ)として引く" },
+  { key: "strata", label: "⛏ 地層", icon: "mountain", summary: "手つかずの期間が長いToDoほど深く埋まる、先送りの地層断面" },
+  { key: "weather", label: "🌦 業務天気予報", icon: "sun", summary: "この先の期日の混み具合を週間天気予報として出す" },
+  { key: "orbit", label: "🪐 軌道", icon: "compass", summary: "案件を惑星、ToDoを衛星として公転させる。期限切れは軌道が崩れる" },
+  { key: "soundtrack", label: "🎵 サウンドトラック", icon: "play", summary: "1日の実績を音楽に変換して再生する。カテゴリごとに音色が変わる" },
+  { key: "metro", label: "🚇 路線図", icon: "pin", summary: "案件を路線、段階を駅として地下鉄の路線図に描く" },
+  { key: "parallel", label: "🌓 並行世界", icon: "moon", summary: "理想通りに働いた並行世界の自分と、現実の自分の差を並べて見る" },
 ];
+
+// 「🪵 年輪」の先頭の絵文字を森では線画にする。文字列(textContent)は変えない
+function ObservatoryLabel({ def }: { def: ObservatoryDef }) {
+  const i = def.label.indexOf(" ");
+  if (i < 0) return <>{def.label}</>;
+  return (
+    <>
+      <Icon name={def.icon} emoji={def.label.slice(0, i)} /> {def.label.slice(i + 1)}
+    </>
+  );
+}
 
 export default function ObservatorySection() {
   const [current, setCurrent] = useSetting("observatory.current", "treeRings");
@@ -44,7 +58,9 @@ export default function ObservatorySection() {
   return (
     <div className="space-y-4">
       <div className="panel p-4">
-        <h3 className="mb-1 font-display text-base font-bold">🔭 観測所</h3>
+        <h3 className="mb-1 font-display text-base font-bold">
+          <IconLabel text="🔭 観測所" />
+        </h3>
         <p className="mb-3 text-xs text-cream/50">
           同じ実績データを、表やグラフとは違う姿に変換して眺めるための場所です。新しく入力するものはありません。
         </p>
@@ -56,7 +72,7 @@ export default function ObservatorySection() {
               className={current === o.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
               title={o.summary}
             >
-              {o.label}
+              <ObservatoryLabel def={o} />
             </button>
           ))}
         </div>

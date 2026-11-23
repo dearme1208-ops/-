@@ -12,12 +12,11 @@ export default function ToastHost() {
   useEffect(() => subscribeToasts(setItems), []);
 
   return (
-    // 画面下には打刻ボタン・計測中の帯・本日の作業の切り替えなど、モードによって高さの違う
-    // 固定の操作が並び、どの高さに出しても何かに重なっていた。画面の上に出す。
+    // 広い画面(sm以上)は画面の上に出す。スマホでは上に出すと見出しを覆ってしまうので、
+    // 下のタブ列のすぐ上(bottom-[5.5rem])に積む。
     // ダイアログ(z-50)を開いたまま出た知らせの「元に戻す」も押せるよう、ダイアログより手前に置く
     <div
-      className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4"
-      style={{ top: "calc(env(safe-area-inset-top) + 0.75rem)" }}
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[60] flex flex-col items-center gap-2 px-4 sm:bottom-auto sm:top-[calc(env(safe-area-inset-top)+0.75rem)]"
       role="status"
       aria-live="polite"
     >
@@ -29,8 +28,9 @@ export default function ToastHost() {
           key={t.id}
           className="toast panel toast-in pointer-events-auto flex max-w-full items-center gap-3 px-4 py-2.5 text-sm"
         >
-          {/* 森だけに出る一枚の葉(emoji無しなので他のモードでは何も描かず、隙間も生まない) */}
-          <Icon name="leaf" className="toast-leaf shrink-0 text-accent" />
+          {/* 森だけに出る一枚の葉(emoji無しなので他のモードでは何も描かず、隙間も生まない)。
+              印(icon)の指定がある知らせは葉の代わりにその線画を出す(emojiがあればほかのモードでは絵文字) */}
+          <Icon name={t.icon ?? "leaf"} emoji={t.emoji} className="toast-leaf shrink-0 text-accent" />
           <span className="text-cream">{t.message}</span>
           {t.onUndo && (
             <button

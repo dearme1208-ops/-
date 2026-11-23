@@ -9,17 +9,26 @@ const UNSET_TAG_LABEL = "未設定";
 const OTHER_TAG_LABEL = "その他";
 
 // StackedComboChartのsegment.classNameに渡す固定の塗り分け。
-// アクセント色(fill-alert)だけの濃淡だと隣り合う区分の区別がつきにくいため、
-// テーマ基調色のfill-creamと交互に組み合わせて隣接区分の見分けやすさを確保する。
-// どちらもテーマのCSS変数に追従する色なので、単一色相方針は崩さない。
-// 動的な文字列結合ではなくリテラルの配列として書き、Tailwindのビルド時スキャンに拾わせる
+// 警告色(alert)だと「未設定」などが警報に見えるため、アクセント色を主役にした段にする。
+// 隣り合う区分はアクセント→基調色(cream)→注意色(caution)と色相か濃さを必ず変えて見分けやすくする。
+// どれもテーマのCSS変数に追従する色。Tailwindのビルド時スキャンに拾わせるためリテラルで書く
 export const TODO_TAG_SEGMENT_CLASSES = [
-  "fill-alert/85",
-  "fill-cream/65",
-  "fill-alert/55",
-  "fill-cream/40",
-  "fill-alert/30",
-  "fill-cream/18",
+  "fill-accent/85",
+  "fill-accent/55",
+  "fill-cream/45",
+  "fill-caution/70",
+  "fill-cream/25",
+  "fill-cream/12",
+];
+
+// 凡例の見本(HTMLのspan)用。SVGのfill-*はspanには効かないため、同じ並び・同じ濃さのbg-*を持つ
+export const TODO_TAG_SWATCH_CLASSES = [
+  "bg-accent/85",
+  "bg-accent/55",
+  "bg-cream/45",
+  "bg-caution/70",
+  "bg-cream/25",
+  "bg-cream/12",
 ];
 
 export interface TodoTrendTagCount {

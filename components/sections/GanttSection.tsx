@@ -584,7 +584,10 @@ export default function GanttSection() {
       return;
     }
     const nowMin = (Date.now() - timelineBase) / 60000;
-    el.scrollLeft = Math.max(0, nowMin * pxPerMin - el.clientWidth / 2);
+    // 左端の時刻ラベルが途中で切れないよう、表示中のラベルの刻みにそろえて止める
+    const labelStepPx = labelStepHours * 60 * pxPerMin;
+    const target = Math.max(0, nowMin * pxPerMin - el.clientWidth / 2);
+    el.scrollLeft = labelStepPx > 0 ? Math.floor(target / labelStepPx) * labelStepPx : target;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, initialAnchor, pxPerMin, timelineBase]);
 
@@ -607,6 +610,14 @@ export default function GanttSection() {
   // その回に入った点(実働の分数)と、予定内(○)/予定超過(●)を並べる。
   // 数字はすべてタイムライン本体と同じdailyTasksから取っており、別集計は一切していない
   const powerproMode = themedMode === "powerpro";
+  // 超過した実績バーの見た目。森は地の色込みのクラス(bg-alert/80+ring)なので bg-alert を重ねない
+  const forestOverrun = themedMode === "home";
+  const overrunBarClass = forestOverrun
+    ? ganttOverrunClass("home")
+    : `bg-alert ${themedMode ? ganttOverrunClass(themedMode) : ""}`;
+  // ringはbox-shadowで描かれるため、森の超過バーではインラインの影を付けない(付けるとringが消える)
+  const barShadowStyle = (over: boolean | undefined) =>
+    over && forestOverrun ? undefined : { boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" };
   const PW = powerproWordsFor(wordingEnabled);
   const lineScore = useMemo(() => {
     const cells: LineScoreCell[] = (tasks ?? [])
@@ -686,22 +697,22 @@ export default function GanttSection() {
         </div>
         <div className="flex items-center gap-1">
           <button
-            className={viewMode === "day" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            className={`whitespace-nowrap ${viewMode === "day" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}`}
             onClick={() => setViewModeStr("day")}
           >
             1日表示
           </button>
           <button
-            className={viewMode === "week" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            className={`whitespace-nowrap ${viewMode === "week" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}`}
             onClick={() => setViewModeStr("week")}
           >
-            週表示（カレンダー風）
+            週表示<span className="hidden sm:inline">（カレンダー風）</span>
           </button>
           <button
-            className={viewMode === "month" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            className={`whitespace-nowrap ${viewMode === "month" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}`}
             onClick={() => setViewModeStr("month")}
           >
-            月表示（カレンダー風）
+            月表示<span className="hidden sm:inline">（カレンダー風）</span>
           </button>
         </div>
         {viewMode === "day" && (
@@ -923,7 +934,7 @@ export default function GanttSection() {
         <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto">
           <div style={{ width: totalMinutes * pxPerMin + 40 }}>
             {/* axis */}
-            <div className="relative mb-2 h-6 border-b border-cream/20 text-xs text-cream/50">
+            <div className="relative mb-2 h-6 whitespace-nowrap border-b border-cream/20 text-xs text-cream/50">
               {hourMarks
                 .filter((h) => h % labelStepHours === 0)
                 .map((h) => (
@@ -1106,10 +1117,10 @@ export default function GanttSection() {
                           height={20}
                           className={`rounded ${
                             iv.overPlan
-                              ? `bg-alert ${themedMode ? ganttOverrunClass(themedMode) : ""}`
+                              ? overrunBarClass
                               : "bg-cream"
                           } opacity-90`}
-                          style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
+                          style={barShadowStyle(iv.overPlan)}
                           tooltip={actualTip}
                           onTap={() => setSelectedDetail(actualTip)}
                         />
@@ -1208,10 +1219,10 @@ export default function GanttSection() {
                                 height={actualBarHeight}
                                 className={`rounded ${
                                   item.overPlan
-                                    ? `bg-alert ${themedMode ? ganttOverrunClass(themedMode) : ""}`
+                                    ? overrunBarClass
                                     : "bg-cream"
                                 } opacity-90`}
-                                style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.4)" }}
+                                style={barShadowStyle(item.overPlan)}
                                 tooltip={actualTip}
                                 onTap={() => setSelectedDetail(actualTip)}
                               />
@@ -1252,7 +1263,7 @@ export default function GanttSection() {
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-cream/70" /> 予測（実績ベースの見込み）</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded border border-dashed border-cream/70" /> 予定（個人が設定した目標。任意）</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-cream" /> 実績</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-alert" /> 実績（超過）</span>
+        <span className="flex items-center gap-1"><span className={`inline-block h-3 w-3 rounded ${forestOverrun ? "bg-alert/80 ring-1 ring-alert/40" : "bg-alert"}`} /> 実績（超過）</span>
         {scheduleItems.length > 0 && (
           <span className="flex items-center gap-1">
             <span className="inline-block h-3 w-3 rounded border-2 border-cream/70 bg-ink/60" /> カレンダー予定（実時刻）

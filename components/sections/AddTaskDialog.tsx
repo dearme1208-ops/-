@@ -12,6 +12,7 @@ import { pickUsualMasters } from "@/lib/usualTasks";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import type { DailyTaskLinks } from "@/lib/workContext";
 import Modal from "@/components/ui/Modal";
+import { IconLabel } from "@/components/ui/Icon";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import VoiceInputButton from "@/components/ui/VoiceInputButton";
 import { useWorkContext } from "@/lib/useWorkContext";
@@ -217,7 +218,9 @@ export default function AddTaskDialog({
       className="mb-3 flex w-full items-center justify-between gap-2 rounded-lg border border-cream/20 px-3 py-2 text-left text-sm hover:bg-cream/5"
       onClick={onGenerateFromTemplate}
     >
-      <span className="text-cream">📋 {templateWeekdayLabel ?? "曜日"}のテンプレートから今日の作業を作る</span>
+      <span className="text-cream">
+        <IconLabel text={`📋 ${templateWeekdayLabel ?? "曜日"}のテンプレートから今日の作業を作る`} />
+      </span>
       <span className="shrink-0 text-xs text-cream/45">まとめて ›</span>
     </button>
   ) : null;
@@ -591,25 +594,31 @@ export default function AddTaskDialog({
     <Modal title="作業を追加" onClose={onClose}>
         {templateRow}
         {usualRow}
-      <div className="mb-3 flex gap-2">
+      {/* 切り替えは同じ幅の升に1行ずつ収める(長い文言が2行に割れて高さがばらついていた)。
+          「自由入力」はe2eが完全一致で押すので文言を変えない */}
+      <div
+        className={`mb-3 grid gap-2 ${doneTasks.length > 0 ? "grid-cols-3" : "grid-cols-2"} [&>button]:whitespace-nowrap [&>button]:px-2 [&>button]:text-[11px] [&>button]:leading-tight`}
+      >
         <button
-          className={mode === "master" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          className={mode === "master" ? "btn-pill" : "btn-pill-outline"}
           onClick={() => setMode("master")}
+          title="登録済みの作業から選ぶ"
         >
-          登録済みの作業から選ぶ
+          登録済みから
         </button>
         <button
-          className={mode === "free" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+          className={mode === "free" ? "btn-pill" : "btn-pill-outline"}
           onClick={() => setMode("free")}
         >
           自由入力
         </button>
         {doneTasks.length > 0 && (
           <button
-            className={mode === "done" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+            className={mode === "done" ? "btn-pill" : "btn-pill-outline"}
             onClick={() => setMode("done")}
+            title="本日すでに完了した業務から選ぶ"
           >
-            ✅ 完了した業務から
+            <IconLabel text="✅ 完了済みから" />
           </button>
         )}
       </div>

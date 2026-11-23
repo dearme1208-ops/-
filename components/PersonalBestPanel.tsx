@@ -42,7 +42,7 @@ export default function PersonalBestPanel() {
         const best = bests.find((b) => b.id === id);
         if (best) {
           fireConfetti();
-          showUndoToast(`🏆 自己ベスト更新「${best.label}」`);
+          showUndoToast(`自己ベスト更新「${best.label}」`, undefined, undefined, { icon: "trophy", emoji: "🏆" });
         }
       }
     }

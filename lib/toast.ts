@@ -1,7 +1,15 @@
 // グローバルなトースト通知(主に「元に戻す」付き)の簡易pub/sub。
 // ReactツリーのどこからでもshowUndoToastを呼べるよう、Context/Providerを介さず
 // モジュールレベルの購読リストで配信する(ToastHostが唯一の購読者として描画する想定)
-export interface ToastItem {
+import type { IconName } from "@/components/ui/Icon";
+
+/** 知らせの頭に添える印。森では線画(icon)、ほかのモードでは絵文字(emoji)を出す。省略時は森の葉だけ */
+export interface ToastIcon {
+  icon?: IconName;
+  emoji?: string;
+}
+
+export interface ToastItem extends ToastIcon {
   id: string;
   message: string;
   onUndo?: () => void;
@@ -29,7 +37,7 @@ export function subscribeToasts(listener: Listener): () => void {
 export const DEFAULT_TOAST_MS = 6000;
 export const DEFAULT_UNDO_TOAST_MS = 10000;
 
-export function showUndoToast(message: string, onUndo?: () => void, durationMs?: number) {
+export function showUndoToast(message: string, onUndo?: () => void, durationMs?: number, mark?: ToastIcon) {
   durationMs ??= onUndo ? DEFAULT_UNDO_TOAST_MS : DEFAULT_TOAST_MS;
   // 同じ知らせが既に出ていれば重ねて出さない(複数の画面が同じ出来事に反応した時に2つ並ばないように)
   if (!onUndo && toasts.some((t) => t.message === message && !t.onUndo)) return;
@@ -46,7 +54,7 @@ export function showUndoToast(message: string, onUndo?: () => void, durationMs?:
     recordHistory(message, once);
     onUndo = once;
   }
-  toasts = [...toasts, { id, message, onUndo, durationMs }];
+  toasts = [...toasts, { id, message, onUndo, durationMs, icon: mark?.icon, emoji: mark?.emoji }];
   emit();
   setTimeout(() => dismissToast(id), durationMs);
 }

@@ -48,8 +48,9 @@ export default function RankingBarChart({
               <div className="truncate text-xs text-cream/80">{d.label}</div>
             </div>
             <div className="h-5 min-w-0 flex-1 rounded bg-cream/5">
+              {/* 森モードだけ、平らなcreamの棒をアクセント色のグラデーションにする(他モードはcreamのまま) */}
               <div
-                className="h-5 rounded-r bg-cream transition-[width]"
+                className="h-5 rounded-r bg-cream transition-[width] [html[data-visual-mode=home]_&]:rounded [html[data-visual-mode=home]_&]:bg-transparent [html[data-visual-mode=home]_&]:bg-gradient-to-r [html[data-visual-mode=home]_&]:from-accent/45 [html[data-visual-mode=home]_&]:to-accent/85"
                 style={{ width: `${pct}%` }}
               />
             </div>

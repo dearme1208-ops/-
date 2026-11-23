@@ -53,8 +53,15 @@ export default function CompletionPopupHost() {
   // デイリーチャレンジ達成のように同時に出るものが画面の上で重なっていた)
   return (
     <div className="flex w-72 max-w-full flex-col gap-2">
-      {items.map((item) => (
-        <CompletionCard key={item.id} item={item} mode={wordingThemedMode} onClose={() => setItems((prev) => prev.filter((i) => i.id !== item.id))} />
+      {items.map((item, index) => (
+        <CompletionCard
+          key={item.id}
+          item={item}
+          mode={wordingThemedMode}
+          // 森の小さな景色は先頭の1枚だけ(一括完了で積み重なった時に縦へ伸びすぎないように)
+          diorama={index === 0}
+          onClose={() => setItems((prev) => prev.filter((i) => i.id !== item.id))}
+        />
       ))}
     </div>
   );
@@ -63,10 +70,12 @@ export default function CompletionPopupHost() {
 function CompletionCard({
   item,
   mode,
+  diorama,
   onClose,
 }: {
   item: CompletionInfo;
   mode: Parameters<typeof completionLabel>[0];
+  diorama: boolean;
   onClose: () => void;
 }) {
   const hasEstimate = item.estimatedSeconds > 0;
@@ -74,7 +83,16 @@ function CompletionCard({
   const compareLabel = !hasEstimate ? null : overSeconds > 0 ? `予定より ${formatHms(overSeconds)} オーバー` : "予定内で完了";
 
   return (
-    <div className="completion-popup-card panel pointer-events-auto flex items-start gap-3 p-3.5 shadow-panel">
+    <div className={`completion-popup-card panel pointer-events-auto relative flex items-start gap-3 p-3.5 shadow-panel${diorama ? " cp-has-diorama" : ""}`}>
+      {/* 森だけの飾り: 奥・中・手前の森と月の小さな景色(上の余白に敷く。ほかのモードでは display:none) */}
+      {diorama && (
+        <span className="cp-diorama" aria-hidden="true">
+          <span className="cp-dio-moon" />
+          <span className="cp-dio-layer cp-dio-far" />
+          <span className="cp-dio-layer cp-dio-mid" />
+          <span className="cp-dio-layer cp-dio-near" />
+        </span>
+      )}
       <span className="completion-seal mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-bold text-ink"><Icon emoji="✓" /></span>
       <div className="min-w-0 flex-1">
         <div className="text-[10px] font-bold uppercase tracking-widest text-accent">{completionLabel(mode)}</div>

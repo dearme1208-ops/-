@@ -1517,7 +1517,7 @@ export default function TodoSection({
           onClick={() => setFiltersOpen((v) => !v)}
           aria-expanded={filtersOpen || searchActive}
         >
-          🔍 絞り込み{activeFilterCount > 0 ? `（${activeFilterCount}）` : ""} {filtersOpen || searchActive ? "▲" : "▼"}
+          <IconLabel text={`🔍 絞り込み${activeFilterCount > 0 ? `（${activeFilterCount}）` : ""} ${filtersOpen || searchActive ? "▲" : "▼"}`} />
         </button>
         {!filtersOpen && !searchActive && savedViews.length > 0 && (
           <span className="text-xs text-cream/40">保存済みビュー {savedViews.length}件</span>
@@ -1530,11 +1530,11 @@ export default function TodoSection({
             onClick={() => setShowProgressSync(true)}
             title="別のAI(Claudeなど)に案件・ToDoの進捗を登録してもらう"
           >
-            🤖 AIと進捗をやり取り
+            <IconLabel text="🤖 AIと進捗をやり取り" />
           </button>
           {showCsvTools && (
             <button className="btn-pill-outline text-xs" onClick={() => setCsvMenuOpen((v) => !v)} aria-expanded={csvMenuOpen}>
-              📂 取り込み・書き出し {csvMenuOpen ? "▲" : "▼"}
+              <IconLabel text={`📂 取り込み・書き出し ${csvMenuOpen ? "▲" : "▼"}`} />
             </button>
           )}
         </span>
@@ -1645,7 +1645,7 @@ export default function TodoSection({
             CSVインポート
           </button>
           <button className="btn-pill-outline text-sm" onClick={() => setShowGuideImport(true)}>
-            📋 ガイド貼り付けインポート
+            <IconLabel text="📋 ガイド貼り付けインポート" />
           </button>
           <input
             ref={fileInputRef}
@@ -1679,7 +1679,7 @@ export default function TodoSection({
               onClick={() => setShowWeeklyReview(true)}
               title="期日切れ・期日未設定のまま放置されたToDoを1件ずつ見直します"
             >
-              📋 週次レビュー
+              <IconLabel text="📋 週次レビュー" />
             </button>
             {/* 表示切替(リスト/かんばん/ガント等)や選択モードは、このビューに1件も
                 無い間は切り替える対象自体が無く、押しても空の盤面が出るだけになる。
@@ -1687,18 +1687,33 @@ export default function TodoSection({
             {visibleTasks.length > 0 && (
               <>
                 {/* 5つの表示形式のボタンはスマホでは2段を使うので、狭い画面では選択欄にする */}
-                <select
-                  value={displayMode}
-                  onChange={(e) => setDisplayMode(e.target.value as DisplayMode)}
-                  className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream sm:hidden"
-                  aria-label="表示形式"
-                >
-                  {(["list", "kanban", "gantt", "calendar", "tree"] as DisplayMode[]).map((m) => (
-                    <option key={m} value={m}>
-                      {m === "list" ? "リスト" : m === "kanban" ? "かんばん" : m === "gantt" ? "ガント" : m === "calendar" ? "カレンダー" : "系統図"}
-                    </option>
-                  ))}
-                </select>
+                <span className="relative inline-flex sm:hidden">
+                  <select
+                    value={displayMode}
+                    onChange={(e) => setDisplayMode(e.target.value as DisplayMode)}
+                    className="appearance-none rounded-full border border-cream/20 bg-ink py-1.5 pl-3 pr-7 text-xs text-cream"
+                    aria-label="表示形式"
+                  >
+                    {(["list", "kanban", "gantt", "calendar", "tree"] as DisplayMode[]).map((m) => (
+                      <option key={m} value={m}>
+                        {m === "list" ? "リスト" : m === "kanban" ? "かんばん" : m === "gantt" ? "ガント" : m === "calendar" ? "カレンダー" : "系統図"}
+                      </option>
+                    ))}
+                  </select>
+                  {/* appearance-none で消えた▼の代わり。どのモードでも出す(押せるのは select 本体) */}
+                  <svg
+                    className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-cream/60"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M5.5 8l4.5 4.5L14.5 8" />
+                  </svg>
+                </span>
                 {(["list", "kanban", "gantt", "calendar", "tree"] as DisplayMode[]).map((m) => (
                   <button
                     key={m}
@@ -1735,7 +1750,7 @@ export default function TodoSection({
                     }}
                     className={bulkSelectionMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
                   >
-                    ☑ 選択モード
+                    <IconLabel text="☑ 選択モード" />
                   </button>
                 )}
               </>
@@ -1748,7 +1763,7 @@ export default function TodoSection({
                 onClick={() => setListMenuOpen((v) => !v)}
                 aria-expanded={listMenuOpen}
               >
-                ⚙ リスト {listMenuOpen ? "▲" : "▼"}
+                <IconLabel text={`⚙ リスト ${listMenuOpen ? "▲" : "▼"}`} />
               </button>
             )}
             {hasListMenu && (
@@ -3347,12 +3362,12 @@ function TaskRow({
           title="統合ボードから外す"
           className={`${ROW_ICON_HIT} text-lg text-cream`}
         >
-          🗂
+          <Icon emoji="🗂" />
         </button>
       )}
       {!task.completed && <QuickDueButton task={task} />}
       <button onClick={onToggleImportant} aria-label="重要" className={`${ROW_ICON_HIT} -mr-2 text-lg`}>
-        {task.important ? <span className="text-alert">★</span> : <span className="text-cream/30">☆</span>}
+        {task.important ? <Icon emoji="★" filled className="text-alert" /> : <Icon emoji="☆" className="text-cream/30" />}
       </button>
     </div>
   );
@@ -3391,7 +3406,7 @@ function QuickDueButton({ task }: { task: TodoTask }) {
         aria-label="期日を動かす"
         aria-expanded={open}
         title="期日を今日・明日・来週月曜などへ動かす"
-        className={`${ROW_ICON_HIT} text-base ${open ? "text-cream" : "text-cream/30 hover:text-cream/70"}`}
+        className={`${ROW_ICON_HIT} text-lg ${open ? "text-cream" : "text-cream/30 hover:text-cream/70"}`}
       >
         ⏩
       </button>
@@ -3860,24 +3875,28 @@ function TaskDetailModal({
           placeholder="タイトル"
         />
 
-        <div className="flex flex-wrap items-center gap-2">
+        {/* 見出し・入力欄は2列の格子で左端をそろえる */}
+        <div className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
           <label className="text-xs text-cream/60">期日</label>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-          />
-          {dueDate && (
-            <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setDueDate("")}>
-              クリア
-            </button>
-          )}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 [&>input]:max-w-full [&>select]:max-w-full">
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+            />
+            {dueDate && (
+              <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setDueDate("")}>
+                クリア
+              </button>
+            )}
+          </div>
         </div>
         <DueDateLoadWarning dateStr={dueDate} excludeTodoId={task.id} />
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
           <label className="text-xs text-cream/60">対応状況</label>
+          <div className="flex min-w-0 flex-wrap items-center gap-2 [&>input]:max-w-full [&>select]:max-w-full">
           {subtasks.length > 0 ? (
             <>
               <span className="rounded-full border border-cream/20 bg-cream/10 px-2 py-0.5 text-xs text-cream">
@@ -3890,7 +3909,7 @@ function TaskDetailModal({
               <select
                 value={tagMode}
                 onChange={(e) => setTagMode(e.target.value)}
-                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               >
                 <option value={NO_TAG_VALUE}>対応状況なし</option>
                 {tagOptions.map((t) => (
@@ -3905,11 +3924,12 @@ function TaskDetailModal({
                   value={customTag}
                   onChange={(e) => setCustomTag(e.target.value)}
                   placeholder="対応状況名"
-                  className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
+                  className="w-28 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
                 />
               )}
             </>
           )}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -3917,14 +3937,14 @@ function TaskDetailModal({
             className={task.myDayDate === today ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={onToggleMyDay}
           >
-            ☀ {task.myDayDate === today ? "マイデイから削除" : "マイデイに追加"}
+            <IconLabel text={`☀ ${task.myDayDate === today ? "マイデイから削除" : "マイデイに追加"}`} />
           </button>
           <button
             className={alreadyAddedToToday ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowAddToTodayDialog(true)}
             disabled={alreadyAddedToToday}
           >
-            📌 {alreadyAddedToToday ? "本日の作業に追加済み" : "本日の作業に追加"}
+            <IconLabel text={`📌 ${alreadyAddedToToday ? "本日の作業に追加済み" : "本日の作業に追加"}`} />
           </button>
         </div>
 
@@ -3956,10 +3976,10 @@ function TaskDetailModal({
           />
         )}
 
-        {/* サブタスク: 親から一段ずらして表示 */}
+        {/* サブタスク: 行は背景つきで区別し、字下げはしない(追加欄がほかの欄と左端をそろえる) */}
         <div>
           <h4 className="mb-1.5 text-xs font-bold text-cream/70">サブタスク</h4>
-          <div className="space-y-1.5 pl-4">
+          <div className="space-y-1.5">
             {subtasks.map((sub) => (
               <div key={sub.id} className="flex items-center gap-2 rounded-lg bg-ink/50 px-2 py-1.5">
                 <button
@@ -4045,12 +4065,12 @@ function TaskDetailModal({
         {moreOpen && (
           <div className="space-y-3">
             {lists.length > 1 && (
-              <label className="flex items-center gap-2 text-xs text-cream/60">
+              <label className="grid grid-cols-[4.5rem_1fr] items-center gap-2 text-xs text-cream/60">
                 リスト
                 <select
                   value={listId}
                   onChange={(e) => setListId(e.target.value)}
-                  className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
+                  className="min-w-0 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
                 >
                   {lists.map((l) => (
                     <option key={l.id} value={l.id}>
@@ -4089,107 +4109,117 @@ function TaskDetailModal({
             <TaskImageField task={task} />
             <TaskMailField task={task} />
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
               <label className="text-xs text-cream/60">分類</label>
-              <select
-                value={categoryMode}
-                onChange={(e) => setCategoryMode(e.target.value)}
-                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-              >
-                <option value={NO_CATEGORY_VALUE}>分類なし</option>
-                {categoryOptions.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-                <option value={CUSTOM_CATEGORY_VALUE}>＋ 新しい分類...</option>
-              </select>
-              {categoryMode === CUSTOM_CATEGORY_VALUE && (
-                <input
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
-                  placeholder="分類名"
-                  className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-                />
-              )}
+              <div className="flex min-w-0 flex-wrap items-center gap-2 [&>input]:max-w-full [&>select]:max-w-full">
+                <select
+                  value={categoryMode}
+                  onChange={(e) => setCategoryMode(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                >
+                  <option value={NO_CATEGORY_VALUE}>分類なし</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_CATEGORY_VALUE}>＋ 新しい分類...</option>
+                </select>
+                {categoryMode === CUSTOM_CATEGORY_VALUE && (
+                  <input
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    placeholder="分類名"
+                    className="w-28 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                  />
+                )}
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
               <label className="text-xs text-cream/60">客先</label>
-              <select
-                value={customerMode}
-                onChange={(e) => setCustomerMode(e.target.value)}
-                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-              >
-                <option value={NO_CUSTOMER_VALUE}>客先なし</option>
-                {customerOptions.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-                <option value={CUSTOM_CUSTOMER_VALUE}>＋ 新しい客先...</option>
-              </select>
-              {customerMode === CUSTOM_CUSTOMER_VALUE && (
-                <input
-                  value={customCustomer}
-                  onChange={(e) => setCustomCustomer(e.target.value)}
-                  placeholder="客先名"
-                  className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-                />
-              )}
+              <div className="flex min-w-0 flex-wrap items-center gap-2 [&>input]:max-w-full [&>select]:max-w-full">
+                <select
+                  value={customerMode}
+                  onChange={(e) => setCustomerMode(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                >
+                  <option value={NO_CUSTOMER_VALUE}>客先なし</option>
+                  {customerOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_CUSTOMER_VALUE}>＋ 新しい客先...</option>
+                </select>
+                {customerMode === CUSTOM_CUSTOMER_VALUE && (
+                  <input
+                    value={customCustomer}
+                    onChange={(e) => setCustomCustomer(e.target.value)}
+                    placeholder="客先名"
+                    className="w-28 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                  />
+                )}
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
               <label className="text-xs text-cream/60">取引先</label>
-              <select
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-              >
-                <option value="">（なし）</option>
-                {(clients ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <span className="text-[10px] text-cream/40">「案件」タブで登録した取引先マスタと紐付けます（客先とは別）</span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 [&>input]:max-w-full [&>select]:max-w-full">
+                <select
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                >
+                  <option value="">（なし）</option>
+                  {(clients ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-cream/40">「案件」タブで登録した取引先マスタと紐付けます（客先とは別）</span>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
               <label className="text-xs text-cream/60">開始日</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-              />
-              {startDate && (
-                <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setStartDate("")}>
-                  クリア
-                </button>
-              )}
+              <div className="flex min-w-0 flex-wrap items-center gap-2 [&>input]:max-w-full [&>select]:max-w-full">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+                {startDate && (
+                  <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setStartDate("")}>
+                    クリア
+                  </button>
+                )}
+              </div>
             </div>
             <p className="text-[10px] text-cream/40">
               開始日を設定した場合、リスト内の並び順は期日ではなく開始日が優先されます。
             </p>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="text-xs text-cream/60">🔔 通知</label>
-              <input
-                type="datetime-local"
-                value={reminderInput}
-                onChange={(e) => setReminderInput(e.target.value)}
-                className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
-              />
-              <button className="btn-pill-outline text-xs" onClick={setReminder} disabled={!reminderInput}>
-                設定
-              </button>
-              {task.reminderAt && (
-                <button className="text-xs text-cream/50 hover:text-alert" onClick={clearReminder}>
-                  クリア
+            <div className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
+              <label className="text-xs text-cream/60"><IconLabel text="🔔 通知" /></label>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 [&>input]:max-w-full [&>select]:max-w-full">
+                <input
+                  type="datetime-local"
+                  value={reminderInput}
+                  onChange={(e) => setReminderInput(e.target.value)}
+                  className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                />
+                <button className="btn-pill-outline text-xs" onClick={setReminder} disabled={!reminderInput}>
+                  設定
                 </button>
-              )}
+                {task.reminderAt && (
+                  <button className="text-xs text-cream/50 hover:text-alert" onClick={clearReminder}>
+                    クリア
+                  </button>
+                )}
+              </div>
             </div>
             {task.reminderAt && (
               <p className="text-[10px] text-cream/40">
@@ -4360,7 +4390,7 @@ function TaskDetailModal({
                 onClick={onConvertToMemo}
                 title={subtasks.length > 0 ? "サブタスクを含めてチェックリスト付箋にします" : "タイトル・次の行動・メモをまとめた付箋にします"}
               >
-                📝 メモに変換
+                <IconLabel text="📝 メモに変換" />
               </button>
               {!task.parentTaskId && (
                 <button
@@ -4370,7 +4400,7 @@ function TaskDetailModal({
                     else placeTodoOnBoard(task.id);
                   }}
                 >
-                  🗂 {task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}
+                  <IconLabel text={`🗂 ${task.boardX !== undefined ? "統合ボードから外す" : "統合ボードに置く"}`} />
                 </button>
               )}
             </div>
@@ -4378,8 +4408,9 @@ function TaskDetailModal({
         )}
       </div>
 
-      <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-cream/10 pt-3">
-        <div className="flex gap-2">
+      {/* 狭い画面で折り返しても、主ボタン群は右寄せ・「保存」がいちばん右(最後)に来るようにする */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-cream/10 pt-3">
+        <div className="flex items-center gap-3">
           <button className="text-xs text-alert" onClick={onDelete}>
             タスクを削除
           </button>
@@ -4392,10 +4423,10 @@ function TaskDetailModal({
                 : "削除せずに、通常の一覧・検索の既定表示から外します"
             }
           >
-            {task.archived ? "🗄 アーカイブを解除" : "🗄 アーカイブする"}
+            <IconLabel text={task.archived ? "🗄 アーカイブを解除" : "🗄 アーカイブする"} />
           </button>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="ml-auto flex flex-wrap justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={onCopy} title="内容をコピーして新しいタスクを追加します">
             コピーして追加
           </button>

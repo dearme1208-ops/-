@@ -4730,10 +4730,12 @@ html[data-visual-mode="zen"] {
 /* 森モード: 区分の色を森の色調に寄せる(並び順・見分けやすさは既定の段と同じ考え方で、明度差を保つ)。
    既定の段の鮮やかなウェブの青(#3987e5)が、24時間の輪・週の積み木・期限の地形の中で森から浮いていたため */
 html[data-visual-mode="home"] {
-  --viz-1: #5f9fc4; /* 露の青 */
-  --viz-2: #d9824a; /* 落ち葉の橙 */
-  --viz-3: #3fae86; /* 苔の青緑 */
-  --viz-4: #c9a23e; /* 琥珀 */
+  /* 森の外の色(露の青)を外し、若葉・錆・琥珀・深い淵の4色に。
+     隣どうし(1-2,2-3,3-4)と輪で一周した4-1も色覚の違いで見分けられる並び(validate_palette.jsで確認) */
+  --viz-1: #7ca245; /* 若葉の緑 */
+  --viz-2: #a74f21; /* 落ち葉の錆 */
+  --viz-3: #b58d2d; /* 琥珀 */
+  --viz-4: #008e88; /* 淵の青緑 */
   --viz-other: rgb(var(--cream-rgb) / 0.26);
 }
 
@@ -5899,3 +5901,129 @@ html[data-visual-mode="terminal"] .num {
     }
   }
 }
+
+/* ══ 森の完了カードの小さな景色(CompletionPopupHost の .cp-diorama) ══
+   奥→中→手前の森(型抜き画像をテーマ色で塗る)と月の光。上の余白に敷く飾りで、押せるものには重ねない。
+   出た時に一度だけ、各層が少しずつずれて沈み込む(transform/opacity のみ)。森以外は出さない */
+.cp-diorama {
+  display: none;
+}
+html[data-visual-mode="home"] .completion-popup-card.cp-has-diorama {
+  --cp-dio-h: 100px;
+  padding-top: calc(var(--cp-dio-h) + 0.625rem);
+}
+html[data-visual-mode="home"] .cp-has-diorama > .cp-diorama {
+  display: block;
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--cp-dio-h);
+  overflow: hidden;
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+  pointer-events: none;
+  /* 夜空: 上ほど若葉色がにじむ */
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, rgb(var(--accent-rgb)) 20%, rgb(var(--panel-rgb))) 0%,
+    color-mix(in srgb, rgb(var(--accent-rgb)) 9%, rgb(var(--panel-rgb))) 70%
+  );
+}
+/* 足元を板の地へなじませる */
+html[data-visual-mode="home"] .cp-has-diorama > .cp-diorama::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 14px;
+  background: linear-gradient(to bottom, transparent, rgb(var(--panel-rgb) / 0.98));
+}
+html[data-visual-mode="home"] .cp-dio-moon {
+  position: absolute;
+  right: 14%;
+  top: 6px;
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, rgb(var(--cream-rgb) / 0.95) 0 6px, rgb(var(--cream-rgb) / 0.35) 7px, rgb(var(--cream-rgb) / 0.12) 14px, transparent 32px);
+}
+html[data-visual-mode="home"] .cp-dio-layer {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+  -webkit-mask-size: 100% auto;
+  mask-size: 100% auto;
+}
+/* 奥: 霞んだ明るい緑 */
+html[data-visual-mode="home"] .cp-dio-far {
+  --dio-dy: 6px;
+  opacity: 0.75;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, color-mix(in srgb, rgb(var(--accent-rgb)) 60%, rgb(var(--cream-rgb))) 34%, rgb(var(--panel-rgb))),
+    color-mix(in srgb, color-mix(in srgb, rgb(var(--accent-rgb)) 60%, rgb(var(--cream-rgb))) 48%, rgb(var(--panel-rgb)))
+  );
+  -webkit-mask-image: url(/art/forest-far-sm.webp);
+  mask-image: url(/art/forest-far-sm.webp);
+  -webkit-mask-position: left 0 bottom 20px;
+  mask-position: left 0 bottom 20px;
+}
+/* 中: 深い苔色 */
+html[data-visual-mode="home"] .cp-dio-mid {
+  --dio-dy: 10px;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, rgb(var(--accent-rgb)) 22%, rgb(var(--ink-rgb))),
+    color-mix(in srgb, rgb(var(--accent-rgb)) 38%, rgb(var(--ink-rgb)))
+  );
+  -webkit-mask-image: url(/art/forest-mid-sm.webp);
+  mask-image: url(/art/forest-mid-sm.webp);
+  -webkit-mask-position: left 0 bottom -30px;
+  mask-position: left 0 bottom -30px;
+}
+/* 手前: ほぼ影(左上の枝と足元のシダ)。上下を少しずつ切って両方を残す */
+html[data-visual-mode="home"] .cp-dio-near {
+  --dio-dy: 16px;
+  background: linear-gradient(
+    to top,
+    rgb(var(--ink-rgb)),
+    color-mix(in srgb, rgb(var(--accent-rgb)) 12%, rgb(var(--ink-rgb)))
+  );
+  -webkit-mask-image: url(/art/forest-near-sm.webp);
+  mask-image: url(/art/forest-near-sm.webp);
+  -webkit-mask-position: left 0 bottom -22px;
+  mask-position: left 0 bottom -22px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-visual-mode="home"] .cp-dio-layer {
+    animation: cp-dio-settle 600ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  }
+  html[data-visual-mode="home"] .cp-dio-mid {
+    animation-delay: 60ms;
+  }
+  html[data-visual-mode="home"] .cp-dio-near {
+    animation-delay: 120ms;
+  }
+  html[data-visual-mode="home"] .cp-dio-moon {
+    animation: cp-dio-moon-in 600ms ease-out backwards;
+  }
+}
+@keyframes cp-dio-settle {
+  from {
+    transform: translateY(var(--dio-dy, 8px));
+    opacity: 0;
+  }
+}
+@keyframes cp-dio-moon-in {
+  from {
+    opacity: 0;
+  }
+}
+/* 動きを減らす設定: 景色は止まったまま */
+@media (prefers-reduced-motion: reduce) {
+  html[data-visual-mode="home"] .cp-dio-layer,
+  html[data-visual-mode="home"] .cp-dio-moon {
+    animation: none;
+  }
+}
+/* ══ ここまで: 森の完了カードの小さな景色 ══ */

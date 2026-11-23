@@ -66,6 +66,7 @@ import { Profile as MountainProfile, Signboard } from "@/components/mountain/Mou
 import { powerproWordsFor } from "@/lib/powerproWords";
 import { PennantBar, Standings } from "@/components/powerpro/PowerproCanvas";
 import EmptyArt from "@/components/ui/EmptyArt";
+import { IconLabel } from "@/components/ui/Icon";
 
 // 案件を新しく登録するときの期日の初期値(今日から何日後か)
 const NEW_PROJECT_DUE_DAYS = 7;
@@ -892,13 +893,14 @@ export default function ProjectsSection({
               aria-pressed={showArchived}
               title="アーカイブした案件を、通常の一覧・ガント・カレンダー等に含めるかどうかを切り替えます"
             >
-              🗄 アーカイブ済み（{archivedProjectCount}）: {showArchived ? "表示中" : "非表示"}
+              <IconLabel text={`🗄 アーカイブ済み（${archivedProjectCount}）: ${showArchived ? "表示中" : "非表示"}`} />
             </button>
           ) : null}
           {completedStageCount > 0 && (
             <button
               type="button"
-              className={showCompletedStages ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              // 表示の切り替えにすぎないので、ON(表示中)でも塗りの主ボタンにはせず控えめな枠線にする
+              className={`btn-pill-outline text-xs ${showCompletedStages ? "" : "text-cream/60"}`}
               onClick={() => setShowCompletedStagesStr(showCompletedStages ? "false" : "true")}
               aria-pressed={showCompletedStages}
               title="各案件の下に並ぶ完了済みの段階を、一覧に出すかどうかを切り替えます（設定タブの同じ項目と連動し、次に開いた時も保たれます）"
@@ -1771,8 +1773,9 @@ function ProjectRow({
           >
             {forecast.status === "done" && "✅ 見積もり時間分は消化済みです"}
             {forecast.status === "overdue" && `🔴 期日超過（残り見積もり ${formatHms(forecast.remainingSeconds)}）`}
-            {forecast.status === "no-recent-pace" &&
-              `😴 直近14日間この案件に未着手（残り見積もり ${formatHms(forecast.remainingSeconds)}）`}
+            {forecast.status === "no-recent-pace" && (
+              <IconLabel text={`😴 直近14日間この案件に未着手（残り見積もり ${formatHms(forecast.remainingSeconds)}）`} />
+            )}
             {forecast.status === "on-track" &&
               forecast.projectedDaysNeeded !== null &&
               `🎯 順調（今のペースならあと約${Math.ceil(forecast.projectedDaysNeeded)}日で完了見込み・残り${formatHms(forecast.remainingSeconds)}）`}
@@ -1793,8 +1796,9 @@ function ProjectRow({
           >
             {stageForecast.status === "done" && "✅ 段階はすべて消化済みです"}
             {stageForecast.status === "overdue" && `🔴 期日超過（残り${stageForecast.remainingStages}段階）`}
-            {stageForecast.status === "no-recent-pace" &&
-              `😴 直近14日間この案件は未着手（残り${stageForecast.remainingStages}段階）`}
+            {stageForecast.status === "no-recent-pace" && (
+              <IconLabel text={`😴 直近14日間この案件は未着手（残り${stageForecast.remainingStages}段階）`} />
+            )}
             {stageForecast.status === "on-track" &&
               stageForecast.projectedDaysNeeded !== null &&
               `🎯 順調（今のペースならあと約${Math.ceil(stageForecast.projectedDaysNeeded)}日で完了見込み・残り${stageForecast.remainingStages}段階）`}
@@ -1841,8 +1845,8 @@ function ProjectRow({
         )}
         {project.stages && project.stages.length > 0 && (
           <div className="mt-1 w-full">
-            {/* 見出しと進捗バーだけは、これまで通り本文脇に収まる幅に留める */}
-            <div className="max-w-[220px]">
+            {/* 見出しと進捗バーは、スマホでは本文脇に収まる幅に留め、広い画面では左カラムいっぱいに伸ばす */}
+            <div className="max-w-[220px] sm:max-w-none">
             <button
               type="button"
               onClick={() => setStagesCollapsed((c) => !c)}
@@ -2071,23 +2075,24 @@ function ProjectRow({
           ⋯
         </button>
       </div>
+      {/* 「⋯」の中身は操作ボタンの行とは別の段に、区切り線つきで並べる(広い画面でも右端に詰め込まない) */}
       {moreOpen && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 [&>button]:whitespace-nowrap">
-          <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onAnalysis} title="SWOT・BSC・3C分析">
+        <div className="mt-2 flex w-full basis-full flex-wrap items-center gap-1.5 border-t border-cream/10 pt-2 [&>button]:whitespace-nowrap">
+          <button className="btn-pill-outline text-xs" onClick={onAnalysis} title="SWOT・BSC・3C分析">
             分析
           </button>
-          <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onWbs} title="WBS(作業分解構成図)">
+          <button className="btn-pill-outline text-xs" onClick={onWbs} title="WBS(作業分解構成図)">
             WBS
           </button>
           <button
-            className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
+            className="btn-pill-outline text-xs"
             onClick={onTemplate}
             title="この案件の段階の構成を引き継いで、同じ種類の新しい案件を作ります(過去の実績から段階ごとの目安時間も出します)"
           >
-            📐 型にして作る
+            <IconLabel text="📐 型にして作る" />
           </button>
           <button
-            className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
+            className="btn-pill-outline text-xs"
             onClick={() => {
               if (project.boardX !== undefined) removeProjectFromBoard(project.id);
               else placeProjectOnBoard(project.id);
@@ -2096,14 +2101,14 @@ function ProjectRow({
             {project.boardX !== undefined ? "ボードから外す" : "ボードに置く"}
           </button>
           <button
-            className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream"
+            className="btn-pill-outline text-xs"
             onClick={onArchive}
             title={project.archived ? "通常の一覧・ガント・カレンダー等に戻します" : "削除せずに、通常の一覧・ガント・カレンダー等から外します"}
           >
-            {project.archived ? "🗄 アーカイブ解除" : "🗄 アーカイブ"}
+            <IconLabel text={project.archived ? "🗄 アーカイブ解除" : "🗄 アーカイブ"} />
           </button>
           {/* 削除は他の操作から少し離し、押し間違えにくくする */}
-          <button className="ml-auto px-1 py-1.5 text-xs text-alert" onClick={onDelete}>
+          <button className="btn-pill-outline ml-auto text-xs text-alert" onClick={onDelete}>
             削除
           </button>
         </div>

@@ -29,6 +29,7 @@ import {
   type EstimateDistribution,
 } from "@/lib/estimation";
 import Modal from "@/components/ui/Modal";
+import Icon from "@/components/ui/Icon";
 import { useWorkContext } from "@/lib/useWorkContext";
 
 // 実績の分布を1行で見せる。P50は自分の予定を立てるとき、P80は相手に締切を
@@ -687,7 +688,7 @@ export default function MasterSection() {
           onClick={() => setShowClientAggregation((v) => !v)}
         >
           <h3 className="font-display text-base font-bold">
-            🏢 取引先別集計 <span className="text-xs font-normal text-cream/50">({clientAggregation.length})</span>
+            <Icon emoji="🏢" /> 取引先別集計 <span className="text-xs font-normal text-cream/50">({clientAggregation.length})</span>
           </h3>
           <span className="text-cream/60">{showClientAggregation ? "▼" : "▶"}</span>
         </button>
@@ -780,60 +781,65 @@ export default function MasterSection() {
             ) : (
               <div className="mt-3 space-y-2">
                 {items.map((t) => (
-                  <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink/50 px-3 py-2">
-                    <div className="flex items-center gap-2">
+                  // 左の細い列に★と統合用のチェック、右の列に名前・分布、その下に操作を折り返して並べる
+                  <div key={t.id} className="grid grid-cols-[1.5rem_1fr] items-start gap-x-2 gap-y-1.5 rounded-lg bg-ink/50 px-3 py-2">
+                    <div className="flex flex-col items-center gap-1.5 pt-0.5">
+                      <button onClick={() => toggleFavorite(t)} aria-label="お気に入り">
+                        <Icon emoji={t.isFavorite ? "★" : "☆"} filled={!!t.isFavorite} />
+                      </button>
+                      {/* 森では見た目を描き替えたチェックボックスに大きさが無く「・」に潰れていたので、大きさを明示する */}
                       <input
                         type="checkbox"
+                        className="h-4 w-4 shrink-0"
                         checked={mergeSelectedIds.has(t.id)}
                         onChange={() => toggleMergeSelect(t.id)}
                         aria-label="統合の対象として選択"
                         title="統合の対象として選択"
                       />
-                      <button onClick={() => toggleFavorite(t)} aria-label="お気に入り">
-                        {t.isFavorite ? "★" : "☆"}
-                      </button>
-                      <div>
-                        <div className="text-sm text-cream">{t.name}</div>
-                        <button
-                          className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80"
-                          onClick={() => openRecordsFor(t)}
-                        >
-                          実績サンプル数 {t.sampleCount}
-                        </button>
-                        <EstimateDistributionRow
-                          dist={distributions.get(t.id)}
-                          sampleCount={t.sampleCount}
-                          estimatedSeconds={t.estimatedSeconds}
-                          onAdopt={(seconds) => updateEstimate(t, formatHms(seconds))}
-                        />
-                        <input
-                          key={`tags-${(t.tags ?? []).join(",")}`}
-                          defaultValue={(t.tags ?? []).join(", ")}
-                          placeholder="タグ（カンマ区切り）"
-                          onBlur={(e) => updateTags(t, e.target.value)}
-                          className="mt-1 w-40 rounded-md border border-cream/10 bg-transparent px-2 py-0.5 text-[11px] text-cream/70"
-                        />
-                        <select
-                          value={t.clientId ?? ""}
-                          onChange={(e) => updateClient(t, e.target.value)}
-                          className="mt-1 ml-1 rounded-md border border-cream/10 bg-transparent px-1 py-0.5 text-[11px] text-cream/70"
-                          title="取引先の括り（集計に使えます）"
-                        >
-                          <option value="">取引先未設定</option>
-                          {(clients ?? []).map((c) => (
-                            <option key={c.id} value={c.id}>
-                              🏢 {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm text-cream">{t.name}</div>
+                      <button
+                        className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80"
+                        onClick={() => openRecordsFor(t)}
+                      >
+                        実績サンプル数 {t.sampleCount}
+                      </button>
+                      <EstimateDistributionRow
+                        dist={distributions.get(t.id)}
+                        sampleCount={t.sampleCount}
+                        estimatedSeconds={t.estimatedSeconds}
+                        onAdopt={(seconds) => updateEstimate(t, formatHms(seconds))}
+                      />
+                    </div>
+                    <div className="col-start-2 flex flex-wrap items-center gap-2">
+                      <input
+                        key={`tags-${(t.tags ?? []).join(",")}`}
+                        defaultValue={(t.tags ?? []).join(", ")}
+                        placeholder="タグ（カンマ区切り）"
+                        onBlur={(e) => updateTags(t, e.target.value)}
+                        className="w-40 rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                      />
+                      <select
+                        value={t.clientId ?? ""}
+                        onChange={(e) => updateClient(t, e.target.value)}
+                        className="rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+                        title="取引先の括り（集計に使えます）"
+                      >
+                        <option value="">取引先未設定</option>
+                        {(clients ?? []).map((c) => (
+                          <option key={c.id} value={c.id}>
+                            🏢 {c.name}
+                          </option>
+                        ))}
+                      </select>
                       <input
                         key={`estimate-${t.estimatedSeconds}`}
                         defaultValue={formatHms(t.estimatedSeconds)}
                         onBlur={(e) => updateEstimate(t, e.target.value)}
-                        className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"
+                        className="w-24 rounded-lg border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"
+                        aria-label="想定時間"
+                        title="想定時間"
                       />
                       {t.archived ? (
                         <button className="text-xs text-cream/60 hover:text-cream" onClick={() => unarchiveTask(t)}>

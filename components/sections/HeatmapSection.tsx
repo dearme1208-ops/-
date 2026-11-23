@@ -44,6 +44,15 @@ export default function HeatmapSection() {
     [records]
   );
 
+  // セルの塗りの濃さ(0.08〜0.8)。濃いセルは明るい文字だと読みにくいので地の色(ink)の文字にする
+  function cellAlpha(value: number, maxValue: number): number {
+    if (maxValue === 0 || value === 0) return 0;
+    return 0.08 + Math.min(1, value / maxValue) * 0.72;
+  }
+  function cellTextClass(value: number, maxValue: number): string {
+    return cellAlpha(value, maxValue) > 0.55 ? "text-ink" : "text-cream/90";
+  }
+
   function hourCellColor(value: number): string {
     if (hourMatrix.max === 0 || value === 0) return "rgba(233,230,189,0.04)";
     const ratio = Math.min(1, value / hourMatrix.max);
@@ -158,10 +167,10 @@ export default function HeatmapSection() {
 
       {viewMode === "hour" && (
         <ScrollFadeHint>
-          <table className="w-full min-w-[560px] border-separate border-spacing-1 text-sm">
+          <table className="w-auto border-separate border-spacing-1 text-sm">
             <thead>
               <tr>
-                <th className="text-left text-xs text-cream/50">時間帯 ＼ 曜日</th>
+                <th className="whitespace-nowrap pr-2 text-left text-xs text-cream/50">時間帯</th>
                 {visibleDows.map((dow) => (
                   <th key={dow} className="w-14 text-center text-xs text-cream/50">
                     {DOW_LABELS[dow]}
@@ -182,7 +191,7 @@ export default function HeatmapSection() {
                         key={dow}
                         role="button"
                         tabIndex={0}
-                        className="cursor-pointer rounded-md text-center text-[10px] tabular-nums text-cream/90 transition hover:ring-1 hover:ring-cream/50 focus:outline-none focus:ring-1 focus:ring-cream/60"
+                        className={`w-14 cursor-pointer rounded-md px-1 text-center text-[10px] font-semibold tabular-nums ${cellTextClass(v, hourMatrix.max)} transition hover:ring-1 hover:ring-cream/50 focus:outline-none focus:ring-1 focus:ring-cream/60`}
                         style={{ backgroundColor: hourCellColor(v), height: 26 }}
                         title={formatHms(v)}
                         onClick={() => setSelectedHourDetail(hourCellDetail(dow, hour))}
@@ -254,10 +263,10 @@ export default function HeatmapSection() {
 
       {viewMode === "category" && (
       <ScrollFadeHint>
-        <table className="w-full min-w-[640px] border-separate border-spacing-1 text-sm">
+        <table className="w-auto border-separate border-spacing-1 text-sm">
           <thead>
             <tr>
-              <th className="text-left text-xs text-cream/50">区分 ＼ 曜日</th>
+              <th className="w-24 whitespace-nowrap text-left text-xs text-cream/50">区分</th>
               {visibleDows.map((dow) => (
                 <th key={dow} className="w-16 text-center text-xs text-cream/50">
                   {DOW_LABELS[dow]}
@@ -276,7 +285,7 @@ export default function HeatmapSection() {
                   return (
                   <td
                     key={dow}
-                    className="rounded-md text-center text-[11px] tabular-nums text-cream/90"
+                    className={`w-16 rounded-md px-1 text-center text-[11px] font-semibold tabular-nums ${cellTextClass(v, max)}`}
                     style={{ backgroundColor: cellColor(v), height: 40 }}
                     title={formatHms(v)}
                   >

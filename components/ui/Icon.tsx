@@ -5,7 +5,10 @@ export type IconName =
   | "bolt" | "plus" | "pencil" | "search" | "compass" | "calendar" | "timer" | "moon" | "history"
   | "clipboard" | "play" | "pause" | "check" | "board" | "pin" | "mountain" | "hourglass" | "sun"
   | "star" | "tag" | "folder" | "journal" | "toolbox" | "clock" | "leaf" | "flame" | "warning"
-  | "sprout" | "chart" | "sliders" | "dice";
+  | "sprout" | "chart" | "sliders" | "dice"
+  | "robot" | "folderOpen" | "checkbox" | "archive" | "ruler" | "zzz" | "save" | "box" | "bell"
+  | "building" | "telescope" | "wrench" | "broom" | "lock" | "unlock" | "sparkle" | "trophy"
+  | "grip" | "chevronDown" | "briefcase" | "home";
 
 const PATHS: Record<IconName, string> = {
   bolt: "M11.5 2.5 4.5 11h5l-1 6.5 7-8.5h-5z",
@@ -39,6 +42,27 @@ const PATHS: Record<IconName, string> = {
   chart: "M3.5 16.5h13M6 14v-3.5M10 14V6M14 14V9",
   sliders: "M3.5 6.5h13M3.5 13.5h13M7.5 4.5v4M12.5 11.5v4",
   dice: "M4 4h12v12H4zM7.25 7.25h.01M10 10h.01M12.75 12.75h.01",
+  robot: "M4.5 7h11v8.5h-11zM10 4v3M7.75 10.5h.01M12.25 10.5h.01M8 13h4M2.75 10v2.5M17.25 10v2.5",
+  folderOpen: "M2.75 15.5V5.25h5l1.5 1.75h6v2.5M2.75 15.5l2.5-6h12.25l-2.5 6z",
+  checkbox: "M4 4h12v12H4zM7 10.25l2.25 2.25 4-4.5",
+  archive: "M4.5 3h11v14h-11zM4.5 10h11M8.5 6.5h3M8.5 13.5h3",
+  ruler: "M3.5 3.5v13h13zM6.5 10.75v3.25h3.25zM3.5 7h1.5M3.5 10h1.5M3.5 13h1.5",
+  zzz: "M3.5 9h4l-4 4.5h4M10 6.5h3l-3 3.5h3M14.5 3h2.5l-2.5 3h2.5",
+  save: "M3.5 3.5h10l3 3v10h-13zM6.5 3.5V7h6V3.5M6.5 16.5v-5h7v5",
+  box: "M10 2.75l6.5 3.5v7.5L10 17.25l-6.5-3.5v-7.5zM3.5 6.25 10 9.75l6.5-3.5M10 9.75v7.5",
+  bell: "M5.5 13.5V9a4.5 4.5 0 0 1 9 0v4.5l1.5 1.5H4zM8.5 17.25h3",
+  building: "M4.5 17V3.5h8V17M12.5 7.5h3V17M3 17h14M7 6.5h3M7 9.5h3M7 12.5h3",
+  telescope: "M3.25 10.75l9.5-4.25 1.25 2.75-9.5 4.25zM12.75 6.5l2.75-1.25 1.25 2.75L14 9.25M9 11.25l-2.5 5.5M9 11.25l2.5 5.5",
+  wrench: "M13.5 3.25a3.75 3.75 0 0 0-3.4 5.3L3.75 14.9l1.35 1.35 6.35-6.35a3.75 3.75 0 0 0 5.3-3.4l-2.25 2.25-2-.75-.75-2z",
+  broom: "M16.5 3.5 11 9M8.5 7.5l4 4M8.5 7.5C6 8.5 4 11.5 3.5 16.5c5-.5 8-2.5 9-5M6.5 14l1.75-1.75",
+  lock: "M5 9h10v8H5zM7 9V6.5a3 3 0 0 1 6 0V9M10 12v2",
+  unlock: "M5 9h10v8H5zM7 9V6.5a3 3 0 0 1 5.8-1.1M10 12v2",
+  sparkle: "M9 2.5c.6 3.9 1.6 4.9 5.5 5.5-3.9.6-4.9 1.6-5.5 5.5-.6-3.9-1.6-4.9-5.5-5.5 3.9-.6 4.9-1.6 5.5-5.5zM15.5 13v3.5M13.75 14.75h3.5",
+  trophy: "M6 3.5h8v4a4 4 0 0 1-8 0zM6 5H3.5c0 2.5 1.2 3.75 3 3.9M14 5h2.5c0 2.5-1.2 3.75-3 3.9M10 11.5v5M7 16.5h6",
+  grip: "M7.5 5h.01M12.5 5h.01M7.5 10h.01M12.5 10h.01M7.5 15h.01M12.5 15h.01",
+  chevronDown: "M5.5 8l4.5 4.5L14.5 8",
+  briefcase: "M3 6.5h14v9.5H3zM7.25 6.5V4.5h5.5v2M3 10.5h14",
+  home: "M3.5 9 10 3.5 16.5 9M5 7.75v8.75h3.5V12h3v4.5H15V7.75",
 };
 // 塗りで描くもの(線だけだと細く見える)
 const FILLED: Partial<Record<IconName, true>> = { play: true };
@@ -52,6 +76,10 @@ const EMOJI: Record<string, IconName> = {
   "★": "star", "☆": "star", "⭐": "star", "🏷": "tag", "📁": "folder", "📓": "journal", "📝": "journal",
   "🧰": "toolbox", "⏰": "clock", "🕰": "clock", "🌿": "leaf", "🍃": "leaf", "🔥": "flame",
   "⚠": "warning", "🌱": "sprout", "📊": "chart", "⚙": "sliders", "🎲": "dice",
+  "🤖": "robot", "📂": "folderOpen", "☑": "checkbox", "🗄": "archive", "📐": "ruler", "😴": "zzz",
+  "💤": "zzz", "💾": "save", "📦": "box", "🔔": "bell", "🏢": "building", "🔭": "telescope",
+  "🛠": "wrench", "🔧": "wrench", "🧹": "broom", "🔒": "lock", "🔓": "unlock", "✨": "sparkle",
+  "🏆": "trophy", "💼": "briefcase", "🏠": "home",
 };
 export function iconForEmoji(emoji: string): IconName | undefined {
   return EMOJI[emoji.replace(/\uFE0F/g, "")];

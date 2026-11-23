@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { formatHms, todayStr } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
+import { useVisualMode } from "@/lib/theme";
 
 // 1か月 = 1本の年輪。中心が一番古い月で、外側へ行くほど新しい。
 // 年輪の太さ=その月の作業時間、色の濃さ=1日あたりの密度、
@@ -14,6 +15,16 @@ const MIN_RING = 2.5;
 const MAX_RING = 16;
 const CORE_RADIUS = 10;
 const MAX_MONTHS = 180; // 15年分。これ以上は中心側(最古)から丸めて省く
+
+// 森モードの木肌: 密度の低い月は濃い木の色、密度の高い月ほど明るい心材の色へ寄せる
+const WOOD_DARK = [0x6b, 0x4a, 0x2e];
+const WOOD_LIGHT = [0xc7, 0x9a, 0x62];
+const BARK = "#3b2a1c";
+function woodColor(t: number, alpha: number): string {
+  const k = Math.max(0, Math.min(1, t));
+  const [r, g, b] = WOOD_DARK.map((c, i) => Math.round(c + (WOOD_LIGHT[i] - c) * k));
+  return `rgb(${r} ${g} ${b} / ${alpha.toFixed(2)})`;
+}
 
 interface MonthRing {
   key: string; // YYYY-MM
@@ -76,6 +87,8 @@ export default function TreeRingsView() {
   const records = useLiveQuery(() => db.records.toArray(), []);
   const today = todayStr();
   const [hovered, setHovered] = useState<MonthRing | null>(null);
+  // 年輪は全モード共通の部品。木の色にするのは森モードだけ(他モードは基調色の濃淡のまま)
+  const { homeMode } = useVisualMode();
 
   const months = useMemo(() => buildMonths(records ?? [], today), [records, today]);
 
@@ -126,12 +139,19 @@ export default function TreeRingsView() {
           <svg viewBox={`0 0 ${size} ${size}`} className="h-auto w-full" role="img" aria-label="作業時間の年輪">
             <defs>
               <radialGradient id="tree-core">
-                <stop offset="0%" stopColor="rgb(var(--cream-rgb) / 0.55)" />
-                <stop offset="100%" stopColor="rgb(var(--cream-rgb) / 0.2)" />
+                <stop offset="0%" stopColor={homeMode ? woodColor(1, 0.9) : "rgb(var(--cream-rgb) / 0.55)"} />
+                <stop offset="100%" stopColor={homeMode ? woodColor(0, 0.7) : "rgb(var(--cream-rgb) / 0.2)"} />
               </radialGradient>
             </defs>
             {/* 樹皮(一番外側) */}
-            <circle cx={center} cy={center} r={size / 2 - 6} fill="none" stroke="rgb(var(--cream-rgb) / 0.18)" strokeWidth={8} />
+            <circle
+              cx={center}
+              cy={center}
+              r={size / 2 - 6}
+              fill="none"
+              stroke={homeMode ? BARK : "rgb(var(--cream-rgb) / 0.18)"}
+              strokeWidth={8}
+            />
             {rings.map(({ month: m, inner, width }) => {
               const density = m.workedDays > 0 ? m.totalSeconds / m.workedDays / 3600 : 0; // 1日あたり時間
               const opacity = m.totalSeconds === 0 ? 0.07 : Math.min(0.85, 0.2 + density / 12);
@@ -140,7 +160,9 @@ export default function TreeRingsView() {
               const stroke =
                 lateRatio > 0.25
                   ? `rgb(var(--accent-rgb) / ${Math.min(0.7, 0.25 + lateRatio * 0.6).toFixed(2)})`
-                  : `rgb(var(--cream-rgb) / ${opacity.toFixed(2)})`;
+                  : homeMode
+                    ? woodColor(density / 10, m.totalSeconds === 0 ? 0.25 : 0.9)
+                    : `rgb(var(--cream-rgb) / ${opacity.toFixed(2)})`;
               const isJanuary = m.month === 1;
               const scar = m.maxDaySeconds >= 12 * 3600;
               const r = inner + width / 2;

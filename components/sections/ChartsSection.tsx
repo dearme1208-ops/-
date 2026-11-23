@@ -9,7 +9,7 @@ import { useWorkContext } from "@/lib/useWorkContext";
 import { withWorkContextNames } from "@/lib/workContext";
 import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period";
 import { buildTrend, TREND_GRANULARITY_LABELS, type TrendGranularity } from "@/lib/trend";
-import { buildTodoTrend, TODO_TAG_SEGMENT_CLASSES, TODO_TREND_MAX_TAGS } from "@/lib/todoTrend";
+import { buildTodoTrend, TODO_TAG_SEGMENT_CLASSES, TODO_TAG_SWATCH_CLASSES, TODO_TREND_MAX_TAGS } from "@/lib/todoTrend";
 import { formatHms } from "@/lib/time";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import TrendBarChart from "@/components/charts/TrendBarChart";
@@ -44,9 +44,10 @@ export default function ChartsSection() {
     })),
     lineValue: p.totalOpen,
   }));
+  // 凡例の見本はHTMLのspanなので、fill-*ではなく同じ並びのbg-*を使う
   const todoTagLegend = (todoTrendPoints[todoTrendPoints.length - 1]?.byTag ?? []).map((t, i) => ({
     label: t.tag,
-    className: TODO_TAG_SEGMENT_CLASSES[Math.min(i, TODO_TAG_SEGMENT_CLASSES.length - 1)],
+    className: TODO_TAG_SWATCH_CLASSES[Math.min(i, TODO_TAG_SWATCH_CLASSES.length - 1)],
   }));
 
   const metricFormat: Record<SortMetric, (v: number) => string> = {

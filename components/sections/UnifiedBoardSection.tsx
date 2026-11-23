@@ -72,6 +72,7 @@ import Modal from "@/components/ui/Modal";
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import StrokeLayer from "@/components/memo/StrokeLayer";
 import RadialTimer from "@/components/ui/RadialTimer";
+import Icon, { IconLabel } from "@/components/ui/Icon";
 import type { BoardShape, BoardShapeType, BoardStamp, DailyTask, MasterTask, MemoNote, MemoStroke, ProjectItem, TodoTask, WorkRecord } from "@/lib/types";
 
 // 「メモ・ToDo・案件・本日の作業」を1つの自由配置キャンバスにまとめて表示し、
@@ -1950,36 +1951,32 @@ export default function UnifiedBoardSection({
           全画面)だけを常に出し、たまにしか触らないもの(メモ帳の切替・ズーム・背景・検索・
           整列・対応状況・書き出し・本日の作業の扱い)は「道具」の中へ畳む。狭い画面では
           主列を横スクロールの1行にして、盤面が最初の画面に入るようにする */}
-      <div className="panel p-3">
+      <div className="panel space-y-2 p-3">
+        {/* 表示の切り替えは横に流れるチップの1列。狭い画面では横スクロール(右端を薄くして続きを示す)、
+            広い画面では折り返して全部見せる。森では先頭の絵文字を線画にする(IconLabel) */}
+        <div
+          className="scroll-fade-right -mx-1 flex snap-x items-center gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible [&>*]:shrink-0"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            el.dataset.atEnd = String(el.scrollWidth - el.clientWidth - el.scrollLeft <= 4);
+          }}
+        >
+          <span className="text-xs text-cream/50">表示:</span>
+          {BOARD_VIEW_MODES.map((m) => (
+            <button
+              key={m.key}
+              className={`${viewMode === m.key ? "btn-pill" : "btn-pill-outline"} snap-start whitespace-nowrap text-xs`}
+              aria-pressed={viewMode === m.key}
+              onClick={() => setViewModeStr(m.key)}
+            >
+              <IconLabel text={m.label} />
+            </button>
+          ))}
+        </div>
+        {viewMode === "board" && (
         <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1 overflow-x-auto">
           <div className="flex w-max items-center gap-2 sm:w-full sm:flex-wrap">
-            <span className="text-xs text-cream/50">表示:</span>
-            {/* 11択のボタン列は狭い画面では何行にも折り返して盤面より先に場所を取ってしまうため、
-                狭い画面(smブレークポイント未満)だけ1つのドロップダウンに差し替える。
-                選んでいる状態(viewMode)は共通のsettingそのものなので、どちらで切り替えても揃う */}
-            <select
-              value={viewMode}
-              onChange={(e) => setViewModeStr(e.target.value as BoardViewMode)}
-              className="rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream sm:hidden"
-            >
-              {BOARD_VIEW_MODES.map((m) => (
-                <option key={m.key} value={m.key}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <div className="hidden flex-wrap items-center gap-2 sm:flex">
-              {BOARD_VIEW_MODES.map((m) => (
-                <button
-                  key={m.key}
-                  className={viewMode === m.key ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                  onClick={() => setViewModeStr(m.key)}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
             {viewMode === "board" && (
               <>
                 <button
@@ -2101,6 +2098,7 @@ export default function UnifiedBoardSection({
           </button>
         )}
         </div>
+        )}
         {/* 追加メニューは横スクロールの枠の中に出すと切り取られて見えなくなるため、
             ツールバーの下に出す */}
         {viewMode === "board" && showAddMenu && (
@@ -2703,6 +2701,12 @@ export default function UnifiedBoardSection({
                 dimmed={boardSearchActive && !(matchingIds?.has(task.id) ?? false)}
                 onSelect={(additive) => selectItem(task.id, additive)}
                 onDragEnd={(id, x, y) => handleItemDragEnd("task", id, x, y)}
+                maxX={
+                  // 狭い画面では計測中のカードが盤面の右へはみ出して見えなかったので、表示だけ幅の内側へ寄せる(保存位置はそのまま)
+                  task.status === "running" && viewportWidth > 0 && viewportWidth < 640
+                    ? Math.max(0, viewportWidth / zoom - CARD_WIDTH - 8)
+                    : undefined
+                }
                 onStart={() => startTask(task)}
                 onPause={() => pauseTask(task)}
                 onComplete={() => setCompleteTarget({ kind: "task", task })}
@@ -3812,6 +3816,9 @@ function boardItemVisualStyle(selected: boolean, matched: boolean, dimmed: boole
 // カード上部の「掴む場所」。暗い背景でも見失わないよう、カード本体より一段
 // 明るい/暗いバンドを敷いた上でグリップ用の点を並べる(色付きの付箋には濃色、
 // 暗いカードには淡色のバンド+ドットを使い、どちらの背景でも視認できるようにする)
+// カードの見出しのロック・最前面固定の線画(森のみ)を、11pxの絵文字と同じくらいの大きさにそろえる
+const BOARD_CTRL_ICON = "[&_.ico-svg]:h-3 [&_.ico-svg]:w-3";
+
 function DragHandle({
   tone,
   onPointerDown,
@@ -3826,7 +3833,7 @@ function DragHandle({
   return (
     <div
       className={`flex h-5 shrink-0 cursor-grab items-center justify-center rounded-t active:cursor-grabbing ${
-        tone === "light" ? "bg-black/10" : "bg-cream/10"
+        tone === "light" ? "bg-black/10" : "bg-cream/5"
       }`}
       style={{ touchAction: "none" }}
       title="ドラッグで移動できます"
@@ -3835,9 +3842,15 @@ function DragHandle({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <span className={`text-[11px] leading-none tracking-widest ${tone === "light" ? "text-ink/50" : "text-cream/50"}`}>
+      {/* 森では点字の「⠿ ⠿ ⠿」をやめ、控えめな線画のつまみ1つにする */}
+      <span
+        className={`text-[11px] leading-none tracking-widest [html[data-visual-mode="home"]_&]:hidden ${
+          tone === "light" ? "text-ink/50" : "text-cream/50"
+        }`}
+      >
         ⠿ ⠿ ⠿
       </span>
+      <Icon name="grip" className={`rotate-90 ${tone === "light" ? "text-ink/30" : "text-cream/30"}`} />
     </div>
   );
 }
@@ -4023,7 +4036,7 @@ function ShapeElement({
           className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
           title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
         >
-          {locked ? "🔒" : "🔓"}
+          <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
         </button>
         <button
           onClick={onTogglePin}
@@ -4031,7 +4044,7 @@ function ShapeElement({
           title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
           aria-pressed={pinned}
         >
-          📌
+          <Icon emoji="📌" className={BOARD_CTRL_ICON} />
         </button>
         <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="図形を削除">
           ✕
@@ -4254,7 +4267,7 @@ function StampElement({
             className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
             title={locked ? "ロックを解除する" : "ロックする(くっ付けの解除・ドラッグを防ぐ)"}
           >
-            {locked ? "🔒" : "🔓"}
+            <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
           </button>
           <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="スタンプを削除">
             ✕
@@ -4421,7 +4434,7 @@ function NoteCard({
         className={`absolute right-8 top-0.5 text-[11px] leading-none ${locked ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
         title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
       >
-        {locked ? "🔒" : "🔓"}
+        <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
       </button>
       <button
         onPointerDown={(e) => e.stopPropagation()}
@@ -4437,7 +4450,7 @@ function NoteCard({
         aria-label={note.pinned ? "最前面固定を解除する" : "最前面に固定する"}
         aria-pressed={!!note.pinned}
       >
-        📌
+        <Icon emoji="📌" className={BOARD_CTRL_ICON} />
       </button>
       <div className="flex shrink-0 flex-wrap items-center gap-1 px-1.5 pb-1 pt-1">
         {Object.keys(MEMO_NOTE_COLORS).map((c) => (
@@ -4537,6 +4550,7 @@ function TaskCard({
   onTogglePin,
   onFocus,
   strip = false,
+  maxX,
 }: {
   task: DailyTask;
   /** 表示名(案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」) */
@@ -4548,6 +4562,8 @@ function TaskCard({
   /** 盤面の外に横並びで出す場合はtrue。自由配置ではなく流し込みで並べるため、
       絶対位置とドラッグでの移動をやめる(中身の作りは盤面上と同じものを使う) */
   strip?: boolean;
+  /** 表示上のx座標の上限(狭い画面で盤面の幅の内側に収めるため)。保存位置は書き換えない */
+  maxX?: number;
   zIndex: number;
   selected: boolean;
   matched: boolean;
@@ -4565,7 +4581,8 @@ function TaskCard({
   const pinned = !!task.boardPinned;
   // 実際の位置は自動配置useEffectがboardX/boardYへ即座に割り当てるため、
   // ここでの初期値は割り当てが反映されるまでの一瞬だけ使われる仮の位置
-  const x = task.boardX ?? 40;
+  const savedX = task.boardX ?? 40;
+  const x = maxX !== undefined ? Math.min(savedX, maxX) : savedX;
   const y = task.boardY ?? 40;
   const { left, top, onPointerDown, onPointerMove, onPointerUp } = useBoardDrag(
     x,
@@ -4607,7 +4624,7 @@ function TaskCard({
         />
       )}
       <div
-        className={`-mx-2 -mt-2 mb-1 flex shrink-0 items-center justify-between rounded-t bg-cream/10 px-2 py-1 ${
+        className={`-mx-2 -mt-2 mb-1 flex shrink-0 items-center justify-between rounded-t bg-cream/5 px-2 py-1 ${
           strip ? "" : locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"
         }`}
         style={strip ? undefined : { touchAction: "none" }}
@@ -4628,7 +4645,7 @@ function TaskCard({
           className={`text-[11px] leading-none ${locked ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
           title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
         >
-          {locked ? "🔒" : "🔓"}
+          <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
         </button>
         <button
           onPointerDown={(e) => e.stopPropagation()}
@@ -4640,7 +4657,7 @@ function TaskCard({
           title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
           aria-pressed={pinned}
         >
-          📌
+          <Icon emoji="📌" className={BOARD_CTRL_ICON} />
         </button>
       </div>
       <p className="min-w-0 flex-1 truncate text-sm text-cream" title={`${task.category} / ${displayName}`}>
@@ -4789,7 +4806,7 @@ function TodoCard({
         className={`absolute right-11 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
         title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
       >
-        {locked ? "🔒" : "🔓"}
+        <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
       </button>
       <button
         onPointerDown={(e) => e.stopPropagation()}
@@ -4801,7 +4818,7 @@ function TodoCard({
         title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
         aria-pressed={pinned}
       >
-        📌
+        <Icon emoji="📌" className={BOARD_CTRL_ICON} />
       </button>
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（マイデイからも外れます。ToDo自体は消えません）" />
       <div className={`flex items-start gap-2 ${subtasks.length > 0 ? "shrink-0" : "flex-1"}`}>
@@ -5151,7 +5168,7 @@ function ProjectCard({
         className={`absolute right-11 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
         title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
       >
-        {locked ? "🔒" : "🔓"}
+        <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
       </button>
       <button
         onPointerDown={(e) => e.stopPropagation()}
@@ -5163,7 +5180,7 @@ function ProjectCard({
         title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
         aria-pressed={pinned}
       >
-        📌
+        <Icon emoji="📌" className={BOARD_CTRL_ICON} />
       </button>
       <BoardRemoveButton onRemove={onRemove} title="ボードから下げる（案件自体は消えません）" />
       <div className="flex items-center gap-1.5">

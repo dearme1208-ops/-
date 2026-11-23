@@ -12,6 +12,7 @@ import { parseWaitingTags } from "@/lib/waiting";
 import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
 import { importBackup, summarizeBackup, type BackupFile } from "@/lib/backup";
 import Modal from "@/components/ui/Modal";
+import Icon, { IconLabel } from "@/components/ui/Icon";
 import { downloadBackupFile, shareBackupFile } from "@/lib/backupFile";
 import {
   chooseAutoBackupFolder,
@@ -678,7 +679,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
         data-testid="backup-status"
       >
         <span className={staleBackupDays === null || staleBackupDays >= 14 ? "font-bold text-alert" : "text-cream/80"}>
-          💾 最後の控え:{" "}
+          <Icon emoji="💾" /> 最後の控え:{" "}
           {staleBackupDays === null ? "まだありません" : staleBackupDays === 0 ? "今日" : `${staleBackupDays}日前`}
         </span>
         <span className="flex flex-wrap gap-2">
@@ -686,7 +687,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
             今すぐ控えを取る
           </button>
           <button className="btn-pill px-3 py-1 text-xs" onClick={() => setShowMigration(true)}>
-            📦 機種変更・引き継ぎ
+            <IconLabel text="📦 機種変更・引き継ぎ" />
           </button>
         </span>
       </div>
@@ -760,9 +761,14 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
         {/* 分類で絞り込む。35項目を1列に並べると目的の項目を探すのに何画面もスクロールするため */}
         {/* スマホでは横にすべらせる1行にし、最初の設定項目が画面の上の方に来るようにする */}
         <div
-          className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap [&>button]:shrink-0 [&>button]:whitespace-nowrap"
+          className="scroll-fade-right -mx-1 flex snap-x gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap [&>button]:shrink-0 [&>button]:snap-start [&>button]:whitespace-nowrap"
           role="group"
           aria-label="設定の分類"
+          onScroll={(e) => {
+            // 右端まで送ったら、続きがあることを示す右端の薄まり(scroll-fade-right)を消す
+            const el = e.currentTarget;
+            el.dataset.atEnd = String(el.scrollWidth - el.clientWidth - el.scrollLeft <= 4);
+          }}
         >
           {[{ key: "all", label: "すべて" }, ...SETTINGS_CATEGORIES].map((c) => (
             <button
@@ -771,7 +777,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
               onClick={() => setSettingsCategory(c.key)}
               aria-pressed={settingsCategory === c.key}
             >
-              {c.label}
+              <IconLabel text={c.label} />
             </button>
           ))}
         </div>
@@ -1647,7 +1653,9 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="section-title font-display">📆 カレンダーの週表示</h3>
+        <h3 className="section-title font-display">
+          <IconLabel text="📆 カレンダーの週表示" />
+        </h3>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             className={weekViewMode === "fixedStart" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
@@ -1687,7 +1695,9 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
       </div>
 
       <div className="panel space-y-2 p-4">
-        <h3 className="section-title font-display">🎭 演出テーマ</h3>
+        <h3 className="section-title font-display">
+          <IconLabel text="🎭 演出テーマ" />
+        </h3>
         {onOpenTab && (
           <button className="btn-pill-outline text-xs" onClick={() => onOpenTab("appearance")}>
             🎭 モード選択を開く
