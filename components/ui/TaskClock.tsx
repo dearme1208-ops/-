@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { formatClock } from "@/lib/time";
 
 // 計測中の作業の「アナログ時計」。今の時刻を針で動かし、文字盤の縁に
@@ -57,6 +58,8 @@ export default function TaskClock({
   const angle = byMinute ? minuteAngle : hourAngle;
   const ringR = byMinute ? 46 : 33;
   const overrun = endMs !== undefined && now > endMs;
+  // 森の立体の飾り(縁・影・ガラスの丸み)のグラデーションの id。useId の「:」は url() で扱いにくいので外す
+  const gid = `tc${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const label =
     endMs === undefined ? "見込みなし" : overrun ? `${formatClock(endMs)}を過ぎています` : `${formatClock(endMs)}ごろ終わる見込み`;
 
@@ -72,8 +75,34 @@ export default function TaskClock({
         aria-label={`今 ${formatClock(now)}、${label}`}
         className="overflow-visible"
       >
+        {/* 森の立体の飾り(動かない)。ほかのモードでは CSS で隠す */}
+        <defs>
+          <radialGradient id={`${gid}-cast`} cx="50%" cy="50%" r="50%">
+            <stop offset="78%" style={{ stopColor: "rgb(0 0 0)", stopOpacity: 0.5 }} />
+            <stop offset="100%" style={{ stopColor: "rgb(0 0 0)", stopOpacity: 0 }} />
+          </radialGradient>
+          <linearGradient id={`${gid}-rim`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" style={{ stopColor: "rgb(var(--cream-rgb))", stopOpacity: 0.55 }} />
+            <stop offset="45%" style={{ stopColor: "rgb(var(--accent-rgb))", stopOpacity: 0.3 }} />
+            <stop offset="100%" style={{ stopColor: "rgb(0 0 0)", stopOpacity: 0.7 }} />
+          </linearGradient>
+          <linearGradient id={`${gid}-bevel`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" style={{ stopColor: "rgb(0 0 0)", stopOpacity: 0.55 }} />
+            <stop offset="100%" style={{ stopColor: "rgb(var(--cream-rgb))", stopOpacity: 0.16 }} />
+          </linearGradient>
+          <radialGradient id={`${gid}-dome`} cx="36%" cy="24%" r="70%">
+            <stop offset="0%" style={{ stopColor: "rgb(255 255 255)", stopOpacity: 0.17 }} />
+            <stop offset="45%" style={{ stopColor: "rgb(255 255 255)", stopOpacity: 0.04 }} />
+            <stop offset="100%" style={{ stopColor: "rgb(255 255 255)", stopOpacity: 0 }} />
+          </radialGradient>
+        </defs>
+        {/* 下に落ちる影(文字盤より少し下にずらす) */}
+        <circle className="tc-depth" cx={C} cy={C + 4} r={53} fill={`url(#${gid}-cast)`} />
         {/* 文字盤 */}
         <circle className="tc-face" cx={C} cy={C} r={48} fill="rgb(var(--ink-rgb) / 0.55)" stroke="rgb(var(--cream-rgb) / 0.2)" strokeWidth={1} />
+        {/* 縁の面取り: 上が光り下が沈む外の縁と、その内側の逆向きの細い段 */}
+        <circle className="tc-depth" cx={C} cy={C} r={48} fill="none" stroke={`url(#${gid}-rim)`} strokeWidth={2.2} />
+        <circle className="tc-depth" cx={C} cy={C} r={46.4} fill="none" stroke={`url(#${gid}-bevel)`} strokeWidth={1} />
         {Array.from({ length: 60 }, (_, i) => {
           const major = i % 5 === 0;
           const [x1, y1] = polar(major ? 40 : 43, i * 6);
@@ -140,12 +169,21 @@ export default function TaskClock({
           const [tx, ty] = polar(-8, secA);
           return (
             <>
+              {/* 森: 針の小さな落ち影(filter を使わず、ずらした線を重ねる) */}
+              <g className="tc-depth" stroke="rgb(0 0 0 / 0.45)" strokeLinecap="round" transform="translate(0.7 1.4)">
+                <line x1={C} y1={C} x2={hx} y2={hy} strokeWidth={3.4} />
+                <line x1={C} y1={C} x2={mx} y2={my} strokeWidth={2.2} />
+                <line x1={tx} y1={ty} x2={sx} y2={sy} strokeWidth={1} />
+              </g>
               <line x1={C} y1={C} x2={hx} y2={hy} stroke="rgb(var(--cream-rgb))" strokeWidth={3.4} strokeLinecap="round" />
               <line x1={C} y1={C} x2={mx} y2={my} stroke="rgb(var(--cream-rgb))" strokeWidth={2.2} strokeLinecap="round" />
               <line x1={tx} y1={ty} x2={sx} y2={sy} stroke="rgb(var(--alert-rgb))" strokeWidth={1} strokeLinecap="round" />
               {/* 森モード: 秒針の先に蛍(ほかのモードでは CSS で隠す) */}
               <circle className="tc-firefly" cx={sx} cy={sy} r={1.7} fill="rgb(214 255 176)" />
               <circle cx={C} cy={C} r={2.4} fill="rgb(var(--alert-rgb))" />
+              {/* 森: ガラスの丸み(左上の淡い光と、縁に沿う細い光の弧)。いちばん上に重ねる */}
+              <circle className="tc-depth" cx={C} cy={C} r={46} fill={`url(#${gid}-dome)`} />
+              <path className="tc-depth" d={arc(44, 292, 352)} fill="none" stroke="rgb(255 255 255 / 0.2)" strokeWidth={1.2} strokeLinecap="round" />
             </>
           );
         })()}

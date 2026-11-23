@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
+import type { DailyTask } from "@/lib/types";
 import { useSetting } from "@/lib/settings";
 import { todayStr, formatHms } from "@/lib/time";
 import { computeDailyChallenges, trendWindowRange, type ChallengeResult } from "@/lib/dailyChallenges";
@@ -15,9 +16,15 @@ import { showUndoToast } from "@/lib/toast";
 // 溜まっていれば過去の傾向(平均)をもとに調整され、足りない間は固定値のままになる。
 // どの演出テーマの「本日」画面にも同じ見た目のまま置けるよう、必要なデータは
 // 自前でクエリする自己完結コンポーネントにしている
-export default function DailyChallengePanel() {
+/**
+ * tasks: 呼び出し側が今日の作業を読み終わっていれば渡す。自前の読み込みを待つ間は何も出さない(null)ので、
+ * 渡しておくと最初の描画から高さが決まり、下の中身を後から押し下げない(森モードの CLS 対策)
+ */
+export default function DailyChallengePanel({ tasks: tasksProp }: { tasks?: DailyTask[] } = {}) {
   const date = todayStr();
-  const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
+  const tasksQuery = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
+  // 自前の結果が届いたらそちらを正にする(渡された一覧と中身は同じだが、更新はこちらが先に届くことがある)
+  const tasks = tasksQuery ?? tasksProp;
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   // 過去の傾向をもとに目標値を調整するための直近の実績(当日は含まない)。

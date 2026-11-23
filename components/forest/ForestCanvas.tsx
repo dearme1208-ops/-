@@ -6,18 +6,25 @@ import {
   computeForestSeason,
   computeForestTimeBand,
   drawForestScene,
+  forestArtSmall,
+  loadForestArt,
+  peekForestArt,
+  type ForestArt,
   type ForestScene,
   type ForestSeason,
   type ForestTimeBand,
 } from "@/lib/forestScene";
+import { createFrameGate, getForestPerfProfile } from "@/lib/forestPerf";
 
 // 森モードのヘッダー。他テーマはSVGの静止画だが、ここだけはCanvasで毎フレーム描く。
 // 木のシルエットは重いのでリサイズ時に一度だけオフスクリーンへ焼き込み(buildForestScene)、
 // 毎フレームは転写+動くものだけを描く。モバイルのPWAで常時表示される帯なので、
-// ・devicePixelRatioは2で頭打ち
-// ・タブが背面のときはrAFを止める
+// ・devicePixelRatioは1.5で頭打ち(軽量モードは1。lib/forestPerf.ts)
+// ・描き直すのは30fps(軽量モードは20fps)で、胞子(ForestAmbience)とは1フレームずつ交互。rAFは回し続けるが、描かないフレームは何もしない
+// ・タブが背面のとき・ヘッダーが画面外へスクロールしたときはrAFを止める
 // ・prefers-reduced-motionなら1枚だけ描いて止める
-// の3点でバッテリーを食わないようにしてある。
+// の点でバッテリーとフレームの余裕を食わないようにしてある。
+// 木立は挿絵(public/art/forest-*.webp)を裏で読み、読めたら1度だけ焼き直して差し替える(lib/forestScene.ts の説明)。
 export default function ForestCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [band, setBand] = useState<ForestTimeBand>(() => computeForestTimeBand(new Date().getHours()));
@@ -45,6 +52,8 @@ export default function ForestCanvas() {
   const dimsRef = useRef({ w: 0, h: 0, dpr: 1 });
   const renderRef = useRef<((t: number) => void) | null>(null);
   const reducedRef = useRef(false);
+  // 挿絵(public/art/forest-*.webp)。読み終わるまで・読めなかった時は null で、手続き生成の木立を描く
+  const artRef = useRef<ForestArt | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -54,8 +63,13 @@ export default function ForestCanvas() {
 
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     reducedRef.current = reduced;
+    const perf = getForestPerfProfile();
 
     let raf = 0;
+    // 描くのは偶数フレーム(胞子 ForestAmbience は奇数)。lib/forestPerf.ts の説明
+    const shouldDraw = createFrameGate(perf.sceneFps, 0);
+    // ヘッダーが画面に見えているか(見えない間は描かない)
+    let onScreen = true;
 
     // ポインタ視差。触れられるまでは、ゆっくり左右に振って「風でカメラが揺れる」動きにする
     let pointerSeen = false;
@@ -66,14 +80,19 @@ export default function ForestCanvas() {
       const rect = canvas.getBoundingClientRect();
       const w = Math.max(1, Math.round(rect.width));
       const h = Math.max(1, Math.round(rect.height));
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const dpr = Math.min(perf.sceneDprCap, window.devicePixelRatio || 1);
       const dims = dimsRef.current;
       if (w === dims.w && h === dims.h && dpr === dims.dpr && sceneRef.current) return;
       dimsRef.current = { w, h, dpr };
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      sceneRef.current = buildForestScene(w, h, dpr, bandRef.current, seasonRef.current);
+      // 前に読み終えた挿絵があれば最初からそれで組む(再マウントで手続き生成が一瞬見えないように)
+      if (!artRef.current) artRef.current = peekForestArt(forestArtSmall(w, perf.lite));
+      sceneRef.current = buildForestScene(w, h, dpr, bandRef.current, seasonRef.current, undefined, {
+        lite: perf.lite,
+        art: artRef.current,
+      });
     };
 
     const render = (t: number) => {
@@ -90,8 +109,9 @@ export default function ForestCanvas() {
 
     const start = performance.now();
     const loop = (now: number) => {
-      render((now - start) / 1000);
       raf = window.requestAnimationFrame(loop);
+      if (!shouldDraw(now)) return;
+      render((now - start) / 1000);
     };
 
     const stop = () => {
@@ -99,7 +119,7 @@ export default function ForestCanvas() {
       raf = 0;
     };
     const play = () => {
-      if (raf || reduced) return;
+      if (raf || reduced || !onScreen || document.hidden) return;
       raf = window.requestAnimationFrame(loop);
     };
 
@@ -107,6 +127,16 @@ export default function ForestCanvas() {
       if (document.hidden) stop();
       else play();
     };
+
+    // ヘッダーが画面外へスクロールしたら止め、戻ってきたら再開する
+    const io =
+      typeof IntersectionObserver !== "undefined"
+        ? new IntersectionObserver((entries) => {
+            onScreen = entries[entries.length - 1]?.isIntersecting ?? true;
+            if (onScreen) play();
+            else stop();
+          })
+        : null;
 
     const onPointer = (e: PointerEvent) => {
       pointerSeen = true;
@@ -119,20 +149,40 @@ export default function ForestCanvas() {
       // 動きを止める設定のときは、夜霧と蛍がいちばん映える時刻の1枚を描いて終わり
       render(6.5);
     } else {
+      // 最初のrAFを待たずに1枚描いておく(空のキャンバスが1フレーム見えないように)
+      render(0);
       play();
     }
 
     const ro = new ResizeObserver(() => {
       resize();
-      if (reduced) render(6.5);
+      // 大きさを変えるとキャンバスは消えるので、次の描く枠を待たずにその場で描き直す
+      render(reduced ? 6.5 : (performance.now() - start) / 1000);
     });
     ro.observe(canvas);
+    io?.observe(canvas);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pointermove", onPointer, { passive: true });
 
+    // 挿絵を裏で読み、読めたらシーンを1度だけ焼き直す。差し替えは次の描画で一度に行われるので、
+    // 空白やちらつき・レイアウトのずれは出ない。失敗(null)なら手続き生成のまま
+    let disposed = false;
+    if (!artRef.current) {
+      loadForestArt(forestArtSmall(dimsRef.current.w, perf.lite)).then((art) => {
+        if (disposed || !art) return;
+        artRef.current = art;
+        const { w, h, dpr } = dimsRef.current;
+        if (w <= 0 || h <= 0) return;
+        sceneRef.current = buildForestScene(w, h, dpr, bandRef.current, seasonRef.current, undefined, { lite: perf.lite, art });
+        if (reduced) render(6.5);
+      });
+    }
+
     return () => {
+      disposed = true;
       stop();
       ro.disconnect();
+      io?.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pointermove", onPointer);
       renderRef.current = null;
@@ -146,7 +196,10 @@ export default function ForestCanvas() {
     seasonRef.current = season;
     const { w, h, dpr } = dimsRef.current;
     if (w <= 0 || h <= 0) return;
-    sceneRef.current = buildForestScene(w, h, dpr, band, season);
+    sceneRef.current = buildForestScene(w, h, dpr, band, season, undefined, {
+      lite: getForestPerfProfile().lite,
+      art: artRef.current,
+    });
     // 動きを止める設定の間は再生ループが回っていないため、焼き直した内容をここで即描画する
     if (reducedRef.current) renderRef.current?.(6.5);
   }, [band, season]);

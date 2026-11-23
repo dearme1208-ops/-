@@ -2760,6 +2760,25 @@ export default function TodaySection({
     hourglass: "終業までに収まる?",
   };
   const { isFolded: isPanelFolded, touch: touchPanel } = usePanelUsage(Object.keys(PANEL_LABELS), now);
+  // 作業の一覧と「そのほかの表示」のどれを出すかを決める設定が、読み終わったか。useSetting は読み終わるまで
+  // 既定値を返すので、読み込み前に既定値(体調の記録はON 等)で出したパネルが直後に消え、下の中身が
+  // 画面の中で上下に跳ねていた(CLS)。上の各 useSetting / usePanelUsage より後に呼ぶ(同じ順に読み出すので、
+  // これが読み終わった時には上の値も届いている。automationSettingsLoaded と同じ考え方)
+  const layoutSettingsLoaded = useSettingsLoaded([
+    "today.taskViewTab",
+    "today.collapseExtras",
+    "today.collapseFavorites",
+    "today.showStatusPanel",
+    "today.showAutoAllocate",
+    "today.notifyAskDismissed",
+    "today.showSuggestedTask",
+    "today.showNextMovePick",
+    "today.showDailyChallenge",
+    "today.showTaskClock",
+    "condition.enabled",
+    "ui.panelUsage",
+    "ui.autoFoldPanels",
+  ]);
   const foldedPanels = Object.entries(PANEL_LABELS)
     .filter(([id]) => isPanelFolded(id))
     .map(([id, label]) => ({ id, label }));
@@ -2880,14 +2899,6 @@ export default function TodaySection({
 
   return (
     <div className="space-y-4">
-      {themedMode && (
-        <div
-          className={`containment-vignette ${va11hallaMode ? "vignette-v11" : ""} ${
-            runningOverrunTasks.length > 0 ? "is-active" : ""
-          }`}
-          aria-hidden="true"
-        />
-      )}
       {/* 実行中タブでは、すぐ下の計測中のカードが同じことを(赤い帯・超過の時間で)出しているので重ねて出さない。
           ほかのタブを見ている時だけ、超過に気づけるよう流す */}
       {/* 画面下の計測中の帯が出ている時も、帯が超過を(赤く)出しているので重ねない */}
@@ -2998,6 +3009,14 @@ export default function TodaySection({
           22remの細い列で並べる。1列だと横に間延びして、カードと輪・砂時計が数画面離れていたため。
           右列は画面より背が高いので sticky にはしない。DOMの順序(カード → そのほかの表示)は変えない。
           画面下の BottomTabBar はこの格子の外に置く(格子の中だと sticky がセルの中で止まるため) */}
+      {/* 今日の作業と、何を出すかの設定(layoutSettingsLoaded)を読み込むまでは、作業の一覧も下の
+          「そのほかの表示」も出さず、画面の高さだけ取っておく。
+         以前は読み込み前に「作業はありません」を出し、読み込み後にその上へテンプレートの枠が差し込まれて、
+         下のパネルがまとめて130pxほど押し下げられていた(モバイルの CLS 0.4 の大半)。高さを取っておくのは、
+         下の BottomTabBar(sticky)が一旦上に来てから画面下へ跳ねないようにするため */}
+      {tasks === undefined || !layoutSettingsLoaded ? (
+        <div className="min-h-screen" aria-busy="true" />
+      ) : (
       <div className={`space-y-4 ${taskViewTab !== "board" ? "xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start xl:gap-x-6 xl:space-y-0" : ""}`}>
       <div className="min-w-0 space-y-4">
       {taskViewTab === "board" && <UnifiedBoardSection onOpenTodo={onOpenTodoTab} />}
@@ -3421,7 +3440,9 @@ export default function TodaySection({
                 チャレンジ欄と二重に達成を祝い、通知が2つ並んでいた */}
             {!isPanelFolded("challenge") && showDailyChallenge && !background && (
               <div data-panel-id="challenge">
-                <DailyChallengePanel />
+                {/* 今日の作業はこちらで読み終わっているので渡す。パネルが自分で読み直す間(数フレーム)
+                    高さ0で、読み終わってから348px現れ、下のパネルを押し下げていたため */}
+                <DailyChallengePanel tasks={tasks} />
               </div>
             )}
             <TodayHintPanel />
@@ -3572,6 +3593,7 @@ export default function TodaySection({
         )}
       </div>
       </div>
+      )}
 
       <BottomTabBar
         items={[
@@ -3868,6 +3890,19 @@ export default function TodaySection({
           todoTaskMap={todoTaskMap}
           onCompleteTodo={completeLinkedTodo}
           onDone={advanceConfirmQueue}
+        />
+      )}
+      {/* 画面全体にかぶせる超過の枠(position: fixed)。この space-y-4 の先頭に置くと、設定を読み込んで
+          themedMode が立った瞬間に「2番目の子」になった見出しへ space-y の margin-top(16px)が付き、
+          タブ列の下の余白(12px)と相殺しきれずに中身全体が4px下がっていた(森モードの CLS 0.1)。
+          流れに乗らない要素なので、兄弟の余白に影響しない末尾に置く(末尾だと自身に付く margin-top で
+          fixed の枠が16px下にずれるので !mt-0 で消す) */}
+      {themedMode && (
+        <div
+          className={`containment-vignette !mt-0 ${va11hallaMode ? "vignette-v11" : ""} ${
+            runningOverrunTasks.length > 0 ? "is-active" : ""
+          }`}
+          aria-hidden="true"
         />
       )}
     </div>

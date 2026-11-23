@@ -5394,12 +5394,17 @@ html[data-visual-mode="terminal"] .num {
   /* --- 素材: 苔のノイズを変数にして、板ごとに光と重ねられるようにする --- */
   html[data-visual-mode="home"] {
     --moss-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
-    --elev-1: 0 0 0 1px rgb(var(--accent-rgb) / 0.08), 0 14px 28px -20px rgb(0 0 0 / 0.7),
-      inset 0 1px 0 rgb(var(--cream-rgb) / 0.06), inset 0 -1px 0 rgb(0 0 0 / 0.35);
-    --elev-1-hover: 0 0 0 1px rgb(var(--accent-rgb) / 0.16), 0 18px 34px -20px rgb(0 0 0 / 0.8),
-      inset 0 1px 0 rgb(var(--cream-rgb) / 0.09), inset 0 -1px 0 rgb(0 0 0 / 0.35);
-    --elev-2: 0 0 0 1px rgb(var(--accent-rgb) / 0.3), 0 28px 48px -22px rgb(0 0 0 / 0.9),
-      0 10px 18px -12px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(var(--cream-rgb) / 0.1), inset 0 -2px 0 rgb(0 0 0 / 0.4);
+    /* 影は苔色を帯びた2層(すぐ下の接地の影+遠くへ広がる柔らかい影)。上端の1pxの光は動かない内側の線。
+       値を変えるだけで、影を動かすアニメーションは付けない */
+    --moss-shadow-rgb: 4 16 9;
+    --elev-1: 0 0 0 1px rgb(var(--accent-rgb) / 0.08), 0 1px 2px rgb(var(--moss-shadow-rgb) / 0.5),
+      0 14px 28px -18px rgb(var(--moss-shadow-rgb) / 0.8),
+      inset 0 1px 0 rgb(var(--cream-rgb) / 0.08), inset 0 -1px 0 rgb(0 0 0 / 0.35);
+    --elev-1-hover: 0 0 0 1px rgb(var(--accent-rgb) / 0.16), 0 2px 4px rgb(var(--moss-shadow-rgb) / 0.5),
+      0 18px 34px -18px rgb(var(--moss-shadow-rgb) / 0.88),
+      inset 0 1px 0 rgb(var(--cream-rgb) / 0.11), inset 0 -1px 0 rgb(0 0 0 / 0.35);
+    --elev-2: 0 0 0 1px rgb(var(--accent-rgb) / 0.3), 0 28px 48px -22px rgb(var(--moss-shadow-rgb) / 0.95),
+      0 10px 18px -12px rgb(var(--moss-shadow-rgb) / 0.7), inset 0 1px 0 rgb(var(--cream-rgb) / 0.12), inset 0 -2px 0 rgb(0 0 0 / 0.4);
     --elev-3: 0 -10px 40px -12px rgb(0 0 0 / 0.75), 0 24px 60px -20px rgb(0 0 0 / 0.9),
       inset 0 1px 0 rgb(var(--accent-rgb) / 0.3);
   }
@@ -5449,7 +5454,8 @@ html[data-visual-mode="terminal"] .num {
     pointer-events: none;
     box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.55), 0 0 26px -4px rgb(var(--accent-rgb) / 0.5);
     opacity: 0.35;
-    will-change: opacity;
+    /* will-change は付けない: 動いている間はブラウザが自動で層に上げる。付けっぱなしだと、
+       動きを減らす設定(animation: none)でも層とそのメモリが残り続ける */
     animation: hero-breathe 4.6s ease-in-out infinite;
   }
   html[data-visual-mode="home"] .panel.card-overrun-forest::after {
@@ -5604,7 +5610,7 @@ html[data-visual-mode="terminal"] .num {
     pointer-events: none;
     background: radial-gradient(closest-side, rgb(var(--accent-rgb) / 0.32), rgb(var(--accent-rgb) / 0.08) 62%, transparent 100%);
     opacity: 0.45;
-    will-change: opacity;
+    /* will-change は付けない(上のカードの縁と同じ理由) */
     animation: hero-breathe 4.6s ease-in-out infinite;
   }
   html[data-visual-mode="home"] .tc-wrap > svg {
@@ -5763,6 +5769,104 @@ html[data-visual-mode="terminal"] .num {
     }
   }
 
+  /* ══ 第3弾: 光でつくる奥行き(森モードのみ) ══
+     three.js などは使わず、CSS の transform と重ねた光だけで立体に見せる。
+     - 傾けるのは主役の1枚(計測中のカード)だけ。マウスのある端末(hover:hover かつ pointer:fine)だけで、タッチでは何もしない
+     - 動かすのは transform/opacity だけ。影・filter は動かさない。ずっと動くものは増やさない(空の知らせの月の1つだけ)
+     - 時計の縁・影・ガラスの丸み、パネルの影は動かない飾り
+     - 動きを減らす設定では、ここの動きもブロック末尾でまとめて止める */
+
+  /* --- 8. 計測中のカードの傾きと照り(TaskCard の onPointerMove が --tilt-rx/ry, --spec-x/y を書く) --- */
+  .tilt-spec {
+    display: none;
+  }
+  @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    /* transition-opacity(薄くする時)と、森の .panel の枠・影の移り変わり(420ms)の分も残す。傾きは data-tilting の間だけ付け、離れたら平らへ戻る */
+    html[data-visual-mode="home"] .panel[data-running-card="true"] {
+      isolation: isolate;
+      transition:
+        opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 420ms ease,
+        border-color 420ms ease,
+        transform 220ms ease-out;
+    }
+    html[data-visual-mode="home"] .panel[data-running-card="true"][data-tilting="true"] {
+      transform: perspective(900px) rotateX(var(--tilt-rx, 0deg)) rotateY(var(--tilt-ry, 0deg));
+    }
+    /* 照り: 板の角丸で切り抜いた枠(z-index:-1 = 板の地の上・中身の下。月の光の筋 ::before より後ろの要素なので上に重なる) */
+    html[data-visual-mode="home"] .panel[data-running-card="true"] > .tilt-spec {
+      display: block;
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      border-radius: inherit;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 240ms ease-out;
+    }
+    html[data-visual-mode="home"] .panel[data-running-card="true"][data-tilting="true"] > .tilt-spec {
+      opacity: 1;
+    }
+    /* 光の玉そのものは描き直さず、位置(transform)だけを動かす */
+    html[data-visual-mode="home"] .panel[data-running-card="true"] > .tilt-spec::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 140%;
+      aspect-ratio: 1;
+      margin: -70% 0 0 -70%;
+      background: radial-gradient(closest-side, rgb(255 255 255 / 0.075), rgb(var(--forest-dew-rgb) / 0.03) 45%, transparent 72%);
+      transform: translate3d(var(--spec-x, 0px), var(--spec-y, 0px), 0);
+      transition: transform 220ms ease-out;
+    }
+  }
+
+  /* --- 9. 計測中の時計の立体(縁の面取り・落ち影・針の影・ガラスの丸み。すべて動かない) --- */
+  .tc-depth {
+    display: none;
+  }
+  html[data-visual-mode="home"] .tc-depth {
+    display: inline;
+  }
+
+  /* --- 10. 完了のしるしが硬貨のように一回転する(一度だけ。700ms) ---
+     回り終わってから輪が広がるよう、森では輪を遅らせる */
+  html[data-visual-mode="home"] .completion-seal {
+    backface-visibility: visible;
+    animation: seal-flip 700ms cubic-bezier(0.22, 0.75, 0.3, 1);
+  }
+  html[data-visual-mode="home"] .completion-seal::after {
+    animation-delay: 600ms;
+  }
+  @keyframes seal-flip {
+    from {
+      transform: perspective(240px) rotateY(0deg);
+    }
+    to {
+      transform: perspective(240px) rotateY(360deg);
+    }
+  }
+
+  /* --- 11. 空の知らせの線画の奥行き: 奥は淡く細く・手前は濃く(EmptyArt 側の g の属性)。月の層だけごくゆっくり漂う --- */
+  html[data-visual-mode="home"] .empty-art {
+    color: rgb(var(--accent-rgb) / 0.62);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-visual-mode="home"] .empty-art .ea-drift {
+      animation: ea-drift 20s ease-in-out infinite alternate;
+    }
+  }
+  @keyframes ea-drift {
+    from {
+      transform: translateX(-4px);
+    }
+    to {
+      transform: translateX(4px);
+    }
+  }
+
   /* ─── 動きを減らす設定: このブロックの動きをすべて止める(必ずブロックの最後に置く) ───
      同じ詳細度なら後ろが勝つので、上の各指定と同じセレクタを並べる(砂時計は html 付きの指定に合わせる) */
   @media (prefers-reduced-motion: reduce) {
@@ -5778,8 +5882,17 @@ html[data-visual-mode="terminal"] .num {
     html[data-visual-mode="home"] .sg-stream,
     .completion-seal::after,
     .completion-seal .ico-svg path,
-    .toast-leaf {
+    .toast-leaf,
+    html[data-visual-mode="home"] .completion-seal,
+    html[data-visual-mode="home"] .empty-art .ea-drift {
       animation: none;
+    }
+    /* 第3弾: 傾きは media で外してあるが、念のため変形と照りも消す */
+    html[data-visual-mode="home"] .panel[data-running-card="true"][data-tilting="true"] {
+      transform: none;
+    }
+    .tilt-spec {
+      display: none;
     }
     .todo-check {
       transition: none;

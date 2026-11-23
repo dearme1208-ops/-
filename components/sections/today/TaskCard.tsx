@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { buzz } from "@/lib/haptics";
@@ -18,6 +18,23 @@ import type { DurationRange } from "@/lib/visuals";
 import type { AutoAllocationResult } from "@/lib/allocate";
 import type { ThemedMode } from "@/lib/theme";
 import type { ConditionLog, DailyTask, ProjectItem, TodoTask } from "@/lib/types";
+
+// 森モードの計測中カードの傾き(マウスの位置に合わせて最大±3°と、動く光の照り)。
+// 見た目は CSS 側で (hover:hover) and (pointer:fine) かつ動きを減らす設定でない時だけ効く。
+// ここではタッチや他モードでは変数を書かないだけにする
+const TILT_MAX_DEG = 3;
+let tiltMql: MediaQueryList | null = null;
+function tiltEnabled(): boolean {
+  if (typeof window === "undefined" || document.documentElement.dataset.visualMode !== "home") return false;
+  tiltMql ??= window.matchMedia("(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)");
+  return tiltMql.matches;
+}
+/** ボタンや入力の上では傾きを変えない(押す瞬間に的が動かないように) */
+const TILT_FREEZE_SELECTOR = "button, a, input, select, textarea, label, [role='button']";
+function clearTilt(el: HTMLElement) {
+  for (const k of ["--tilt-rx", "--tilt-ry", "--spec-x", "--spec-y"]) el.style.removeProperty(k);
+  el.removeAttribute("data-tilting");
+}
 
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -248,6 +265,50 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
   const openSegmentStart = task.segments.find((sg) => sg.end === undefined)?.start ?? null;
   const [finishEarlierAt, setFinishEarlierAt] = useState<number | null>(null);
   const finishEarlierOpen = task.status === "running" && openSegmentStart !== null && finishEarlierAt === openSegmentStart;
+  // 傾きの更新は1フレームに1回まで(rAFで間引く)
+  const tiltFrame = useRef<number | null>(null);
+  const tiltPoint = useRef<{ x: number; y: number } | null>(null);
+  const onTiltMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "mouse" || !tiltEnabled()) return;
+    if ((e.target as Element).closest?.(TILT_FREEZE_SELECTOR)) return;
+    tiltPoint.current = { x: e.clientX, y: e.clientY };
+    if (tiltFrame.current !== null) return;
+    const el = e.currentTarget;
+    tiltFrame.current = requestAnimationFrame(() => {
+      tiltFrame.current = null;
+      const p = tiltPoint.current;
+      if (!p) return;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return;
+      // -1〜1 に正規化(中央が0)
+      const nx = Math.max(-1, Math.min(1, ((p.x - r.left) / r.width) * 2 - 1));
+      const ny = Math.max(-1, Math.min(1, ((p.y - r.top) / r.height) * 2 - 1));
+      el.style.setProperty("--tilt-rx", `${(-ny * TILT_MAX_DEG).toFixed(2)}deg`);
+      el.style.setProperty("--tilt-ry", `${(nx * TILT_MAX_DEG).toFixed(2)}deg`);
+      el.style.setProperty("--spec-x", `${((nx * r.width) / 2).toFixed(1)}px`);
+      el.style.setProperty("--spec-y", `${((ny * r.height) / 2).toFixed(1)}px`);
+      el.setAttribute("data-tilting", "true");
+    });
+  };
+  // 計測中でなくなったら(一時停止・完了)残った傾きを消す。外れる時は待っている rAF も止める
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const isRunning = task.status === "running";
+  useEffect(() => {
+    if (isRunning) return;
+    if (cardRef.current) clearTilt(cardRef.current);
+  }, [isRunning]);
+  useEffect(
+    () => () => {
+      if (tiltFrame.current !== null) cancelAnimationFrame(tiltFrame.current);
+    },
+    [],
+  );
+  const onTiltLeave = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (tiltFrame.current !== null) cancelAnimationFrame(tiltFrame.current);
+    tiltFrame.current = null;
+    tiltPoint.current = null;
+    clearTilt(e.currentTarget);
+  };
   const guessInput = (
     <div className="flex items-center gap-1 text-xs text-cream/40">
       <span title="開始前後に自分で予想を立てておくと、完了時に的中度が見られます">🎯予想</span>
@@ -308,6 +369,9 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
       data-running-card={task.status === "running" ? "true" : undefined}
       // 状態ごとの板の見た目(森の一時停止の琥珀など)をCSSだけで切り替えるための印。読むのはCSSだけ
       data-status={task.status}
+      ref={cardRef}
+      onPointerMove={task.status === "running" ? onTiltMove : undefined}
+      onPointerLeave={task.status === "running" ? onTiltLeave : undefined}
       className={`panel relative p-4 transition-opacity ${cardClass} ${
         task.status !== "done" && dimmed ? "opacity-40" : ""
       } ${isDraggable ? "cursor-grab active:cursor-grabbing" : ""} ${
@@ -855,6 +919,8 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
           </div>
         )}
       </div>
+      {/* 森: 傾けた時の動く照り(CSS の .tilt-spec。ほかのモード・タッチでは出さない) */}
+      {task.status === "running" && <span className="tilt-spec" aria-hidden="true" />}
     </div>
   );}
 

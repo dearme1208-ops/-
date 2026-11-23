@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useVisualMode } from "@/lib/theme";
 import { mulberry32 } from "@/lib/forestScene";
+import { createFrameGate, getForestPerfProfile } from "@/lib/forestPerf";
 
 interface Spore {
   x: number;
@@ -36,22 +37,40 @@ export default function ForestAmbience() {
     if (!ctx) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
 
+    const perf = getForestPerfProfile();
     let spores: Spore[] = [];
     let w = 0;
     let h = 0;
     let raf = 0;
+    // 描くのは奇数フレーム(ヘッダーの林 ForestCanvas は偶数)。lib/forestPerf.ts の説明
+    const shouldDraw = createFrameGate(perf.ambienceFps, 1);
+
+    // 綿毛1粒の光。以前は毎フレーム粒ごとに放射グラデーションを作っていたので、
+    // 中心の不透明度を1にした1枚を焼いておき、描く時は大きさと globalAlpha だけを変える
+    const sprite = document.createElement("canvas");
+    sprite.width = sprite.height = 32;
+    const sctx = sprite.getContext("2d");
+    if (sctx) {
+      const g = sctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      g.addColorStop(0, "rgba(214,255,190,1)");
+      g.addColorStop(0.45, "rgba(150,220,130,0.35)");
+      g.addColorStop(1, "rgba(150,220,130,0)");
+      sctx.fillStyle = g;
+      sctx.fillRect(0, 0, 32, 32);
+    }
 
     const resize = () => {
       w = window.innerWidth;
       h = window.innerHeight;
-      // 本文の背後に敷く薄い層なので、解像度は1.5倍で頭打ちにして負荷を抑える
-      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      // 本文の背後に敷く、輪郭のないぼんやりした光の層なので、解像度は1倍(軽量モードは0.75倍)で
+      // 頭打ちにして負荷を抑える。画面全体の大きさがあるため、描くたびの転送量がそのまま効く
+      const dpr = Math.min(perf.ambienceDprCap, window.devicePixelRatio || 1);
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const rand = mulberry32(7717);
-      const count = Math.round(Math.min(30, Math.max(10, (w * h) / 46000)));
+      const count = Math.round(Math.min(30, Math.max(10, (w * h) / 46000)) * (perf.lite ? 0.6 : 1));
       spores = Array.from({ length: count }, () => ({
         x: rand() * w,
         y: rand() * h,
@@ -75,6 +94,8 @@ export default function ForestAmbience() {
 
     const start = performance.now();
     const loop = (now: number) => {
+      raf = window.requestAnimationFrame(loop);
+      if (!shouldDraw(now)) return;
       const t = (now - start) / 1000;
       ctx.clearRect(0, 0, w, h);
       ctx.globalCompositeOperation = "lighter";
@@ -85,17 +106,12 @@ export default function ForestAmbience() {
         const y = h + s.r * 4 - ((s.y + t * s.vy + parallax) % (h + s.r * 8));
         const x = s.x + Math.sin(t * s.as + s.phase) * s.ax;
         const pulse = 0.65 + 0.35 * Math.sin(t * s.as * 2.3 + s.phase);
-        const g = ctx.createRadialGradient(x, y, 0, x, y, s.r * 4);
-        g.addColorStop(0, `rgba(214,255,190,${s.alpha * pulse})`);
-        g.addColorStop(0.45, `rgba(150,220,130,${s.alpha * pulse * 0.35})`);
-        g.addColorStop(1, "rgba(150,220,130,0)");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(x, y, s.r * 4, 0, Math.PI * 2);
-        ctx.fill();
+        const R = s.r * 4;
+        ctx.globalAlpha = s.alpha * pulse;
+        ctx.drawImage(sprite, x - R, y - R, R * 2, R * 2);
       }
+      ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
-      raf = window.requestAnimationFrame(loop);
     };
 
     const stop = () => {
