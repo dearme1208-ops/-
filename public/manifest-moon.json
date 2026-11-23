@@ -1,0 +1,104 @@
+{
+  "name": "工程表 - 作業時間記録・集計",
+  "short_name": "工程表",
+  "description": "日々の作業時間を記録し、予定と実績を比較・集計するツール",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0C141E",
+  "theme_color": "#0B0B0C",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/icons/moon/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/moon/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/moon/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "📍 打刻(今の時刻を残す)",
+      "short_name": "打刻",
+      "url": "/?stamp=1",
+      "icons": [
+        {
+          "src": "/icons/moon/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "クイック起動①",
+      "short_name": "①",
+      "url": "/?quickstart=1",
+      "icons": [
+        {
+          "src": "/icons/moon/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "クイック起動②",
+      "short_name": "②",
+      "url": "/?quickstart=2",
+      "icons": [
+        {
+          "src": "/icons/moon/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "クイック起動③",
+      "short_name": "③",
+      "url": "/?quickstart=3",
+      "icons": [
+        {
+          "src": "/icons/moon/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "クイック起動④",
+      "short_name": "④",
+      "url": "/?quickstart=4",
+      "icons": [
+        {
+          "src": "/icons/moon/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "id": "/"
+}
