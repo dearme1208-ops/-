@@ -9,7 +9,7 @@ export const APP_ICON_OPTIONS = [
   { id: "forest", label: "森の大樹" },
   { id: "day", label: "昼の森" },
   { id: "moon", label: "月の時計" },
-  { id: "classic", label: "以前のアイコン" },
+  { id: "classic", label: "以前の形" },
 ] as const;
 
 export type AppIconId = (typeof APP_ICON_OPTIONS)[number]["id"];

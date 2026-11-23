@@ -1565,7 +1565,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
 
       <div className="panel space-y-3 p-4">
         <h3 className="section-title font-display">アプリのアイコン</h3>
-        <div role="radiogroup" aria-label="アプリのアイコン" className="flex flex-wrap gap-2">
+        <div role="radiogroup" aria-label="アプリのアイコン" className="grid max-w-md grid-cols-4 gap-2">
           {APP_ICON_OPTIONS.map((o) => {
             const on = appIcon === o.id;
             return (
@@ -1576,13 +1576,13 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
                 aria-checked={on}
                 data-testid={`app-icon-${o.id}`}
                 onClick={() => setAppIcon(o.id)}
-                className={`flex w-[84px] flex-col items-center gap-1 rounded-lg border p-2 text-xs ${
+                className={`flex min-w-0 flex-col items-center gap-1 rounded-lg border px-1 py-2 text-[11px] ${
                   on ? "border-cream bg-cream/10 text-cream" : "border-cream/20 text-cream/60"
                 }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={appIconPaths(o.id).icon192} alt="" width={56} height={56} className="h-14 w-14 rounded-xl" />
-                <span className="leading-tight">{o.label}</span>
+                <img src={appIconPaths(o.id).icon192} alt="" width={56} height={56} className="h-12 w-12 rounded-xl sm:h-14 sm:w-14" />
+                <span className="whitespace-nowrap leading-tight">{o.label}</span>
               </button>
             );
           })}
