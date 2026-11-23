@@ -7,6 +7,7 @@ import type { ThemedMode } from "@/lib/theme";
 import { formatHms } from "@/lib/time";
 import { useSetting } from "@/lib/settings";
 import Icon from "@/components/ui/Icon";
+import GrowthTree, { treeStageFromGrowthIndex } from "@/components/ui/GrowthTree";
 import type { WeekdayAverage } from "@/lib/weekday";
 import { openQuickCapture } from "@/lib/quickCapture";
 import { openHistory, openSearch } from "@/lib/globalPanels";
@@ -139,12 +140,23 @@ export default function TodayToolbar(props: TodayToolbarProps) {
         {props.growthStageEnabled &&
           todayTotalSeconds > 0 &&
           (() => {
-            const { stage } = computeGrowthStage(props.themedMode, todayTotalSeconds);
+            const { stage, index } = computeGrowthStage(props.themedMode, todayTotalSeconds);
+            const growthTitle = `本日の作業時間(${formatHms(todayTotalSeconds)})に応じた育成度`;
+            // 森モードは札の絵文字の代わりに「今日の木」を立てる。札の枠は付けず、横幅は元の札より広げない
+            // (390px で見出しと1行に収めるため)。木は上下に少しはみ出させ、行の高さを増やしすぎない
+            if (props.themedMode === "home") {
+              return (
+                <span className="inline-flex shrink-0 items-end gap-0.5 whitespace-nowrap text-xs font-semibold text-cream/85" title={growthTitle}>
+                  <GrowthTree stage={treeStageFromGrowthIndex(index)} size={36} label={stage.label} className="-my-2" />
+                  <span className="pb-px">{stage.label}</span>
+                </span>
+              );
+            }
             return (
               <span
                 className="chip"
                 data-size="lg"
-                title={`本日の作業時間(${formatHms(todayTotalSeconds)})に応じた育成度`}
+                title={growthTitle}
               >
                 {/* 対応する線画が無い段階(🌰 など)は Icon が絵文字のまま出す */}
                 <Icon emoji={stage.icon} /> {stage.label}
