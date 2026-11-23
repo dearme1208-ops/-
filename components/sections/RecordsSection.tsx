@@ -27,6 +27,7 @@ import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import DayReplayModal from "@/components/DayReplayModal";
 import { ConditionHeatmapPanel, WeekBlocks } from "@/components/viz/TodayViz";
+import WeekForest from "@/components/viz/WeekForest";
 import { IconLabel } from "@/components/ui/Icon";
 import EmptyArt from "@/components/ui/EmptyArt";
 
@@ -302,6 +303,8 @@ export default function RecordsSection() {
     <div className="space-y-4">
       {/* 記録を振り返る図(本日の作業から移した)。いちばん上は1週間の積み木。曜日×時間帯の調子は一覧の後 */}
       <WeekBlocks today={todayStr()} />
+      {/* 森モードだけ、同じ7日を木の並びでも見せる(他モードでは何も出さない) */}
+      <WeekForest end={todayStr()} today={todayStr()} title="🌲 この1週間の森" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <input

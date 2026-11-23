@@ -22,7 +22,7 @@
 // 差し込むか置き換えれば、blitLayer が同じ視差・ゆらぎで動かす(差し込む位置=上の重ね順のどこに挟むか)。
 //
 // 挿絵レイヤー(public/art/forest-{far,mid,near}.webp。黒+αのマスク):
-// ・loadForestArt で非同期に読み、読み終わるまでは上の手続き生成の木立のまま(読めなければずっとそのまま)
+// ・loadForestArt で非同期に読み、読み終わるまでは上の手続き生成の木立のまま(失敗時はオンライン復帰・タブ再表示で数回だけ読み直す)
 // ・buildForestScene({art}) の時に、時間帯×季節のパレットで source-in 着色した横並び(鏡映しで継ぎ目なし)の
 //   オフスクリーンへ焼く。中景の上辺の月明かりの縁取りも焼き込み。毎フレームは3枚の drawImage だけ
 // ・重ね順: backdrop → 星 → 天体 → 光芒 → 遠景 → 霧(奥) → 中景 → 蛍 → 霧(手前) → 舞うもの → 林冠 → 近景 → 周辺減光
@@ -659,19 +659,73 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** 3枚まとめて読む。1枚でも失敗したら null(手続き生成のまま) */
+function loadArtOnce(small: boolean): Promise<ForestArt> {
+  const sfx = small ? "-sm" : "";
+  return Promise.all(["far", "mid", "near"].map((n) => loadImage(`/art/forest-${n}${sfx}.webp`))).then(
+    ([far, mid, near]) => ({ far, mid, near }),
+  );
+}
+
+// 失敗後の再試行。オンライン復帰・タブ再表示のときだけ試し、前回から最低この間隔を空ける(回数=要素数)
+const ART_RETRY_GAP_MS = [4000, 15000, 60000];
+
+/**
+ * 3枚まとめて読む。1枚でも失敗したら、オンライン復帰かタブ再表示を待って最大3回まで読み直す
+ * (間隔は ART_RETRY_GAP_MS で広げる)。読めた時点で解決し、使い切ったら null(手続き生成のまま)。
+ * 同じ組は1本のPromiseを共有する
+ */
 export function loadForestArt(small: boolean): Promise<ForestArt | null> {
   const hit = artCache.get(small);
   if (hit) return hit;
-  if (typeof Image === "undefined") return Promise.resolve(null);
-  const sfx = small ? "-sm" : "";
-  const p = Promise.all(["far", "mid", "near"].map((n) => loadImage(`/art/forest-${n}${sfx}.webp`)))
-    .then(([far, mid, near]) => {
-      const art = { far, mid, near };
-      artReady.set(small, art);
-      return art;
-    })
-    .catch(() => null);
+  if (typeof Image === "undefined" || typeof window === "undefined") return Promise.resolve(null);
+  const p = new Promise<ForestArt | null>((resolve) => {
+    let fails = 0;
+    let lastAt = 0;
+    let busy = false;
+    let timer = 0;
+    const detach = () => {
+      window.removeEventListener("online", kick);
+      document.removeEventListener("visibilitychange", kick);
+      if (timer) window.clearTimeout(timer);
+      timer = 0;
+    };
+    const attempt = () => {
+      busy = true;
+      lastAt = Date.now();
+      loadArtOnce(small).then(
+        (art) => {
+          detach();
+          artReady.set(small, art);
+          resolve(art);
+        },
+        () => {
+          busy = false;
+          fails++;
+          if (fails > ART_RETRY_GAP_MS.length) {
+            detach();
+            resolve(null);
+          } else if (fails === 1) {
+            window.addEventListener("online", kick);
+            document.addEventListener("visibilitychange", kick);
+          }
+        },
+      );
+    };
+    function kick() {
+      if (busy || timer || document.hidden || navigator.onLine === false) return;
+      const wait = ART_RETRY_GAP_MS[fails - 1] - (Date.now() - lastAt);
+      if (wait <= 0) {
+        attempt();
+        return;
+      }
+      // 間隔が足りなければ、空いた時点で1度だけ試す(その時また背面・オフラインなら次の契機を待つ)
+      timer = window.setTimeout(() => {
+        timer = 0;
+        kick();
+      }, wait);
+    }
+    attempt();
+  });
   artCache.set(small, p);
   return p;
 }

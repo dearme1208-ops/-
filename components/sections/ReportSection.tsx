@@ -30,6 +30,7 @@ import type { DailyTask, TodoTask, WorkRecord } from "@/lib/types";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import OverlayLineChart from "@/components/charts/OverlayLineChart";
 import Modal from "@/components/ui/Modal";
+import WeekForest from "@/components/viz/WeekForest";
 
 const TOP_N = 10;
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -542,6 +543,9 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
             />
             {totalCost !== null && <StatTile label="💰 概算コスト" value={formatYen(totalCost)} />}
           </div>
+
+          {/* 森モードの週報だけ、月〜日を7本の木で見せる */}
+          {kind === "week" && <WeekForest end={todayStr(getPeriodRange(filter)?.end ?? new Date())} today={today} />}
 
           {narrative && (
             <div className="panel p-4">

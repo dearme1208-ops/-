@@ -54,6 +54,8 @@ export default function ForestCanvas() {
   const reducedRef = useRef(false);
   // 挿絵(public/art/forest-*.webp)。読み終わるまで・読めなかった時は null で、手続き生成の木立を描く
   const artRef = useRef<ForestArt | null>(null);
+  // artRef がどちらの組か(true=-sm)。null はまだ幅が決まらず選んでいない
+  const artSmallRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -76,6 +78,55 @@ export default function ForestCanvas() {
     let px = 0.5;
     let py = 0.5;
 
+    let disposed = false;
+    const start = performance.now();
+
+    const rebuild = () => {
+      const { w, h, dpr } = dimsRef.current;
+      if (w <= 0 || h <= 0) return;
+      sceneRef.current = buildForestScene(w, h, dpr, bandRef.current, seasonRef.current, undefined, {
+        lite: perf.lite,
+        art: artRef.current,
+      });
+    };
+
+    // 挿絵の組(-sm か原寸か)を今の幅で選び直す。違う組が要るときは裏で読み、
+    // 読めるまでは今の絵のまま(差し替えは次の描画で一度に行われ、ちらつかない)。組ごとの読み込みは lib 側で共有
+    let artWant: boolean | null = null;
+    const syncArt = () => {
+      const w = dimsRef.current.w;
+      if (disposed || w <= 1) return; // 幅0でマウントされた時は、実際の幅が分かるまで選ばない
+      const want = forestArtSmall(w, perf.lite);
+      if (want === artWant) return;
+      artWant = want;
+      const ready = peekForestArt(want);
+      if (ready) {
+        if (artSmallRef.current === want && artRef.current === ready) return;
+        artRef.current = ready;
+        artSmallRef.current = want;
+        rebuild();
+        return;
+      }
+      loadForestArt(want).then((art) => {
+        // 待つ間にまた閾値をまたいだら捨てる(読んだ組は lib にキャッシュされ、戻った時は即座に使える)
+        if (disposed || !art || artWant !== want) return;
+        artRef.current = art;
+        artSmallRef.current = want;
+        rebuild();
+        // 再生中は次の描く枠で反映される。止めている設定のときだけその場で描く
+        if (reduced) redraw();
+      });
+    };
+    // 窓のドラッグ中に何度も読みに行かないよう、組の選び直しは落ち着いてから
+    let artTimer = 0;
+    const syncArtSoon = () => {
+      if (artTimer) window.clearTimeout(artTimer);
+      artTimer = window.setTimeout(() => {
+        artTimer = 0;
+        syncArt();
+      }, 300);
+    };
+
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       const w = Math.max(1, Math.round(rect.width));
@@ -87,12 +138,11 @@ export default function ForestCanvas() {
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // 前に読み終えた挿絵があれば最初からそれで組む(再マウントで手続き生成が一瞬見えないように)
-      if (!artRef.current) artRef.current = peekForestArt(forestArtSmall(w, perf.lite));
-      sceneRef.current = buildForestScene(w, h, dpr, bandRef.current, seasonRef.current, undefined, {
-        lite: perf.lite,
-        art: artRef.current,
-      });
+      // まだ組を選んでいなければ今すぐ選ぶ(読み終えた挿絵があれば最初からそれで組み、再マウントで手続き生成が一瞬見えないように)。
+      // 選んだ後の閾値またぎは間引いて選び直す
+      if (artWant === null) syncArt();
+      else syncArtSoon();
+      rebuild();
     };
 
     const render = (t: number) => {
@@ -106,8 +156,11 @@ export default function ForestCanvas() {
       drawForestScene(ctx, scene, t, { px: ax, py: Math.min(1, ay + scrolled * 0.55), still: reduced });
     };
     renderRef.current = render;
+    // その場で1枚描き直す(大きさを変えるとキャンバスは消える。動きを止める設定では再生ループが回っていない)
+    function redraw() {
+      render(reduced ? 6.5 : (performance.now() - start) / 1000);
+    }
 
-    const start = performance.now();
     const loop = (now: number) => {
       raf = window.requestAnimationFrame(loop);
       if (!shouldDraw(now)) return;
@@ -157,30 +210,36 @@ export default function ForestCanvas() {
     const ro = new ResizeObserver(() => {
       resize();
       // 大きさを変えるとキャンバスは消えるので、次の描く枠を待たずにその場で描き直す
-      render(reduced ? 6.5 : (performance.now() - start) / 1000);
+      redraw();
     });
     ro.observe(canvas);
     io?.observe(canvas);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pointermove", onPointer, { passive: true });
 
-    // 挿絵を裏で読み、読めたらシーンを1度だけ焼き直す。差し替えは次の描画で一度に行われるので、
-    // 空白やちらつき・レイアウトのずれは出ない。失敗(null)なら手続き生成のまま
-    let disposed = false;
-    if (!artRef.current) {
-      loadForestArt(forestArtSmall(dimsRef.current.w, perf.lite)).then((art) => {
-        if (disposed || !art) return;
-        artRef.current = art;
-        const { w, h, dpr } = dimsRef.current;
-        if (w <= 0 || h <= 0) return;
-        sceneRef.current = buildForestScene(w, h, dpr, bandRef.current, seasonRef.current, undefined, { lite: perf.lite, art });
-        if (reduced) render(6.5);
-      });
+    // 画面の倍率だけが変わった時(別モニタへ移動・ズーム)は ResizeObserver が鳴らないので、
+    // 今の倍率に一致するメディアクエリを張り、外れたら焼き直して新しい倍率で張り直す
+    let dprMq: MediaQueryList | null = null;
+    const onDpr = () => {
+      watchDpr();
+      resize(); // 上限(sceneDprCap)で丸めた値が同じなら何もしない
+      redraw();
+    };
+    function watchDpr() {
+      dprMq?.removeEventListener("change", onDpr);
+      dprMq = window.matchMedia?.(`(resolution: ${window.devicePixelRatio || 1}dppx)`) ?? null;
+      dprMq?.addEventListener?.("change", onDpr);
     }
+    watchDpr();
+
+    // 挿絵は resize 内の syncArt で裏読みし、読めたらシーンを1度だけ焼き直す。
+    // 差し替えは次の描画で一度に行われるので、空白やちらつき・レイアウトのずれは出ない
 
     return () => {
       disposed = true;
       stop();
+      if (artTimer) window.clearTimeout(artTimer);
+      dprMq?.removeEventListener("change", onDpr);
       ro.disconnect();
       io?.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
