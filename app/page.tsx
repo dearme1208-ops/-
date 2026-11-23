@@ -14,6 +14,7 @@ import Modal from "@/components/ui/Modal";
 import ThemeInit from "@/components/ThemeInit";
 import VisualModeInit from "@/components/VisualModeInit";
 import AccessibilityInit from "@/components/AccessibilityInit";
+import AppIconSync from "@/components/AppIconSync";
 import StoragePersistInit from "@/components/StoragePersistInit";
 import AutoBackupInit from "@/components/AutoBackupInit";
 import LobotomyOverrunWatcher from "@/components/LobotomyOverrunWatcher";
@@ -260,6 +261,7 @@ export default function HomePage() {
       <ThemeInit />
       <VisualModeInit />
       <AccessibilityInit />
+      <AppIconSync />
       <StoragePersistInit />
       <AutoBackupInit />
       <LobotomyOverrunWatcher />

@@ -26,6 +26,7 @@ import { showUndoToast } from "@/lib/toast";
 import { downloadTextFile } from "@/lib/report";
 import { todayStr } from "@/lib/time";
 import { ACCENT_PRESETS, DEFAULT_ACCENT_RGB } from "@/lib/theme";
+import { APP_ICON_OPTIONS, APP_ICON_SETTING_KEY, DEFAULT_APP_ICON, appIconPaths, normalizeAppIcon } from "@/lib/appIcon";
 import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { normalizeAddTaskStyle } from "@/components/sections/AddTaskDialog";
 import { CONDITION_LEVELS } from "@/lib/condition";
@@ -264,6 +265,8 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
     "5"
   );
   const [accentRgb, setAccentRgb] = useSetting("theme.accentRgb", DEFAULT_ACCENT_RGB);
+  const [appIconRaw, setAppIcon] = useSetting(APP_ICON_SETTING_KEY, DEFAULT_APP_ICON);
+  const appIcon = normalizeAppIcon(appIconRaw);
   const [fontScale, setFontScale] = useSetting("accessibility.fontScale", "md");
   const [highContrastStr, setHighContrastStr] = useSetting("accessibility.highContrast", "false");
   const highContrast = highContrastStr === "true";
@@ -1557,6 +1560,35 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
         </div>
         <p className="text-xs text-cream/65">
           警告・重要・強調表示に使う単色アクセントの色相を変更します（配色方針自体は単色のまま維持されます）。
+        </p>
+      </div>
+
+      <div className="panel space-y-3 p-4">
+        <h3 className="section-title font-display">アプリのアイコン</h3>
+        <div role="radiogroup" aria-label="アプリのアイコン" className="flex flex-wrap gap-2">
+          {APP_ICON_OPTIONS.map((o) => {
+            const on = appIcon === o.id;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                data-testid={`app-icon-${o.id}`}
+                onClick={() => setAppIcon(o.id)}
+                className={`flex w-[84px] flex-col items-center gap-1 rounded-lg border p-2 text-xs ${
+                  on ? "border-cream bg-cream/10 text-cream" : "border-cream/20 text-cream/60"
+                }`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={appIconPaths(o.id).icon192} alt="" width={56} height={56} className="h-14 w-14 rounded-xl" />
+                <span className="leading-tight">{o.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-cream/65">
+          ブラウザのタブのアイコンはすぐ変わります。ホーム画面に追加したアプリのアイコンは、端末やブラウザが設定を読み直した時に変わります（Androidでは数時間〜1日ほどかかることがあります。すぐ変えたい時はホーム画面から削除して追加し直してください）。
         </p>
       </div>
 
