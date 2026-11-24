@@ -97,6 +97,13 @@ export interface TaskCardContext {
   /** 本日の体調ログ。完了カードの体調表示(taskOwnConditionLog等)が依存するので、
    *  完了カードの描き直しを省く判定(下のmemo)で、変わったかどうかを見るために渡す */
   conditionLogs: ConditionLog[] | undefined;
+  /** 完了した作業の「分ける…」「まとめる…」(⋯ の中) */
+  onSplitTask?: (task: DailyTask) => void;
+  onMergeTask?: (task: DailyTask) => void;
+  /** 予定のカードを1つ上/下へ(スマホではドラッグで並べ替えられないため ⋯ の中に出す) */
+  movePendingTask?: (task: DailyTask, dir: -1 | 1) => void;
+  /** 予定のカードの並び(上へ/下へを端で押せなくするため) */
+  pendingOrderIds?: string[];
 }
 
 // 手段(この作業をどんなやり方でしているか: Excel・マクロ・Claudeなど)の行。計測中・一時停止中・予定の
@@ -790,6 +797,33 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
             )}
             </div>
           )}
+          {task.status === "pending" && moreOpen && ctx.movePendingTask && (
+            (() => {
+              const ids = ctx.pendingOrderIds ?? [];
+              const idx = ids.indexOf(task.id);
+              return (
+                <div className="flex items-center gap-2" data-testid="pending-reorder">
+                  <span className="caption">並び</span>
+                  <button
+                    className="btn-pill-outline px-3 py-1.5 text-xs"
+                    disabled={idx <= 0}
+                    onClick={() => ctx.movePendingTask?.(task, -1)}
+                    aria-label="上へ"
+                  >
+                    ▲ 上へ
+                  </button>
+                  <button
+                    className="btn-pill-outline px-3 py-1.5 text-xs"
+                    disabled={idx < 0 || idx >= ids.length - 1}
+                    onClick={() => ctx.movePendingTask?.(task, 1)}
+                    aria-label="下へ"
+                  >
+                    ▼ 下へ
+                  </button>
+                </div>
+              );
+            })()
+          )}
           {task.status === "running" && (
             <>
               {/* 主ボタンの下の1行に、左に「⏪」、右に「⋯」をまとめる(以前は別々の行で、カードが縦に伸びていた) */}
@@ -861,9 +895,27 @@ function TaskCard({ task, ctx }: { task: DailyTask; ctx: TaskCardContext }) {
                     );
                   })()}
               </div>
-              <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setDeletingCompletedTask(task)}>
-                削除
-              </button>
+              <span className="ml-auto flex items-center gap-1">
+                <button className="text-xs text-cream/50 hover:text-alert" onClick={() => setDeletingCompletedTask(task)}>
+                  削除
+                </button>
+                {(ctx.onSplitTask || ctx.onMergeTask) && moreButton}
+              </span>
+            </div>
+          )}
+          {/* 完了: 「⋯」で開く、時刻で分ける・ほかの完了とまとめる */}
+          {task.status === "done" && moreOpen && (ctx.onSplitTask || ctx.onMergeTask) && (
+            <div className="flex flex-wrap items-center gap-2 [&>button]:px-3 [&>button]:py-1.5" data-testid="done-more">
+              {ctx.onSplitTask && task.startedAt && task.endedAt && (
+                <button className="btn-pill-outline text-xs" onClick={() => ctx.onSplitTask?.(task)}>
+                  分ける…
+                </button>
+              )}
+              {ctx.onMergeTask && (
+                <button className="btn-pill-outline text-xs" onClick={() => ctx.onMergeTask?.(task)}>
+                  まとめる…
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -20,6 +20,7 @@ import GlobalErrorToast from "@/components/GlobalErrorToast";
 import AutoBackupInit from "@/components/AutoBackupInit";
 import LobotomyOverrunWatcher from "@/components/LobotomyOverrunWatcher";
 import ToastHost from "@/components/ui/ToastHost";
+import ConfirmHost from "@/components/ui/ConfirmDialog";
 import ConfettiHost from "@/components/ui/ConfettiHost";
 import OrphanTaskModal from "@/components/OrphanTaskModal";
 import RunningNowPill from "@/components/RunningNowPill";
@@ -268,6 +269,7 @@ export default function HomePage() {
       <AutoBackupInit />
       <LobotomyOverrunWatcher />
       <ToastHost />
+      <ConfirmHost />
       <ConfettiHost />
       <OnboardingGuide />
       <OrphanTaskModal />

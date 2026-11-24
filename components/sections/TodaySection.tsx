@@ -33,6 +33,7 @@ import {
   updateRecordBoundsAfterEdit,
   pauseDailyTask,
   enforceSingleRunning,
+  UNDO_FINISH_STALE_MESSAGE,
   type FinishDailyTaskOptions,
 } from "@/lib/tasks";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
@@ -92,7 +93,19 @@ import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTask
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import FinishAtDialog from "@/components/sections/FinishAtDialog";
 import ProvisionalTaskCard, { type ProvisionalSecondHalf, type ProvisionalTarget } from "@/components/sections/ProvisionalTaskCard";
-import { appendSegmentsKeepingRecorded, closeSegmentsAt, closedSegmentsMs, provisionalCarry, splitSegmentsAt } from "@/lib/provisionalSplit";
+import {
+  appendSegmentsKeepingRecorded,
+  closeSegmentsAt,
+  closedSegmentsMs,
+  mergeDoneDailyTasks,
+  provisionalCarry,
+  splitDoneDailyTask,
+  splitSegmentsAt,
+  undoDoneTaskEdit,
+  type SplitSecondPart,
+} from "@/lib/provisionalSplit";
+import { deleteFromTrash, putInTrash } from "@/lib/trash";
+import { MergeDoneTaskDialog, SplitDoneTaskDialog } from "@/components/sections/today/DoneTaskSplitMerge";
 import { closedMs, retimeSegments } from "@/lib/segmentEdit";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
@@ -130,7 +143,7 @@ import LinkedCompletionDialog, {
 } from "@/components/sections/today/LinkedCompletionDialog";
 import SecondaryProjectsDialog from "@/components/sections/today/SecondaryProjectsDialog";
 import TaskCard, { type TaskCardContext } from "@/components/sections/today/TaskCard";
-import TodayToolbar from "@/components/sections/today/TodayToolbar";
+import TodayToolbar, { shortDateLabel } from "@/components/sections/today/TodayToolbar";
 import { useGeoArrivalWatch, useGeoMovementWatch, useWakeLock } from "@/components/sections/today/useLocationWatch";
 import { useTodayNotifications } from "@/components/sections/today/useTodayNotifications";
 import { useWeatherWatch } from "@/components/sections/today/useWeatherWatch";
@@ -152,6 +165,9 @@ import { TODAY_ACTION_EVENT } from "@/lib/todayActions";
 import type { QuickStamp } from "@/lib/types";
 
 const OVERRUN_REPROMPT_MS = 20 * 60 * 1000;
+// 過去の日のカードに渡す、空の計測状態(毎回作り直すと完了カードの描き直しを省けないので固定する)
+const EMPTY_IDS = new Set<string>();
+const EMPTY_SECONDS = new Map<string, number>();
 
 // 最後に操作した時刻を、同じアプリを開いているほかの窓と共有するためのキー(放置検知に使う)
 const ACTIVITY_KEY = "koutei.lastActivityAt";
@@ -394,6 +410,27 @@ export default function TodaySection({
     () => db.dailyTasks.where("date").equals(date).sortBy("order"),
     [date]
   );
+  // 過去の日を見ている時のその日(null=今日)。覚えない(開けば今日)。
+  // 見ている日が変わっても、自動の処理・開始・タイマーはすべて本当の今日(date・tasks)のまま動かす
+  const [pastDate, setPastDate] = useState<string | null>(null);
+  const viewDate = pastDate && pastDate < date ? pastDate : date;
+  const isPastView = viewDate !== date;
+  const pastTasks = useLiveQuery(
+    async () => (isPastView ? await db.dailyTasks.where("date").equals(viewDate).sortBy("order") : []),
+    [isPastView, viewDate]
+  );
+  const pastDoneTasks = useMemo(
+    () =>
+      (pastTasks ?? [])
+        .filter((t) => t.status === "done" && !t.isProvisional)
+        .sort((a, b) => (a.endedAt ?? a.startedAt ?? 0) - (b.endedAt ?? b.startedAt ?? 0) || a.order - b.order),
+    [pastTasks]
+  );
+  /** その作業の日の作業一覧(今日なら今日、過去の日ならその日) */
+  const tasksOfDay = (d: string): DailyTask[] => (d === date ? (tasks ?? []) : d === viewDate ? (pastTasks ?? []) : []);
+  // 「分ける…」「まとめる…」の対象
+  const [splittingTask, setSplittingTask] = useState<DailyTask | null>(null);
+  const [mergingTask, setMergingTask] = useState<DailyTask | null>(null);
   // 作業の実測は同時に1つだけ。どの入口から始めても(仮計測・前日から計測中の作業も含め)、
   // 計測中が2つになったら後から始めた方だけを残す(lib/tasks.ts enforceSingleRunning)
   const allRunning = useLiveQuery(() => db.dailyTasks.where("status").equals("running").toArray(), []);
@@ -1721,7 +1758,7 @@ export default function TodaySection({
   function findPreviousTaskEndedAt(task: DailyTask): number | null {
     const start = taskStartEdge(task);
     let best: number | null = null;
-    for (const t of tasks ?? []) {
+    for (const t of tasksOfDay(task.date)) {
       if (t.id === task.id || t.isProvisional || t.status !== "done") continue;
       const end = taskEndEdge(t);
       if (end === undefined || (start !== undefined && end > start)) continue;
@@ -2057,6 +2094,8 @@ export default function TodaySection({
     const recordedMs = snapshot.recordedMs ?? 0;
     const lostMs = Math.max(0, segmentsAccumulatedMs(snapshot, Date.now()) - recordedMs);
     await db.dailyTasks.delete(task.id);
+    // 元に戻すの通知が消えた後でも、ゴミ箱から戻せるようにする
+    const trashId = await putInTrash("dailyTask", `作業「${workLabel(task)}」（${shortDateLabel(task.date)}）`, { dailyTasks: [snapshot] });
     const lostPart = lostMs >= 60_000 ? `${recordedMs > 0 ? "続きに" : ""}計測した${formatHms(Math.round(lostMs / 1000))}も消えました` : "";
     const keptPart = recordedMs > 0 ? `前回までの${formatHms(Math.round(recordedMs / 1000))}は実績に残ります` : "";
     const note = [lostPart, keptPart].filter(Boolean).join("。");
@@ -2064,7 +2103,10 @@ export default function TodaySection({
       `「${workLabel(task)}」を削除しました${note ? `（${note}）` : ""}`,
       async () => {
         // 同じIDの作業がもう作り直されていたら、古い控えで上書きしない
-        if (!(await db.dailyTasks.get(snapshot.id))) await db.dailyTasks.put(snapshot);
+        if (!(await db.dailyTasks.get(snapshot.id))) {
+          await db.dailyTasks.put(snapshot);
+          if (trashId) await deleteFromTrash(trashId);
+        }
       },
       8000
     );
@@ -2123,7 +2165,19 @@ export default function TodaySection({
     const parts = ["本日の作業"];
     if (deleteRecord && existing) parts.push("実績");
     if (deleteMaster && masterSnapshot) parts.push("作業マスタ");
+    // ゴミ箱にも入れる。実績は丸ごと消した時だけ行を入れる(差し引いただけの実績は残っているので、戻す時に上書きしない)
+    const recordGone = !!recordSnapshot && !(await db.records.get(recordSnapshot.id));
+    const trashId = await putInTrash(
+      "dailyTask",
+      `作業「${workLabel(task)}」（${shortDateLabel(task.date)}）${deleteRecord && existing && !recordGone ? "※実績から差し引いた分は戻りません" : ""}`,
+      {
+        dailyTasks: [taskSnapshot],
+        records: recordGone && recordSnapshot ? [recordSnapshot] : [],
+        masterTasks: masterSnapshot ? [masterSnapshot] : [],
+      }
+    );
     showUndoToast(`「${workLabel(task)}」の${parts.join("・")}を削除しました`, async () => {
+      if (trashId) await deleteFromTrash(trashId);
       // 「元に戻す」は操作の履歴から、しばらく経ってからでも押せる。削除した時点の控えで丸ごと
       // 上書きすると、その後に同じ実績へ入った分(別の作業の完了・時刻の編集など)が消えるため、
       // 実績が残っていればこの作業の分だけを足し戻す。控えから戻すのは、実績が無くなっている時だけ
@@ -2167,6 +2221,93 @@ export default function TodaySection({
     const [moved] = reordered.splice(fromIdx, 1);
     reordered.splice(toIdx, 0, moved);
     await Promise.all(reordered.map((t, i) => db.dailyTasks.update(t.id, { order: i })));
+  }
+
+  // スマホの「上へ」「下へ」(ドラッグの代わり)。並べ替えはドラッグと同じ reorderPendingTask を通す
+  const pendingOrderIds = useMemo(
+    () => (tasks ?? []).filter((t) => t.status === "pending" && !t.isProvisional).sort((a, b) => a.order - b.order).map((t) => t.id),
+    [tasks]
+  );
+  async function movePendingTask(task: DailyTask, dir: -1 | 1) {
+    const idx = pendingOrderIds.indexOf(task.id);
+    const target = pendingOrderIds[idx + dir];
+    if (idx < 0 || !target) return;
+    await reorderPendingTask(task.id, target);
+  }
+
+  // 完了した作業を時刻で2つに分ける(lib/provisionalSplit.ts)。「元に戻す」はその後に変わっていれば戻さない
+  async function splitDoneTask(task: DailyTask, atMs: number, second?: SplitSecondPart): Promise<TaskEditResult> {
+    const r = await splitDoneDailyTask(task.id, atMs, second);
+    if (r.status !== "ok") return { ok: false, message: r.message };
+    setSplittingTask(null);
+    showUndoToast(`「${workLabel(task)}」を${formatClock(atMs)}で2つに分けました`, async () => {
+      if (!(await undoDoneTaskEdit(r.undo))) showUndoToast(UNDO_FINISH_STALE_MESSAGE);
+    });
+    return { ok: true };
+  }
+
+  // 同じ日の完了した作業2つを1つにまとめる
+  async function mergeDoneTask(task: DailyTask, otherId: string, nameFrom: "keep" | "other"): Promise<TaskEditResult> {
+    const other = tasksOfDay(task.date).find((t) => t.id === otherId);
+    const r = await mergeDoneDailyTasks(task.id, otherId, nameFrom);
+    if (r.status !== "ok") return { ok: false, message: r.message };
+    setMergingTask(null);
+    const label = nameFrom === "other" && other ? workLabel(other) : workLabel(task);
+    showUndoToast(`「${label}」に1つにまとめました`, async () => {
+      if (!(await undoDoneTaskEdit(r.undo))) showUndoToast(UNDO_FINISH_STALE_MESSAGE);
+    });
+    return { ok: true };
+  }
+
+  // 完了ガントのドラッグで時刻を直す(今日・過去の日どちらも)
+  async function commitGanttTimes(task: DailyTask, startedAt: number, endedAt: number) {
+    // ドラッグのたびに確認は出さず、すぐ反映して「元に戻す」を出す。戻せるよう、直す前の作業を控える
+    const before = (await db.dailyTasks.get(task.id)) ?? task;
+    const result = await applyTaskEdit(task, task.category, task.name, undefined, task.note, task.method, startedAt, endedAt);
+    if (!result.ok) {
+      showUndoToast(result.message);
+      return;
+    }
+    const after = await db.dailyTasks.get(task.id);
+    showUndoToast(`「${workLabel(task)}」の時刻を ${formatClock(startedAt)}〜${formatClock(endedAt)} に変更しました`, async () => {
+      // 履歴からは後になってからでも押せる。今の作業を読み直し、今回の変更のままの時だけ戻す
+      // (その後に時刻や時間を直していたら、古い時刻で上書きしない)
+      const now = await db.dailyTasks.get(task.id);
+      if (!now || !after) return;
+      if (
+        now.status !== "done" ||
+        now.startedAt !== after.startedAt ||
+        now.endedAt !== after.endedAt ||
+        now.accumulatedMs !== after.accumulatedMs
+      ) {
+        showUndoToast(`「${workLabel(task)}」はその後に変更されているため、時刻を元に戻しませんでした`);
+        return;
+      }
+      if (before.startedAt == null || before.endedAt == null) return;
+      // 実績(同じ日の同じ作業の合算)は、控えで上書きせず、変更の時と同じ経路で差分だけ直す
+      const undone = await applyTaskEdit(now, now.category, now.name, undefined, now.note, now.method, before.startedAt, before.endedAt);
+      if (!undone.ok) {
+        showUndoToast(undone.message);
+        return;
+      }
+      // 一時停止を挟んだ作業は、変更で落とした区間が上の戻しでは1本につながり、止めていた間まで
+      // 時間に入ってしまう。区間を元の形に戻し、実績には食い違った分だけを足し引きする
+      const restored = await db.dailyTasks.get(task.id);
+      if (!restored || JSON.stringify(restored.segments) === JSON.stringify(before.segments)) return;
+      const diffSeconds = Math.round(before.accumulatedMs / 1000) - Math.round(restored.accumulatedMs / 1000);
+      await db.dailyTasks.update(task.id, {
+        segments: before.segments,
+        accumulatedMs: before.accumulatedMs,
+        recordedMs: before.accumulatedMs,
+        recordedSegmentCount: before.segments.length,
+      });
+      if (diffSeconds === 0) return;
+      const masterId = await masterIdOfDoneTask(restored);
+      const record = masterId ? await findMergeTargetRecord(restored.date, masterId, restored) : undefined;
+      if (!record || !masterId) return;
+      await db.records.update(record.id, { seconds: Math.max(0, record.seconds + diffSeconds) });
+      await recomputeEstimateFromRecords(masterId);
+    });
   }
 
   async function pauseTask(task: DailyTask) {
@@ -2777,14 +2918,15 @@ export default function TodaySection({
 
     setScheduleImportErrors(errors);
     if (rows.length === 0) {
-      setScheduleImportResult(notes.join(" / "));
-      if (errors.length === 0) {
-        alert(
-          isIcs
+      // 以前は alert で知らせていた。画面を止めないよう、取り込み結果の行と通知で知らせる
+      const empty =
+        errors.length === 0
+          ? isIcs
             ? `今日から${DEFAULT_IMPORT_DAYS}日以内に、取り込める予定が見つかりませんでした。`
             : "取り込める予定がありませんでした（このCSVにはヘッダーのみで、予定のデータ行がありません）。"
-        );
-      }
+          : "";
+      setScheduleImportResult([empty, ...notes].filter(Boolean).join(" / "));
+      if (empty) showUndoToast(empty);
       return;
     }
     const { created } = await importScheduleRows(rows);
@@ -3024,6 +3166,22 @@ export default function TodaySection({
     setSecondaryProjectsTask,
     onOpenTodoDetail,
     onOpenProjectEdit,
+    onSplitTask: setSplittingTask,
+    onMergeTask: setMergingTask,
+    movePendingTask,
+    pendingOrderIds,
+  };
+  // 過去の日のカード: 計測・予測・体調(今日の体調ログ)は今日だけのものなので外す
+  const pastCardCtx: TaskCardContext = {
+    ...taskCardCtx,
+    conditionEnabled: false,
+    nextTaskId: null,
+    provisionalActive: false,
+    runningTaskIds: EMPTY_IDS,
+    runningTaskKeys: EMPTY_IDS,
+    predictedSecondsByTaskId: EMPTY_SECONDS,
+    projectedFinishByTaskId: EMPTY_SECONDS,
+    effectiveAllocation: null,
   };
 
   return (
@@ -3118,8 +3276,56 @@ export default function TodaySection({
         onDownloadScheduleTemplate={downloadScheduleTemplate}
         onImportScheduleFile={importScheduleFile}
         onRegenerate={requestGenerateFromTemplate}
+        viewDate={viewDate}
+        onShiftDay={(delta) => {
+          const next = shiftDateStr(viewDate, delta);
+          setPastDate(next < date ? next : null);
+        }}
+        onToday={() => setPastDate(null)}
       />
 
+      {isPastView ? (
+        <div className="space-y-3" data-testid="past-day-view">
+          <div className="panel flex flex-wrap items-center gap-x-2 gap-y-1 border border-cream/30 px-4 py-2.5 text-sm" role="status">
+            <span className="font-bold text-cream">{shortDateLabel(viewDate)}を表示中</span>
+            <span className="text-cream/40" aria-hidden="true">
+              —
+            </span>
+            <button className="font-bold text-accent underline underline-offset-2" onClick={() => setPastDate(null)}>
+              今日へ戻る
+            </button>
+            <p className="caption w-full">時刻・手段・名前の直し、削除、分ける・まとめるができます。開始や計測は今日だけです。</p>
+          </div>
+          {pastTasks === undefined ? (
+            <div className="min-h-[40vh]" aria-busy="true" />
+          ) : pastDoneTasks.length === 0 ? (
+            <div className="empty-state">
+              <EmptyArt name="done" />
+              <p>この日の完了した作業はありません</p>
+            </div>
+          ) : (
+            <>
+              {pastDoneTasks.map((task) => (
+                <TaskCard key={task.id} task={task} ctx={pastCardCtx} />
+              ))}
+              <div className={pastDoneTasks.length > 20 ? "max-h-[60vh] overflow-y-auto" : ""}>
+                <CompletedTasksGantt
+                  tasks={pastDoneTasks}
+                  date={viewDate}
+                  onOpenEdit={(task) => setEditingTask(task)}
+                  onCommitTimes={commitGanttTimes}
+                />
+              </div>
+            </>
+          )}
+          {(pastTasks ?? []).some((t) => t.status !== "done" && !t.isProvisional) && (
+            <p className="caption px-1">
+              この日にはほかに、完了していない作業が{(pastTasks ?? []).filter((t) => t.status !== "done" && !t.isProvisional).length}件あります。
+            </p>
+          )}
+        </div>
+      ) : (
+      <>
       <TimeboxBand boxes={timeboxes} now={now} workLabel={workLabel} onEdit={() => setShowTimebox(true)} />
 
       {/* ペルソナ風: 日めくりと、期日の迫る仕事の予告状 */}
@@ -3315,55 +3521,7 @@ export default function TodaySection({
           tasks={nonProvisionalSortedTasks}
           date={date}
           onOpenEdit={(task) => setEditingTask(task)}
-          onCommitTimes={async (task, startedAt, endedAt) => {
-            // ドラッグのたびに確認は出さず、すぐ反映して「元に戻す」を出す。戻せるよう、直す前の作業を控える
-            const before = (await db.dailyTasks.get(task.id)) ?? task;
-            const result = await applyTaskEdit(task, task.category, task.name, undefined, task.note, task.method, startedAt, endedAt);
-            if (!result.ok) {
-              showUndoToast(result.message);
-              return;
-            }
-            const after = await db.dailyTasks.get(task.id);
-            showUndoToast(`「${workLabel(task)}」の時刻を ${formatClock(startedAt)}〜${formatClock(endedAt)} に変更しました`, async () => {
-              // 履歴からは後になってからでも押せる。今の作業を読み直し、今回の変更のままの時だけ戻す
-              // (その後に時刻や時間を直していたら、古い時刻で上書きしない)
-              const now = await db.dailyTasks.get(task.id);
-              if (!now || !after) return;
-              if (
-                now.status !== "done" ||
-                now.startedAt !== after.startedAt ||
-                now.endedAt !== after.endedAt ||
-                now.accumulatedMs !== after.accumulatedMs
-              ) {
-                showUndoToast(`「${workLabel(task)}」はその後に変更されているため、時刻を元に戻しませんでした`);
-                return;
-              }
-              if (before.startedAt == null || before.endedAt == null) return;
-              // 実績(同じ日の同じ作業の合算)は、控えで上書きせず、変更の時と同じ経路で差分だけ直す
-              const undone = await applyTaskEdit(now, now.category, now.name, undefined, now.note, now.method, before.startedAt, before.endedAt);
-              if (!undone.ok) {
-                showUndoToast(undone.message);
-                return;
-              }
-              // 一時停止を挟んだ作業は、変更で落とした区間が上の戻しでは1本につながり、止めていた間まで
-              // 時間に入ってしまう。区間を元の形に戻し、実績には食い違った分だけを足し引きする
-              const restored = await db.dailyTasks.get(task.id);
-              if (!restored || JSON.stringify(restored.segments) === JSON.stringify(before.segments)) return;
-              const diffSeconds = Math.round(before.accumulatedMs / 1000) - Math.round(restored.accumulatedMs / 1000);
-              await db.dailyTasks.update(task.id, {
-                segments: before.segments,
-                accumulatedMs: before.accumulatedMs,
-                recordedMs: before.accumulatedMs,
-                recordedSegmentCount: before.segments.length,
-              });
-              if (diffSeconds === 0) return;
-              const masterId = await masterIdOfDoneTask(restored);
-              const record = masterId ? await findMergeTargetRecord(restored.date, masterId, restored) : undefined;
-              if (!record || !masterId) return;
-              await db.records.update(record.id, { seconds: Math.max(0, record.seconds + diffSeconds) });
-              await recomputeEstimateFromRecords(masterId);
-            });
-          }}
+          onCommitTimes={commitGanttTimes}
         />
         </div>
       )}
@@ -3726,6 +3884,8 @@ export default function TodaySection({
       </div>
       </div>
       )}
+      </>
+      )}
 
       <BottomTabBar
         items={[
@@ -3743,7 +3903,11 @@ export default function TodaySection({
           { key: "board", icon: "🗂️", label: "ボード" },
         ]}
         activeKey={taskViewTab}
-        onSelect={(k) => setTaskViewTab(k as typeof taskViewTab)}
+        onSelect={(k) => {
+          // 過去の日を見ている時にタブを押したら、今日へ戻る
+          setPastDate(null);
+          setTaskViewTab(k as typeof taskViewTab);
+        }}
         style={tabBarStyle as TabBarStyle}
         adaptiveEmphasis={tabBarAdaptiveEmphasis}
         leading={quickStampButtonStr === "true" ? <QuickStampButton onStamp={stampNow} /> : undefined}
@@ -3905,6 +4069,25 @@ export default function TodaySection({
             return result;
           }}
           onClose={() => setEditingTask(null)}
+        />
+      )}
+
+      {splittingTask && (
+        <SplitDoneTaskDialog
+          task={splittingTask}
+          masters={allMasterTasks ?? []}
+          onSplit={(atMs, second) => splitDoneTask(splittingTask, atMs, second)}
+          onClose={() => setSplittingTask(null)}
+        />
+      )}
+
+      {mergingTask && (
+        <MergeDoneTaskDialog
+          task={mergingTask}
+          candidates={tasksOfDay(mergingTask.date).filter((t) => t.id !== mergingTask.id && t.status === "done" && !t.isProvisional)}
+          workLabel={workLabel}
+          onMerge={(otherId, nameFrom) => mergeDoneTask(mergingTask, otherId, nameFrom)}
+          onClose={() => setMergingTask(null)}
         />
       )}
 

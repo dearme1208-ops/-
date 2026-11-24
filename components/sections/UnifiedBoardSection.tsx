@@ -10,7 +10,7 @@ import { todoLabel } from "@/lib/todoLabel";
 import { useSetting } from "@/lib/settings";
 import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib/time";
 import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask, pauseDailyTask } from "@/lib/tasks";
-import { completeTodoTask, DEFAULT_TAG_PRESETS, effectiveTag, normalizeUrl, parsePresetList } from "@/lib/todo";
+import { completeTodoTask, DEFAULT_TAG_PRESETS, effectiveTag, normalizeUrl, parsePresetList, todoTrashLabel, trashTodos } from "@/lib/todo";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { openMailAttachment, readFileAsDataUrl } from "@/lib/mailImport";
 import { getRiskTier, useVisualMode } from "@/lib/theme";
@@ -853,13 +853,16 @@ export default function UnifiedBoardSection({
   // サブタスクの✕は確認なしですぐ消し、知らせの「元に戻す」で戻せるようにする
   // (その下の子も一緒に控える。戻す時は親が残っていて、同じidが無い時だけ足す)
   async function deleteSubtask(sub: TodoTask) {
-    const removed = await db.transaction("rw", db.todoTasks, async () => {
+    const { removed, trashId } = await db.transaction("rw", db.todoTasks, db.trash, async () => {
       const children = await db.todoTasks.where("parentTaskId").equals(sub.id).toArray();
+      // ゴミ箱にも入れる(トーストが消えたあとも7日間は戻せる)
+      const trashId = await trashTodos(todoTrashLabel([sub], children.length), [sub, ...children]);
       await db.todoTasks.bulkDelete([sub.id, ...children.map((c) => c.id)]);
-      return [sub, ...children];
+      return { removed: [sub, ...children], trashId };
     });
     showUndoToast(`サブタスク「${sub.title}」を削除しました`, async () => {
-      await db.transaction("rw", db.todoTasks, async () => {
+      await db.transaction("rw", db.todoTasks, db.trash, async () => {
+        if (trashId) await db.trash.delete(trashId);
         if (sub.parentTaskId && !(await db.todoTasks.get(sub.parentTaskId))) return;
         for (const t of removed) {
           if (!(await db.todoTasks.get(t.id))) await db.todoTasks.add(t);

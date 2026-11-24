@@ -33,7 +33,8 @@ import ConditionGlyph from "@/components/ui/ConditionGlyph";
 import { normalizeAddTaskStyle } from "@/components/sections/AddTaskDialog";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { parseCategoryRates, serializeCategoryRates } from "@/lib/cost";
-import type { BreakRange } from "@/lib/types";
+import type { BreakRange, TrashItem, TrashKind } from "@/lib/types";
+import { deleteFromTrash, restoreFromTrash, TRASH_KEEP_DAYS } from "@/lib/trash";
 import { WEEKDAY_JP } from "@/lib/types";
 import LifeContextSelect from "@/components/ai/LifeContextSelect";
 
@@ -2522,6 +2523,104 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
           データが増えすぎて動作が重くなってきた場合などに使います。まずダウンロードしてバックアップし、内容を確認してから削除を実行してください（削除ボタンは同じ期間でダウンロードするまで押せません。削除されるのはダウンロードしたファイルに入っている分だけです）。作業マスタや案件、ToDoは削除されません。削除した分を戻したいときは、上の「バックアップから復元」でアーカイブのファイルを選んでください。
         </p>
       </div>
+
+      <TrashPanel />
+    </div>
+  );
+}
+
+const TRASH_KIND_LABELS: Record<TrashKind, string> = {
+  todo: "ToDo",
+  project: "案件",
+  record: "実績",
+  dailyTask: "作業",
+  master: "作業マスタ",
+  memoNote: "付箋",
+  memoBoard: "メモボード",
+  other: "その他",
+};
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// ゴミ箱: 消したものを7日間とっておき、ここから戻す(設定パネルの直接の子として並ぶよう、外側は.panel)
+function TrashPanel() {
+  const items = useLiveQuery(() => db.trash.orderBy("deletedAt").reverse().toArray(), []);
+  const now = Date.now();
+
+  async function restore(item: TrashItem) {
+    const r = await restoreFromTrash(item.id);
+    if (!r) {
+      showUndoToast("もうゴミ箱にありません");
+      return;
+    }
+    if (r.restored === 0) showUndoToast(`同じものが既にあったため、「${item.label}」は何も戻しませんでした`);
+    else if (r.skipped > 0) showUndoToast(`戻しました（同じものが既にあった${r.skipped}件はそのまま）`);
+    else showUndoToast(`「${item.label}」を戻しました`);
+  }
+
+  // 1件だけ消すのは確認なしで消し、知らせの「元に戻す」でゴミ箱に戻せるようにする
+  async function remove(item: TrashItem) {
+    await deleteFromTrash(item.id);
+    showUndoToast(`「${item.label}」を完全に消しました`, async () => {
+      if (!(await db.trash.get(item.id))) await db.trash.add(item);
+    });
+  }
+
+  async function emptyAll() {
+    const list = items ?? [];
+    if (list.length === 0) return;
+    if (!confirm(`ゴミ箱の${list.length}件を完全に消します。元に戻せません。よろしいですか？`)) return;
+    // 確認のあとに入ったものは消さない
+    await db.trash.bulkDelete(list.map((i) => i.id));
+    showUndoToast("ゴミ箱を空にしました");
+  }
+
+  return (
+    <div className="panel space-y-3 p-4" data-testid="trash-panel">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="section-title font-display">ゴミ箱</h3>
+        {(items?.length ?? 0) > 0 && (
+          <button className="btn-pill-outline px-3 py-1 text-xs" onClick={() => void emptyAll()}>
+            ゴミ箱を空にする
+          </button>
+        )}
+      </div>
+      {items && items.length === 0 ? (
+        <div className="empty-state">
+          <p>ゴミ箱は空です。消したToDo・案件・メモはここに{TRASH_KEEP_DAYS}日間残ります。</p>
+        </div>
+      ) : (
+        <ul className="list-rows">
+          {(items ?? []).map((item) => {
+            const ago = Math.max(0, Math.floor((now - item.deletedAt) / DAY_MS));
+            const left = Math.max(1, Math.ceil((item.deletedAt + TRASH_KEEP_DAYS * DAY_MS - now) / DAY_MS));
+            return (
+              <li key={item.id} className="list-row flex-wrap justify-between gap-2 py-2" data-testid="trash-item">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="chip">{TRASH_KIND_LABELS[item.kind] ?? "その他"}</span>
+                    <span className="break-all text-sm text-cream">{item.label}</span>
+                  </div>
+                  <p className="caption mt-0.5">
+                    <span className="num">{ago === 0 ? "今日" : `${ago}日前に`}</span>削除・あと<span className="num">{left}</span>日で消えます
+                    {item.kind === "project" && "（ToDoとのつながりは戻りません）"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-1.5">
+                  <button className="btn-pill px-3 py-1 text-xs" onClick={() => void restore(item)}>
+                    戻す
+                  </button>
+                  <button className="btn-pill-outline px-3 py-1 text-xs text-alert" onClick={() => void remove(item)}>
+                    完全に消す
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p className="text-xs text-cream/65">
+        消したToDo・案件・メモボードは{TRASH_KEEP_DAYS}日間ここに残り、「戻す」で元の場所に戻せます。{TRASH_KEEP_DAYS}日を過ぎると自動で消えます。戻す時、同じものが既にある場合はそちらを残します。
+      </p>
     </div>
   );
 }

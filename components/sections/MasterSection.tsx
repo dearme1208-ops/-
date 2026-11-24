@@ -1,7 +1,7 @@
 "use client";
 
 import { readTextFile } from "@/lib/csv";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import {
@@ -13,7 +13,10 @@ import {
   normalizeMasterKey,
   deleteMasterTask,
   restoreDeletedMasterTask,
+  renameMasterTask,
+  undoRenameMasterTask,
 } from "@/lib/master";
+import { isImeComposing, isSubmitEnter } from "@/lib/keyboard";
 import { recomputeOutliersForAll, clearManualOverride } from "@/lib/outliers";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/masterCsv";
@@ -312,6 +315,36 @@ export default function MasterSection() {
       await restoreDeletedMasterTask(deleted);
     });
   }
+
+  // 名前(区分・作業名)の変更。マスタ・実績・本日の作業・テンプレートをまとめて変える(lib/master.ts)
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameConflict, setRenameConflict] = useState<{ sourceId: string; target: MasterTask } | null>(null);
+  async function renameTask(t: MasterTask, category: string, name: string) {
+    const res = await renameMasterTask(t.id, { category, name });
+    if (res.status === "conflict") {
+      setRenameConflict({ sourceId: t.id, target: res.conflictWith });
+      return;
+    }
+    if (res.status === "invalid") return; // 空欄のままなら編集を続ける
+    setRenamingId(null);
+    if (res.status !== "renamed") return;
+    const { undo } = res;
+    showUndoToast(`「${undo.before.category} / ${undo.before.name}」を「${undo.after.category} / ${undo.after.name}」に変えました`, async () => {
+      if (!(await undoRenameMasterTask(undo))) showUndoToast("その後に変更があったため元に戻せませんでした");
+    });
+  }
+  async function confirmRenameMerge() {
+    if (!renameConflict) return;
+    const { sourceId, target } = renameConflict;
+    setRenameConflict(null);
+    setRenamingId(null);
+    const { movedRecords } = await mergeMasterTasks(target.id, [sourceId]);
+    showUndoToast(`「${target.category} / ${target.name}」にまとめました(実績${movedRecords}件)`);
+  }
+  const renameFormFor = (t: MasterTask) =>
+    renamingId === t.id ? (
+      <MasterRenameForm task={t} onSubmit={(c, n) => void renameTask(t, c, n)} onCancel={() => setRenamingId(null)} />
+    ) : undefined;
 
   async function insertNewMaster(category: string, name: string) {
     const now = Date.now();
@@ -779,6 +812,8 @@ export default function MasterSection() {
                     onUnarchive={() => unarchiveTask(t)}
                     onDelete={() => deleteTask(t)}
                     onViewRecords={() => openRecordsFor(t)}
+                    onStartRename={() => setRenamingId(t.id)}
+                    renameForm={renameFormFor(t)}
                   />
                 ))}
               </div>
@@ -802,7 +837,19 @@ export default function MasterSection() {
                       />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-sm text-cream">{t.name}</div>
+                      {renameFormFor(t) ?? (
+                        <div className="flex items-start gap-1">
+                          <span className="text-sm text-cream">{t.name}</span>
+                          <button
+                            className="shrink-0 px-1 text-xs text-cream/50 hover:text-cream"
+                            onClick={() => setRenamingId(t.id)}
+                            aria-label="名前を変える"
+                            title="名前を変える(区分・作業名)"
+                          >
+                            <Icon emoji="✏" />
+                          </button>
+                        </div>
+                      )}
                       <button
                         className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80"
                         onClick={() => openRecordsFor(t)}
@@ -919,6 +966,23 @@ export default function MasterSection() {
         </Modal>
       )}
 
+      {renameConflict && (
+        <Modal title="名前を変える" onClose={() => setRenameConflict(null)}>
+          <p className="text-sm text-cream">同じ名前の作業があります。まとめますか？</p>
+          <p className="caption mt-1">
+            「{renameConflict.target.category} / {renameConflict.target.name}」へ、実績・本日の作業・テンプレートをまとめます。
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => setRenameConflict(null)}>
+              やめる
+            </button>
+            <button className="btn-pill text-sm" onClick={() => void confirmRenameMerge()}>
+              まとめる
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {mergeTarget && (
         <MergeConfirmModal
           tasks={(tasks ?? []).filter((t) => mergeTarget.ids.includes(t.id))}
@@ -1010,6 +1074,8 @@ function MonsterCard({
   onUnarchive,
   onDelete,
   onViewRecords,
+  onStartRename,
+  renameForm,
 }: {
   task: MasterTask;
   mergeSelected: boolean;
@@ -1021,6 +1087,8 @@ function MonsterCard({
   onUnarchive: () => void;
   onDelete: () => void;
   onViewRecords: () => void;
+  onStartRename: () => void;
+  renameForm?: ReactNode;
 }) {
   return (
     <div className={`adv-quest-card flex flex-col gap-2 p-3 ${task.archived ? "opacity-50" : ""}`}>
@@ -1040,7 +1108,14 @@ function MonsterCard({
         </button>
       </div>
       <div>
-        <div className="truncate text-sm font-bold text-cream">{task.name}</div>
+        {renameForm ?? (
+          <div className="flex items-center gap-1">
+            <span className="truncate text-sm font-bold text-cream">{task.name}</span>
+            <button className="shrink-0 text-[11px] text-cream/50 hover:text-cream" onClick={onStartRename} aria-label="名前を変える" title="名前を変える">
+              ✏
+            </button>
+          </div>
+        )}
         <button className="text-[10px] text-cream/50 underline decoration-dotted hover:text-cream/80" onClick={onViewRecords}>
           遭遇回数 {task.sampleCount}回
         </button>
@@ -1073,6 +1148,51 @@ function MonsterCard({
           削除
         </button>
       </div>
+    </div>
+  );
+}
+
+// 区分・作業名をその場で直す欄。Enterで確定、Escでやめる(変換中のキーは無視)
+function MasterRenameForm({
+  task,
+  onSubmit,
+  onCancel,
+}: {
+  task: MasterTask;
+  onSubmit: (category: string, name: string) => void;
+  onCancel: () => void;
+}) {
+  const [category, setCategory] = useState(task.category);
+  const [name, setName] = useState(task.name);
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isSubmitEnter(e)) {
+      e.preventDefault();
+      onSubmit(category, name);
+    } else if (e.key === "Escape" && !isImeComposing(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+    }
+  };
+  const input = "min-w-0 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream";
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <input value={category} onChange={(e) => setCategory(e.target.value)} onKeyDown={onKeyDown} aria-label="区分" placeholder="区分" className={`${input} w-24`} />
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={onKeyDown}
+        aria-label="作業名"
+        placeholder="作業名"
+        className={`${input} w-36 flex-1`}
+        autoFocus
+      />
+      <button className="btn-pill text-xs" onClick={() => onSubmit(category, name)}>
+        変える
+      </button>
+      <button className="btn-pill-outline text-xs" onClick={onCancel}>
+        やめる
+      </button>
     </div>
   );
 }

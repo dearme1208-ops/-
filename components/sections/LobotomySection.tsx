@@ -35,6 +35,7 @@ import { EnergyMeter, OrdealSigil, RiskSeal, VirtueChart, WorkGlyph } from "@/co
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
+import Modal from "@/components/ui/Modal";
 
 // Lobotomy Corporation風モード(管理局モード)の「本日の作業」タブ。
 //
@@ -596,43 +597,42 @@ export default function LobotomySection() {
 
       {/* ══ 個体図鑑から収容する ══ */}
       {showPicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
-          onClick={() => {
+        <Modal
+          variant="bare"
+          title={W.pickerTitle}
+          onClose={() => {
             setShowPicker(false);
             setPickedMaster(null);
           }}
+          closeOnBackdrop
+          scrimClassName="bg-black/85"
+          panelClassName="flex max-h-[85vh] w-full max-w-md flex-col border border-cream/25 bg-ink"
         >
-          <div
-            className="flex max-h-[85vh] w-full max-w-md flex-col border border-cream/25 bg-ink"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="border-b border-cream/20 p-3">
-              <p className="font-display text-sm tracking-widest text-alert">{W.pickerTitle}</p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <MasterTaskPicker onSelect={setPickedMaster} selectedId={pickedMaster?.id ?? null} />
-            </div>
-            <div className="space-y-1 border-t border-cream/20 p-3">
-              <button
-                className="w-full border border-alert/50 bg-alert/10 py-2 text-xs text-alert disabled:opacity-40"
-                disabled={!pickedMaster}
-                onClick={() => pickedMaster && containMaster(pickedMaster)}
-              >
-                {W.pickerOpen}
-              </button>
-              <button
-                className="w-full border border-cream/25 py-2 text-xs text-cream/60"
-                onClick={() => {
-                  setShowPicker(false);
-                  setPickedMaster(null);
-                }}
-              >
-                {W.closeLabel}
-              </button>
-            </div>
+          <div className="border-b border-cream/20 p-3">
+            <p className="font-display text-sm tracking-widest text-alert">{W.pickerTitle}</p>
           </div>
-        </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <MasterTaskPicker onSelect={setPickedMaster} selectedId={pickedMaster?.id ?? null} />
+          </div>
+          <div className="space-y-1 border-t border-cream/20 p-3">
+            <button
+              className="w-full border border-alert/50 bg-alert/10 py-2 text-xs text-alert disabled:opacity-40"
+              disabled={!pickedMaster}
+              onClick={() => pickedMaster && containMaster(pickedMaster)}
+            >
+              {W.pickerOpen}
+            </button>
+            <button
+              className="w-full border border-cream/25 py-2 text-xs text-cream/60"
+              onClick={() => {
+                setShowPicker(false);
+                setPickedMaster(null);
+              }}
+            >
+              {W.closeLabel}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -696,68 +696,70 @@ function IndexDetail({
   if (!abnormality) return null;
   const a = abnormality;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4" onClick={onClose}>
-      <div
-        className="max-h-[85vh] w-full max-w-sm overflow-y-auto border border-cream/25 bg-ink p-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex gap-2">
-          <AbnormalityPortrait
-            seed={`${a.category}/${a.name}`}
-            size={120}
-            riskLevel={a.riskLevel}
-            breached={a.breached}
-            businessIcon={iconFor(a.category, a.name)}
-            className="shrink-0 border border-cream/20"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[10px] tracking-widest text-cream/45">{a.subjectNumber}</p>
-            <p className="font-display text-sm font-bold text-cream/90">{a.name}</p>
-            <p className="text-[10px] text-cream/45">{a.category}</p>
-            <div className="mt-1 flex items-center gap-1.5">
-              <RiskSeal level={a.riskLevel} size={26} />
-              <span className="font-mono text-[11px] font-bold tracking-widest text-alert">
-              {words.riskLabel[a.riskLevel]}
-            </span>
-            </div>
+    <Modal
+      variant="bare"
+      title={a.name}
+      onClose={onClose}
+      closeOnBackdrop
+      scrimClassName="bg-black/85"
+      panelClassName="max-h-[85vh] w-full max-w-sm overflow-y-auto border border-cream/25 bg-ink p-3"
+    >
+      <div className="flex gap-2">
+        <AbnormalityPortrait
+          seed={`${a.category}/${a.name}`}
+          size={120}
+          riskLevel={a.riskLevel}
+          breached={a.breached}
+          businessIcon={iconFor(a.category, a.name)}
+          className="shrink-0 border border-cream/20"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[10px] tracking-widest text-cream/45">{a.subjectNumber}</p>
+          <p className="font-display text-sm font-bold text-cream/90">{a.name}</p>
+          <p className="text-[10px] text-cream/45">{a.category}</p>
+          <div className="mt-1 flex items-center gap-1.5">
+            <RiskSeal level={a.riskLevel} size={26} />
+            <span className="font-mono text-[11px] font-bold tracking-widest text-alert">
+            {words.riskLabel[a.riskLevel]}
+          </span>
           </div>
         </div>
-
-        <dl className="mt-3 space-y-1.5 text-[11px]">
-          {(
-            [
-              [words.riskTitle, words.riskNote(a.riskLevel, a.meanRatio)],
-              [words.qliphothLabel, words.qliphothNote(a.qliphothCounter, a.qliphothMax)],
-              [words.observationLabel, words.observationNote(a.observationLevel)],
-              [
-                words.recommendedLabel,
-                `${words.workName[a.recommended]} — ${words.recommendedNote(a.recommended)}`,
-              ],
-              [
-                "想定時間",
-                a.medianActualSeconds
-                  ? `${formatHms(a.estimatedSeconds)}（実績の中央値 ${formatHms(Math.round(a.medianActualSeconds))}）`
-                  : formatHms(a.estimatedSeconds),
-              ],
-            ] as const
-          ).map(([label, value]) => (
-            <div key={label} className="border-l-2 border-cream/20 pl-2">
-              <dt className="text-[10px] tracking-wider text-cream/45">{label}</dt>
-              <dd className="leading-relaxed text-cream/80">{value}</dd>
-            </div>
-          ))}
-        </dl>
-
-        {a.breached && (
-          <p className="mt-2 border border-alert/50 bg-alert/10 p-2 text-[10px] leading-relaxed text-alert">
-            {words.breachedLabel}: {words.breachedNote}
-          </p>
-        )}
-
-        <button className="mt-3 w-full border border-cream/25 py-2 text-xs text-cream/60" onClick={onClose}>
-          {words.closeLabel}
-        </button>
       </div>
-    </div>
+
+      <dl className="mt-3 space-y-1.5 text-[11px]">
+        {(
+          [
+            [words.riskTitle, words.riskNote(a.riskLevel, a.meanRatio)],
+            [words.qliphothLabel, words.qliphothNote(a.qliphothCounter, a.qliphothMax)],
+            [words.observationLabel, words.observationNote(a.observationLevel)],
+            [
+              words.recommendedLabel,
+              `${words.workName[a.recommended]} — ${words.recommendedNote(a.recommended)}`,
+            ],
+            [
+              "想定時間",
+              a.medianActualSeconds
+                ? `${formatHms(a.estimatedSeconds)}（実績の中央値 ${formatHms(Math.round(a.medianActualSeconds))}）`
+                : formatHms(a.estimatedSeconds),
+            ],
+          ] as const
+        ).map(([label, value]) => (
+          <div key={label} className="border-l-2 border-cream/20 pl-2">
+            <dt className="text-[10px] tracking-wider text-cream/45">{label}</dt>
+            <dd className="leading-relaxed text-cream/80">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {a.breached && (
+        <p className="mt-2 border border-alert/50 bg-alert/10 p-2 text-[10px] leading-relaxed text-alert">
+          {words.breachedLabel}: {words.breachedNote}
+        </p>
+      )}
+
+      <button className="mt-3 w-full border border-cream/25 py-2 text-xs text-cream/60" onClick={onClose}>
+        {words.closeLabel}
+      </button>
+    </Modal>
   );
 }

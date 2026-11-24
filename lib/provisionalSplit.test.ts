@@ -11,6 +11,10 @@ import {
   provisionalCarry,
   splitOrphanAtMidnight,
   splitSegmentsAt,
+  splitDoneDailyTask,
+  mergeDoneDailyTasks,
+  subtractSegments,
+  undoDoneTaskEdit,
 } from "./provisionalSplit";
 
 const M = 60_000;
@@ -151,5 +155,150 @@ describe("0時で分ける", () => {
     // 古い画面の表示(計測中)のまま押した
     expect(await splitOrphanAtMidnight(stale, D2)).toBeNull();
     expect(await db.dailyTasks.where("date").equals(D2).count()).toBe(0);
+  });
+});
+
+describe("subtractSegments", () => {
+  it("取り除く時間帯で区間を切る", () => {
+    expect(subtractSegments([{ start: 0, end: 60 * M }], [{ start: 20 * M, end: 30 * M }])).toEqual([
+      { start: 0, end: 20 * M },
+      { start: 30 * M, end: 60 * M },
+    ]);
+    expect(subtractSegments([{ start: 0, end: 10 * M }], [{ start: 0, end: 10 * M }])).toEqual([]);
+  });
+});
+
+describe("完了した作業を分ける・まとめる", () => {
+  const h = (hm: string) => t1(hm, D2);
+  beforeEach(async () => {
+    await Promise.all([db.dailyTasks.clear(), db.records.clear(), db.masterTasks.clear()]);
+    await db.masterTasks.bulkPut([
+      { id: "m1", category: "業務", name: "資料作成", estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 },
+      { id: "m2", category: "業務", name: "電話対応", estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 },
+    ]);
+  });
+  async function doneTask(id: string, from: string, to: string, masterTaskId = "m1", name = "資料作成") {
+    await db.dailyTasks.put(daily({ id, masterTaskId, name, status: "running", segments: [{ start: h(from) }], startedAt: h(from) }));
+    await finishDailyTask((await db.dailyTasks.get(id))!, h(to));
+    return (await db.dailyTasks.get(id))!;
+  }
+
+  it("同じ作業のまま分けると、2つの完了になり、実績は変わらない", async () => {
+    await doneTask("a", "09:00", "10:00");
+    const recBefore = (await db.records.toArray())[0];
+    const r = await splitDoneDailyTask("a", h("09:20"));
+    expect(r.status).toBe("ok");
+    if (r.status !== "ok") return;
+    const first = (await db.dailyTasks.get("a"))!;
+    const second = (await db.dailyTasks.get(r.taskId))!;
+    expect(first.segments).toEqual([{ start: h("09:00"), end: h("09:20") }]);
+    expect(first.accumulatedMs).toBe(20 * M);
+    expect(first.recordedMs).toBe(20 * M);
+    expect(first.endedAt).toBe(h("09:20"));
+    expect(second.status).toBe("done");
+    expect(second.segments).toEqual([{ start: h("09:20"), end: h("10:00") }]);
+    expect(second.accumulatedMs).toBe(40 * M);
+    expect(second.startedAt).toBe(h("09:20"));
+    expect(second.endedAt).toBe(h("10:00"));
+    expect(second.masterTaskId).toBe("m1");
+    expect(await db.records.toArray()).toEqual([recBefore]);
+  });
+
+  it("後半を別の作業にすると、後半の秒数を移した先の実績へ移す", async () => {
+    await doneTask("a", "09:00", "10:00");
+    const r = await splitDoneDailyTask("a", h("09:20"), { category: "業務", name: "電話対応", masterTaskId: "m2" });
+    expect(r.status).toBe("ok");
+    const recs = await db.records.toArray();
+    const r1 = recs.find((x) => x.masterTaskId === "m1")!;
+    const r2 = recs.find((x) => x.masterTaskId === "m2")!;
+    expect(r1.seconds).toBe(20 * 60);
+    expect(r1.segments).toEqual([{ start: h("09:00"), end: h("09:20") }]);
+    expect(r1.endedAt).toBe(h("09:20"));
+    expect(r2.seconds).toBe(40 * 60);
+    expect(r2.name).toBe("電話対応");
+    expect(r2.startedAt).toBe(h("09:20"));
+  });
+
+  it("「時間を加算」の分は前半に残す。後半を別の作業にしても合計は保たれる", async () => {
+    await db.dailyTasks.put(daily({ id: "a", status: "running", segments: [{ start: h("09:00") }], startedAt: h("09:00"), manualAdjustmentMs: 10 * M }));
+    await finishDailyTask((await db.dailyTasks.get("a"))!, h("10:00"));
+    const r = await splitDoneDailyTask("a", h("09:30"), { category: "業務", name: "電話対応" });
+    expect(r.status).toBe("ok");
+    expect((await db.dailyTasks.get("a"))!.accumulatedMs).toBe(40 * M);
+    const recs = await db.records.toArray();
+    expect(recs.reduce((s, x) => s + x.seconds, 0)).toBe(70 * 60);
+    expect(recs.find((x) => x.masterTaskId === "m2")!.seconds).toBe(30 * 60);
+  });
+
+  it("範囲の外や休憩中だけの区切りは断る", async () => {
+    await doneTask("a", "09:00", "10:00");
+    expect((await splitDoneDailyTask("a", h("08:00"))).status).toBe("rejected");
+    expect((await splitDoneDailyTask("a", h("10:00"))).status).toBe("rejected");
+    expect(await db.dailyTasks.count()).toBe(1);
+  });
+
+  it("分けたのを元に戻すと元どおり。その後に変更があれば戻さない", async () => {
+    const before = await doneTask("a", "09:00", "10:00");
+    const recBefore = await db.records.toArray();
+    const r = await splitDoneDailyTask("a", h("09:20"), { category: "業務", name: "電話対応", masterTaskId: "m2" });
+    if (r.status !== "ok") throw new Error("split failed");
+    expect(await undoDoneTaskEdit(r.undo)).toBe(true);
+    expect(await db.dailyTasks.toArray()).toEqual([before]);
+    expect(await db.records.toArray()).toEqual(recBefore);
+
+    const r2 = await splitDoneDailyTask("a", h("09:20"));
+    if (r2.status !== "ok") throw new Error("split failed");
+    await db.dailyTasks.update(r2.taskId, { note: "あとで直した" });
+    expect(await undoDoneTaskEdit(r2.undo)).toBe(false);
+    expect(await db.dailyTasks.count()).toBe(2);
+  });
+
+  it("同じ作業の2つをまとめると、区間をつなげて合計を足し、実績は変えない", async () => {
+    await doneTask("a", "09:00", "09:30");
+    await doneTask("b", "11:00", "11:20");
+    const recBefore = await db.records.toArray();
+    expect(recBefore).toHaveLength(1);
+    const r = await mergeDoneDailyTasks("a", "b");
+    expect(r.status).toBe("ok");
+    const merged = (await db.dailyTasks.get("a"))!;
+    expect(await db.dailyTasks.get("b")).toBeUndefined();
+    expect(merged.segments).toEqual([
+      { start: h("09:00"), end: h("09:30") },
+      { start: h("11:00"), end: h("11:20") },
+    ]);
+    expect(merged.accumulatedMs).toBe(50 * M);
+    expect(merged.recordedMs).toBe(50 * M);
+    expect(merged.recordedSegmentCount).toBe(2);
+    expect(merged.startedAt).toBe(h("09:00"));
+    expect(merged.endedAt).toBe(h("11:20"));
+    expect(await db.records.toArray()).toEqual(recBefore);
+  });
+
+  it("別の作業をまとめると、選んだ名前の実績へ秒数を移す。元に戻せる", async () => {
+    await doneTask("a", "09:00", "09:30");
+    await doneTask("b", "11:00", "11:20", "m2", "電話対応");
+    const tasksBefore = await db.dailyTasks.toArray();
+    const r = await mergeDoneDailyTasks("a", "b", "other");
+    if (r.status !== "ok") throw new Error("merge failed");
+    const merged = (await db.dailyTasks.get("a"))!;
+    expect(merged.name).toBe("電話対応");
+    expect(merged.masterTaskId).toBe("m2");
+    const recs = await db.records.toArray();
+    expect(recs).toHaveLength(1);
+    expect(recs[0].masterTaskId).toBe("m2");
+    expect(recs[0].seconds).toBe(50 * 60);
+    expect(await undoDoneTaskEdit(r.undo)).toBe(true);
+    expect((await db.dailyTasks.toArray()).sort((x, y) => x.id.localeCompare(y.id))).toEqual(tasksBefore.sort((x, y) => x.id.localeCompare(y.id)));
+    const back = await db.records.toArray();
+    expect(back.find((x) => x.masterTaskId === "m1")!.seconds).toBe(30 * 60);
+    expect(back.find((x) => x.masterTaskId === "m2")!.seconds).toBe(20 * 60);
+  });
+
+  it("違う日の作業や未完了の作業はまとめない", async () => {
+    await doneTask("a", "09:00", "09:30");
+    await db.dailyTasks.put(daily({ id: "c", status: "pending" }));
+    expect((await mergeDoneDailyTasks("a", "c")).status).toBe("rejected");
+    await db.dailyTasks.put({ ...(await db.dailyTasks.get("a"))!, id: "d", date: D1 });
+    expect((await mergeDoneDailyTasks("a", "d")).status).toBe("rejected");
   });
 });

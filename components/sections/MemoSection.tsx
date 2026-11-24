@@ -8,6 +8,7 @@ import { useSetting } from "@/lib/settings";
 import { downloadTextFile } from "@/lib/report";
 import { createSpeechRecognition } from "@/lib/voice";
 import { showUndoToast } from "@/lib/toast";
+import { deleteFromTrash, putInTrash } from "@/lib/trash";
 import { isSubmitEnter } from "@/lib/keyboard";
 import { deleteProjectCascade } from "@/lib/projects";
 import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
@@ -52,6 +53,14 @@ type MemoUndoEntry =
   | { type: "connector"; connector: MemoConnector }
   | { type: "stamp"; stamp: BoardStamp }
   | { type: "board"; board: MemoBoard; notes: MemoNote[]; strokes: MemoStroke[]; connectors: MemoConnector[]; stamps: BoardStamp[]; shapes: BoardShape[] };
+
+// ゴミ箱に出す付箋の名前(長い本文は先頭だけ)
+function memoNoteTrashLabel(note: MemoNote): string {
+  const raw = note.isChecklist ? (note.checklistItems ?? []).map((i) => i.text).join(" ") : note.text;
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (!text) return "メモの付箋";
+  return `メモの付箋「${text.length > 20 ? `${text.slice(0, 20)}…` : text}」`;
+}
 
 const MEMO_MINIMAP_WIDTH = 140;
 const MEMO_MINIMAP_HEIGHT = Math.round((MEMO_MINIMAP_WIDTH * MEMO_BOARD_HEIGHT) / MEMO_BOARD_WIDTH);
@@ -154,8 +163,12 @@ export default function MemoSection() {
 
   // 誤って消してしまった付箋・手書き・連結線などを、トーストの「元に戻す」から復元できるようにする。
   // 以前はメモタブの中だけに帯を出していたが、ほかのタブの「元に戻す」と同じ知らせ(と操作の履歴)に揃える
-  function pushUndo(entry: MemoUndoEntry) {
-    showUndoToast(undoMessage(entry), () => void restoreUndo(entry));
+  // trashId: 同じものをゴミ箱にも入れた時のid。取り消したらゴミ箱からは消す(二重に戻せる状態を残さない)
+  function pushUndo(entry: MemoUndoEntry, trashId?: string | null) {
+    showUndoToast(undoMessage(entry), () => {
+      if (trashId) void deleteFromTrash(trashId);
+      void restoreUndo(entry);
+    });
   }
   async function restoreUndo(entry: MemoUndoEntry) {
     // 戻すまでの間に、同じものが取り込み等で作り直されていたり、つなぎ先の付箋やボードが
@@ -485,12 +498,16 @@ export default function MemoSection() {
     // 確認は出さず、すぐ消す。付箋とつながっていた線は控えておき、「元に戻す」でまとめて戻す
     // (確認の窓は毎回押す手間になるうえ、慣れると読まずに押してしまい守りにならないため)
     const relatedConnectors = (connectors ?? []).filter((c) => c.fromNoteId === id || c.toNoteId === id);
-    await db.transaction("rw", db.memoNotes, db.memoConnectors, async () => {
+    const trashId = await db.transaction("rw", db.memoNotes, db.memoConnectors, db.trash, async () => {
+      // ゴミ箱にも入れる(トーストが消えたあとも7日間は戻せる)
+      const current = (await db.memoNotes.get(id)) ?? note;
+      const tid = current ? await putInTrash("memoNote", memoNoteTrashLabel(current), { memoNotes: [current], memoConnectors: relatedConnectors }) : null;
       await db.memoNotes.delete(id);
       await db.memoConnectors.where("fromNoteId").equals(id).delete();
       await db.memoConnectors.where("toNoteId").equals(id).delete();
+      return tid;
     });
-    if (note) pushUndo({ type: "note", note, connectors: relatedConnectors });
+    if (note) pushUndo({ type: "note", note, connectors: relatedConnectors }, trashId);
   }
   async function setNoteColor(id: string, color: string) {
     await db.memoNotes.update(id, { color });
@@ -897,7 +914,7 @@ export default function MemoSection() {
     // 「元に戻す」でまとめて戻せるようにする
     const board = currentBoard;
     const boardId = board.id;
-    const snapshot = await db.transaction("rw", [db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, db.boardStamps, db.boardShapes], async () => {
+    const { snapshot, trashId } = await db.transaction("rw", [db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, db.boardStamps, db.boardShapes, db.trash], async () => {
       const snap: MemoUndoEntry = {
         type: "board",
         board,
@@ -907,6 +924,19 @@ export default function MemoSection() {
         stamps: await db.boardStamps.where("boardId").equals(boardId).toArray(),
         shapes: await db.boardShapes.where("boardId").equals(boardId).toArray(),
       };
+      // ゴミ箱にも中身ごと入れる
+      const tid = await putInTrash(
+        "memoBoard",
+        `メモボード「${board.title}」${snap.notes.length > 0 ? `と付箋${snap.notes.length}枚` : ""}`,
+        {
+          memoBoards: [board],
+          memoNotes: snap.notes,
+          memoStrokes: snap.strokes,
+          memoConnectors: snap.connectors,
+          boardStamps: snap.stamps,
+          boardShapes: snap.shapes,
+        }
+      );
       await db.memoNotes.where("boardId").equals(boardId).delete();
       await db.memoStrokes.where("boardId").equals(boardId).delete();
       await db.memoConnectors.where("boardId").equals(boardId).delete();
@@ -915,9 +945,9 @@ export default function MemoSection() {
       // 統合ボードで置いた図形も同じボードに属するので一緒に消す
       await db.boardShapes.where("boardId").equals(boardId).delete();
       await db.memoBoards.delete(boardId);
-      return snap;
+      return { snapshot: snap, trashId: tid };
     });
-    pushUndo(snapshot);
+    pushUndo(snapshot, trashId);
   }
 
   return (

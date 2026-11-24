@@ -6,11 +6,14 @@ import { useWorkContext } from "@/lib/useWorkContext";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import {
-  findOrCreateMasterTask,
   recomputeEstimateFromRecords,
   bulkFindOrCreateMasterTasks,
   recomputeEstimatesForMasterTasks,
+  renameMasterTask,
+  undoRenameMasterTask,
+  mergeMasterTasks,
 } from "@/lib/master";
+import { deleteRecordToTrash, relinkRecordToMaster, undoDeleteRecord } from "@/lib/records";
 import { setManualOverride, clearManualOverride } from "@/lib/outliers";
 import { recordsToCsv, parseRecordsCsv, readTextFile, planRecordsImport, type RecordsImportPlan } from "@/lib/csv";
 import { JOURNAL_KEY_PREFIX, journalEntriesFromSettings, journalEntriesToCsv } from "@/lib/journal";
@@ -30,7 +33,7 @@ import {
 import { recordSpanAsTask } from "@/lib/quickStamp";
 import { formatClock, formatDateJp, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
-import type { WorkRecord } from "@/lib/types";
+import type { MasterTask, WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
 import DayReplayModal from "@/components/DayReplayModal";
@@ -182,54 +185,74 @@ export default function RecordsSection() {
     if (shownCount !== PAGE_SIZE) setShownCount(PAGE_SIZE);
   }
 
-  // 名称・区分を変更した場合、設定に応じて紐づく作業マスタもリネームするか、
-  // 新しい名称・区分のマスタ（既存 or 新規）に繋ぎ変える。時間変更時は紐づくマスタの想定時間を再計算する
+  // 名称・区分を変更した場合、設定に応じて紐づく作業マスタごと名前を変える(マスタ・同じマスタの実績・
+  // 本日の作業・テンプレートを揃える)か、この1件だけ別のマスタ(既存 or 新規)へ繋ぎ変える。
+  // 時間変更時は紐づくマスタの想定時間を再計算する
   async function updateRecord(r: WorkRecord, patch: Partial<WorkRecord>) {
-    const nameChanged = patch.name !== undefined && patch.name !== r.name;
-    const categoryChanged = patch.category !== undefined && patch.category !== r.category;
+    const nameChanged = patch.name !== undefined && patch.name.trim() !== r.name;
+    const categoryChanged = patch.category !== undefined && patch.category.trim() !== r.category;
     const finalPatch: Partial<WorkRecord> = { ...patch };
     // 開始/終了時刻や実績時間を手動編集すると、保持していた実働区間(segments)と
     // 矛盾してしまうため破棄する(定時以降の判定はstartedAt〜endedAtの近似に戻る)
     if (r.segments && (patch.startedAt !== undefined || patch.endedAt !== undefined || patch.seconds !== undefined)) {
       finalPatch.segments = undefined;
     }
-    let oldMasterId: string | undefined;
-    let newMasterId: string | undefined;
 
     if ((nameChanged || categoryChanged) && r.masterTaskId) {
       const newCategory = (patch.category ?? r.category).trim();
       const newName = (patch.name ?? r.name).trim();
-      if (masterEditMode === "rename") {
-        await db.masterTasks.update(r.masterTaskId, { category: newCategory, name: newName, updatedAt: Date.now() });
-        // マスタ自体をリネームする設定の場合、同じマスタに紐づく他の実績も
-        // 表示上の名称・区分を新しいものに揃える(この実績自身への反映は下のupdateで行う)
-        await db.records
-          .where("masterTaskId")
-          .equals(r.masterTaskId)
-          .filter((other) => other.id !== r.id)
-          .modify({ category: newCategory, name: newName });
-      } else {
-        const master = await findOrCreateMasterTask(newCategory, newName, 0);
-        if (master.id !== r.masterTaskId) {
-          finalPatch.masterTaskId = master.id;
-          oldMasterId = r.masterTaskId;
-          newMasterId = master.id;
-        }
+      // 名前の欄はここで全部扱う(残りの項目だけ下で書く)
+      delete finalPatch.category;
+      delete finalPatch.name;
+      if (!newCategory || !newName) {
+        setNameInputNonce((n) => n + 1);
+        return;
       }
+      if (masterEditMode === "rename") {
+        await renameMasterWithUndo(r.masterTaskId, { category: newCategory, name: newName });
+      } else {
+        // この1件だけ繋ぎ変える。元になった完了済みの本日の作業も一緒に繋ぎ変える
+        await relinkRecordToMaster(r.id, newCategory, newName);
+      }
+      // 表記ゆれだけで変わらなかった時なども、入力欄を保存された名前に揃える
+      setNameInputNonce((n) => n + 1);
+      if (Object.keys(finalPatch).length === 0) return;
     }
 
     await db.records.update(r.id, finalPatch);
 
-    const affected = new Set<string>();
-    if (patch.seconds !== undefined) {
-      const id = finalPatch.masterTaskId ?? r.masterTaskId;
-      if (id) affected.add(id);
+    if (patch.seconds !== undefined && r.masterTaskId) {
+      await recomputeEstimateFromRecords(r.masterTaskId);
     }
-    if (oldMasterId) affected.add(oldMasterId);
-    if (newMasterId) affected.add(newMasterId);
-    for (const id of affected) {
-      await recomputeEstimateFromRecords(id);
+  }
+
+  // 「全部の名前を変える」設定: 作業マスタごと名前を変え、「元に戻す」を出す。
+  // 同じ名前の作業が既にあれば、まとめるか尋ねる
+  const [renameConflict, setRenameConflict] = useState<{ sourceId: string; target: MasterTask } | null>(null);
+  async function renameMasterWithUndo(masterId: string, next: { category: string; name: string }) {
+    const res = await renameMasterTask(masterId, next);
+    if (res.status === "conflict") {
+      setRenameConflict({ sourceId: masterId, target: res.conflictWith });
+      return;
     }
+    if (res.status !== "renamed") return;
+    const { undo } = res;
+    showUndoToast(`「${undo.before.category} / ${undo.before.name}」を「${undo.after.category} / ${undo.after.name}」に変えました`, async () => {
+      if (!(await undoRenameMasterTask(undo))) showUndoToast("その後に変更があったため元に戻せませんでした");
+    });
+  }
+  // やめた時は、入力欄を今の名前へ戻す
+  const [nameInputNonce, setNameInputNonce] = useState(0);
+  function cancelRenameMerge() {
+    setRenameConflict(null);
+    setNameInputNonce((n) => n + 1);
+  }
+  async function confirmRenameMerge() {
+    if (!renameConflict) return;
+    const { sourceId, target } = renameConflict;
+    setRenameConflict(null);
+    const { movedRecords } = await mergeMasterTasks(target.id, [sourceId]);
+    showUndoToast(`「${target.category} / ${target.name}」にまとめました(実績${movedRecords}件)`);
   }
 
   // 開始・終了時刻を編集した場合、実績時間(seconds)は動かした分だけ増減させる。
@@ -299,20 +322,12 @@ export default function RecordsSection() {
 
   async function deleteRecord(r: WorkRecord) {
     // 確認を挟む代わりに、すぐ消して「元に戻す」を出す(本日の作業の削除と同じ)。
-    // 画面に出ている行は少し古いことがあるので、消す直前の中身を控える
-    const snapshot = (await db.records.get(r.id)) ?? r;
-    await db.records.delete(r.id);
-    if (snapshot.masterTaskId) await recomputeEstimateFromRecords(snapshot.masterTaskId);
+    // ゴミ箱にも入れるので、「元に戻す」が消えた後でも戻せる。
+    // 戻す時は「同じIDの行がもう無い時だけ足す」(その後に入った新しい内容を古い控えで上書きしない)
+    const deleted = await deleteRecordToTrash(r.id);
+    if (!deleted) return;
     showUndoToast(`「${workCtx.label(r)}」の実績を削除しました`, async () => {
-      // 実績は同じ日の同じ作業を合算した行。戻す時は「同じIDの行がもう無い時だけ足す」。
-      // putで戻すと、その後に入った新しい内容を古い控えで上書きしてしまう
-      const restored = await db.transaction("rw", db.records, async () => {
-        if (await db.records.get(snapshot.id)) return false;
-        await db.records.add(snapshot);
-        return true;
-      });
-      // 削除の時に計算し直した作業マスタの想定時間も、戻した実績を含めて計算し直す
-      if (restored && snapshot.masterTaskId) await recomputeEstimateFromRecords(snapshot.masterTaskId);
+      await undoDeleteRecord(deleted);
     });
   }
 
@@ -576,7 +591,7 @@ export default function RecordsSection() {
                 />
               </div>
               <input
-                key={`category-${r.category}`}
+                key={`category-${r.category}-${nameInputNonce}`}
                 defaultValue={r.category}
                 onBlur={(e) => updateRecord(r, { category: e.target.value })}
                 className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
@@ -589,7 +604,7 @@ export default function RecordsSection() {
                 </span>
               )}
               <input
-                key={`name-${r.name}`}
+                key={`name-${r.name}-${nameInputNonce}`}
                 defaultValue={r.name}
                 onBlur={(e) => updateRecord(r, { name: e.target.value })}
                 className="w-32 rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
@@ -828,6 +843,22 @@ export default function RecordsSection() {
             </button>
             <button className="btn-pill text-sm" onClick={() => void applyImport(pendingImport.plan)}>
               取り込む
+            </button>
+          </div>
+        </Modal>
+      )}
+      {renameConflict && (
+        <Modal title="名前を変える" onClose={cancelRenameMerge}>
+          <p className="text-sm text-cream">同じ名前の作業があります。まとめますか？</p>
+          <p className="caption mt-1">
+            「{renameConflict.target.category} / {renameConflict.target.name}」へ、実績・本日の作業・テンプレートをまとめます。
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={cancelRenameMerge}>
+              やめる
+            </button>
+            <button className="btn-pill text-sm" onClick={() => void confirmRenameMerge()}>
+              まとめる
             </button>
           </div>
         </Modal>

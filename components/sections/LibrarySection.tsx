@@ -24,6 +24,7 @@ import { CardStock, DateSlip, OpenBook, ReadingRoom, Shelf } from "@/components/
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
+import Modal from "@/components/ui/Modal";
 
 // 図書館モードの「本日の作業」タブ。
 //
@@ -497,120 +498,121 @@ export default function LibrarySection() {
           )}
 
           {openBook && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-cream/40 p-4" onClick={() => setOpenBookId(null)}>
-              <div
-                className="max-h-[85vh] w-full max-w-sm overflow-y-auto border border-cream/40 bg-panel"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="relative">
-                  <CardStock seed={`${openBook.category}/${openBook.title}`} className="absolute inset-0" />
-                  <div className="relative p-3">
-                    <p className="font-mono text-[10px] tracking-widest text-cream/55">
-                      {W.callNumberLabel}　{openBook.callNumber}
-                    </p>
-                    <p className="mt-1 font-display text-base font-bold text-cream/90">{openBook.title}</p>
-                    <p className="text-[11px] text-cream/55">
-                      {W.authorLabel}　{openBook.category}
-                    </p>
-                    <dl className="mt-2 space-y-1 text-[11px]">
-                      {(
+            <Modal
+              variant="bare"
+              title={openBook.title}
+              onClose={() => setOpenBookId(null)}
+              closeOnBackdrop
+              scrimClassName="bg-cream/40"
+              panelClassName="max-h-[85vh] w-full max-w-sm overflow-y-auto border border-cream/40 bg-panel"
+            >
+              <div className="relative">
+                <CardStock seed={`${openBook.category}/${openBook.title}`} className="absolute inset-0" />
+                <div className="relative p-3">
+                  <p className="font-mono text-[10px] tracking-widest text-cream/55">
+                    {W.callNumberLabel}　{openBook.callNumber}
+                  </p>
+                  <p className="mt-1 font-display text-base font-bold text-cream/90">{openBook.title}</p>
+                  <p className="text-[11px] text-cream/55">
+                    {W.authorLabel}　{openBook.category}
+                  </p>
+                  <dl className="mt-2 space-y-1 text-[11px]">
+                    {(
+                      [
+                        [W.dueLabel, formatHms(openBook.estimatedSeconds)],
+                        [W.loanCountLabel, `${openBook.loanCount}回`],
                         [
-                          [W.dueLabel, formatHms(openBook.estimatedSeconds)],
-                          [W.loanCountLabel, `${openBook.loanCount}回`],
-                          [
-                            W.medianLabel,
-                            openBook.medianSeconds ? formatHms(Math.round(openBook.medianSeconds)) : W.neverLoaned,
-                          ],
-                          [
-                            W.overdueRateLabel,
-                            openBook.loanCount > 0 ? `${Math.round(openBook.overdueRate * 100)}%` : W.neverLoaned,
-                          ],
-                          [W.lastLoanLabel, openBook.lastLoanDate ?? W.neverLoaned],
-                        ] as const
-                      ).map(([label, value]) => (
-                        <div key={label} className="flex gap-2 border-b border-cream/10 pb-0.5">
-                          <dt className="w-32 shrink-0 text-cream/45">{label}</dt>
-                          <dd className="min-w-0 flex-1 tabular-nums text-cream/80">{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </div>
-                </div>
-                <DateSlip
-                  stamps={openBookSlip}
-                  title={`${W.slipTitle}　${openBook.title}`}
-                  className="border-t border-cream/20"
-                />
-                <div className="space-y-1 border-t border-cream/20 p-3">
-                  <button
-                    className="w-full border border-alert/50 bg-alert/10 py-2 text-xs text-alert"
-                    onClick={() => {
-                      const m = masterById.get(openBook.masterId);
-                      if (m) borrowFromCatalog(m, true);
-                    }}
-                  >
-                    {W.actionBorrow}
-                  </button>
-                  <button
-                    className="w-full border border-cream/30 py-2 text-xs text-cream/65"
-                    onClick={() => setOpenBookId(null)}
-                  >
-                    {W.closeLabel}
-                  </button>
+                          W.medianLabel,
+                          openBook.medianSeconds ? formatHms(Math.round(openBook.medianSeconds)) : W.neverLoaned,
+                        ],
+                        [
+                          W.overdueRateLabel,
+                          openBook.loanCount > 0 ? `${Math.round(openBook.overdueRate * 100)}%` : W.neverLoaned,
+                        ],
+                        [W.lastLoanLabel, openBook.lastLoanDate ?? W.neverLoaned],
+                      ] as const
+                    ).map(([label, value]) => (
+                      <div key={label} className="flex gap-2 border-b border-cream/10 pb-0.5">
+                        <dt className="w-32 shrink-0 text-cream/45">{label}</dt>
+                        <dd className="min-w-0 flex-1 tabular-nums text-cream/80">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 </div>
               </div>
-            </div>
+              <DateSlip
+                stamps={openBookSlip}
+                title={`${W.slipTitle}　${openBook.title}`}
+                className="border-t border-cream/20"
+              />
+              <div className="space-y-1 border-t border-cream/20 p-3">
+                <button
+                  className="w-full border border-alert/50 bg-alert/10 py-2 text-xs text-alert"
+                  onClick={() => {
+                    const m = masterById.get(openBook.masterId);
+                    if (m) borrowFromCatalog(m, true);
+                  }}
+                >
+                  {W.actionBorrow}
+                </button>
+                <button
+                  className="w-full border border-cream/30 py-2 text-xs text-cream/65"
+                  onClick={() => setOpenBookId(null)}
+                >
+                  {W.closeLabel}
+                </button>
+              </div>
+            </Modal>
           )}
         </div>
       )}
 
       {/* ══ 蔵書目録から借りる ══ */}
       {showPicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-cream/40 p-4"
-          onClick={() => {
+        <Modal
+          variant="bare"
+          title={W.pickerTitle}
+          onClose={() => {
             setShowPicker(false);
             setPickedMaster(null);
           }}
+          closeOnBackdrop
+          scrimClassName="bg-cream/40"
+          panelClassName="flex max-h-[85vh] w-full max-w-md flex-col border border-cream/40 bg-panel"
         >
-          <div
-            className="flex max-h-[85vh] w-full max-w-md flex-col border border-cream/40 bg-panel"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="border-b border-cream/25 p-3">
-              <p className="font-display text-sm tracking-[0.2em] text-cream/85">{W.pickerTitle}</p>
-              <p className="mt-0.5 text-[11px] text-cream/50">{W.borrowPrompt}</p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <MasterTaskPicker onSelect={setPickedMaster} selectedId={pickedMaster?.id ?? null} />
-            </div>
-            <div className="space-y-1 border-t border-cream/25 p-3">
-              <button
-                className="w-full border border-alert/50 bg-alert/10 py-2 text-xs text-alert disabled:opacity-40"
-                disabled={!pickedMaster}
-                onClick={() => pickedMaster && borrowFromCatalog(pickedMaster, true)}
-              >
-                {W.actionBorrow}
-              </button>
-              <button
-                className="w-full border border-cream/30 py-2 text-xs text-cream/65 disabled:opacity-40"
-                disabled={!pickedMaster}
-                onClick={() => pickedMaster && borrowFromCatalog(pickedMaster, false)}
-              >
-                {W.loanStatus["予約"]}
-              </button>
-              <button
-                className="w-full border border-cream/30 py-2 text-xs text-cream/65"
-                onClick={() => {
-                  setShowPicker(false);
-                  setPickedMaster(null);
-                }}
-              >
-                {W.closeLabel}
-              </button>
-            </div>
+          <div className="border-b border-cream/25 p-3">
+            <p className="font-display text-sm tracking-[0.2em] text-cream/85">{W.pickerTitle}</p>
+            <p className="mt-0.5 text-[11px] text-cream/50">{W.borrowPrompt}</p>
           </div>
-        </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <MasterTaskPicker onSelect={setPickedMaster} selectedId={pickedMaster?.id ?? null} />
+          </div>
+          <div className="space-y-1 border-t border-cream/25 p-3">
+            <button
+              className="w-full border border-alert/50 bg-alert/10 py-2 text-xs text-alert disabled:opacity-40"
+              disabled={!pickedMaster}
+              onClick={() => pickedMaster && borrowFromCatalog(pickedMaster, true)}
+            >
+              {W.actionBorrow}
+            </button>
+            <button
+              className="w-full border border-cream/30 py-2 text-xs text-cream/65 disabled:opacity-40"
+              disabled={!pickedMaster}
+              onClick={() => pickedMaster && borrowFromCatalog(pickedMaster, false)}
+            >
+              {W.loanStatus["予約"]}
+            </button>
+            <button
+              className="w-full border border-cream/30 py-2 text-xs text-cream/65"
+              onClick={() => {
+                setShowPicker(false);
+                setPickedMaster(null);
+              }}
+            >
+              {W.closeLabel}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

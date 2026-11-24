@@ -30,10 +30,13 @@ import {
   parsePresetList,
   setTodoArchived,
   setTodoParent,
+  todoTrashLabel,
+  trashTodos,
   undoTodoChanges,
   upsertTodoFromCsv,
   type TodoChange,
 } from "@/lib/todo";
+import { deleteFromTrash } from "@/lib/trash";
 import { isImeComposing, isSubmitEnter } from "@/lib/keyboard";
 import ParentTaskPicker from "@/components/sections/todo/ParentTaskPicker";
 import { todoPostpones, todoWaitingInfo } from "@/lib/waiting";
@@ -875,16 +878,20 @@ export default function TodoSection({
     if (!list) return;
     const deletedTasks = await db.todoTasks.where("listId").equals(listId).toArray();
     const wasViewing = view === `list:${listId}`;
-    await db.transaction("rw", db.todoLists, db.todoTasks, async () => {
+    // 件数はサブタスクを除いた、一覧で見えていた数にする(中身はサブタスクも含めて全部戻す)
+    const count = deletedTasks.filter((t) => !t.parentTaskId).length;
+    let trashId: string | null = null;
+    await db.transaction("rw", db.todoLists, db.todoTasks, db.trash, async () => {
+      // ゴミ箱にも入れる(トーストが消えたあとも7日間は戻せる)
+      trashId = await trashTodos(`リスト「${list.title}」とToDo${count}件`, deletedTasks, [list]);
       await db.todoTasks.bulkDelete(deletedTasks.map((t) => t.id));
       await db.todoLists.delete(listId);
     });
     if (wasViewing) setView("myday");
-    // 件数はサブタスクを除いた、一覧で見えていた数にする(中身はサブタスクも含めて全部戻す)
-    const count = deletedTasks.filter((t) => !t.parentTaskId).length;
     showUndoToast(`リスト「${list.title}」と中のタスク${count}件を削除しました`, async () => {
       // bulkPut: 戻すまでの間に同じIDが作られていても失敗せず、控えた内容で戻す
-      await db.transaction("rw", db.todoLists, db.todoTasks, async () => {
+      await db.transaction("rw", db.todoLists, db.todoTasks, db.trash, async () => {
+        if (trashId) await db.trash.delete(trashId);
         await db.todoLists.put(list);
         await db.todoTasks.bulkPut(deletedTasks);
       });
@@ -1221,9 +1228,11 @@ export default function TodoSection({
 
   async function deleteTask(task: TodoTask) {
     const subs = subtasksByParent.get(task.id) ?? [];
+    const trashId = await trashTodos(todoTrashLabel([task], subs.length), [task, ...subs]);
     await db.todoTasks.bulkDelete([task.id, ...subs.map((s) => s.id)]);
     if (detailTaskId === task.id) setDetailTaskId(null);
     showUndoToast(`「${task.title}」を削除しました`, async () => {
+      if (trashId) await deleteFromTrash(trashId);
       await db.todoTasks.bulkAdd([task, ...subs]);
     });
   }
@@ -1307,8 +1316,10 @@ export default function TodoSection({
     const targets = (allTasks ?? []).filter((t) => selectedTaskIds.has(t.id));
     if (targets.length === 0) return;
     const subs = targets.flatMap((t) => subtasksByParent.get(t.id) ?? []);
+    const trashId = await trashTodos(todoTrashLabel(targets, subs.length), [...targets, ...subs]);
     await db.todoTasks.bulkDelete([...targets.map((t) => t.id), ...subs.map((s) => s.id)]);
     showUndoToast(`${targets.length}件のタスクを削除しました`, async () => {
+      if (trashId) await deleteFromTrash(trashId);
       await db.todoTasks.bulkAdd([...targets, ...subs]);
     });
     setSelectedTaskIds(new Set());
@@ -1377,10 +1388,12 @@ export default function TodoSection({
   async function deleteSubtaskWithUndo(sub: TodoTask) {
     // 画面に出ていた古い写しではなく、消す直前の最新の内容を控える
     const snapshot = (await db.todoTasks.get(sub.id)) ?? sub;
+    const trashId = await trashTodos(todoTrashLabel([snapshot]), [snapshot]);
     await db.todoTasks.delete(sub.id);
     if (detailTaskId === sub.id) setDetailTaskId(null);
     showUndoToast(`サブタスク「${snapshot.title}」を削除しました`, async () => {
-      await db.transaction("rw", db.todoTasks, async () => {
+      await db.transaction("rw", db.todoTasks, db.trash, async () => {
+        if (trashId) await db.trash.delete(trashId);
         if (await db.todoTasks.get(snapshot.id)) return;
         // 親が消えた・別のタスクのサブタスクになった時は、親なしの迷子や2段目を作らないよう通常のタスクとして戻す
         const parent = snapshot.parentTaskId ? await db.todoTasks.get(snapshot.parentTaskId) : undefined;
@@ -4343,8 +4356,10 @@ function TaskDetailModal({
 
   // ✕は小さく押し間違えやすいので、消した直後なら元に戻せるようにする
   async function deleteSubtask(sub: TodoTask) {
+    const trashId = await trashTodos(todoTrashLabel([sub]), [sub]);
     await db.todoTasks.delete(sub.id);
     showUndoToast(`サブタスク「${sub.title}」を削除しました`, async () => {
+      if (trashId) await deleteFromTrash(trashId);
       await db.todoTasks.add(sub);
     });
   }

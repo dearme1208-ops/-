@@ -42,6 +42,7 @@ import {
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
+import Modal from "@/components/ui/Modal";
 
 // パワプロ風モード(育成選手モード)の「本日の作業」タブ。
 //
@@ -834,131 +835,49 @@ export default function PowerproTrainingSection() {
 
       {/* ══ 練習メニューの追加 ══ */}
       {showPicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(10,20,44)]/55 p-4"
-          onClick={closePicker}
+        <Modal
+          variant="bare"
+          title={W.pickerTitle}
+          onClose={closePicker}
+          closeOnBackdrop
+          scrimClassName="bg-[rgb(10,20,44)]/55"
+          panelClassName="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-white/30 bg-panel shadow-2xl"
         >
-          <div
-            className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-white/30 bg-panel shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-3 py-2" style={accentPlate}>
-              <p className="font-display text-sm font-black text-white">{W.pickerTitle}</p>
+          <div className="px-3 py-2" style={accentPlate}>
+            <p className="font-display text-sm font-black text-white">{W.pickerTitle}</p>
+          </div>
+
+          {pickerTab === "menu" && (
+            <div className="space-y-2 p-3">
+              <p className="text-[11px] text-cream/50">{W.pickerMenuTitle}</p>
+              <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("master")}>
+                {W.pickerOptMaster}
+              </button>
+              <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("favorite")}>
+                {W.pickerOptFavorite}
+              </button>
+              <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("free")}>
+                {W.pickerOptFree}
+              </button>
+              <button className={plateQuiet} onClick={closePicker}>
+                {W.closeLabel}
+              </button>
             </div>
+          )}
 
-            {pickerTab === "menu" && (
-              <div className="space-y-2 p-3">
-                <p className="text-[11px] text-cream/50">{W.pickerMenuTitle}</p>
-                <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("master")}>
-                  {W.pickerOptMaster}
-                </button>
-                <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("favorite")}>
-                  {W.pickerOptFavorite}
-                </button>
-                <button className={plateAccent} style={plateAccentStyle} onClick={() => setPickerTab("free")}>
-                  {W.pickerOptFree}
-                </button>
-                <button className={plateQuiet} onClick={closePicker}>
-                  {W.closeLabel}
-                </button>
+          {pickerTab === "master" && (
+            <>
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                <MasterTaskPicker onSelect={setPickedMaster} selectedId={pickedMaster?.id ?? null} />
               </div>
-            )}
-
-            {pickerTab === "master" && (
-              <>
-                <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                  <MasterTaskPicker onSelect={setPickedMaster} selectedId={pickedMaster?.id ?? null} />
-                </div>
-                <div className="space-y-1.5 border-t border-cream/10 p-3">
-                  <button
-                    className={plateAccent + " disabled:opacity-40"}
-                    style={plateAccentStyle}
-                    disabled={!pickedMaster}
-                    onClick={async () => {
-                      if (!pickedMaster) return;
-                      await addFromMaster(pickedMaster, true);
-                      closePicker();
-                    }}
-                  >
-                    {W.actionStart}
-                  </button>
-                  <button
-                    className={plateQuiet + " disabled:opacity-40"}
-                    disabled={!pickedMaster}
-                    onClick={async () => {
-                      if (!pickedMaster) return;
-                      await addFromMaster(pickedMaster, false);
-                      closePicker();
-                    }}
-                  >
-                    {W.actionPick}
-                  </button>
-                  <button className={plateQuiet} onClick={() => setPickerTab("menu")}>
-                    {W.closeLabel}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {pickerTab === "favorite" && (
-              <>
-                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3">
-                  {favoriteMasters.length === 0 ? (
-                    <p className="text-[11px] text-cream/50">{W.favoriteEmpty}</p>
-                  ) : (
-                    favoriteMasters.map((m) => (
-                      <button
-                        key={m.id}
-                        className="flex w-full items-center gap-2 rounded-lg border border-cream/15 bg-ink px-2.5 py-2 text-left"
-                        onClick={async () => {
-                          await addFromMaster(m, true);
-                          closePicker();
-                        }}
-                      >
-                        <span className="text-[rgb(232,172,40)]">★</span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[10px] text-cream/45">{m.category}</span>
-                          <span className="block truncate text-xs font-bold text-cream/85">{m.name}</span>
-                        </span>
-                        <span className="shrink-0 text-[10px] tabular-nums text-cream/40">
-                          {formatHms(m.estimatedSeconds)}
-                        </span>
-                      </button>
-                    ))
-                  )}
-                </div>
-                <div className="border-t border-cream/10 p-3">
-                  <button className={plateQuiet} onClick={() => setPickerTab("menu")}>
-                    {W.closeLabel}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {pickerTab === "free" && (
-              <div className="space-y-2 p-3">
-                <label className="block">
-                  <span className="mb-1 block text-[11px] text-cream/50">{W.freeCategoryLabel}</span>
-                  <input
-                    className="w-full rounded-lg border border-cream/20 bg-ink px-2.5 py-2 text-sm text-cream"
-                    value={freeCategory}
-                    onChange={(e) => setFreeCategory(e.target.value)}
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[11px] text-cream/50">{W.freeNameLabel}</span>
-                  <input
-                    className="w-full rounded-lg border border-cream/20 bg-ink px-2.5 py-2 text-sm text-cream"
-                    value={freeName}
-                    onChange={(e) => setFreeName(e.target.value)}
-                  />
-                </label>
+              <div className="space-y-1.5 border-t border-cream/10 p-3">
                 <button
                   className={plateAccent + " disabled:opacity-40"}
                   style={plateAccentStyle}
-                  disabled={!freeCategory.trim() || !freeName.trim()}
+                  disabled={!pickedMaster}
                   onClick={async () => {
-                    await addFreeform(freeCategory, freeName, true);
+                    if (!pickedMaster) return;
+                    await addFromMaster(pickedMaster, true);
                     closePicker();
                   }}
                 >
@@ -966,9 +885,10 @@ export default function PowerproTrainingSection() {
                 </button>
                 <button
                   className={plateQuiet + " disabled:opacity-40"}
-                  disabled={!freeCategory.trim() || !freeName.trim()}
+                  disabled={!pickedMaster}
                   onClick={async () => {
-                    await addFreeform(freeCategory, freeName, false);
+                    if (!pickedMaster) return;
+                    await addFromMaster(pickedMaster, false);
                     closePicker();
                   }}
                 >
@@ -978,9 +898,89 @@ export default function PowerproTrainingSection() {
                   {W.closeLabel}
                 </button>
               </div>
-            )}
-          </div>
-        </div>
+            </>
+          )}
+
+          {pickerTab === "favorite" && (
+            <>
+              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3">
+                {favoriteMasters.length === 0 ? (
+                  <p className="text-[11px] text-cream/50">{W.favoriteEmpty}</p>
+                ) : (
+                  favoriteMasters.map((m) => (
+                    <button
+                      key={m.id}
+                      className="flex w-full items-center gap-2 rounded-lg border border-cream/15 bg-ink px-2.5 py-2 text-left"
+                      onClick={async () => {
+                        await addFromMaster(m, true);
+                        closePicker();
+                      }}
+                    >
+                      <span className="text-[rgb(232,172,40)]">★</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[10px] text-cream/45">{m.category}</span>
+                        <span className="block truncate text-xs font-bold text-cream/85">{m.name}</span>
+                      </span>
+                      <span className="shrink-0 text-[10px] tabular-nums text-cream/40">
+                        {formatHms(m.estimatedSeconds)}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="border-t border-cream/10 p-3">
+                <button className={plateQuiet} onClick={() => setPickerTab("menu")}>
+                  {W.closeLabel}
+                </button>
+              </div>
+            </>
+          )}
+
+          {pickerTab === "free" && (
+            <div className="space-y-2 p-3">
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-cream/50">{W.freeCategoryLabel}</span>
+                <input
+                  className="w-full rounded-lg border border-cream/20 bg-ink px-2.5 py-2 text-sm text-cream"
+                  value={freeCategory}
+                  onChange={(e) => setFreeCategory(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-cream/50">{W.freeNameLabel}</span>
+                <input
+                  className="w-full rounded-lg border border-cream/20 bg-ink px-2.5 py-2 text-sm text-cream"
+                  value={freeName}
+                  onChange={(e) => setFreeName(e.target.value)}
+                />
+              </label>
+              <button
+                className={plateAccent + " disabled:opacity-40"}
+                style={plateAccentStyle}
+                disabled={!freeCategory.trim() || !freeName.trim()}
+                onClick={async () => {
+                  await addFreeform(freeCategory, freeName, true);
+                  closePicker();
+                }}
+              >
+                {W.actionStart}
+              </button>
+              <button
+                className={plateQuiet + " disabled:opacity-40"}
+                disabled={!freeCategory.trim() || !freeName.trim()}
+                onClick={async () => {
+                  await addFreeform(freeCategory, freeName, false);
+                  closePicker();
+                }}
+              >
+                {W.actionPick}
+              </button>
+              <button className={plateQuiet} onClick={() => setPickerTab("menu")}>
+                {W.closeLabel}
+              </button>
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   );

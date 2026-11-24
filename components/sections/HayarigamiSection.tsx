@@ -30,6 +30,7 @@ import {
 } from "@/lib/hayarigamiLogic";
 import type { DailyTask, MasterTask, TodoTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
+import Modal from "@/components/ui/Modal";
 
 // 流行り神風モード(怪異調査モード)専用の「本日の作業」タブ。
 // ホラーサウンドノベルの画面構成(暗闇の背景 + 下部のメッセージウィンドウ + 選択肢)を
@@ -1032,246 +1033,247 @@ export default function HayarigamiSection() {
 
       {/* ── 作業を選んで追加する(名鑑 / お気に入り / 自由入力の入口) ── */}
       {showPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4" onClick={closePicker}>
-          <div
-            className="flex max-h-[85vh] w-full max-w-sm flex-col border border-alert/40 bg-ink p-4"
-            onClick={(e) => e.stopPropagation()}
-            style={{
+        <Modal
+          variant="bare"
+          title={W.pickerTitle}
+          onClose={closePicker}
+          closeOnBackdrop
+          scrimClassName="bg-black/85"
+          panelClassName="flex max-h-[85vh] w-full max-w-sm flex-col border border-alert/40 bg-ink p-4"
+          panelStyle={{
               backgroundImage:
                 "radial-gradient(ellipse at 50% 0%, rgb(var(--accent-rgb) / 0.12) 0%, transparent 65%), linear-gradient(180deg, rgb(var(--panel-rgb)) 0%, rgb(var(--ink-rgb)) 100%)",
             }}
-          >
-            {pickerTab === "menu" && (
-              <>
-                <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerMenuTitle}</p>
-                <div className="mt-3 shrink-0 space-y-2">
-                  <button className={choicePlate} onClick={() => setPickerTab("master")}>
-                    {W.pickerOptMaster}
-                  </button>
-                  <button className={choicePlate} onClick={() => setPickerTab("favorite")}>
-                    {W.pickerOptFavorite}
-                  </button>
-                  <button className={choicePlate} onClick={() => setPickerTab("free")}>
-                    {W.pickerOptFree}
-                  </button>
-                  <button className="w-full border border-cream/25 py-2 text-xs text-cream/70" onClick={closePicker}>
-                    閉じる
-                  </button>
-                </div>
-              </>
-            )}
+        >
+          {pickerTab === "menu" && (
+            <>
+              <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerMenuTitle}</p>
+              <div className="mt-3 shrink-0 space-y-2">
+                <button className={choicePlate} onClick={() => setPickerTab("master")}>
+                  {W.pickerOptMaster}
+                </button>
+                <button className={choicePlate} onClick={() => setPickerTab("favorite")}>
+                  {W.pickerOptFavorite}
+                </button>
+                <button className={choicePlate} onClick={() => setPickerTab("free")}>
+                  {W.pickerOptFree}
+                </button>
+                <button className="w-full border border-cream/25 py-2 text-xs text-cream/70" onClick={closePicker}>
+                  閉じる
+                </button>
+              </div>
+            </>
+          )}
 
-            {pickerTab === "master" && (
-              <>
-                <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerTitle}</p>
-                <p className="mb-2 shrink-0 text-xs text-cream/50">{W.pickerDesc}</p>
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <MasterTaskPicker selectedId={pickedMaster?.id} onSelect={setPickedMaster} />
-                </div>
-                <div className="mt-3 shrink-0 space-y-2">
-                  <button
-                    className={choicePlate + " disabled:opacity-40"}
-                    disabled={!pickedMaster}
-                    onClick={async () => {
-                      if (!pickedMaster) return;
-                      await addFromMaster(pickedMaster, true);
-                      closePicker();
-                    }}
-                  >
-                    {W.pickerStart}
-                  </button>
-                  <button
-                    className={choicePlate + " disabled:opacity-40"}
-                    disabled={!pickedMaster}
-                    onClick={async () => {
-                      if (!pickedMaster) return;
-                      await addFromMaster(pickedMaster, false);
-                      closePicker();
-                    }}
-                  >
-                    {W.pickerQueue}
-                  </button>
-                  <button
-                    className="w-full border border-cream/25 py-2 text-xs text-cream/70"
-                    onClick={() => {
-                      setPickerTab("menu");
-                      setPickedMaster(null);
-                    }}
-                  >
-                    戻る
-                  </button>
-                </div>
-              </>
-            )}
+          {pickerTab === "master" && (
+            <>
+              <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerTitle}</p>
+              <p className="mb-2 shrink-0 text-xs text-cream/50">{W.pickerDesc}</p>
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <MasterTaskPicker selectedId={pickedMaster?.id} onSelect={setPickedMaster} />
+              </div>
+              <div className="mt-3 shrink-0 space-y-2">
+                <button
+                  className={choicePlate + " disabled:opacity-40"}
+                  disabled={!pickedMaster}
+                  onClick={async () => {
+                    if (!pickedMaster) return;
+                    await addFromMaster(pickedMaster, true);
+                    closePicker();
+                  }}
+                >
+                  {W.pickerStart}
+                </button>
+                <button
+                  className={choicePlate + " disabled:opacity-40"}
+                  disabled={!pickedMaster}
+                  onClick={async () => {
+                    if (!pickedMaster) return;
+                    await addFromMaster(pickedMaster, false);
+                    closePicker();
+                  }}
+                >
+                  {W.pickerQueue}
+                </button>
+                <button
+                  className="w-full border border-cream/25 py-2 text-xs text-cream/70"
+                  onClick={() => {
+                    setPickerTab("menu");
+                    setPickedMaster(null);
+                  }}
+                >
+                  戻る
+                </button>
+              </div>
+            </>
+          )}
 
-            {pickerTab === "favorite" && (
-              <>
-                <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerOptFavorite}</p>
-                <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-                  {favoriteMasters.length === 0 ? (
-                    <p className="text-xs leading-relaxed text-cream/50">{W.favoriteEmpty}</p>
-                  ) : (
-                    favoriteMasters.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => setPickedMaster(m)}
-                        className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${
-                          pickedMaster?.id === m.id ? "bg-cream text-ink" : "bg-ink/60 text-cream hover:bg-ink/80"
-                        }`}
-                      >
-                        ★ {m.name}
-                        <span className="ml-1 text-xs opacity-60">（{m.category}）</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-                <div className="mt-3 shrink-0 space-y-2">
-                  <button
-                    className={choicePlate + " disabled:opacity-40"}
-                    disabled={!pickedMaster}
-                    onClick={async () => {
-                      if (!pickedMaster) return;
-                      await addFromMaster(pickedMaster, true);
-                      closePicker();
-                    }}
-                  >
-                    {W.pickerStart}
-                  </button>
-                  <button
-                    className={choicePlate + " disabled:opacity-40"}
-                    disabled={!pickedMaster}
-                    onClick={async () => {
-                      if (!pickedMaster) return;
-                      await addFromMaster(pickedMaster, false);
-                      closePicker();
-                    }}
-                  >
-                    {W.pickerQueue}
-                  </button>
-                  <button
-                    className="w-full border border-cream/25 py-2 text-xs text-cream/70"
-                    onClick={() => {
-                      setPickerTab("menu");
-                      setPickedMaster(null);
-                    }}
-                  >
-                    戻る
-                  </button>
-                </div>
-              </>
-            )}
+          {pickerTab === "favorite" && (
+            <>
+              <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerOptFavorite}</p>
+              <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+                {favoriteMasters.length === 0 ? (
+                  <p className="text-xs leading-relaxed text-cream/50">{W.favoriteEmpty}</p>
+                ) : (
+                  favoriteMasters.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setPickedMaster(m)}
+                      className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${
+                        pickedMaster?.id === m.id ? "bg-cream text-ink" : "bg-ink/60 text-cream hover:bg-ink/80"
+                      }`}
+                    >
+                      ★ {m.name}
+                      <span className="ml-1 text-xs opacity-60">（{m.category}）</span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="mt-3 shrink-0 space-y-2">
+                <button
+                  className={choicePlate + " disabled:opacity-40"}
+                  disabled={!pickedMaster}
+                  onClick={async () => {
+                    if (!pickedMaster) return;
+                    await addFromMaster(pickedMaster, true);
+                    closePicker();
+                  }}
+                >
+                  {W.pickerStart}
+                </button>
+                <button
+                  className={choicePlate + " disabled:opacity-40"}
+                  disabled={!pickedMaster}
+                  onClick={async () => {
+                    if (!pickedMaster) return;
+                    await addFromMaster(pickedMaster, false);
+                    closePicker();
+                  }}
+                >
+                  {W.pickerQueue}
+                </button>
+                <button
+                  className="w-full border border-cream/25 py-2 text-xs text-cream/70"
+                  onClick={() => {
+                    setPickerTab("menu");
+                    setPickedMaster(null);
+                  }}
+                >
+                  戻る
+                </button>
+              </div>
+            </>
+          )}
 
-            {pickerTab === "free" && (
-              <>
-                <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerOptFree}</p>
-                <div className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                  <div>
-                    <label className="mb-1 block text-xs text-cream/50">{W.freeCategoryLabel}</label>
-                    <input
-                      value={freeCategory}
-                      onChange={(e) => setFreeCategory(e.target.value)}
-                      className="w-full rounded-lg border border-cream/20 bg-black/40 px-3 py-2 text-sm text-cream"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs text-cream/50">{W.freeNameLabel}</label>
-                    <input
-                      value={freeName}
-                      onChange={(e) => setFreeName(e.target.value)}
-                      className="w-full rounded-lg border border-cream/20 bg-black/40 px-3 py-2 text-sm text-cream"
-                    />
-                  </div>
+          {pickerTab === "free" && (
+            <>
+              <p className="shrink-0 text-[10px] tracking-[0.3em] text-cream/40">{W.pickerOptFree}</p>
+              <div className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                <div>
+                  <label className="mb-1 block text-xs text-cream/50">{W.freeCategoryLabel}</label>
+                  <input
+                    value={freeCategory}
+                    onChange={(e) => setFreeCategory(e.target.value)}
+                    className="w-full rounded-lg border border-cream/20 bg-black/40 px-3 py-2 text-sm text-cream"
+                  />
                 </div>
-                <div className="mt-3 shrink-0 space-y-2">
-                  <button
-                    className={choicePlate + " disabled:opacity-40"}
-                    disabled={!freeCategory.trim() || !freeName.trim()}
-                    onClick={async () => {
-                      await addFreeform(freeCategory, freeName, true);
-                      closePicker();
-                    }}
-                  >
-                    {W.pickerStart}
-                  </button>
-                  <button
-                    className={choicePlate + " disabled:opacity-40"}
-                    disabled={!freeCategory.trim() || !freeName.trim()}
-                    onClick={async () => {
-                      await addFreeform(freeCategory, freeName, false);
-                      closePicker();
-                    }}
-                  >
-                    {W.pickerQueue}
-                  </button>
-                  <button
-                    className="w-full border border-cream/25 py-2 text-xs text-cream/70"
-                    onClick={() => setPickerTab("menu")}
-                  >
-                    戻る
-                  </button>
+                <div>
+                  <label className="mb-1 block text-xs text-cream/50">{W.freeNameLabel}</label>
+                  <input
+                    value={freeName}
+                    onChange={(e) => setFreeName(e.target.value)}
+                    className="w-full rounded-lg border border-cream/20 bg-black/40 px-3 py-2 text-sm text-cream"
+                  />
                 </div>
-              </>
-            )}
-          </div>
-        </div>
+              </div>
+              <div className="mt-3 shrink-0 space-y-2">
+                <button
+                  className={choicePlate + " disabled:opacity-40"}
+                  disabled={!freeCategory.trim() || !freeName.trim()}
+                  onClick={async () => {
+                    await addFreeform(freeCategory, freeName, true);
+                    closePicker();
+                  }}
+                >
+                  {W.pickerStart}
+                </button>
+                <button
+                  className={choicePlate + " disabled:opacity-40"}
+                  disabled={!freeCategory.trim() || !freeName.trim()}
+                  onClick={async () => {
+                    await addFreeform(freeCategory, freeName, false);
+                    closePicker();
+                  }}
+                >
+                  {W.pickerQueue}
+                </button>
+                <button
+                  className="w-full border border-cream/25 py-2 text-xs text-cream/70"
+                  onClick={() => setPickerTab("menu")}
+                >
+                  戻る
+                </button>
+              </div>
+            </>
+          )}
+        </Modal>
       )}
 
       {/* ── 怪異の詳細(名鑑を開いた時) ── */}
       {openKaii && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
-          onClick={() => setOpenKaii(null)}
-        >
-          <div
-            className="w-full max-w-sm border border-alert/40 bg-ink p-4"
-            onClick={(e) => e.stopPropagation()}
-            style={{
+        <Modal
+          variant="bare"
+          title={wordingEnabled ? openKaii.displayName : openKaii.realName}
+          onClose={() => setOpenKaii(null)}
+          closeOnBackdrop
+          scrimClassName="bg-black/85"
+          panelClassName="w-full max-w-sm border border-alert/40 bg-ink p-4"
+          panelStyle={{
               backgroundImage:
                 "radial-gradient(ellipse at 50% 0%, rgb(var(--accent-rgb) / 0.12) 0%, transparent 65%), linear-gradient(180deg, rgb(var(--panel-rgb)) 0%, rgb(var(--ink-rgb)) 100%)",
             }}
-          >
-            <p className="text-[10px] tracking-[0.3em] text-cream/40">{W.detailHeader}</p>
-            <div className="mt-1 flex items-start gap-3">
-              <KaiiSilhouette
-                seed={openKaii.displayName}
-                size={104}
-                dangerLevel={openKaii.dangerLevel}
-                className="shrink-0 border border-cream/20"
-              />
-              <div className="min-w-0">
-                <p className={`font-display text-lg font-bold leading-snug ${DANGER_TEXT[openKaii.dangerLevel]}`}>
-                  {wordingEnabled ? openKaii.displayName : openKaii.realName}
-                </p>
-                <p className="text-[11px] text-cream/40">
-                  {openKaii.category} / {openKaii.realName}
-                </p>
-              </div>
+        >
+          <p className="text-[10px] tracking-[0.3em] text-cream/40">{W.detailHeader}</p>
+          <div className="mt-1 flex items-start gap-3">
+            <KaiiSilhouette
+              seed={openKaii.displayName}
+              size={104}
+              dangerLevel={openKaii.dangerLevel}
+              className="shrink-0 border border-cream/20"
+            />
+            <div className="min-w-0">
+              <p className={`font-display text-lg font-bold leading-snug ${DANGER_TEXT[openKaii.dangerLevel]}`}>
+                {wordingEnabled ? openKaii.displayName : openKaii.realName}
+              </p>
+              <p className="text-[11px] text-cream/40">
+                {openKaii.category} / {openKaii.realName}
+              </p>
             </div>
-            <div className="mt-3 space-y-1 text-xs text-cream/70">
-              {[
-                [W.detailStatus, kaiiStatusLabel(openKaii.status, wordingEnabled)],
-                [W.detailCount, `${openKaii.encounterCount}回`],
-                [W.detailAvg, formatHms(Math.round(openKaii.avgSeconds))],
-                [W.detailMax, formatHms(Math.round(openKaii.maxSeconds))],
-                [W.detailRatio, openKaii.avgRatio > 0 ? `${Math.round(openKaii.avgRatio * 100)}%` : W.noEstimate],
-                [W.detailTrouble, `${openKaii.troubleCount}回`],
-                [W.detailLastSeen, openKaii.lastSeenDate],
-              ].map(([label, value]) => (
-                <div key={label} className="flex justify-between border-b border-cream/10 pb-1">
-                  <span className="text-cream/40">{label}</span>
-                  <span className="tabular-nums">{value}</span>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-[10px] leading-relaxed text-cream/35">{W.detailNote}</p>
-            <button
-              className="mt-3 w-full border border-cream/25 py-2 text-xs text-cream/70"
-              onClick={() => setOpenKaii(null)}
-            >
-              閉じる
-            </button>
           </div>
-        </div>
+          <div className="mt-3 space-y-1 text-xs text-cream/70">
+            {[
+              [W.detailStatus, kaiiStatusLabel(openKaii.status, wordingEnabled)],
+              [W.detailCount, `${openKaii.encounterCount}回`],
+              [W.detailAvg, formatHms(Math.round(openKaii.avgSeconds))],
+              [W.detailMax, formatHms(Math.round(openKaii.maxSeconds))],
+              [W.detailRatio, openKaii.avgRatio > 0 ? `${Math.round(openKaii.avgRatio * 100)}%` : W.noEstimate],
+              [W.detailTrouble, `${openKaii.troubleCount}回`],
+              [W.detailLastSeen, openKaii.lastSeenDate],
+            ].map(([label, value]) => (
+              <div key={label} className="flex justify-between border-b border-cream/10 pb-1">
+                <span className="text-cream/40">{label}</span>
+                <span className="tabular-nums">{value}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[10px] leading-relaxed text-cream/35">{W.detailNote}</p>
+          <button
+            className="mt-3 w-full border border-cream/25 py-2 text-xs text-cream/70"
+            onClick={() => setOpenKaii(null)}
+          >
+            閉じる
+          </button>
+        </Modal>
       )}
     </div>
   );

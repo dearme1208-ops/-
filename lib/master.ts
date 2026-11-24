@@ -1,6 +1,7 @@
 import { db, uid } from "./db";
 import type { MasterTask } from "./types";
 import type { ParsedMasterRow } from "./masterCsv";
+import { putInTrash } from "./trash";
 
 export interface DuplicateMasterGroup {
   category: string;
@@ -84,6 +85,109 @@ export async function mergeMasterTasks(
   return result;
 }
 
+// ---- 作業マスタの名前変更(区分・作業名) ----
+// マスタ・紐づく実績・本日の作業(過去・未来すべて)・曜日別テンプレートを1つのトランザクションで揃える。
+// 同じ名前の別マスタがあれば変えずに conflictWith を返す(呼び出し側で統合を勧める)
+
+type NameFields = { category?: string; name?: string };
+interface RenamedRow {
+  id: string;
+  before: NameFields;
+}
+export interface MasterRenameUndo {
+  masterId: string;
+  before: { category: string; name: string };
+  after: { category: string; name: string };
+  records: RenamedRow[];
+  dailyTasks: RenamedRow[];
+  templateItems: RenamedRow[];
+}
+export type RenameMasterResult =
+  | { status: "renamed"; undo: MasterRenameUndo; counts: { records: number; dailyTasks: number; templateItems: number } }
+  | { status: "conflict"; conflictWith: MasterTask }
+  | { status: "unchanged" }
+  | { status: "notFound" }
+  | { status: "invalid" };
+
+export async function renameMasterTask(masterId: string, patch: { category?: string; name?: string }): Promise<RenameMasterResult> {
+  return db.transaction("rw", [db.masterTasks, db.records, db.dailyTasks, db.templateItems], async (): Promise<RenameMasterResult> => {
+    const master = await db.masterTasks.get(masterId);
+    if (!master) return { status: "notFound" };
+    const category = (patch.category ?? master.category).trim();
+    const name = (patch.name ?? master.name).trim();
+    if (!category || !name) return { status: "invalid" };
+    const catChanged = category !== master.category;
+    const nameChanged = name !== master.name;
+    if (!catChanged && !nameChanged) return { status: "unchanged" };
+
+    const key = `${normalizeMasterKey(category)}::${normalizeMasterKey(name)}`;
+    const conflictWith = await db.masterTasks
+      .filter((t) => t.id !== masterId && `${normalizeMasterKey(t.category)}::${normalizeMasterKey(t.name)}` === key)
+      .first();
+    if (conflictWith) return { status: "conflict", conflictWith };
+
+    // 変わった項目だけを書く(区分だけ変えた時に、行ごとの作業名には触れない)
+    const fields: NameFields = {};
+    if (catChanged) fields.category = category;
+    if (nameChanged) fields.name = name;
+    const pick = (row: { category: string; name: string }): NameFields => {
+      const b: NameFields = {};
+      if (catChanged) b.category = row.category;
+      if (nameChanged) b.name = row.name;
+      return b;
+    };
+    const differs = (row: { category: string; name: string }) =>
+      (catChanged && row.category !== category) || (nameChanged && row.name !== name);
+
+    const recs = (await db.records.where("masterTaskId").equals(masterId).toArray()).filter(differs);
+    for (const r of recs) await db.records.update(r.id, fields);
+    // 本日の作業は日付を問わず全部揃える(履歴の表示と実績が食い違わないように)
+    const dts = (await db.dailyTasks.filter((t) => t.masterTaskId === masterId).toArray()).filter(differs);
+    for (const t of dts) await db.dailyTasks.update(t.id, fields);
+    const tis = (await db.templateItems.filter((t) => t.masterTaskId === masterId).toArray()).filter(differs);
+    for (const t of tis) await db.templateItems.update(t.id, fields);
+    await db.masterTasks.update(masterId, { category, name, updatedAt: Date.now() });
+
+    return {
+      status: "renamed",
+      undo: {
+        masterId,
+        before: { category: master.category, name: master.name },
+        after: { category, name },
+        records: recs.map((r) => ({ id: r.id, before: pick(r) })),
+        dailyTasks: dts.map((t) => ({ id: t.id, before: pick(t) })),
+        templateItems: tis.map((t) => ({ id: t.id, before: pick(t) })),
+      },
+      counts: { records: recs.length, dailyTasks: dts.length, templateItems: tis.length },
+    };
+  });
+}
+
+/** renameMasterTask を取り消す。その後に変わっていない行だけ元の名前へ戻す。
+ *  マスタ自体が既に別の名前になっている・元の名前の別マスタができている時は戻さない(false) */
+export async function undoRenameMasterTask(u: MasterRenameUndo): Promise<boolean> {
+  return db.transaction("rw", [db.masterTasks, db.records, db.dailyTasks, db.templateItems], async () => {
+    const master = await db.masterTasks.get(u.masterId);
+    if (!master || master.category !== u.after.category || master.name !== u.after.name) return false;
+    const key = `${normalizeMasterKey(u.before.category)}::${normalizeMasterKey(u.before.name)}`;
+    const clash = await db.masterTasks
+      .filter((t) => t.id !== u.masterId && `${normalizeMasterKey(t.category)}::${normalizeMasterKey(t.name)}` === key)
+      .first();
+    if (clash) return false;
+    // 行が今も「この操作で付けた名前のまま・同じマスタ」の時だけ戻す
+    const still = (row: { masterTaskId?: string; category: string; name: string } | undefined, before: NameFields) =>
+      !!row &&
+      row.masterTaskId === u.masterId &&
+      (before.category === undefined || row.category === u.after.category) &&
+      (before.name === undefined || row.name === u.after.name);
+    for (const r of u.records) if (still(await db.records.get(r.id), r.before)) await db.records.update(r.id, r.before);
+    for (const t of u.dailyTasks) if (still(await db.dailyTasks.get(t.id), t.before)) await db.dailyTasks.update(t.id, t.before);
+    for (const t of u.templateItems) if (still(await db.templateItems.get(t.id), t.before)) await db.templateItems.update(t.id, t.before);
+    await db.masterTasks.update(u.masterId, { category: u.before.category, name: u.before.name, updatedAt: Date.now() });
+    return true;
+  });
+}
+
 /**
  * 作業マスタの照合に使う正規化。全角/半角(ＮＴＥ と NTE)、前後や途中の空白の違い、英字の大文字小文字を同じとみなす
  * (自由入力で表記が少し違うだけの重複マスタができ、集計が分かれてしまうのを防ぐ)
@@ -164,22 +268,26 @@ export async function recoverOrphanedMasterHistory(
 export interface DeletedMaster {
   master: MasterTask;
   unlinkedTemplateItemIds: string[];
+  /** ゴミ箱に入れた控えのID(元に戻したらゴミ箱からは消す) */
+  trashId?: string | null;
 }
 
 export async function deleteMasterTask(id: string): Promise<DeletedMaster | undefined> {
-  return db.transaction("rw", db.masterTasks, db.templateItems, async () => {
+  return db.transaction("rw", [db.masterTasks, db.templateItems, db.trash], async () => {
     const master = await db.masterTasks.get(id);
     if (!master) return undefined;
     const items = await db.templateItems.filter((t) => t.masterTaskId === id).toArray();
     for (const t of items) await db.templateItems.update(t.id, { masterTaskId: undefined });
     await db.masterTasks.delete(id);
-    return { master, unlinkedTemplateItemIds: items.map((t) => t.id) };
+    // 「元に戻す」が消えた後でもゴミ箱から戻せるようにする
+    const trashId = await putInTrash("master", `作業マスタ ${master.category} / ${master.name}`, { masterTasks: [master] });
+    return { master, unlinkedTemplateItemIds: items.map((t) => t.id), trashId };
   });
 }
 
 /** deleteMasterTask を取り消す。同じIDのマスタが既にあれば何もしない(false) */
 export async function restoreDeletedMasterTask(d: DeletedMaster): Promise<boolean> {
-  return db.transaction("rw", db.masterTasks, db.templateItems, async () => {
+  return db.transaction("rw", [db.masterTasks, db.templateItems, db.trash], async () => {
     if (await db.masterTasks.get(d.master.id)) return false;
     await db.masterTasks.add(d.master);
     // 紐付けを外したままの項目だけ繋ぎ直す(その後に別のマスタへ繋いだ項目には触れない)
@@ -187,6 +295,8 @@ export async function restoreDeletedMasterTask(d: DeletedMaster): Promise<boolea
       const item = await db.templateItems.get(id);
       if (item && !item.masterTaskId) await db.templateItems.update(id, { masterTaskId: d.master.id });
     }
+    // 戻したのでゴミ箱の控えは要らない(残すと二重に見える)
+    if (d.trashId) await db.trash.delete(d.trashId);
     return true;
   });
 }

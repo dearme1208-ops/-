@@ -92,11 +92,50 @@ export interface TodayToolbarProps {
   onDownloadScheduleTemplate: () => void;
   onImportScheduleFile: (file: File) => void;
   onRegenerate: () => void;
+  /** 見ている日(過去の日を見ている時だけ date と違う) */
+  viewDate?: string;
+  /** 前日・翌日へ(翌日は今日まで) */
+  onShiftDay?: (delta: -1 | 1) => void;
+  onToday?: () => void;
+}
+
+const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
+/** "2026-11-22" → "11/22（日）" */
+export function shortDateLabel(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  return `${d.getMonth() + 1}/${d.getDate()}（${WEEKDAY_JA[d.getDay()]}）`;
+}
+
+/** 見出し横の小さな日付の切り替え(◀ 前日 / 日付 / 翌日 ▶ / 今日へ)。どの日を見ていたかは覚えない(開けば今日) */
+function DayNav({ viewDate, isPast, onShiftDay, onToday }: { viewDate: string; isPast: boolean; onShiftDay: (d: -1 | 1) => void; onToday: () => void }) {
+  return (
+    <div role="group" aria-label="表示する日" className="flex items-center gap-1 text-xs" data-testid="today-day-nav">
+      <button className="btn-pill-outline whitespace-nowrap px-2.5 py-1 text-xs" onClick={() => onShiftDay(-1)} aria-label="前日">
+        ◀ 前日
+      </button>
+      <span className="num whitespace-nowrap px-1 text-cream/80">{shortDateLabel(viewDate)}</span>
+      <button
+        className="btn-pill-outline whitespace-nowrap px-2.5 py-1 text-xs"
+        onClick={() => onShiftDay(1)}
+        disabled={!isPast}
+        aria-label="翌日"
+      >
+        翌日 ▶
+      </button>
+      {isPast && (
+        <button className="btn-pill whitespace-nowrap px-2.5 py-1 text-xs" onClick={onToday}>
+          今日へ
+        </button>
+      )}
+    </div>
+  );
 }
 
 // 本日の作業リストの見出し(日付・連続日数・育成度・同曜日比)と、右側の操作ボタン群
 export default function TodayToolbar(props: TodayToolbarProps) {
   const { date, simpleButtons: simple, todayTotalSeconds, sameWeekdayAvg, voice } = props;
+  const viewDate = props.viewDate ?? date;
+  const isPast = viewDate !== date;
   const scheduleFileInputRef = useRef<HTMLInputElement>(null);
   // たまにしか使わない操作(予定の取り込み・テンプレートでの作り直し)は「その他」に畳む。
   // スマホでは9個のボタンが作業リストの前に約260pxも並び、リストが下へ押し出されていた
@@ -131,13 +170,15 @@ export default function TodayToolbar(props: TodayToolbarProps) {
       {/* today-head: スマホの幅では見出し横の札を大きい札(data-size="lg")からふつうの大きさに戻す(globals.css)。
           大きいままだと 390px で札が見出しの下の段へ回り込んでいた */}
       <div className="today-head flex flex-wrap items-center gap-2">
-        <h2 className="font-display text-lg font-bold whitespace-nowrap">{date} の作業リスト</h2>
-        {props.streakDays > 0 && (
+        <h2 className="font-display text-lg font-bold whitespace-nowrap">{viewDate} の作業リスト</h2>
+        {props.onShiftDay && props.onToday && <DayNav viewDate={viewDate} isPast={isPast} onShiftDay={props.onShiftDay} onToday={props.onToday} />}
+        {!isPast && props.streakDays > 0 && (
           <span className="chip" data-size="lg" data-tone="accent" title="実績が記録されている連続日数">
             <Icon emoji="🔥" /> 連続{props.streakDays}日
           </span>
         )}
-        {props.growthStageEnabled &&
+        {!isPast &&
+          props.growthStageEnabled &&
           todayTotalSeconds > 0 &&
           (() => {
             const { stage, index } = computeGrowthStage(props.themedMode, todayTotalSeconds);
@@ -163,7 +204,7 @@ export default function TodayToolbar(props: TodayToolbarProps) {
               </span>
             );
           })()}
-        {todayTotalSeconds > 0 && sameWeekdayAvg && sameWeekdayAvg.dayCount >= 2 && (
+        {!isPast && todayTotalSeconds > 0 && sameWeekdayAvg && sameWeekdayAvg.dayCount >= 2 && (
           <span
             className="chip num"
             data-size="lg"
@@ -179,7 +220,8 @@ export default function TodayToolbar(props: TodayToolbarProps) {
           以前は「いま」の2つを1段目、ほかを2段目に分けていたが、2段だと計測中の作業が下へ押し出される。
           区別は段ではなく、細い区切り線と小さな見出し、「いま」だけ塗りつぶしにすることで付ける。
           狭い画面では1行の横スクロール(よく使う「いま」が左端) */}
-      <div className="flex w-full flex-col gap-2 sm:w-auto">
+      {/* 過去の日を見ている間は、今日の操作(追加・トラブル・段取りなど)は出さない */}
+      <div className={`flex w-full flex-col gap-2 sm:w-auto ${isPast ? "hidden" : ""}`}>
       <div
         ref={subRowRef}
         className="scroll-fade-right -mx-1 flex items-start gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible"

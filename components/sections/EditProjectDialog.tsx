@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { attachMailFile, openMailAttachment, readFileAsDataUrl, type MailAttachmentFields } from "@/lib/mailImport";
 import {
   DndContext,
@@ -22,6 +22,8 @@ import { stageRecordedSeconds } from "@/lib/projects";
 import { isSubmitEnter } from "@/lib/keyboard";
 import { formatHms, parseHmsToSeconds } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
+import { useUnsavedGuard } from "@/components/ui/useUnsavedGuard";
 import RetrospectiveInput from "@/components/sections/RetrospectiveInput";
 import { collectRetrospectives, similarCompletedProjects } from "@/lib/projectTemplate";
 import DueDateLoadWarning from "@/components/ui/DueDateLoadWarning";
@@ -236,28 +238,23 @@ function StageRow({
         />
       </div>
       {imageExpanded && stage.imageDataUrl && (
-        <div
-          className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setImageExpanded(false)}
-        >
-          <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
-            <img src={stage.imageDataUrl} alt={stage.title} className="max-h-[75vh] max-w-full rounded-lg object-contain" />
-            <div className="mt-2 flex justify-center gap-2">
-              <button
-                className="btn-pill-outline text-xs"
-                onClick={() => {
-                  onSetImage(stage.id, undefined);
-                  setImageExpanded(false);
-                }}
-              >
-                画像を削除
-              </button>
-              <button className="btn-pill text-xs" onClick={() => setImageExpanded(false)}>
-                閉じる
-              </button>
-            </div>
+        <Modal title={stage.title.trim() || "段階の画像"} onClose={() => setImageExpanded(false)} size="image" closeOnBackdrop>
+          <img src={stage.imageDataUrl} alt={stage.title} className="mx-auto max-h-[65dvh] max-w-full rounded-lg object-contain" />
+          <div className="mt-3 flex justify-center gap-2">
+            <button
+              className="btn-pill-outline text-xs"
+              onClick={() => {
+                onSetImage(stage.id, undefined);
+                setImageExpanded(false);
+              }}
+            >
+              画像を削除
+            </button>
+            <button className="btn-pill text-xs" onClick={() => setImageExpanded(false)}>
+              閉じる
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -354,13 +351,18 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   }
   // 実績のある段階を消すと、集計で「削除済みの段階」としか出なくなるので先に知らせる
   const projectRecords = useLiveQuery(() => db.records.filter((r) => r.projectId === project.id).toArray(), [project.id]);
-  const [removeConfirm, setRemoveConfirm] = useState<{ id: string; title: string; seconds: number } | null>(null);
-  function removeStage(id: string) {
+  async function removeStage(id: string) {
     const seconds = stageRecordedSeconds(projectRecords ?? [], project.id, id);
     if (seconds > 0) {
-      const stage = stages.find((s) => s.id === id);
-      setRemoveConfirm({ id, title: stage?.title ?? "", seconds });
-      return;
+      const stageTitle = stages.find((s) => s.id === id)?.title ?? "";
+      const ok = await confirmDialog({
+        title: "段階を削除しますか？",
+        body: `この段階には${formatStageHours(seconds)}の実績があります（「${stageTitle || "無題の段階"}」）。消すと、集計では「削除済みの段階」としてまとめて出ます（実績そのものは残ります）。保存するまでは元に戻せます。`,
+        okLabel: "削除する",
+        cancelLabel: "やめる",
+        danger: true,
+      });
+      if (!ok) return;
     }
     setStages((prev) => prev.filter((s) => s.id !== id));
   }
@@ -429,8 +431,28 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
     );
   }
 
-  async function save() {
-    if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) return;
+  // 開いた時の入力内容。これと違えば「保存していない変更あり」
+  const currentSnapshot = {
+    title, groupName, category, workName, dueDate, hourlyRateStr, estimatedTotalStr, clientId, tag, url,
+    mail: mail ?? null, predecessorProjectIds, newStage: newStageTitle.trim(),
+  };
+  const [initialSnapshot] = useState(() => JSON.stringify(currentSnapshot));
+  const [initialStages] = useState(stages);
+  const stagesDirty = useMemo(
+    () => stages !== initialStages && JSON.stringify(stages) !== JSON.stringify(initialStages),
+    [stages, initialStages]
+  );
+  const dirty = stagesDirty || JSON.stringify(currentSnapshot) !== initialSnapshot;
+  // 保存できなかった理由(空なら出さない)
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // 保存できたら true(閉じるのは呼び出し側)
+  async function save(): Promise<boolean> {
+    if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) {
+      setSaveError("件名・業務区分・詳細作業名・期日を入力してください。");
+      return false;
+    }
     const rate = Number(hourlyRateStr);
     const estimatedTotalSeconds =
       estimatedTotalStr.trim() !== "" ? parseHmsToSeconds(estimatedTotalStr) : 0;
@@ -455,25 +477,41 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
     // 段階名は前後の空白を除いて保存する(空白だけの入力だと、一見「入力済み」に
     // 見えてしまいプレースホルダーも出ないまま空欄が残ってしまうため)
     const editedStages = stages.map((s) => ({ ...s, title: s.title.trim() }));
-    await db.transaction("rw", db.projects, async () => {
-      // 開いている間に他の画面で変わった分(段階の完了・対応状況など)を巻き戻さないよう、
-      // 最新の案件を読み直し、この画面で実際に変えた項目だけを書く
-      const fresh = await db.projects.get(project.id);
-      if (!fresh) return;
-      const opened = project as unknown as Record<string, unknown>;
-      const patch: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(fields)) {
-        if (JSON.stringify(v) !== JSON.stringify(opened[k])) patch[k] = v;
+    setSaving(true);
+    setSaveError("");
+    try {
+      const found = await db.transaction("rw", db.projects, async () => {
+        // 開いている間に他の画面で変わった分(段階の完了・対応状況など)を巻き戻さないよう、
+        // 最新の案件を読み直し、この画面で実際に変えた項目だけを書く
+        const fresh = await db.projects.get(project.id);
+        if (!fresh) return false;
+        const opened = project as unknown as Record<string, unknown>;
+        const patch: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(fields)) {
+          if (JSON.stringify(v) !== JSON.stringify(opened[k])) patch[k] = v;
+        }
+        const mergedStages = mergeEditedStages(project.stages ?? [], editedStages, fresh.stages ?? []);
+        if (JSON.stringify(mergedStages) !== JSON.stringify(fresh.stages ?? [])) patch.stages = mergedStages;
+        if (Object.keys(patch).length > 0) await db.projects.update(project.id, patch as Partial<ProjectItem>);
+        return true;
+      });
+      if (!found) {
+        setSaveError("この案件はほかの画面で削除されたため、保存できませんでした。");
+        return false;
       }
-      const mergedStages = mergeEditedStages(project.stages ?? [], editedStages, fresh.stages ?? []);
-      if (JSON.stringify(mergedStages) !== JSON.stringify(fresh.stages ?? [])) patch.stages = mergedStages;
-      if (Object.keys(patch).length > 0) await db.projects.update(project.id, patch as Partial<ProjectItem>);
-    });
-    onClose();
+      return true;
+    } catch (err) {
+      setSaveError(`保存できませんでした: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    } finally {
+      setSaving(false);
+    }
   }
+  // ✕・Esc で閉じる時、保存していない変更があれば [保存][破棄][戻る] を聞く
+  const requestClose = useUnsavedGuard(dirty, { onClose, onSave: save });
 
   return (
-    <Modal title="案件を編集" onClose={onClose} size="lg">
+    <Modal title="案件を編集" onClose={requestClose} size="lg">
       <div className="space-y-2">
         {templateRetrospectives.length > 0 && (
           <div className="rounded-lg border border-cream/20 bg-cream/5 px-3 py-2">
@@ -733,34 +771,22 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
           </div>
         </div>
       </div>
+      {saveError && (
+        <p role="alert" className="mt-3 rounded-lg border border-alert/40 bg-alert/10 px-3 py-2 text-xs text-alert">
+          {saveError}
+        </p>
+      )}
       <div className="mt-4 flex justify-end gap-2">
-        <button className="btn-pill text-sm" onClick={save}>
+        <button
+          className="btn-pill text-sm disabled:opacity-50"
+          disabled={saving}
+          onClick={async () => {
+            if (await save()) onClose();
+          }}
+        >
           保存
         </button>
       </div>
-      {removeConfirm && (
-        <Modal title="段階を削除しますか？" onClose={() => setRemoveConfirm(null)}>
-          <p className="text-sm text-cream/80">
-            この段階には{formatStageHours(removeConfirm.seconds)}の実績があります（「{removeConfirm.title || "無題の段階"}」）。
-            消すと、集計では「削除済みの段階」としてまとめて出ます（実績そのものは残ります）。保存するまでは元に戻せます。
-          </p>
-          <div className="mt-4 flex justify-end gap-2">
-            <button className="btn-pill-outline text-sm" onClick={() => setRemoveConfirm(null)}>
-              やめる
-            </button>
-            <button
-              className="btn-pill text-sm text-alert"
-              onClick={() => {
-                const id = removeConfirm.id;
-                setRemoveConfirm(null);
-                setStages((prev) => prev.filter((s) => s.id !== id));
-              }}
-            >
-              削除する
-            </button>
-          </div>
-        </Modal>
-      )}
     </Modal>
   );
 }

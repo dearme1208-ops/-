@@ -25,6 +25,7 @@ import { DiaryPicture, Insect, RuledPaper, Scenery, StampCard } from "@/componen
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
+import Modal from "@/components/ui/Modal";
 
 // ぼくのなつやすみ風モードの「本日の作業」タブ。
 //
@@ -439,177 +440,181 @@ export default function NatsuyasumiSection() {
 
       {/* ══ 虫の詳細 ══ */}
       {openBug && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpenBugId(null)}>
-          <div
-            className={`w-full max-w-sm overflow-hidden ${card}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 border-b border-[rgb(var(--nat-leaf-rgb)/0.2)] px-4 py-3">
-              <Insect species={openBug.species} scale={openBug.size} rarity={openBug.rarity} size={64} className="shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[11px] text-cream/45">{W.speciesName(openBug.species)}</p>
-                <p className="truncate font-display text-base font-bold text-cream">{openBug.name}</p>
-                <p className="text-[11px] text-cream/45">
-                  {openBug.category}・{W.rarityName(openBug.rarity)}
-                </p>
-              </div>
-            </div>
-            <dl className="space-y-1 px-4 py-3 text-[12px]">
-              {(
-                [
-                  [W.sizeLabel, formatHms(Math.round(openBug.size * 4 * 3600))],
-                  [W.countLabel, `${openBug.count}`],
-                  [W.lastSeenLabel, openBug.lastSeenDate ?? "—"],
-                ] as const
-              ).map(([label, value]) => (
-                <div key={label} className="flex gap-3 border-b border-[rgb(var(--nat-leaf-rgb)/0.14)] pb-1">
-                  <dt className="w-28 shrink-0 text-cream/45">{label}</dt>
-                  <dd className="min-w-0 flex-1 tabular-nums text-cream/80">{value}</dd>
-                </div>
-              ))}
-            </dl>
-            <div className="px-4 pb-3">
-              <button className={btn + " w-full"} onClick={() => setOpenBugId(null)}>
-                {W.closeLabel}
-              </button>
+        <Modal
+          variant="bare"
+          title={openBug.name}
+          onClose={() => setOpenBugId(null)}
+          closeOnBackdrop
+          scrimClassName="bg-black/40"
+          panelClassName={`w-full max-w-sm overflow-hidden ${card}`}
+        >
+          <div className="flex items-center gap-3 border-b border-[rgb(var(--nat-leaf-rgb)/0.2)] px-4 py-3">
+            <Insect species={openBug.species} scale={openBug.size} rarity={openBug.rarity} size={64} className="shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[11px] text-cream/45">{W.speciesName(openBug.species)}</p>
+              <p className="truncate font-display text-base font-bold text-cream">{openBug.name}</p>
+              <p className="text-[11px] text-cream/45">
+                {openBug.category}・{W.rarityName(openBug.rarity)}
+              </p>
             </div>
           </div>
-        </div>
+          <dl className="space-y-1 px-4 py-3 text-[12px]">
+            {(
+              [
+                [W.sizeLabel, formatHms(Math.round(openBug.size * 4 * 3600))],
+                [W.countLabel, `${openBug.count}`],
+                [W.lastSeenLabel, openBug.lastSeenDate ?? "—"],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label} className="flex gap-3 border-b border-[rgb(var(--nat-leaf-rgb)/0.14)] pb-1">
+                <dt className="w-28 shrink-0 text-cream/45">{label}</dt>
+                <dd className="min-w-0 flex-1 tabular-nums text-cream/80">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="px-4 pb-3">
+            <button className={btn + " w-full"} onClick={() => setOpenBugId(null)}>
+              {W.closeLabel}
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* ══ やることを ふやす ══ */}
       {showPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closePicker}>
-          <div
-            className={`flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden ${card}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="bg-[rgb(var(--nat-sun-rgb)/0.22)] px-4 py-2 font-display text-sm font-bold text-cream">
-              {W.pickerTitle}
-            </p>
+        <Modal
+          variant="bare"
+          title={W.pickerTitle}
+          onClose={closePicker}
+          closeOnBackdrop
+          scrimClassName="bg-black/40"
+          panelClassName={`flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden ${card}`}
+        >
+          <p className="bg-[rgb(var(--nat-sun-rgb)/0.22)] px-4 py-2 font-display text-sm font-bold text-cream">
+            {W.pickerTitle}
+          </p>
 
-            {pickerTab === "menu" && (
-              <div className="space-y-2 p-4">
-                <p className="text-[11px] text-cream/45">{W.pickerMenu}</p>
-                <button className={btnSun + " w-full"} onClick={() => setPickerTab("master")}>
-                  {W.pickerMaster}
-                </button>
-                <button className={btnSun + " w-full"} onClick={() => setPickerTab("favorite")}>
-                  {W.pickerFavorite}
-                </button>
-                <button className={btnSun + " w-full"} onClick={() => setPickerTab("free")}>
-                  {W.pickerFree}
-                </button>
-                <button className={btn + " w-full"} onClick={closePicker}>
-                  {W.closeLabel}
-                </button>
+          {pickerTab === "menu" && (
+            <div className="space-y-2 p-4">
+              <p className="text-[11px] text-cream/45">{W.pickerMenu}</p>
+              <button className={btnSun + " w-full"} onClick={() => setPickerTab("master")}>
+                {W.pickerMaster}
+              </button>
+              <button className={btnSun + " w-full"} onClick={() => setPickerTab("favorite")}>
+                {W.pickerFavorite}
+              </button>
+              <button className={btnSun + " w-full"} onClick={() => setPickerTab("free")}>
+                {W.pickerFree}
+              </button>
+              <button className={btn + " w-full"} onClick={closePicker}>
+                {W.closeLabel}
+              </button>
+            </div>
+          )}
+
+          {pickerTab === "master" && (
+            <>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <MasterTaskPicker onSelect={setPickedMaster} selectedId={pickedMaster?.id ?? null} />
               </div>
-            )}
-
-            {pickerTab === "master" && (
-              <>
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                  <MasterTaskPicker onSelect={setPickedMaster} selectedId={pickedMaster?.id ?? null} />
-                </div>
-                <div className="space-y-2 border-t border-[rgb(var(--nat-leaf-rgb)/0.2)] p-4">
-                  <button
-                    className={btnSun + " w-full disabled:opacity-40"}
-                    disabled={!pickedMaster}
-                    onClick={async () => {
-                      if (!pickedMaster) return;
-                      await addFromMaster(pickedMaster, true);
-                      closePicker();
-                    }}
-                  >
-                    {W.actionCatch}
-                  </button>
-                  <button
-                    className={btn + " w-full disabled:opacity-40"}
-                    disabled={!pickedMaster}
-                    onClick={async () => {
-                      if (!pickedMaster) return;
-                      await addFromMaster(pickedMaster, false);
-                      closePicker();
-                    }}
-                  >
-                    {W.actionPick}
-                  </button>
-                  <button className={btn + " w-full"} onClick={() => setPickerTab("menu")}>
-                    {W.closeLabel}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {pickerTab === "favorite" && (
-              <>
-                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-4">
-                  {favoriteMasters.length === 0 ? (
-                    <p className="text-[12px] text-cream/45">{W.favoriteEmpty}</p>
-                  ) : (
-                    favoriteMasters.map((m) => (
-                      <button
-                        key={m.id}
-                        className="flex w-full items-center gap-2 rounded-xl border border-[rgb(var(--nat-leaf-rgb)/0.25)] px-3 py-2 text-left"
-                        onClick={async () => {
-                          await addFromMaster(m, true);
-                          closePicker();
-                        }}
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[10px] text-cream/40">{m.category}</span>
-                          <span className="block truncate text-sm text-cream/85">{m.name}</span>
-                        </span>
-                        <span className="shrink-0 text-[10px] tabular-nums text-cream/40">
-                          {formatHms(m.estimatedSeconds)}
-                        </span>
-                      </button>
-                    ))
-                  )}
-                </div>
-                <div className="border-t border-[rgb(var(--nat-leaf-rgb)/0.2)] p-4">
-                  <button className={btn + " w-full"} onClick={() => setPickerTab("menu")}>
-                    {W.closeLabel}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {pickerTab === "free" && (
-              <div className="space-y-2 p-4">
-                <label className="block">
-                  <span className="mb-1 block text-[11px] text-cream/45">{W.freeCategoryLabel}</span>
-                  <input
-                    className="w-full rounded-lg border border-[rgb(var(--nat-leaf-rgb)/0.3)] bg-ink px-3 py-2 text-sm text-cream"
-                    value={freeCategory}
-                    onChange={(e) => setFreeCategory(e.target.value)}
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[11px] text-cream/45">{W.freeNameLabel}</span>
-                  <input
-                    className="w-full rounded-lg border border-[rgb(var(--nat-leaf-rgb)/0.3)] bg-ink px-3 py-2 text-sm text-cream"
-                    value={freeName}
-                    onChange={(e) => setFreeName(e.target.value)}
-                  />
-                </label>
+              <div className="space-y-2 border-t border-[rgb(var(--nat-leaf-rgb)/0.2)] p-4">
                 <button
                   className={btnSun + " w-full disabled:opacity-40"}
-                  disabled={!freeCategory.trim() || !freeName.trim()}
+                  disabled={!pickedMaster}
                   onClick={async () => {
-                    await addFreeform(freeCategory, freeName, true);
+                    if (!pickedMaster) return;
+                    await addFromMaster(pickedMaster, true);
                     closePicker();
                   }}
                 >
                   {W.actionCatch}
                 </button>
+                <button
+                  className={btn + " w-full disabled:opacity-40"}
+                  disabled={!pickedMaster}
+                  onClick={async () => {
+                    if (!pickedMaster) return;
+                    await addFromMaster(pickedMaster, false);
+                    closePicker();
+                  }}
+                >
+                  {W.actionPick}
+                </button>
                 <button className={btn + " w-full"} onClick={() => setPickerTab("menu")}>
                   {W.closeLabel}
                 </button>
               </div>
-            )}
-          </div>
-        </div>
+            </>
+          )}
+
+          {pickerTab === "favorite" && (
+            <>
+              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-4">
+                {favoriteMasters.length === 0 ? (
+                  <p className="text-[12px] text-cream/45">{W.favoriteEmpty}</p>
+                ) : (
+                  favoriteMasters.map((m) => (
+                    <button
+                      key={m.id}
+                      className="flex w-full items-center gap-2 rounded-xl border border-[rgb(var(--nat-leaf-rgb)/0.25)] px-3 py-2 text-left"
+                      onClick={async () => {
+                        await addFromMaster(m, true);
+                        closePicker();
+                      }}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[10px] text-cream/40">{m.category}</span>
+                        <span className="block truncate text-sm text-cream/85">{m.name}</span>
+                      </span>
+                      <span className="shrink-0 text-[10px] tabular-nums text-cream/40">
+                        {formatHms(m.estimatedSeconds)}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="border-t border-[rgb(var(--nat-leaf-rgb)/0.2)] p-4">
+                <button className={btn + " w-full"} onClick={() => setPickerTab("menu")}>
+                  {W.closeLabel}
+                </button>
+              </div>
+            </>
+          )}
+
+          {pickerTab === "free" && (
+            <div className="space-y-2 p-4">
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-cream/45">{W.freeCategoryLabel}</span>
+                <input
+                  className="w-full rounded-lg border border-[rgb(var(--nat-leaf-rgb)/0.3)] bg-ink px-3 py-2 text-sm text-cream"
+                  value={freeCategory}
+                  onChange={(e) => setFreeCategory(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-cream/45">{W.freeNameLabel}</span>
+                <input
+                  className="w-full rounded-lg border border-[rgb(var(--nat-leaf-rgb)/0.3)] bg-ink px-3 py-2 text-sm text-cream"
+                  value={freeName}
+                  onChange={(e) => setFreeName(e.target.value)}
+                />
+              </label>
+              <button
+                className={btnSun + " w-full disabled:opacity-40"}
+                disabled={!freeCategory.trim() || !freeName.trim()}
+                onClick={async () => {
+                  await addFreeform(freeCategory, freeName, true);
+                  closePicker();
+                }}
+              >
+                {W.actionCatch}
+              </button>
+              <button className={btn + " w-full"} onClick={() => setPickerTab("menu")}>
+                {W.closeLabel}
+              </button>
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   );

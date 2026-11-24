@@ -3,6 +3,7 @@ import type { RecurrenceOrdinal, RecurrenceRule, TodoList, TodoTask } from "./ty
 import type { ParsedTodoRow } from "./todoCsv";
 import { daysBetweenDateStrs, shiftDateStr, todayStr } from "./time";
 import { highestPriorityTag } from "./tagPriority";
+import { putInTrash } from "./trash";
 
 // 対応状況の初期値（設定タブ「todo.tagPresets」の初期シード値。以後は設定タブで自由に増減できる）
 export const DEFAULT_TAG_PRESETS = ["社内確認中", "客先確認中", "打ち合わせ", "対応中", "保留"];
@@ -605,4 +606,18 @@ export function findParentCandidates(tasks: TodoTask[], listId: string, query: s
   const q = query.trim().toLowerCase();
   if (!q) return [];
   return tasks.filter((t) => t.listId === listId && canBeParent(t) && t.title.toLowerCase().includes(q));
+}
+
+/** ゴミ箱に出す名前。tasks は消した親(またはサブタスク単体)、subCount はその下で一緒に消えたサブタスク数 */
+export function todoTrashLabel(tasks: Pick<TodoTask, "title" | "parentTaskId">[], subCount = 0): string {
+  const first = tasks[0];
+  if (!first) return "ToDo";
+  const head =
+    tasks.length === 1 && first.parentTaskId ? `サブタスク「${first.title}」` : `ToDo「${first.title}」${tasks.length > 1 ? `ほか${tasks.length - 1}件` : ""}`;
+  return subCount > 0 ? `${head}とサブタスク${subCount}件` : head;
+}
+
+/** 消したToDo(とサブタスク・リスト)をゴミ箱に入れる。ゴミ箱の項目idを返す(取り消し時に消すため) */
+export async function trashTodos(label: string, tasks: TodoTask[], lists: TodoList[] = []): Promise<string | null> {
+  return putInTrash("todo", label, { todoLists: lists, todoTasks: tasks });
 }

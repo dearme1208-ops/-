@@ -8,6 +8,7 @@ const CACHE_TABLES = new Set(["weatherForecasts"]);
 // バックアップ対象はdb.tablesから毎回求める。ここに一覧を直書きすると、テーブルを
 // 追加したときに追記を忘れてそのテーブルだけ書き出されない事故が起きるため
 // （実際にメモ・統合ボード・マンダラ等が長らく書き出されていなかった）
+// ゴミ箱(trash)も含める。7日分だけで小さく、復元後も消したものを戻せるため
 function backupTableNames(): string[] {
   return db.tables.map((t) => t.name).filter((name) => !CACHE_TABLES.has(name));
 }

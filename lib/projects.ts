@@ -1,4 +1,5 @@
 import { db, uid } from "./db";
+import { putInTrash } from "./trash";
 import { daysBetweenDateStrs, shiftDateStr, todayStr } from "./time";
 import type { ProjectItem, ProjectStage, TodoTask, WbsNode, WorkRecord } from "./types";
 import type { ParsedProjectRow, ParsedProjectStage } from "./projectsCsv";
@@ -188,10 +189,15 @@ export interface ProjectDeletion {
  * 実績(records)は残す(集計では「削除済みの案件」として出る)
  */
 export async function deleteProjectCascade(projectId: string): Promise<ProjectDeletion | null> {
-  const snapshot = await db.transaction("rw", db.projects, db.wbsNodes, db.todoTasks, async () => {
+  const snapshot = await db.transaction("rw", db.projects, db.wbsNodes, db.todoTasks, db.trash, async () => {
     const project = await db.projects.get(projectId);
     if (!project) return null;
     const wbsNodes = await db.wbsNodes.where("projectId").equals(projectId).toArray();
+    // ゴミ箱にも入れる(ToDoとの紐づけは削除ではないので入れない=ゴミ箱から戻しても付け直されない)
+    const trashId = await putInTrash("project", `案件「${project.title}」${wbsNodes.length > 0 ? `とWBS${wbsNodes.length}件` : ""}`, {
+      projects: [project],
+      wbsNodes,
+    });
     const todoIds = await db.todoTasks.filter((t) => t.projectId === projectId).primaryKeys();
     const dependentIds = await db.projects.filter((p) => p.predecessorProjectIds?.includes(projectId) ?? false).primaryKeys();
     await db.projects.delete(projectId);
@@ -203,14 +209,16 @@ export async function deleteProjectCascade(projectId: string): Promise<ProjectDe
       const rest = (p?.predecessorProjectIds ?? []).filter((pid) => pid !== projectId);
       await db.projects.update(id, { predecessorProjectIds: rest.length > 0 ? rest : undefined });
     }
-    return { project, wbsNodes, todoIds, dependentIds };
+    return { project, wbsNodes, todoIds, dependentIds, trashId };
   });
   if (!snapshot) return null;
-  const { project, wbsNodes, todoIds, dependentIds } = snapshot;
+  const { project, wbsNodes, todoIds, dependentIds, trashId } = snapshot;
   return {
     project,
     undo: async () => {
-      await db.transaction("rw", db.projects, db.wbsNodes, db.todoTasks, async () => {
+      await db.transaction("rw", db.projects, db.wbsNodes, db.todoTasks, db.trash, async () => {
+        // 取り消したらゴミ箱からは消す(二重に戻せる状態を残さない)
+        if (trashId) await db.trash.delete(trashId);
         if (!(await db.projects.get(project.id))) await db.projects.add(project);
         for (const n of wbsNodes) if (!(await db.wbsNodes.get(n.id))) await db.wbsNodes.add(n);
         for (const id of todoIds) {
