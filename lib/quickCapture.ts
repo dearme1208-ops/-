@@ -1,6 +1,7 @@
 import { db, uid } from "./db";
 import type { ComposeResult } from "./claudeCompose";
 import { findOrCreateMasterTask } from "./master";
+import { DEFAULT_PROJECT_CATEGORY } from "./projects";
 import { shiftDateStr } from "./time";
 import type { DailyTask } from "./types";
 
@@ -63,7 +64,7 @@ export async function commitCapture(dest: CaptureDest, raw: string, parsed: Comp
     await db.projects.add({
       id: uid(),
       title,
-      category: parsed.category || "プロジェクト",
+      category: parsed.category || DEFAULT_PROJECT_CATEGORY,
       workName: title,
       dueDate: parsed.dueDate ?? shiftDateStr(today, 7),
       createdAt: now,

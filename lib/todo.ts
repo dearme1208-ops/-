@@ -1,7 +1,7 @@
 import { db, uid } from "./db";
 import type { RecurrenceOrdinal, RecurrenceRule, TodoList, TodoTask } from "./types";
 import type { ParsedTodoRow } from "./todoCsv";
-import { todayStr } from "./time";
+import { daysBetweenDateStrs, shiftDateStr, todayStr } from "./time";
 import { highestPriorityTag } from "./tagPriority";
 
 // 対応状況の初期値（設定タブ「todo.tagPresets」の初期シード値。以後は設定タブで自由に増減できる）
@@ -69,14 +69,29 @@ export async function completeTodoTask(task: TodoTask, today: string): Promise<v
       nextDue = computeNextDueDate(rule, nextDue);
     }
     // lastRecurrenceAtは、この期日の変更が「延期」ではなく次の回へ進んだものだと記録側に伝える印
-    const updates: Partial<TodoTask> = { dueDate: nextDue, lastRecurrenceAt: Date.now() };
+    const now = Date.now();
+    const updates: Partial<TodoTask> = { dueDate: nextDue, lastRecurrenceAt: now };
     if (task.myDayDate === today) updates.myDayDate = undefined;
+    // 期日が進んだ日数。サブタスクの期日・通知も同じだけ進め、前回の日付のまま残らないようにする
+    // (親に期日が無かった場合はずらす基準が無いので動かさない)
+    const deltaDays = task.dueDate ? daysBetweenDateStrs(task.dueDate, nextDue) : 0;
+    const deltaMs = deltaDays * 86_400_000;
+    if (task.reminderAt && deltaMs) {
+      updates.reminderAt = task.reminderAt + deltaMs;
+      updates.reminderFiredAt = undefined;
+    }
     await db.transaction("rw", db.todoTasks, async () => {
       await db.todoTasks.update(task.id, updates);
       // 次回に進む際、前回分のサブタスクの完了状態を持ち越さないよう未完了に戻す
       const subtasks = await db.todoTasks.where("parentTaskId").equals(task.id).toArray();
       for (const s of subtasks) {
-        if (s.completed) await db.todoTasks.update(s.id, { completed: false, completedAt: undefined });
+        const subUpdates: Partial<TodoTask> = {};
+        if (s.completed) Object.assign(subUpdates, { completed: false, completedAt: undefined });
+        if (deltaDays && !s.archived) {
+          if (s.dueDate) Object.assign(subUpdates, { dueDate: shiftDateStr(s.dueDate, deltaDays), lastRecurrenceAt: now });
+          if (s.reminderAt) Object.assign(subUpdates, { reminderAt: s.reminderAt + deltaMs, reminderFiredAt: undefined });
+        }
+        if (Object.keys(subUpdates).length > 0) await db.todoTasks.update(s.id, subUpdates);
       }
     });
     return;
@@ -215,17 +230,25 @@ export function computeNextDueDate(rawRule: RecurrenceRule, fromDateStr: string)
 }
 
 // CSVの行を、リスト名でリストを紐付けながらタスクとして取り込む。
-// idが一致する既存タスクは上書き、なければ新規作成する
+// idが一致する既存タスクは上書き、なければ新規作成する。
+// 親(parentId)は、CSVにその列がある時だけ書き換える(列の無いCSVで既存のサブタスクが親から外れないように)。
+// 親は「存在する・サブタスクではない・自分ではない」ものに限り、リストは親のリストに合わせる。
+// 条件に合わない行は取り込まずにerrorsへ理由を返す
 export async function upsertTodoFromCsv(
-  rows: ParsedTodoRow[]
-): Promise<{ created: number; updated: number; listsCreated: number }> {
+  rows: ParsedTodoRow[],
+  options: { hasParentColumn?: boolean } = {}
+): Promise<{ created: number; updated: number; listsCreated: number; errors: string[] }> {
   let created = 0;
   let updated = 0;
   let listsCreated = 0;
+  const errors: string[] = [];
+  // 列の有無を渡されなかった時は、どこかの行に親が書かれていれば列あり扱い
+  const hasParentColumn = options.hasParentColumn ?? rows.some((r) => r.parentId !== undefined);
 
   const existingLists = await db.todoLists.toArray();
   const listIdByTitle = new Map(existingLists.map((l) => [l.title, l.id]));
   const orderCursor = new Map<string, number>();
+  const subOrderCursor = new Map<string, number>();
 
   for (const row of rows) {
     if (!listIdByTitle.has(row.listTitle)) {
@@ -236,23 +259,79 @@ export async function upsertTodoFromCsv(
     }
   }
 
-  for (const row of rows) {
-    const listId = listIdByTitle.get(row.listTitle)!;
-    const id = row.id || uid();
-    const existing = await db.todoTasks.get(id);
-
-    if (!orderCursor.has(listId)) {
-      orderCursor.set(listId, await db.todoTasks.where("listId").equals(listId).count());
+  // 取り込み後の親子関係を、既存のタスクとCSVの行を合わせて判定する
+  const allExisting = await db.todoTasks.toArray();
+  const existingById = new Map(allExisting.map((t) => [t.id, t]));
+  const rowById = new Map(rows.filter((r) => r.id).map((r) => [r.id!, r]));
+  const finalParentOf = (id: string): string | undefined => {
+    const r = rowById.get(id);
+    if (r && hasParentColumn) return r.parentId || undefined;
+    return existingById.get(id)?.parentTaskId;
+  };
+  const finalListOf = (id: string): string | undefined => {
+    const r = rowById.get(id);
+    return r ? listIdByTitle.get(r.listTitle) : existingById.get(id)?.listId;
+  };
+  const hasChildren = (id: string): boolean => {
+    for (const r of rows) if (r.id !== id && hasParentColumn && r.parentId === id) return true;
+    for (const t of allExisting) {
+      if (t.parentTaskId === id && !(hasParentColumn && rowById.has(t.id))) return true;
     }
-    const order = existing?.order ?? orderCursor.get(listId)!;
-    if (!existing) orderCursor.set(listId, order + 1);
+    return false;
+  };
+
+  for (const row of rows) {
+    const id = row.id || uid();
+    const existing = existingById.get(id);
+    const parentId = hasParentColumn ? row.parentId || undefined : existing?.parentTaskId;
+
+    let listId = listIdByTitle.get(row.listTitle)!;
+    if (parentId) {
+      const label = `「${row.title}」`;
+      if (parentId === id) {
+        errors.push(`${label}: 自分自身を親にはできないため取り込みませんでした`);
+        continue;
+      }
+      if (!rowById.has(parentId) && !existingById.has(parentId)) {
+        errors.push(`${label}: 親タスク(id=${parentId})が見つからないため取り込みませんでした`);
+        continue;
+      }
+      if (finalParentOf(parentId)) {
+        errors.push(`${label}: 親タスク(id=${parentId})がサブタスクのため取り込みませんでした（サブタスクは1段まで）`);
+        continue;
+      }
+      if (hasChildren(id)) {
+        errors.push(`${label}: サブタスクを持つタスクはサブタスクにできないため取り込みませんでした`);
+        continue;
+      }
+      listId = finalListOf(parentId) ?? listId;
+    }
+
+    let order: number;
+    if (existing && existing.parentTaskId === parentId) {
+      order = existing.order;
+    } else if (parentId) {
+      if (!subOrderCursor.has(parentId)) {
+        const subs = allExisting.filter((t) => t.parentTaskId === parentId && t.id !== id);
+        subOrderCursor.set(parentId, subs.reduce((m, t) => Math.max(m, t.order + 1), 0));
+      }
+      order = subOrderCursor.get(parentId)!;
+      subOrderCursor.set(parentId, order + 1);
+    } else if (existing) {
+      order = existing.order;
+    } else {
+      if (!orderCursor.has(listId)) {
+        orderCursor.set(listId, await db.todoTasks.where("listId").equals(listId).count());
+      }
+      order = orderCursor.get(listId)!;
+      orderCursor.set(listId, order + 1);
+    }
 
     // 既に完了済みのタスクはCSV側がfalseでも復活させない（完了はCSV再取込で覆されない一方向の状態）
     const completed = existing?.completed || row.completed;
     // CSVに列がある項目だけ。既存タスクではこの項目だけを書き換える
-    const fromCsv = {
+    const fromCsv: Partial<TodoTask> = {
       listId,
-      parentTaskId: row.parentId || undefined,
       title: row.title,
       action: row.action,
       url: row.url,
@@ -266,20 +345,28 @@ export async function upsertTodoFromCsv(
       completedAt: completed ? (existing?.completedAt ?? Date.now()) : undefined,
       notes: row.notes,
     };
+    if (hasParentColumn || !existing) fromCsv.parentTaskId = parentId;
+    if (existing && order !== existing.order) fromCsv.order = order;
     if (existing) {
       // 丸ごと置き換えると、CSVに列の無い項目(添付画像・メール・リマインダー・見込み時間・取引先・
       // アーカイブ・ボード上の位置・変更履歴など)が再取込のたびに消えてしまうため、差分だけを書く。
       // 繰り返しは、CSVに繰り返しの指定が無い行では既存の設定を残す
-      await db.todoTasks.update(id, row.recurrence ? { ...fromCsv, recurrence: row.recurrence } : fromCsv);
+      await db.todoTasks.update(id, row.recurrence && !parentId ? { ...fromCsv, recurrence: row.recurrence } : fromCsv);
+      updated++;
     } else {
-      const task: TodoTask = { ...fromCsv, id, order, createdAt: Date.now(), recurrence: row.recurrence };
+      const task = {
+        ...fromCsv,
+        id,
+        order,
+        createdAt: Date.now(),
+        recurrence: parentId ? undefined : row.recurrence,
+      } as TodoTask;
       await db.todoTasks.add(task);
+      created++;
     }
-    if (existing) updated++;
-    else created++;
   }
 
-  return { created, updated, listsCreated };
+  return { created, updated, listsCreated, errors };
 }
 
 // 開始日(優先)または期日が設定されたタスクを、同じリスト内で日付順になる位置に挿入する。
@@ -314,4 +401,208 @@ export async function computeDateOrderedPosition(
   });
 
   return insertIndex;
+}
+
+// ---- 親子の付け替え(サブタスクは1段まで) ----
+
+/** 書き換えた1件分の前後の値。元に戻す時は「今の値がafterのまま」の時だけbeforeへ戻す */
+export interface TodoChange {
+  id: string;
+  before: Partial<TodoTask>;
+  after: Partial<TodoTask>;
+}
+
+export type SetParentRefusal =
+  | "not-found"
+  | "self"
+  | "parent-not-found"
+  | "parent-is-subtask"
+  | "parent-archived"
+  | "parent-completed"
+  | "has-subtasks"
+  | "noop";
+
+export const SET_PARENT_REFUSAL_MESSAGES: Record<SetParentRefusal, string> = {
+  "not-found": "タスクが見つかりません",
+  self: "自分自身を親にはできません",
+  "parent-not-found": "親タスクが見つかりません",
+  "parent-is-subtask": "サブタスクの下にはサブタスクを作れません（1段まで）",
+  "parent-archived": "アーカイブ済みのタスクは親にできません",
+  "parent-completed": "完了済みのタスクは親にできません",
+  "has-subtasks": "サブタスクを持つタスクは、ほかのタスクのサブタスクにできません（1段まで）",
+  noop: "すでにその状態です",
+};
+
+export type SetParentResult =
+  | { ok: true; changes: TodoChange[]; fromListId: string; toListId: string; parentTitle?: string }
+  | { ok: false; reason: SetParentRefusal; message: string };
+
+// 親として選べるか(サブタスクでない・未完了・アーカイブしていない)
+export function canBeParent(t: TodoTask): boolean {
+  return !t.parentTaskId && !t.completed && !t.archived;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// patchのうち実際に値が変わる項目だけを、前後の値として控える
+function diffChange(cur: TodoTask, patch: Partial<TodoTask>): TodoChange | null {
+  const before: Partial<TodoTask> = {};
+  const after: Partial<TodoTask> = {};
+  for (const key of Object.keys(patch) as (keyof TodoTask)[]) {
+    if (sameValue(cur[key], patch[key])) continue;
+    (before as Record<string, unknown>)[key] = cur[key];
+    (after as Record<string, unknown>)[key] = patch[key];
+  }
+  return Object.keys(after).length > 0 ? { id: cur.id, before, after } : null;
+}
+
+/**
+ * タスクの親を付け替える。parentIdにnullを渡すと通常のタスクに戻す。
+ * 子になる側は親のリストへ移り、親のサブタスクの末尾に入る。繰り返し・マイデイ・
+ * 統合ボード上の位置・アーカイブはサブタスクでは使わないので外す(元に戻すで戻る)。
+ * 通常のタスクに戻す時は、日付があれば日付順の位置、無ければリストの先頭に入れる
+ */
+export async function setTodoParent(taskId: string, parentId: string | null): Promise<SetParentResult> {
+  const refuse = (reason: SetParentRefusal): SetParentResult => ({ ok: false, reason, message: SET_PARENT_REFUSAL_MESSAGES[reason] });
+  return db.transaction("rw", db.todoTasks, async (): Promise<SetParentResult> => {
+    const task = await db.todoTasks.get(taskId);
+    if (!task) return refuse("not-found");
+    const changes: TodoChange[] = [];
+    const apply = async (cur: TodoTask, patch: Partial<TodoTask>) => {
+      const c = diffChange(cur, patch);
+      if (!c) return;
+      changes.push(c);
+      await db.todoTasks.update(cur.id, c.after);
+    };
+
+    if (parentId === null) {
+      if (!task.parentTaskId) return refuse("noop");
+      const siblings = (await db.todoTasks.where("listId").equals(task.listId).sortBy("order")).filter(
+        (t) => !t.parentTaskId && t.id !== task.id
+      );
+      const sortDate = task.startDate || task.dueDate;
+      let insertIndex = 0;
+      if (sortDate) {
+        insertIndex = siblings.length;
+        for (let i = 0; i < siblings.length; i++) {
+          const sDate = siblings[i].startDate || siblings[i].dueDate;
+          if (!sDate || sDate > sortDate) {
+            insertIndex = i;
+            break;
+          }
+        }
+      }
+      // 既存のorderが連番でなくても重複しないよう、挿入位置を空けて0..nに振り直す
+      for (let i = 0; i < siblings.length; i++) {
+        await apply(siblings[i], { order: i < insertIndex ? i : i + 1 });
+      }
+      await apply(task, { parentTaskId: undefined, order: insertIndex });
+      return { ok: true, changes, fromListId: task.listId, toListId: task.listId };
+    }
+
+    if (parentId === taskId) return refuse("self");
+    const parent = await db.todoTasks.get(parentId);
+    if (!parent) return refuse("parent-not-found");
+    if (parent.parentTaskId) return refuse("parent-is-subtask");
+    if (parent.archived) return refuse("parent-archived");
+    if (parent.completed) return refuse("parent-completed");
+    if (task.parentTaskId === parentId) return refuse("noop");
+    const ownSubs = await db.todoTasks.where("parentTaskId").equals(taskId).count();
+    if (ownSubs > 0) return refuse("has-subtasks");
+
+    const parentSubs = (await db.todoTasks.where("parentTaskId").equals(parentId).toArray()).filter((t) => t.id !== taskId);
+    const order = parentSubs.reduce((m, t) => Math.max(m, t.order + 1), 0);
+    await apply(task, {
+      parentTaskId: parentId,
+      listId: parent.listId,
+      order,
+      recurrence: undefined,
+      myDayDate: undefined,
+      myDayDismissedDate: undefined,
+      boardX: undefined,
+      boardY: undefined,
+      boardLocked: undefined,
+      boardPinned: undefined,
+      boardHidden: undefined,
+      archived: undefined,
+    });
+    return { ok: true, changes, fromListId: task.listId, toListId: parent.listId, parentTitle: parent.title };
+  });
+}
+
+/**
+ * 控えた変更を元に戻す。戻すまでの間にほかで書き換えられたタスクは上書きしない
+ * (今の値がafterのままのタスクだけをbeforeへ戻す)。戻せなかった件数をskippedで返す
+ */
+export async function undoTodoChanges(changes: TodoChange[]): Promise<{ restored: number; skipped: number }> {
+  let restored = 0;
+  let skipped = 0;
+  await db.transaction("rw", db.todoTasks, async () => {
+    for (const c of changes) {
+      const cur = await db.todoTasks.get(c.id);
+      if (!cur) {
+        skipped++;
+        continue;
+      }
+      // 1件の中で一部だけ戻すと親とリストが食い違うことがあるので、1件ごとに全部戻すか戻さないか
+      const untouched = (Object.keys(c.after) as (keyof TodoTask)[]).every((key) => sameValue(cur[key], c.after[key]));
+      if (!untouched) {
+        skipped++;
+        continue;
+      }
+      // サブタスクへ戻す時は、戻すまでの間に親が消された・サブタスクになった、または自分が
+      // サブタスクを持った場合に戻さない(サブタスクは1段まで・親のいないサブタスクを作らない)
+      const restoreParent = c.before.parentTaskId;
+      if (restoreParent) {
+        const parent = await db.todoTasks.get(restoreParent);
+        const ownSubs = await db.todoTasks.where("parentTaskId").equals(c.id).count();
+        const restoredListId = "listId" in c.before ? c.before.listId : cur.listId;
+        if (!parent || parent.parentTaskId || ownSubs > 0 || parent.listId !== restoredListId) {
+          skipped++;
+          continue;
+        }
+      }
+      await db.todoTasks.update(c.id, c.before);
+      restored++;
+    }
+  });
+  return { restored, skipped };
+}
+
+/**
+ * アーカイブする/解除する。親をアーカイブするとサブタスクも一緒にアーカイブし、
+ * 解除するとサブタスクも一緒に戻す(サブタスクだけが一覧・計画に残らないように)
+ */
+export async function setTodoArchived(taskId: string, archived: boolean): Promise<TodoChange[]> {
+  return db.transaction("rw", db.todoTasks, async () => {
+    const task = await db.todoTasks.get(taskId);
+    if (!task) return [];
+    const subs = task.parentTaskId ? [] : await db.todoTasks.where("parentTaskId").equals(taskId).toArray();
+    const changes: TodoChange[] = [];
+    for (const t of [task, ...subs]) {
+      const c = diffChange(t, { archived: archived ? true : undefined });
+      if (!c) continue;
+      changes.push(c);
+      await db.todoTasks.update(t.id, c.after);
+    }
+    return changes;
+  });
+}
+
+// すぐ追加の「＞親の名前の一部 件名」。＞(全角)か>で始まり、空白の後ろに件名がある時だけ親の指定とみなす
+export function parseParentPrefix(raw: string): { parentQuery: string; rest: string } | null {
+  const m = raw.trim().match(/^[>＞]\s*(\S+)\s+(.+)$/);
+  if (!m) return null;
+  const rest = m[2].trim();
+  if (!rest) return null;
+  return { parentQuery: m[1], rest };
+}
+
+// 名前の一部で親を探す。同じリストの、親として選べるタスクの中から(大文字小文字は区別しない)
+export function findParentCandidates(tasks: TodoTask[], listId: string, query: string): TodoTask[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return tasks.filter((t) => t.listId === listId && canBeParent(t) && t.title.toLowerCase().includes(q));
 }

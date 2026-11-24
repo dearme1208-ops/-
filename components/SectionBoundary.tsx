@@ -21,6 +21,8 @@ export default class SectionBoundary extends Component<{ children: ReactNode; la
     const { error } = this.state;
     if (!error) return this.props.children;
     const chunk = error.name === "ChunkLoadError" || /Loading chunk|Failed to fetch dynamically imported module/i.test(error.message);
+    // 通信できているのに読み込めないのは、多くは新しい版が出て古い版の部品が無くなったため
+    const online = typeof navigator === "undefined" || navigator.onLine !== false;
     return (
       <div className="panel space-y-3 border border-alert/50 p-5" role="alert" data-testid="section-error">
         <p className="font-bold text-cream">
@@ -28,12 +30,14 @@ export default class SectionBoundary extends Component<{ children: ReactNode; la
         </p>
         <p className="text-sm text-cream/75">
           {chunk
-            ? "電波の弱い所では、初めて開く画面の読み込みに失敗することがあります。通信を確かめて、もう一度読み込んでください。"
+            ? online
+              ? "新しい版があります。再読み込みしてください。記録したデータは消えません。"
+              : "電波の弱い所では、初めて開く画面の読み込みに失敗することがあります。通信を確かめて、もう一度読み込んでください。"
             : "記録したデータは消えていません。ほかのタブや、計測・予定の自動開始はそのまま動いています。"}
         </p>
         <div className="flex flex-wrap gap-2">
           <button className="btn-pill text-sm" onClick={() => (chunk ? window.location.reload() : this.setState({ error: null }))}>
-            {chunk ? "もう一度読み込む" : "再試行"}
+            {chunk ? (online ? "再読み込み" : "もう一度読み込む") : "再試行"}
           </button>
         </div>
       </div>

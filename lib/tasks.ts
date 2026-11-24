@@ -6,6 +6,7 @@ import type { DailyTask, MasterTask, TimeSegment, TodoTask, WorkRecord } from ".
 import { buildWorkContextSources, workNameWithContext } from "./workContext";
 import type { ScheduleRow } from "./scheduleCsv";
 import { fireCompletionPopup } from "./completionPopup";
+import { showUndoToast } from "./toast";
 
 // 同日・同じ作業の実績が既にある場合に、実働区間(segments)を合算する。
 // 既存の実績にsegmentsが無い(この機能追加より前に作られた記録など、区間が不明な記録)場合は、
@@ -94,7 +95,14 @@ export async function computeRemainingEstimatedSeconds(
     .filter((t) => !t.isProvisional && t.category === category && t.name === name)
     .toArray();
   if (sameDay.length === 0) return masterEstimatedSeconds;
-  const last = sameDay.reduce((a, b) => (b.order > a.order ? b : a));
+  // 「直近」は並び順ではなく開始時刻で決める(並べ替えで順番が変わっても取り違えない)。
+  // まだ始めていない作業は、始めたものより後に作られたものとみなす
+  const startKey = (t: DailyTask) => t.startedAt ?? t.segments[0]?.start ?? Infinity;
+  const last = sameDay.reduce((a, b) => {
+    const ka = startKey(a);
+    const kb = startKey(b);
+    return kb > ka || (kb === ka && b.order > a.order) ? b : a;
+  });
   const spentSeconds = Math.round(last.accumulatedMs / 1000);
   return Math.max(0, last.estimatedSeconds - spentSeconds);
 }
@@ -230,6 +238,8 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
     return true;
   });
   if (!claimed) return false;
+  // 「元に戻す」時に、完了した時のままかを確かめるための控え
+  const finished: FinishedState = { stoppedAt: nowMs, endedAt, segmentCount: segments.length };
   // どの画面・どの経路で終えても、スマホの通知に残っている「計測中」を消す
   void closeRunningNotification();
 
@@ -250,7 +260,7 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
       isTrouble: existing.isTrouble || task.isTrouble,
       ...(task.secondaryProjectIds ? { secondaryProjectIds: task.secondaryProjectIds } : {}),
     });
-    contribution = { recordId: existing.id, created: false, seconds, segments: newSegments, recordBefore: { ...existing }, after: merged };
+    contribution = { recordId: existing.id, created: false, seconds, segments: newSegments, recordBefore: { ...existing }, after: merged, finished };
   } else {
     const createdRecordId = uid();
     // 作業の全区間ではなく今回足した分だけを持たせる(帰属先を変えてから「続きから」完了した時、
@@ -279,6 +289,7 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
       seconds,
       segments: newSegments,
       after: { seconds, startedAt, endedAt, segments: newSegments },
+      finished,
     };
   }
 
@@ -299,7 +310,13 @@ export async function finishDailyTask(task: DailyTask, endAtOrOptions?: number |
       seconds: Math.round(accumulatedMs / 1000),
       estimatedSeconds: task.estimatedSeconds,
       // 押し間違えた「終了」を、完了前の状態(計測中なら計測中のまま)へ戻す
-      undo: before ? () => undoFinishDailyTask(before, finalMasterId, contribution) : undefined,
+      // 戻せなかった(その後に変更があった)時は、その旨を知らせる
+      undo: before
+        ? async () => {
+            const res = await undoFinishDailyTask(before, finalMasterId, contribution);
+            if (!res.ok) showUndoToast(UNDO_FINISH_STALE_MESSAGE);
+          }
+        : undefined,
       // 次にやる作業をそのまま始められるようにする(トラブル対応など、終えると元の作業へ自動で
       // 戻るものは出さない)
       next: task.resumeTaskIds?.length ? undefined : await pickNextDailyTask(task.date, task.id),
@@ -364,6 +381,33 @@ export interface FinishContribution {
   recordBefore?: WorkRecord;
   /** この完了を反映した直後の実績の値(その後に別の変更が入ったかの判定に使う) */
   after: { seconds: number; startedAt: number; endedAt: number; segments: TimeSegment[] };
+  /** 完了した直後の作業の状態(その後に作業が変わったかの判定に使う) */
+  finished?: FinishedState;
+}
+
+/** 完了した直後の作業の状態 */
+export interface FinishedState {
+  /** 完了操作をした時刻(DailyTask.stoppedAt) */
+  stoppedAt: number;
+  endedAt: number;
+  segmentCount: number;
+}
+
+/**
+ * undoFinishDailyTask の結果。
+ *  - ok: true  … 完了前の状態へ戻した
+ *  - ok: false … 完了の後に作業が変わっていた(削除・「続きから」・再度の完了など)ため何もしなかった
+ */
+export type UndoFinishResult = { ok: true } | { ok: false; reason: "changed" };
+
+export const UNDO_FINISH_STALE_MESSAGE = "その後に変更があったため元に戻せませんでした";
+
+/** 作業が、完了した直後の状態のままか */
+function stillFinishedAs(current: DailyTask | undefined, finished: FinishedState | undefined): current is DailyTask {
+  if (!current || current.status !== "done") return false;
+  if (!finished) return true;
+  const stopMatches = current.stoppedAt !== undefined ? current.stoppedAt === finished.stoppedAt : current.endedAt === finished.endedAt;
+  return stopMatches && current.segments.length === finished.segmentCount;
 }
 
 /**
@@ -377,25 +421,28 @@ export interface FinishContribution {
  * 想定時間も実績から計算し直す。
  * 計測中に戻した作業は区間が開いたままなので、完了していた間の時間も計測に含まれる
  * (押し間違いをすぐ戻す使い方を想定しているため)
+ * 完了の後に作業が消された・「続きから」再開された・もう一度完了された時は、古い控えで
+ * 上書きしないよう何もせず { ok: false } を返す(呼び出し側は UNDO_FINISH_STALE_MESSAGE を出す)
  */
 export async function undoFinishDailyTask(
   taskBefore: DailyTask,
   masterTaskId: string,
   contribution: FinishContribution
-): Promise<void> {
-  await db.transaction("rw", db.dailyTasks, db.records, async () => {
+): Promise<UndoFinishResult> {
+  const ok = await db.transaction("rw", db.dailyTasks, db.records, async () => {
+    const current = await db.dailyTasks.get(taskBefore.id);
+    if (!stillFinishedAs(current, contribution.finished)) return false;
     // 完了の後で時刻を直していると、実績にはその分も入っている。完了時に足した分ではなく、
     // いまこの作業が実績に入れている分(完了前からの増分)を引く。そうしないと直した分だけ実績に残り、
     // もう一度完了した時に二重に数えていた
-    const current = await db.dailyTasks.get(taskBefore.id);
     const secondsToRemove =
-      current?.status === "done" && current.recordedMs !== undefined
+      current.recordedMs !== undefined
         ? Math.round((current.recordedMs - (taskBefore.recordedMs ?? 0)) / 1000)
         : contribution.seconds;
     await db.dailyTasks.put(taskBefore);
     const rec = await db.records.get(contribution.recordId);
     // 実績が既に消されていれば(実績編集で削除したなど)、戻す分は無い
-    if (!rec) return;
+    if (!rec) return true;
     const { after } = contribution;
     const untouched =
       rec.seconds === after.seconds &&
@@ -405,12 +452,12 @@ export async function undoFinishDailyTask(
     if (untouched) {
       if (contribution.recordBefore) await db.records.put(contribution.recordBefore);
       else await db.records.delete(rec.id);
-      return;
+      return true;
     }
     const remaining = rec.seconds - secondsToRemove;
     if (contribution.created && remaining <= 0) {
       await db.records.delete(rec.id);
-      return;
+      return true;
     }
     // この完了が足した区間だけを実績の区間から取り除き、開始〜終了は残った区間から求め直す。
     // 取り除けない(実績の区間が編集で捨てられた・一致しない)時は、区間を捨てて開始〜終了はそのままにする
@@ -443,8 +490,11 @@ export async function undoFinishDailyTask(
           }
         : { seconds: Math.max(0, remaining), segments: undefined }
     );
+    return true;
   });
+  if (!ok) return { ok: false, reason: "changed" };
   await recomputeEstimateFromRecords(masterTaskId);
+  return { ok: true };
 }
 
 /**
@@ -644,28 +694,63 @@ export async function cleanupZeroLengthProvisionals(): Promise<number> {
 //  - rejected: その時刻にすると作業の区間が成り立たない(実績も直さないこと)
 export type BoundarySyncResult = { status: "synced"; deltaMs: number } | { status: "none" } | { status: "rejected" };
 
+/** 作業の開始の端(startedAt、無ければ最も早い区間の開始) */
+export function taskStartEdge(t: DailyTask): number | undefined {
+  return t.startedAt ?? (t.segments.length > 0 ? Math.min(...t.segments.map((s) => s.start)) : undefined);
+}
+
+/** 作業の終了の端(endedAt、無ければ最も遅い区間の終了) */
+export function taskEndEdge(t: DailyTask): number | undefined {
+  const ends = t.segments.map((s) => s.end).filter((v): v is number => v !== undefined);
+  return t.endedAt ?? (ends.length > 0 ? Math.max(...ends) : undefined);
+}
+
+/** 実績に合算されている、同じ日・同じ作業マスタ・同じ帰属先の完了済みの作業 */
+export async function findLinkedDoneTasks(
+  record: Pick<WorkRecord, "date" | "masterTaskId" | "projectId" | "stageId" | "todoTaskId" | "method">
+): Promise<DailyTask[]> {
+  if (!record.masterTaskId) return [];
+  return (await db.dailyTasks.where("date").equals(record.date).toArray()).filter(
+    (t) => t.status === "done" && t.masterTaskId === record.masterTaskId && sameAttribution(t, record)
+  );
+}
+
 export async function syncDailyTaskBoundaryFromRecord(
-  record: Pick<WorkRecord, "date" | "masterTaskId" | "projectId" | "stageId" | "todoTaskId" | "method">,
+  record: Pick<WorkRecord, "date" | "masterTaskId" | "projectId" | "stageId" | "todoTaskId" | "method"> &
+    Partial<Pick<WorkRecord, "startedAt" | "endedAt">>,
   edge: "start" | "end",
   newTime: number
 ): Promise<BoundarySyncResult> {
-  if (!record.masterTaskId) return { status: "none" };
-  const candidates = (await db.dailyTasks.where("date").equals(record.date).toArray())
-    .filter(
-      (t) =>
-        t.status === "done" &&
-        t.masterTaskId === record.masterTaskId &&
-        sameAttribution(t, record)
-    )
-    .sort((a, b) => a.order - b.order);
+  const candidates = await findLinkedDoneTasks(record);
   if (candidates.length === 0) return { status: "none" };
-  const target = edge === "start" ? candidates[0] : candidates[candidates.length - 1];
+  // 並び順ではなく時刻で選ぶ: 実績の端と同じ端を持つ作業だけを直す
+  // (実績の端を決めていない作業を直すと、関係のない作業の時間が増減していた)。
+  // 実績の端が分からない時は、最も早い開始/最も遅い終了の作業
+  const edgeOf = (t: DailyTask) => (edge === "start" ? taskStartEdge(t) : taskEndEdge(t));
+  const recordEdge = edge === "start" ? record.startedAt : record.endedAt;
+  let target: DailyTask | undefined;
+  if (recordEdge !== undefined) {
+    target = candidates.find((t) => edgeOf(t) === recordEdge);
+  } else {
+    const withEdge = candidates.filter((t) => edgeOf(t) !== undefined);
+    target = withEdge.reduce<DailyTask | undefined>((best, t) => {
+      if (!best) return t;
+      return edge === "start" ? (edgeOf(t)! < edgeOf(best)! ? t : best) : edgeOf(t)! > edgeOf(best)! ? t : best;
+    }, undefined);
+  }
+  if (!target) return { status: "none" };
 
+  // 端を決めている区間(開始なら最も早い区間・終了なら最も遅い区間)を動かす
+  const idx =
+    target.segments.length === 0
+      ? -1
+      : target.segments.reduce((bi, s, i, list) => {
+          if (edge === "start") return s.start < list[bi].start ? i : bi;
+          return (s.end ?? -Infinity) > (list[bi].end ?? -Infinity) ? i : bi;
+        }, 0);
   const segments =
-    target.segments.length > 0
-      ? target.segments.map((s, i) =>
-          edge === "start" ? (i === 0 ? { ...s, start: newTime } : s) : i === target.segments.length - 1 ? { ...s, end: newTime } : s
-        )
+    idx >= 0
+      ? target.segments.map((s, i) => (i !== idx ? s : edge === "start" ? { ...s, start: newTime } : { ...s, end: newTime }))
       : [edge === "start" ? { start: newTime, end: target.endedAt ?? newTime } : { start: target.startedAt ?? newTime, end: newTime }];
   if (segments.some((s) => s.end !== undefined && s.end <= s.start)) return { status: "rejected" };
 
@@ -682,6 +767,182 @@ export async function syncDailyTaskBoundaryFromRecord(
     recordedSegmentCount: segments.length,
   });
   return { status: "synced", deltaMs: accumulatedMs - target.accumulatedMs };
+}
+
+/**
+ * 実績編集で実績時間(秒)を直した時、元になった完了済みの作業にも同じだけ反映する。
+ * 元の作業がちょうど1件の時だけ、その合計と最後の区間の終わりを増減させる。
+ *  - synced:    作業も直した。endedAt は作業の新しい終了時刻(実績の終了と揃えていた場合だけ実績も揃える)
+ *  - none:      元の作業が無い(CSVで取り込んだ実績など)
+ *  - ambiguous: 元の作業が2件以上あり、どれを直すか決められない(本日の作業の表示とずれる)
+ *  - rejected:  最後の区間より多く減らそうとした(作業の側では直せない)
+ */
+export type SecondsSyncResult =
+  | { status: "synced"; taskId: string; endedAt: number; previousEndedAt: number | undefined }
+  | { status: "none" }
+  | { status: "ambiguous" }
+  | { status: "rejected" };
+
+export async function syncDailyTaskSecondsFromRecord(
+  record: Pick<WorkRecord, "date" | "masterTaskId" | "projectId" | "stageId" | "todoTaskId" | "method" | "seconds">,
+  newSeconds: number
+): Promise<SecondsSyncResult> {
+  const deltaMs = (newSeconds - record.seconds) * 1000;
+  return db.transaction("rw", db.dailyTasks, async () => {
+    const linked = await findLinkedDoneTasks(record);
+    if (linked.length === 0) return { status: "none" } as const;
+    if (linked.length > 1) return { status: "ambiguous" } as const;
+    const t = linked[0];
+    const previousEndedAt = taskEndEdge(t);
+    if (deltaMs === 0) return { status: "synced", taskId: t.id, endedAt: previousEndedAt ?? 0, previousEndedAt } as const;
+    // 最も遅く終わった区間の終わりを動かす
+    const closed = t.segments.map((s, i) => ({ s, i })).filter((x) => x.s.end !== undefined);
+    if (closed.length === 0) return { status: "rejected" } as const;
+    const last = closed.reduce((a, b) => (b.s.end! > a.s.end! ? b : a));
+    const newEnd = last.s.end! + deltaMs;
+    if (newEnd <= last.s.start || t.accumulatedMs + deltaMs < 0) return { status: "rejected" } as const;
+    const segments = t.segments.map((s, i) => (i === last.i ? { ...s, end: newEnd } : s));
+    const accumulatedMs = t.accumulatedMs + deltaMs;
+    const endedAt = t.endedAt === undefined || t.endedAt === last.s.end ? newEnd : t.endedAt;
+    await db.dailyTasks.update(t.id, {
+      segments,
+      accumulatedMs,
+      recordedMs: (t.recordedMs ?? t.accumulatedMs) + deltaMs,
+      endedAt,
+    });
+    return { status: "synced", taskId: t.id, endedAt, previousEndedAt } as const;
+  });
+}
+
+/**
+ * 実績の日付を変える(実績編集)。開始・終了・区間も同じ日数だけずらし、元になった完了済みの作業も
+ * その日へ移す(本日の作業の「完了」と実績がずれないように)。
+ * 移した先の日に同じ作業・帰属先の実績が既にあれば、そちらへ合算する(同じ日・同じ作業の実績は1件)。
+ * 元の日に同じ作業の計測中・一時停止中の作業(続きから再開したもの)が残っている時は、
+ * 次に完了した時の合算先が分かれてしまうため、移さずに断る
+ */
+export type MoveRecordDateResult =
+  | { status: "moved" | "merged"; undo: MoveRecordUndo }
+  | { status: "unchanged" }
+  | { status: "rejected"; message: string };
+
+export interface MoveRecordUndo {
+  /** 変更前の実績(移したもの・合算先) */
+  recordsBefore: WorkRecord[];
+  /** 変更後の実績(合算した時は合算先だけ) */
+  recordsAfter: WorkRecord[];
+  tasksBefore: DailyTask[];
+  tasksAfter: DailyTask[];
+}
+
+function dayDeltaMs(fromDate: string, toDate: string): number {
+  return new Date(`${toDate}T00:00:00`).getTime() - new Date(`${fromDate}T00:00:00`).getTime();
+}
+
+export async function moveRecordToDate(recordId: string, newDate: string): Promise<MoveRecordDateResult> {
+  const result = await db.transaction("rw", db.records, db.dailyTasks, async (): Promise<MoveRecordDateResult> => {
+    const rec = await db.records.get(recordId);
+    if (!rec) return { status: "rejected", message: "実績が見つかりません" };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return { status: "rejected", message: "日付を読めません" };
+    if (rec.date === newDate) return { status: "unchanged" };
+    const delta = dayDeltaMs(rec.date, newDate);
+    const shift = (v: number) => v + delta;
+    const shiftSegs = (list: TimeSegment[] | undefined) =>
+      list?.map((s) => ({ start: shift(s.start), ...(s.end !== undefined ? { end: shift(s.end) } : {}) }));
+
+    const sameDay = rec.masterTaskId ? await db.dailyTasks.where("date").equals(rec.date).toArray() : [];
+    const sameWork = sameDay.filter((t) => t.masterTaskId === rec.masterTaskId && sameAttribution(t, rec));
+    if (sameWork.some((t) => t.status !== "done" && (t.recordedMs ?? 0) > 0)) {
+      return {
+        status: "rejected",
+        message: "この作業は本日の作業で続きから再開中のため、日付を変えられません。先に完了してください",
+      };
+    }
+    const linked = sameWork.filter((t) => t.status === "done");
+
+    const moved: WorkRecord = {
+      ...rec,
+      date: newDate,
+      startedAt: shift(rec.startedAt),
+      endedAt: shift(rec.endedAt),
+      segments: shiftSegs(rec.segments),
+    };
+    const target = rec.masterTaskId
+      ? (await db.records.where("date").equals(newDate).toArray()).find((r) => r.id !== rec.id && recordMatches(r, rec.masterTaskId!, rec))
+      : undefined;
+
+    const newDayCount = linked.length > 0 ? await db.dailyTasks.where("date").equals(newDate).count() : 0;
+    const tasksAfter: DailyTask[] = linked.map((t, i) => ({
+      ...t,
+      date: newDate,
+      order: newDayCount + i,
+      segments: shiftSegs(t.segments)!,
+      ...(t.startedAt !== undefined ? { startedAt: shift(t.startedAt) } : {}),
+      ...(t.endedAt !== undefined ? { endedAt: shift(t.endedAt) } : {}),
+    }));
+
+    let recordsAfter: WorkRecord[];
+    const recordsBefore = [rec, ...(target ? [target] : [])];
+    if (target) {
+      const merged: WorkRecord = {
+        ...target,
+        seconds: target.seconds + moved.seconds,
+        startedAt: Math.min(target.startedAt, moved.startedAt),
+        endedAt: Math.max(target.endedAt, moved.endedAt),
+        segments: target.segments && moved.segments ? mergeRecordSegments(target, moved.segments) : undefined,
+        isTrouble: target.isTrouble || moved.isTrouble || undefined,
+        note: [target.note, moved.note].filter(Boolean).join(" / ") || undefined,
+        secondaryProjectIds:
+          target.secondaryProjectIds || moved.secondaryProjectIds
+            ? [...new Set([...(target.secondaryProjectIds ?? []), ...(moved.secondaryProjectIds ?? [])])]
+            : undefined,
+      };
+      await db.records.delete(rec.id);
+      await db.records.put(merged);
+      recordsAfter = [merged];
+    } else {
+      await db.records.put(moved);
+      recordsAfter = [moved];
+    }
+    if (tasksAfter.length > 0) await db.dailyTasks.bulkPut(tasksAfter);
+    return { status: target ? "merged" : "moved", undo: { recordsBefore, recordsAfter, tasksBefore: linked, tasksAfter } };
+  });
+  // 合算すると実績の件数が変わるので、想定時間を数え直す
+  const masterId = result.status === "merged" ? result.undo.recordsBefore[0].masterTaskId : undefined;
+  if (masterId) await recomputeEstimateFromRecords(masterId);
+  return result;
+}
+
+/** moveRecordToDate を取り消す。その後に実績・作業が変わっていれば何もせず false を返す */
+export async function undoMoveRecordToDate(u: MoveRecordUndo): Promise<boolean> {
+  const ok = await db.transaction("rw", db.records, db.dailyTasks, async () => {
+    for (const r of u.recordsAfter) {
+      if (JSON.stringify(await db.records.get(r.id)) !== JSON.stringify(r)) return false;
+    }
+    for (const t of u.tasksAfter) {
+      if (JSON.stringify(await db.dailyTasks.get(t.id)) !== JSON.stringify(t)) return false;
+    }
+    // 元のIDの実績が新しく作られていたら上書きしない
+    for (const r of u.recordsBefore) {
+      if (!u.recordsAfter.some((a) => a.id === r.id) && (await db.records.get(r.id))) return false;
+    }
+    // 移した後に元の日で同じ作業の実績が新しくできていたら、戻すと同じ日・同じ作業の実績が2件になる
+    const beforeIds = new Set(u.recordsBefore.map((r) => r.id));
+    for (const r of u.recordsBefore) {
+      if (!r.masterTaskId) continue;
+      const dup = (await db.records.where("date").equals(r.date).toArray()).some(
+        (o) => !beforeIds.has(o.id) && recordMatches(o, r.masterTaskId!, r)
+      );
+      if (dup) return false;
+    }
+    await db.records.bulkDelete(u.recordsAfter.map((r) => r.id));
+    await db.records.bulkPut(u.recordsBefore);
+    if (u.tasksBefore.length > 0) await db.dailyTasks.bulkPut(u.tasksBefore);
+    return true;
+  });
+  const masterId = u.recordsBefore[0]?.masterTaskId;
+  if (ok && masterId) await recomputeEstimateFromRecords(masterId);
+  return ok;
 }
 
 // 日をまたいで「計測中」「一時停止中」のまま放置されたタスクを探す（statusが running/paused で、

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { cleanupDailySettingsOncePerDay } from "@/lib/dailySettingsCleanup";
 
 // このアプリのデータは端末のブラウザ内(IndexedDB)にしか無い。既定では「一時的な」
 // 保存領域として扱われ、端末の空き容量が減った際にブラウザの判断で丸ごと破棄され得る。
@@ -17,6 +18,11 @@ export default function StoragePersistInit() {
         // 未対応・拒否のいずれでもアプリの動作自体には影響しないため、何もしない
       }
     })();
+    // 日付ごとの古い印の掃除(1日1回)。起動の描画を邪魔しないよう少し後で行う
+    const timer = window.setTimeout(() => {
+      void cleanupDailySettingsOncePerDay().catch(() => {});
+    }, 5000);
+    return () => window.clearTimeout(timer);
   }, []);
 
   return null;

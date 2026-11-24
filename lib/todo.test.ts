@@ -5,6 +5,11 @@ import {
   computeDateOrderedPosition,
   computeNextDueDate,
   fillRecurrenceDefaults,
+  findParentCandidates,
+  parseParentPrefix,
+  setTodoArchived,
+  setTodoParent,
+  undoTodoChanges,
   upsertTodoFromCsv,
 } from "./todo";
 import { incompletePreviousStageTitles } from "./projectStage";
@@ -138,6 +143,29 @@ describe("繰り返しタスクの完了(completeTodoTask)", () => {
     await completeTodoTask(t, TODAY);
     expect((await db.todoTasks.get("r4"))?.dueDate).toBe("2026-11-22");
   });
+
+  it("親の期日が進んだ日数だけ、サブタスクの期日・通知も進め、通知済みの印を消す", async () => {
+    const H = 3_600_000;
+    const rem = new Date("2026-11-21T09:00:00").getTime();
+    const t = todo({ id: "rp", dueDate: TODAY, reminderAt: rem, reminderFiredAt: rem, recurrence: { type: "weekly", interval: 1, weekdays: [6] } });
+    await db.todoTasks.bulkAdd([
+      t,
+      todo({ id: "rs1", parentTaskId: "rp", dueDate: "2026-11-20", reminderAt: rem - H, reminderFiredAt: rem - H }),
+      todo({ id: "rs2", parentTaskId: "rp", dueDate: "2026-11-21", completed: true, completedAt: 1 }),
+      todo({ id: "rs3", parentTaskId: "rp" }),
+    ]);
+    await completeTodoTask(t, TODAY);
+    const p = await db.todoTasks.get("rp");
+    expect(p?.dueDate).toBe("2026-11-28");
+    expect(p?.reminderAt).toBe(rem + 7 * 86_400_000);
+    expect(p?.reminderFiredAt).toBeUndefined();
+    const s1 = await db.todoTasks.get("rs1");
+    expect(s1?.dueDate).toBe("2026-11-27");
+    expect(s1?.reminderAt).toBe(rem - H + 7 * 86_400_000);
+    expect(s1?.reminderFiredAt).toBeUndefined();
+    expect(await db.todoTasks.get("rs2")).toMatchObject({ dueDate: "2026-11-28", completed: false });
+    expect((await db.todoTasks.get("rs3"))?.dueDate).toBeUndefined();
+  });
 });
 
 describe("日付順の挿入位置(computeDateOrderedPosition)", () => {
@@ -210,7 +238,7 @@ describe("ToDoのCSV再取込(upsertTodoFromCsv)", () => {
     const res = await upsertTodoFromCsv([
       { id: "x1", listTitle: "タスク", title: "新件名", tag: "対応中", dueDate: "2026-12-01", important: true, completed: false },
     ]);
-    expect(res).toEqual({ created: 0, updated: 1, listsCreated: 0 });
+    expect(res).toEqual({ created: 0, updated: 1, listsCreated: 0, errors: [] });
     const after = await db.todoTasks.get("x1");
     expect(after).toMatchObject({
       title: "新件名",
@@ -234,6 +262,61 @@ describe("ToDoのCSV再取込(upsertTodoFromCsv)", () => {
     expect(after?.customer).toBeUndefined();
   });
 
+  it("親(parentId)の列が無いCSVでは、既存のサブタスクを親から外さず、親のリストのまま", async () => {
+    await db.todoLists.bulkAdd([
+      { id: "L", title: "タスク", order: 0, createdAt: 0 },
+      { id: "L2", title: "別", order: 1, createdAt: 0 },
+    ]);
+    await db.todoTasks.bulkAdd([todo({ id: "p" }), todo({ id: "s", parentTaskId: "p" })]);
+    await upsertTodoFromCsv([{ id: "s", listTitle: "別", title: "子", important: false, completed: false }], { hasParentColumn: false });
+    expect(await db.todoTasks.get("s")).toMatchObject({ parentTaskId: "p", listId: "L", title: "子" });
+  });
+
+  it("親の列があれば親を確かめて付け替え、リストは親に合わせる。条件に合わない行はエラーで取り込まない", async () => {
+    await db.todoLists.bulkAdd([
+      { id: "L", title: "タスク", order: 0, createdAt: 0 },
+      { id: "L2", title: "別", order: 1, createdAt: 0 },
+    ]);
+    await db.todoTasks.bulkAdd([
+      todo({ id: "p", listId: "L2" }),
+      todo({ id: "ps", parentTaskId: "p", listId: "L2" }),
+      todo({ id: "s", parentTaskId: "p", listId: "L2" }),
+      todo({ id: "hasKids" }),
+      todo({ id: "kid", parentTaskId: "hasKids" }),
+    ]);
+    const res = await upsertTodoFromCsv(
+      [
+        { id: "n1", listTitle: "タスク", parentId: "p", title: "新しい子", important: false, completed: false, recurrence: { type: "daily", interval: 1 } },
+        { id: "bad1", listTitle: "タスク", parentId: "nope", title: "親なし", important: false, completed: false },
+        { id: "bad2", listTitle: "タスク", parentId: "ps", title: "孫", important: false, completed: false },
+        { id: "bad3", listTitle: "タスク", parentId: "bad3", title: "自分", important: false, completed: false },
+        { id: "hasKids", listTitle: "タスク", parentId: "p", title: "子持ち", important: false, completed: false },
+        { id: "s", listTitle: "別", title: "親から外す", important: false, completed: false },
+      ],
+      { hasParentColumn: true }
+    );
+    expect(res.created).toBe(1);
+    expect(res.updated).toBe(1);
+    expect(res.errors).toHaveLength(4);
+    expect(await db.todoTasks.get("n1")).toMatchObject({ parentTaskId: "p", listId: "L2", order: 1 });
+    expect((await db.todoTasks.get("n1"))?.recurrence).toBeUndefined();
+    expect(await db.todoTasks.get("bad1")).toBeUndefined();
+    expect(await db.todoTasks.get("bad2")).toBeUndefined();
+    expect(await db.todoTasks.get("bad3")).toBeUndefined();
+    expect((await db.todoTasks.get("hasKids"))?.parentTaskId).toBeUndefined();
+    expect((await db.todoTasks.get("s"))?.parentTaskId).toBeUndefined();
+  });
+
+  it("同じCSVの中で親と子を新しく作れる(子の行が先でも)", async () => {
+    const res = await upsertTodoFromCsv([
+      { id: "c1", listTitle: "A", parentId: "p1", title: "子", important: false, completed: false },
+      { id: "p1", listTitle: "A", title: "親", important: false, completed: false },
+    ]);
+    expect(res.errors).toEqual([]);
+    const lists = await db.todoLists.toArray();
+    expect(await db.todoTasks.get("c1")).toMatchObject({ parentTaskId: "p1", listId: lists[0].id });
+  });
+
   it("完了済みはCSVがfalseでも戻さず、新しい行は追加する", async () => {
     await db.todoLists.add({ id: "L", title: "タスク", order: 0, createdAt: 0 });
     await db.todoTasks.add(todo({ id: "x1", completed: true, completedAt: 77 }));
@@ -241,7 +324,7 @@ describe("ToDoのCSV再取込(upsertTodoFromCsv)", () => {
       { id: "x1", listTitle: "タスク", title: "a", important: false, completed: false },
       { id: "x2", listTitle: "新リスト", title: "b", important: false, completed: false, recurrence: { type: "daily", interval: 1 } },
     ]);
-    expect(res).toEqual({ created: 1, updated: 1, listsCreated: 1 });
+    expect(res).toEqual({ created: 1, updated: 1, listsCreated: 1, errors: [] });
     expect(await db.todoTasks.get("x1")).toMatchObject({ completed: true, completedAt: 77 });
     expect(await db.todoTasks.get("x2")).toMatchObject({ title: "b", order: 0, recurrence: { type: "daily", interval: 1 } });
   });
@@ -275,5 +358,162 @@ describe("件数管理の段階・アーカイブ済み案件の扱い", () => {
     const active = project({ id: "p2", tag: "客先確認中", tagChangedAt: NOW - 5 * DAY, dueHistory } as Partial<ProjectItem>);
     expect(collectWaitingItems([], [archived, active], [], ["客先確認中"], 3, NOW).map((i) => i.id)).toEqual(["p2"]);
     expect(collectFrequentlyPostponed([], [archived, active], 2).map((i) => i.id)).toEqual(["p2"]);
+  });
+});
+
+describe("親の付け替え(setTodoParent)", () => {
+  beforeEach(async () => {
+    await db.todoTasks.bulkAdd([
+      todo({ id: "P", listId: "L2", order: 0, title: "親" }),
+      todo({ id: "P1", parentTaskId: "P", listId: "L2", order: 3 }),
+      todo({ id: "SUB", parentTaskId: "P", listId: "L2", order: 4 }),
+      todo({ id: "DONE", completed: true, completedAt: 1 }),
+      todo({ id: "ARC", archived: true }),
+      todo({ id: "KIDS" }),
+      todo({ id: "KID", parentTaskId: "KIDS" }),
+      todo({
+        id: "T",
+        order: 1,
+        recurrence: { type: "daily", interval: 1 },
+        myDayDate: "2026-11-21",
+        boardX: 10,
+        boardY: 20,
+        boardPinned: true,
+        archived: true,
+      }),
+    ]);
+  });
+
+  it.each([
+    ["NOPE", "P", "not-found"],
+    ["T", "T", "self"],
+    ["T", "NOPE", "parent-not-found"],
+    ["T", "SUB", "parent-is-subtask"],
+    ["T", "ARC", "parent-archived"],
+    ["T", "DONE", "parent-completed"],
+    ["KIDS", "P", "has-subtasks"],
+    ["SUB", "P", "noop"],
+  ] as const)("%s → %s は %s で断る", async (taskId, parentId, reason) => {
+    const before = await db.todoTasks.toArray();
+    const res = await setTodoParent(taskId, parentId);
+    expect(res).toMatchObject({ ok: false, reason });
+    expect(await db.todoTasks.toArray()).toEqual(before);
+  });
+
+  it("通常のタスクに戻す対象がサブタスクでなければ noop", async () => {
+    expect(await setTodoParent("T", null)).toMatchObject({ ok: false, reason: "noop" });
+  });
+
+  it("サブタスクにすると親のリストへ移り、親のサブタスクの末尾に入り、サブタスクで使わない項目は外れる", async () => {
+    const res = await setTodoParent("T", "P");
+    expect(res).toMatchObject({ ok: true, fromListId: "L", toListId: "L2", parentTitle: "親" });
+    const t = await db.todoTasks.get("T");
+    expect(t).toMatchObject({ parentTaskId: "P", listId: "L2", order: 5 });
+    for (const k of ["recurrence", "myDayDate", "boardX", "boardY", "boardPinned", "archived"] as const) expect(t?.[k]).toBeUndefined();
+  });
+
+  it("別の親へ移せる", async () => {
+    await db.todoTasks.add(todo({ id: "Q", order: 9 }));
+    const res = await setTodoParent("SUB", "Q");
+    expect(res).toMatchObject({ ok: true, fromListId: "L2", toListId: "L" });
+    expect(await db.todoTasks.get("SUB")).toMatchObject({ parentTaskId: "Q", listId: "L", order: 0 });
+  });
+
+  it("通常のタスクに戻すと、日付が無ければリストの先頭へ入り、ほかのorderは詰め直す", async () => {
+    await db.todoTasks.add(todo({ id: "X", listId: "L2", order: 7 }));
+    const res = await setTodoParent("SUB", null);
+    expect(res.ok).toBe(true);
+    expect((await db.todoTasks.get("SUB"))?.parentTaskId).toBeUndefined();
+    const top = (await db.todoTasks.where("listId").equals("L2").toArray()).filter((t) => !t.parentTaskId).sort((a, b) => a.order - b.order);
+    expect(top.map((t) => `${t.id}=${t.order}`)).toEqual(["SUB=0", "P=1", "X=2"]);
+  });
+
+  it("通常のタスクに戻すと、日付があれば日付順の位置へ入る", async () => {
+    await db.todoTasks.bulkAdd([
+      todo({ id: "A", listId: "L2", order: 1, dueDate: "2026-12-01" }),
+      todo({ id: "B", listId: "L2", order: 2, dueDate: "2026-12-20" }),
+    ]);
+    await db.todoTasks.update("P", { dueDate: "2026-11-01" });
+    await db.todoTasks.update("SUB", { dueDate: "2026-12-10" });
+    await setTodoParent("SUB", null);
+    const top = (await db.todoTasks.where("listId").equals("L2").toArray()).filter((t) => !t.parentTaskId).sort((a, b) => a.order - b.order);
+    expect(top.map((t) => t.id)).toEqual(["P", "A", "SUB", "B"]);
+  });
+
+  it("元に戻すと前の状態に戻る", async () => {
+    const before = await db.todoTasks.toArray();
+    const res = await setTodoParent("T", "P");
+    if (!res.ok) throw new Error("refused");
+    expect(await undoTodoChanges(res.changes)).toEqual({ restored: 1, skipped: 0 });
+    expect(await db.todoTasks.toArray()).toEqual(before);
+  });
+
+  it("戻すまでの間に書き換えられたタスクは上書きしない", async () => {
+    await db.todoTasks.add(todo({ id: "X", listId: "L2", order: 7 }));
+    const res = await setTodoParent("SUB", null);
+    if (!res.ok) throw new Error("refused");
+    // 戻す前にもう一度サブタスクへ
+    await setTodoParent("SUB", "P");
+    const r = await undoTodoChanges(res.changes);
+    expect(r.skipped).toBe(1);
+    expect((await db.todoTasks.get("SUB"))?.parentTaskId).toBe("P");
+    // 並びだけ変わったほかのタスクは戻る
+    expect((await db.todoTasks.get("X"))?.order).toBe(7);
+  });
+
+  it("戻すまでの間に親が消された・サブタスクになった時は、サブタスクへ戻さない(1段まで・親のいないサブタスクを作らない)", async () => {
+    const res = await setTodoParent("SUB", null);
+    if (!res.ok) throw new Error("refused");
+    // 親だったPを、サブタスクを外してからほかのタスクのサブタスクにする
+    await db.todoTasks.add(todo({ id: "Q", listId: "L2", order: 9 }));
+    await db.todoTasks.delete("P1");
+    expect(await setTodoParent("P", "Q")).toMatchObject({ ok: true });
+    const r1 = await undoTodoChanges(res.changes);
+    expect(r1.skipped).toBeGreaterThanOrEqual(1);
+    expect((await db.todoTasks.get("SUB"))?.parentTaskId).toBeUndefined();
+  });
+
+  it("戻すまでの間に親が消された時は、サブタスクへ戻さない", async () => {
+    const res = await setTodoParent("SUB", null);
+    if (!res.ok) throw new Error("refused");
+    await db.todoTasks.delete("P");
+    await undoTodoChanges(res.changes);
+    expect((await db.todoTasks.get("SUB"))?.parentTaskId).toBeUndefined();
+  });
+});
+
+describe("アーカイブ(setTodoArchived)", () => {
+  it("親をアーカイブするとサブタスクも一緒に、解除すると一緒に戻る。元に戻すも効く", async () => {
+    await db.todoTasks.bulkAdd([todo({ id: "P" }), todo({ id: "S1", parentTaskId: "P" }), todo({ id: "S2", parentTaskId: "P" })]);
+    const changes = await setTodoArchived("P", true);
+    expect(changes).toHaveLength(3);
+    expect((await db.todoTasks.toArray()).every((t) => t.archived)).toBe(true);
+    await undoTodoChanges(changes);
+    expect((await db.todoTasks.toArray()).some((t) => t.archived)).toBe(false);
+    await setTodoArchived("P", true);
+    await setTodoArchived("P", false);
+    expect((await db.todoTasks.toArray()).some((t) => t.archived)).toBe(false);
+  });
+});
+
+describe("すぐ追加の親の指定(＞親 件名)", () => {
+  it("全角・半角の＞と、全角・半角の空白を受け付ける", () => {
+    expect(parseParentPrefix("＞見積 金額を確認")).toEqual({ parentQuery: "見積", rest: "金額を確認" });
+    expect(parseParentPrefix("> 見積　金額を確認 明日")).toEqual({ parentQuery: "見積", rest: "金額を確認 明日" });
+    expect(parseParentPrefix("＞見積")).toBeNull();
+    expect(parseParentPrefix("見積 >金額")).toBeNull();
+  });
+
+  it("同じリストの、親にできるタスクから探す", () => {
+    const tasks = [
+      todo({ id: "a", title: "A社見積" }),
+      todo({ id: "b", title: "B社見積" }),
+      todo({ id: "c", title: "A社見積(完了)", completed: true }),
+      todo({ id: "d", title: "A社見積の子", parentTaskId: "a" }),
+      todo({ id: "e", title: "A社見積 別リスト", listId: "L2" }),
+    ];
+    expect(findParentCandidates(tasks, "L", "a社").map((t) => t.id)).toEqual(["a"]);
+    expect(findParentCandidates(tasks, "L", "見積").map((t) => t.id)).toEqual(["a", "b"]);
+    expect(findParentCandidates(tasks, "L", "")).toEqual([]);
   });
 });

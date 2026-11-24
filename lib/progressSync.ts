@@ -1,5 +1,5 @@
 import { db, uid } from "./db";
-import { effectiveProjectTag, isStageDone } from "./projectStage";
+import { effectiveProjectTag, isStageDone, mergeEditedStages } from "./projectStage";
 import { computeNextDueDate, effectiveTag } from "./todo";
 import { todayStr } from "./time";
 import { hmToMin, minToHm } from "./timebox";
@@ -509,7 +509,8 @@ export function planProgressUpdate(
             parts.push(completed ? `完了にする${isDate(o.completedDate) ? `(${o.completedDate})` : ""}` : "未完了に戻す");
           }
           const doneNow = next.targetCount ? (next.completedCount ?? 0) >= next.targetCount : (completed ?? stage.completed);
-          next.completed = doneNow;
+          // 件数管理の段階は件数で完了が決まる。completed を立てると、件数を減らしても完了のまま残ってしまう
+          if (!next.targetCount) next.completed = doneNow;
           if (doneNow && !isStageDone(stage)) next.completedAt = completedAtOf(o.completedDate, now);
           if (!doneNow) next.completedAt = undefined;
           const due = optDate(o, "dueDate");
@@ -745,8 +746,18 @@ export async function applyProgressPlan(plan: UpdatePlan): Promise<() => Promise
     for (const { before, after } of dailyTasks.values()) await db.dailyTasks.update(after.id, diff(before, after));
     for (const l of lists) await db.todoLists.add(l);
     for (const { before, after } of projects.values()) {
-      if (before) await db.projects.update(after.id, diff(before, after));
-      else await db.projects.add(after);
+      if (!before) {
+        await db.projects.add(after);
+        continue;
+      }
+      const patch = diff(before, after);
+      // 段階は配列ごと書くと、計画を作ったあとに他の画面で変えた段階まで巻き戻すので、
+      // 最新の段階へ段階ごと・項目ごとに重ねる
+      if (patch.stages !== undefined) {
+        const current = await db.projects.get(after.id);
+        patch.stages = mergeEditedStages(before.stages ?? [], after.stages ?? [], current?.stages ?? []);
+      }
+      await db.projects.update(after.id, patch);
     }
     for (const { before, after } of todos.values()) {
       if (before) await db.todoTasks.update(after.id, diff(before, after));

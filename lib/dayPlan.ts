@@ -335,6 +335,8 @@ export function collectPlanCandidates(input: DayPlanInput): PlanCandidate[] {
     const coveredByProject = !!linkedProject && !linkedProject.completedAt && !linkedProject.archived;
     if (coveredByProject || hasOpenChildren.has(t.id)) continue;
     const parent = t.parentTaskId ? todoById.get(t.parentTaskId) : undefined;
+    // 親を「タスクだけ完了」にした・アーカイブした後に残ったサブタスクは、もう対応不要なので出さない
+    if (parent && (parent.completed || parent.archived)) continue;
     const due = t.dueDate ?? parent?.dueDate;
     const inMyDay = t.myDayDate === today;
     if (!inMyDay && (!due || due > horizon)) continue;

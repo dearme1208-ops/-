@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { exportBackup, importBackup } from "@/lib/backup";
+import { beforeRestoreFileName, exportBackup, importBackup, isNewerBackupVersion } from "@/lib/backup";
 import { db } from "@/lib/db";
+import type { MasterTask } from "@/lib/types";
 
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
@@ -48,8 +49,43 @@ describe("壊れたバックアップの復元", () => {
 
   it("途中で失敗したら、どのテーブルも書き換えない", async () => {
     await db.records.put({ id: "keep", date: "2026-09-29", category: "業務", name: "x", masterTaskId: "m", seconds: 1, startedAt: 0, endedAt: 1, excludedFromStats: false });
-    const dup = { id: "m1", category: "a", name: "b", estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 };
-    await expect(importBackup({ app: "koutei-hyo", version: 2, exportedAt: "", tables: { records: [], masterTasks: [dup, dup] } })).rejects.toBeTruthy();
+    // 主キーに使えない値(オブジェクト)の行で書き込みを失敗させる
+    const bad = { id: {}, category: "a", name: "b", estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 };
+    await expect(importBackup({ app: "koutei-hyo", version: 2, exportedAt: "", tables: { records: [], masterTasks: [bad] } as unknown as Record<string, unknown[]> })).rejects.toBeTruthy();
     expect(await db.records.get("keep")).toBeTruthy();
+  });
+});
+
+describe("復元の安全策", () => {
+  const master = (id: unknown, name = "b") => ({ id, category: "a", name, estimatedSeconds: 0, isFavorite: false, sampleCount: 0, createdAt: 0, updatedAt: 0 });
+
+  it("主キーが重複した行があっても復元全体は失敗せず、後の行が残る", async () => {
+    const r = await importBackup({ app: "koutei-hyo", version: 2, exportedAt: "", tables: { masterTasks: [master("m1", "前"), master("m1", "後"), master("m2")] } });
+    expect(await db.masterTasks.count()).toBe(2);
+    expect((await db.masterTasks.get("m1"))!.name).toBe("後");
+    expect(r.restoredRows).toBe(2);
+  });
+
+  it("idの無い行・オブジェクトでない行は落とし、残りは復元する", async () => {
+    const r = await importBackup({ app: "koutei-hyo", version: 2, exportedAt: "", tables: { masterTasks: [master(undefined), master(""), null, "x", master("ok")] } });
+    expect((await db.masterTasks.toArray()).map((m) => m.id)).toEqual(["ok"]);
+    expect(r.droppedRows).toBe(4);
+  });
+
+  it("設定(主キーがkey)はkeyで判定する", async () => {
+    await importBackup({ app: "koutei-hyo", version: 2, exportedAt: "", tables: { settings: [{ key: "a", value: 1 }, { value: 2 }] } });
+    expect(await db.settings.count()).toBe(1);
+  });
+
+  it("新しい版の形式のファイルは、今のデータに触れずに断る", async () => {
+    await db.masterTasks.put(master("keep") as MasterTask);
+    expect(isNewerBackupVersion({ version: 3 })).toBe(true);
+    expect(isNewerBackupVersion({ version: 2 })).toBe(false);
+    await expect(importBackup({ app: "koutei-hyo", version: 3, exportedAt: "", tables: { masterTasks: [] } })).rejects.toThrow(/version 3/);
+    expect(await db.masterTasks.get("keep")).toBeTruthy();
+  });
+
+  it("復元前の自動書き出しのファイル名に日時が入る", () => {
+    expect(beforeRestoreFileName(new Date(2026, 10, 24, 9, 5, 7))).toBe("koutei-hyo_before-restore_2026-11-24_090507.json");
   });
 });

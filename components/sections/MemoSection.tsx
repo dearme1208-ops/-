@@ -8,6 +8,8 @@ import { useSetting } from "@/lib/settings";
 import { downloadTextFile } from "@/lib/report";
 import { createSpeechRecognition } from "@/lib/voice";
 import { showUndoToast } from "@/lib/toast";
+import { isSubmitEnter } from "@/lib/keyboard";
+import { deleteProjectCascade } from "@/lib/projects";
 import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import {
   BOARD_STAMP_HEIGHT,
@@ -37,7 +39,7 @@ import {
   serializeMemoBoard,
 } from "@/lib/memo";
 import { formatMailNoteText, openMailAttachment, parseMsgFile, readFileAsDataUrl } from "@/lib/mailImport";
-import type { BoardStamp, MemoBoard, MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
+import type { BoardShape, BoardStamp, MemoBoard, MemoChecklistItem, MemoConnector, MemoNote, MemoStroke } from "@/lib/types";
 import { todayStr } from "@/lib/time";
 import StrokeLayer from "@/components/memo/StrokeLayer";
 import Modal from "@/components/ui/Modal";
@@ -49,7 +51,7 @@ type MemoUndoEntry =
   | { type: "strokes"; strokes: MemoStroke[]; label: string }
   | { type: "connector"; connector: MemoConnector }
   | { type: "stamp"; stamp: BoardStamp }
-  | { type: "board"; board: MemoBoard; notes: MemoNote[]; strokes: MemoStroke[]; connectors: MemoConnector[]; stamps: BoardStamp[] };
+  | { type: "board"; board: MemoBoard; notes: MemoNote[]; strokes: MemoStroke[]; connectors: MemoConnector[]; stamps: BoardStamp[]; shapes: BoardShape[] };
 
 const MEMO_MINIMAP_WIDTH = 140;
 const MEMO_MINIMAP_HEIGHT = Math.round((MEMO_MINIMAP_WIDTH * MEMO_BOARD_HEIGHT) / MEMO_BOARD_WIDTH);
@@ -159,7 +161,7 @@ export default function MemoSection() {
     // 戻すまでの間に、同じものが取り込み等で作り直されていたり、つなぎ先の付箋やボードが
     // 消されていたりすることがある。新しい状態を古い控えで上書きしない・宙に浮いた線を作らないよう、
     // 今は無いものだけを、つなぎ先が残っている時だけ戻す
-    await db.transaction("rw", [db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, db.boardStamps], async () => {
+    await db.transaction("rw", [db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, db.boardStamps, db.boardShapes], async () => {
       if (entry.type === "board") {
         if (!(await db.memoBoards.get(entry.board.id))) await db.memoBoards.add(entry.board);
       }
@@ -188,6 +190,10 @@ export default function MemoSection() {
       const stampsToAdd = entry.type === "stamp" ? [entry.stamp] : entry.type === "board" ? entry.stamps : [];
       for (const st of stampsToAdd) {
         if ((await boardExists(st.boardId)) && !(await db.boardStamps.get(st.id))) await db.boardStamps.add(st);
+      }
+      const shapesToAdd = entry.type === "board" ? entry.shapes : [];
+      for (const sh of shapesToAdd) {
+        if ((await boardExists(sh.boardId)) && !(await db.boardShapes.get(sh.id))) await db.boardShapes.add(sh);
       }
     });
     if (entry.type === "board") setSelectedBoardId(entry.board.id);
@@ -714,7 +720,8 @@ export default function MemoSection() {
       createdAt: Date.now(),
     });
     showUndoToast(`案件「${title}」を追加しました`, async () => {
-      await db.projects.delete(id);
+      // 取り消すまでに足されたWBS・紐づけも一緒に外す
+      await deleteProjectCascade(id);
     });
   }
 
@@ -890,7 +897,7 @@ export default function MemoSection() {
     // 「元に戻す」でまとめて戻せるようにする
     const board = currentBoard;
     const boardId = board.id;
-    const snapshot = await db.transaction("rw", [db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, db.boardStamps], async () => {
+    const snapshot = await db.transaction("rw", [db.memoBoards, db.memoNotes, db.memoStrokes, db.memoConnectors, db.boardStamps, db.boardShapes], async () => {
       const snap: MemoUndoEntry = {
         type: "board",
         board,
@@ -898,12 +905,15 @@ export default function MemoSection() {
         strokes: await db.memoStrokes.where("boardId").equals(boardId).toArray(),
         connectors: await db.memoConnectors.where("boardId").equals(boardId).toArray(),
         stamps: await db.boardStamps.where("boardId").equals(boardId).toArray(),
+        shapes: await db.boardShapes.where("boardId").equals(boardId).toArray(),
       };
       await db.memoNotes.where("boardId").equals(boardId).delete();
       await db.memoStrokes.where("boardId").equals(boardId).delete();
       await db.memoConnectors.where("boardId").equals(boardId).delete();
       // スタンプも一緒に消す(以前は残っていて、どのボードからも見えないまま溜まっていた)
       await db.boardStamps.where("boardId").equals(boardId).delete();
+      // 統合ボードで置いた図形も同じボードに属するので一緒に消す
+      await db.boardShapes.where("boardId").equals(boardId).delete();
       await db.memoBoards.delete(boardId);
       return snap;
     });
@@ -1001,7 +1011,7 @@ export default function MemoSection() {
                   value={customStampText}
                   onChange={(e) => setCustomStampText(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") addStamp(customStampText);
+                    if (isSubmitEnter(e)) addStamp(customStampText);
                   }}
                   placeholder="一言を入力"
                   className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
@@ -1119,7 +1129,7 @@ export default function MemoSection() {
             setSearchIndex(0);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") handleSearchSubmit();
+            if (isSubmitEnter(e)) handleSearchSubmit();
           }}
           placeholder="付箋を検索..."
           className="w-40 rounded border border-cream/20 bg-ink px-2 py-1 text-sm text-cream"

@@ -444,3 +444,194 @@ describe("完了の「元に戻す」(undoFinishDailyTask)", () => {
     expect(await db.records.toArray()).toEqual(first.records);
   });
 });
+
+describe("完了の「元に戻す」: その後に作業が変わっていたら戻さない", () => {
+  async function finishCapture(t: DailyTask, endAtMs: number) {
+    const { subscribeCompletionPopup } = await import("./completionPopup");
+    let undo: (() => Promise<void>) | undefined;
+    const un = subscribeCompletionPopup((i) => {
+      undo = i.undo;
+    });
+    await finishDailyTask(t, endAtMs);
+    un();
+    return undo!;
+  }
+
+  it("続きから再開してもう一度完了した後の「元に戻す」は、後の時間を消さない", async () => {
+    const { undoFinishDailyTask } = await import("./tasks");
+    await db.dailyTasks.put(task({ id: "a" }));
+    const undo1 = await finishCapture(task({ id: "a" }), T0 + 30 * MIN);
+    const d = (await db.dailyTasks.get("a"))!;
+    await db.dailyTasks.update("a", { status: "running", segments: [...d.segments, { start: T0 + 60 * MIN }], endedAt: undefined });
+    await finishCapture((await db.dailyTasks.get("a"))!, T0 + 120 * MIN);
+    const recBefore = await db.records.toArray();
+    await undo1();
+    expect(await db.records.toArray()).toEqual(recBefore);
+    const t = (await db.dailyTasks.get("a"))!;
+    expect(t.status).toBe("done");
+    expect(t.segments).toHaveLength(2);
+    expect(undoFinishDailyTask).toBeTypeOf("function");
+  });
+
+  it("完了した作業を消した後の「元に戻す」は、計測中として生き返らせない", async () => {
+    await db.dailyTasks.put(task({ id: "a" }));
+    const undo1 = await finishCapture(task({ id: "a" }), T0 + 30 * MIN);
+    await db.dailyTasks.delete("a");
+    await db.records.clear();
+    await undo1();
+    expect(await db.dailyTasks.get("a")).toBeUndefined();
+  });
+
+  it("undoFinishDailyTask は戻せたか(ok)を返す", async () => {
+    const { undoFinishDailyTask } = await import("./tasks");
+    const before = task({ id: "a" });
+    await db.dailyTasks.put(before);
+    await finishDailyTask(before, T0 + 30 * MIN);
+    const done = (await db.dailyTasks.get("a"))!;
+    const rec = (await db.records.toArray())[0];
+    const contribution = {
+      recordId: rec.id,
+      created: true,
+      seconds: rec.seconds,
+      segments: rec.segments!,
+      after: { seconds: rec.seconds, startedAt: rec.startedAt, endedAt: rec.endedAt, segments: rec.segments! },
+      finished: { stoppedAt: done.stoppedAt!, endedAt: done.endedAt!, segmentCount: done.segments.length },
+    };
+    // 先に「続きから」再開されていたら戻さない
+    await db.dailyTasks.update("a", { status: "running", segments: [...done.segments, { start: T0 + 40 * MIN }] });
+    expect(await undoFinishDailyTask(before, "m1", contribution)).toEqual({ ok: false, reason: "changed" });
+    expect(await db.records.count()).toBe(1);
+    await db.dailyTasks.put(done);
+    expect(await undoFinishDailyTask(before, "m1", contribution)).toEqual({ ok: true });
+    expect((await db.dailyTasks.get("a"))!.status).toBe("running");
+    expect(await db.records.count()).toBe(0);
+  });
+});
+
+describe("実績編集の時刻を本日の作業へ反映: 並び順ではなく時刻で作業を選ぶ", () => {
+  it("開始を直すと、実績の開始を決めている(最も早く始めた)作業だけを直す", async () => {
+    const { syncDailyTaskBoundaryFromRecord } = await import("./tasks");
+    // a: 9:00-10:00 (並び順5)、b: 14:00-15:00 (並び順0)
+    const a = task({ id: "a", order: 5 });
+    const b = task({ id: "b", order: 0, segments: [{ start: T0 + 300 * MIN }], startedAt: T0 + 300 * MIN });
+    await db.dailyTasks.bulkPut([a, b]);
+    await finishDailyTask(a, T0 + 60 * MIN);
+    await finishDailyTask(b, T0 + 360 * MIN);
+    const r = (await db.records.toArray())[0];
+    const res = await syncDailyTaskBoundaryFromRecord(r, "start", T0 - 10 * MIN);
+    expect(res).toEqual({ status: "synced", deltaMs: 10 * MIN });
+    expect((await db.dailyTasks.get("a"))!.startedAt).toBe(T0 - 10 * MIN);
+    expect((await db.dailyTasks.get("b"))!.startedAt).toBe(T0 + 300 * MIN);
+    expect((await db.dailyTasks.get("b"))!.accumulatedMs).toBe(60 * MIN);
+  });
+
+  it("実績の端と同じ端の作業が無ければ作業は直さない(none)", async () => {
+    const { syncDailyTaskBoundaryFromRecord } = await import("./tasks");
+    await finish(task({ id: "a" }), { endAtMs: T0 + 60 * MIN });
+    const r = (await db.records.toArray())[0];
+    const res = await syncDailyTaskBoundaryFromRecord({ ...r, endedAt: T0 + 90 * MIN }, "end", T0 + 100 * MIN);
+    expect(res).toEqual({ status: "none" });
+    expect((await db.dailyTasks.get("a"))!.endedAt).toBe(T0 + 60 * MIN);
+  });
+});
+
+describe("実績編集の秒数を本日の作業へ反映(syncDailyTaskSecondsFromRecord)", () => {
+  it("元の作業が1件なら合計と最後の区間の終わりを動かす", async () => {
+    const { syncDailyTaskSecondsFromRecord } = await import("./tasks");
+    await finish(task({ id: "a" }), { endAtMs: T0 + 60 * MIN });
+    const r = (await db.records.toArray())[0];
+    const res = await syncDailyTaskSecondsFromRecord(r, 45 * 60);
+    expect(res).toMatchObject({ status: "synced", endedAt: T0 + 45 * MIN, previousEndedAt: T0 + 60 * MIN });
+    const d = (await db.dailyTasks.get("a"))!;
+    expect(d.accumulatedMs).toBe(45 * MIN);
+    expect(d.recordedMs).toBe(45 * MIN);
+    expect(d.segments[0].end).toBe(T0 + 45 * MIN);
+    expect(d.endedAt).toBe(T0 + 45 * MIN);
+  });
+
+  it("元の作業が2件以上なら直さない(ambiguous)。最後の区間より多く減らすなら断る", async () => {
+    const { syncDailyTaskSecondsFromRecord } = await import("./tasks");
+    await finish(task({ id: "a" }), { endAtMs: T0 + 10 * MIN });
+    const r1 = (await db.records.toArray())[0];
+    expect(await syncDailyTaskSecondsFromRecord(r1, 0)).toEqual({ status: "rejected" });
+    await finish(task({ id: "b", segments: [{ start: T0 + 60 * MIN }], startedAt: T0 + 60 * MIN }), { endAtMs: T0 + 70 * MIN });
+    const r2 = (await db.records.toArray())[0];
+    expect(await syncDailyTaskSecondsFromRecord(r2, 60)).toEqual({ status: "ambiguous" });
+    expect((await db.dailyTasks.get("a"))!.accumulatedMs).toBe(10 * MIN);
+  });
+});
+
+describe("実績の日付を変える(moveRecordToDate)", () => {
+  const NEXT = "2026-09-30";
+  const DAY = 24 * 60 * MIN;
+
+  it("移した先に同じ作業の実績が無ければ、時刻ごと移し、元の完了も移す", async () => {
+    const { moveRecordToDate } = await import("./tasks");
+    await finish(task({ id: "a" }), { endAtMs: T0 + 30 * MIN });
+    const r = (await db.records.toArray())[0];
+    const res = await moveRecordToDate(r.id, NEXT);
+    expect(res.status).toBe("moved");
+    const moved = (await db.records.get(r.id))!;
+    expect(moved.date).toBe(NEXT);
+    expect(moved.startedAt).toBe(T0 + DAY);
+    expect(moved.segments).toEqual([{ start: T0 + DAY, end: T0 + DAY + 30 * MIN }]);
+    const d = (await db.dailyTasks.get("a"))!;
+    expect(d.date).toBe(NEXT);
+    expect(d.endedAt).toBe(T0 + DAY + 30 * MIN);
+  });
+
+  it("移した先に同じ作業の実績があれば合算し、元に戻せる", async () => {
+    const { moveRecordToDate, undoMoveRecordToDate } = await import("./tasks");
+    await finish(task({ id: "a" }), { endAtMs: T0 + 30 * MIN });
+    const next0 = T0 + DAY + 120 * MIN;
+    await finish(task({ id: "b", date: NEXT, segments: [{ start: next0 }], startedAt: next0 }), { endAtMs: next0 + 15 * MIN });
+    const before = await db.records.toArray();
+    const src = before.find((r) => r.date === DATE)!;
+    const res = await moveRecordToDate(src.id, NEXT);
+    expect(res.status).toBe("merged");
+    const after = await db.records.toArray();
+    expect(after).toHaveLength(1);
+    expect(after[0].seconds).toBe(45 * 60);
+    expect(after[0].startedAt).toBe(T0 + DAY);
+    expect(after[0].segments).toHaveLength(2);
+    expect((await db.dailyTasks.get("a"))!.date).toBe(NEXT);
+    if (res.status !== "merged") throw new Error();
+    expect(await undoMoveRecordToDate(res.undo)).toBe(true);
+    expect((await db.records.toArray()).sort((x, y) => x.date.localeCompare(y.date))).toEqual(before.sort((x, y) => x.date.localeCompare(y.date)));
+    expect((await db.dailyTasks.get("a"))!.date).toBe(DATE);
+  });
+
+  it("元の日に続きから再開中の同じ作業があれば断る", async () => {
+    const { moveRecordToDate } = await import("./tasks");
+    const { daily } = await finish(task({ id: "a" }), { endAtMs: T0 + 30 * MIN });
+    await db.dailyTasks.put({ ...daily, status: "running", segments: [...daily.segments, { start: T0 + 60 * MIN }] });
+    const r = (await db.records.toArray())[0];
+    const res = await moveRecordToDate(r.id, NEXT);
+    expect(res.status).toBe("rejected");
+    expect((await db.records.get(r.id))!.date).toBe(DATE);
+  });
+
+  it("移した後に元の日で同じ作業の実績ができていたら、元に戻さない(同じ日・同じ作業の実績を2件にしない)", async () => {
+    const { moveRecordToDate, undoMoveRecordToDate } = await import("./tasks");
+    await finish(task({ id: "a" }), { endAtMs: T0 + 30 * MIN });
+    const r = (await db.records.toArray())[0];
+    const res = await moveRecordToDate(r.id, NEXT);
+    if (res.status !== "moved") throw new Error();
+    // 元の日にもう一度同じ作業をして完了した
+    await finish(task({ id: "c", segments: [{ start: T0 + 60 * MIN }], startedAt: T0 + 60 * MIN }), { endAtMs: T0 + 70 * MIN });
+    expect(await undoMoveRecordToDate(res.undo)).toBe(false);
+    expect((await db.records.where("date").equals(DATE).toArray())).toHaveLength(1);
+    expect((await db.records.get(r.id))!.date).toBe(NEXT);
+  });
+});
+
+describe("残りの想定時間は並び順ではなく開始時刻で直近の作業を選ぶ", () => {
+  it("並べ替えで並び順が前になっても、後から始めた作業を直近とみなす", async () => {
+    const { computeRemainingEstimatedSeconds } = await import("./tasks");
+    await db.dailyTasks.bulkPut([
+      task({ id: "early", order: 3, status: "done", estimatedSeconds: 3600, accumulatedMs: 20 * MIN, segments: [{ start: T0, end: T0 + 20 * MIN }] }),
+      task({ id: "late", order: 0, status: "done", estimatedSeconds: 2400, accumulatedMs: 10 * MIN, startedAt: T0 + 60 * MIN, segments: [{ start: T0 + 60 * MIN, end: T0 + 70 * MIN }] }),
+    ]);
+    expect(await computeRemainingEstimatedSeconds(DATE, "業務", "資料作成", 9999)).toBe(1800);
+  });
+});

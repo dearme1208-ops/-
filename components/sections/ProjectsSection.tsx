@@ -4,9 +4,17 @@ import { readTextFile } from "@/lib/csv";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { findOrCreateMasterTask } from "@/lib/master";
-import { upsertProjectsFromCsv, recordBelongsToProject } from "@/lib/projects";
-import { computeRemainingEstimatedSeconds, pauseDailyTask } from "@/lib/tasks";
+import {
+  DEFAULT_PROJECT_CATEGORY,
+  deleteProjectCascade,
+  duplicateProject,
+  findOriginTodo,
+  projectCategoryFor,
+  recordBelongsToProject,
+  setProjectCompleted,
+  upsertProjectsFromCsv,
+} from "@/lib/projects";
+import { addProjectToToday } from "@/lib/progressActions";
 import { projectsToCsv, projectsCsvTemplate, parseProjectsCsv } from "@/lib/projectsCsv";
 import { downloadTextFile } from "@/lib/report";
 import { computeCost, formatYen, parseCategoryRates, resolveCategoryRate } from "@/lib/cost";
@@ -19,8 +27,10 @@ import {
   effectiveProjectTag,
   incompletePreviousStageTitles,
   isStageDone,
+  openStageTitles,
   toggleProjectStage as toggleProjectStageShared,
 } from "@/lib/projectStage";
+import { ProjectCascadeDialog, type ProjectCascade } from "@/components/sections/today/LinkedCompletionDialog";
 import { summarizePostpones, waitingInfo } from "@/lib/changeTracking";
 import { projectWaitingInfo } from "@/lib/waiting";
 import { useWaitingSettings } from "@/lib/waitingSettings";
@@ -36,7 +46,7 @@ import {
   todayStr,
   shiftDateStr,
 } from "@/lib/time";
-import type { DailyTask, ProjectItem, ProjectStage } from "@/lib/types";
+import type { ProjectItem, ProjectStage } from "@/lib/types";
 import ProjectsCalendarView from "@/components/sections/ProjectsCalendarView";
 import EditProjectDialog from "@/components/sections/EditProjectDialog";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
@@ -260,16 +270,7 @@ export default function ProjectsSection({
     }
   }, [initialEditProjectId, projects, onInitialEditConsumed]);
 
-  // Todoタブから「案件に反映」された案件は、そのTodoタスク側にprojectIdが立つ。
-  // 本日の作業に追加する際、逆引きして元のTodoタスクIDをDailyTask.todoTaskIdに引き継ぐ
-  const linkedTodoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
-  const todoTaskIdByProjectId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const t of linkedTodoTasks ?? []) {
-      if (t.projectId) map.set(t.projectId, t.id);
-    }
-    return map;
-  }, [linkedTodoTasks]);
+  // 元のToDo(案件に反映したToDo)の紐付けは lib/progressActions.ts の addProjectToToday が行う
 
   const [defaultHourlyRateStr] = useSetting("cost.defaultHourlyRate", "");
   const defaultHourlyRate = Number(defaultHourlyRateStr) > 0 ? Number(defaultHourlyRateStr) : null;
@@ -283,9 +284,11 @@ export default function ProjectsSection({
 
   // 案件ごとの累計作業時間（全期間の実績を合算。主案件だけでなく兼務向けの
   // 追加の案件タグ(secondaryProjectIds)がこの案件を含む実績も合算する）
+  // 取引先別・グループ別のまとめと同じく、集計から除外した実績(excludedFromStats)は数えない
   const projectTotalSeconds = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of records ?? []) {
+      if (r.excludedFromStats) continue;
       const ids = new Set([r.projectId, ...(r.secondaryProjectIds ?? [])].filter((id): id is string => !!id));
       for (const id of ids) map.set(id, (map.get(id) ?? 0) + r.seconds);
     }
@@ -353,12 +356,13 @@ export default function ProjectsSection({
   }
 
   async function addProject() {
-    if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) return;
+    if (!title.trim() || !workName.trim() || !dueDate) return;
     const item: ProjectItem = {
       id: uid(),
       title: title.trim(),
       groupName: groupName.trim() || undefined,
-      category: category.trim(),
+      // 業務区分を空のまま登録したら既定の区分にする(Claudeのワークスペースと同じ)
+      category: category.trim() || DEFAULT_PROJECT_CATEGORY,
       workName: workName.trim(),
       dueDate,
       clientId: clientId || undefined,
@@ -413,35 +417,33 @@ export default function ProjectsSection({
   }
 
   async function deleteProject(item: ProjectItem) {
-    // 削除した案件を先行案件として参照していた案件と、この案件に反映済みのToDo。
-    // 元に戻す時に両方の紐づけを復元できるよう、消す前に控えておく
-    const dependentIds = (projects ?? []).filter((p) => p.predecessorProjectIds?.includes(item.id)).map((p) => p.id);
-    const linkedTodoIds = await db.todoTasks.filter((t) => t.projectId === item.id).primaryKeys();
-    await db.transaction("rw", db.projects, db.todoTasks, async () => {
-      await db.projects.delete(item.id);
-      // 削除した案件を先行案件として参照していた、残る案件からその参照を外す
-      for (const id of dependentIds) {
-        const p = await db.projects.get(id);
-        if (!p?.predecessorProjectIds) continue;
-        await db.projects.update(id, { predecessorProjectIds: p.predecessorProjectIds.filter((pid) => pid !== item.id) });
-      }
-      // ToDo側に案件への紐づけが残ると、存在しない案件に「反映済み」のまま再反映できず、
-      // 今日の段取りの候補からも外れ続けるため、紐づけを外して普通のToDoに戻す
-      for (const id of linkedTodoIds) await db.todoTasks.update(id, { projectId: undefined });
-    });
-    showUndoToast(`「${item.title}」を削除しました`, async () => {
-      await db.transaction("rw", db.projects, db.todoTasks, async () => {
-        await db.projects.add(item);
-        for (const id of dependentIds) {
-          const p = await db.projects.get(id);
-          if (!p || p.predecessorProjectIds?.includes(item.id)) continue;
-          await db.projects.update(id, { predecessorProjectIds: [...(p.predecessorProjectIds ?? []), item.id] });
-        }
-        for (const id of linkedTodoIds) {
-          // 削除後に別の案件へ反映し直したToDoは、その新しい紐づけを優先する
-          const t = await db.todoTasks.get(id);
-          if (t && !t.projectId) await db.todoTasks.update(id, { projectId: item.id });
-        }
+    // WBS・ToDoの紐づけ・先行案件の参照もまとめて外し、「元に戻す」で全部戻す(lib/projects.ts)
+    const deletion = await deleteProjectCascade(item.id);
+    if (!deletion) return;
+    showUndoToast(`「${item.title}」を削除しました`, deletion.undo);
+  }
+
+  // 複製: 段階・対応状況・URL・取引先を写す(実績は写さない)。WBSがあれば写すかを尋ねる
+  const [duplicateTarget, setDuplicateTarget] = useState<{ project: ProjectItem; wbsCount: number } | null>(null);
+  async function requestDuplicate(item: ProjectItem) {
+    const wbsCount = await db.wbsNodes.where("projectId").equals(item.id).count();
+    if (wbsCount > 0) {
+      setDuplicateTarget({ project: item, wbsCount });
+      return;
+    }
+    await doDuplicate(item, false);
+  }
+  async function doDuplicate(item: ProjectItem, withWbs: boolean) {
+    setDuplicateTarget(null);
+    const copy = await duplicateProject(item.id, { withWbs });
+    if (!copy) return;
+    showUndoToast(`「${item.title}」を複製しました（期日 ${copy.dueDate}）`, async () => {
+      // 複製のあとで手を入れていなければ消す(WBSも一緒に)
+      await db.transaction("rw", db.projects, db.wbsNodes, async () => {
+        const cur = await db.projects.get(copy.id);
+        if (!cur || JSON.stringify(cur.stages ?? []) !== JSON.stringify(copy.stages ?? []) || cur.title !== copy.title) return;
+        await db.projects.delete(copy.id);
+        await db.wbsNodes.where("projectId").equals(copy.id).delete();
       });
     });
   }
@@ -450,77 +452,73 @@ export default function ProjectsSection({
     await db.projects.update(item.id, { tag: value || undefined });
   }
 
-  // アーカイブ: 削除と違いデータは残したまま、通常の一覧・ガント・カレンダー等から外す
-  async function toggleArchiveProject(item: ProjectItem) {
-    const next = !item.archived;
-    await db.projects.update(item.id, { archived: next });
+  // アーカイブ: 削除と違いデータは残したまま、通常の一覧・ガント・カレンダー等から外す。
+  // まだ完了していない案件は、見えなくなって期日を落とさないよう先に尋ねる
+  const [archiveConfirm, setArchiveConfirm] = useState<ProjectItem | null>(null);
+  function toggleArchiveProject(item: ProjectItem) {
+    if (!item.archived && !item.completedAt) {
+      setArchiveConfirm(item);
+      return;
+    }
+    void setArchived(item, !item.archived);
+  }
+  async function setArchived(item: ProjectItem, next: boolean) {
+    setArchiveConfirm(null);
+    await db.projects.update(item.id, { archived: next || undefined });
     showUndoToast(next ? `「${item.title}」をアーカイブしました` : `「${item.title}」のアーカイブを解除しました`, async () => {
-      await db.projects.update(item.id, { archived: !next });
+      const cur = await db.projects.get(item.id);
+      if (!cur || !!cur.archived !== next) return;
+      await db.projects.update(item.id, { archived: !next || undefined });
     });
   }
+
+  // 完了まわりの続きの確認(未完了の段階がある・全段階が済んだ・元のToDoも完了にするか)
+  const [cascade, setCascade] = useState<ProjectCascade | null>(null);
 
   async function toggleComplete(item: ProjectItem) {
-    const nowCompleting = !item.completedAt;
-    const completedAt = nowCompleting ? Date.now() : undefined;
-    await db.projects.update(item.id, { completedAt, autoCompletedByImport: false });
-    showUndoToast(nowCompleting ? `「${item.title}」を完了にしました` : `「${item.title}」を未完了に戻しました`, async () => {
-      // その後に別の操作で完了状態が変わっていれば、新しい方を優先して戻さない
-      const current = await db.projects.get(item.id);
-      if (!current || current.completedAt !== completedAt) return;
-      await db.projects.update(item.id, { completedAt: item.completedAt, autoCompletedByImport: item.autoCompletedByImport });
-      setCompletionReport((r) => (r?.project.id === item.id ? null : r));
-    });
-    if (nowCompleting) {
-      fireConfetti();
-      const projectRecords = (records ?? []).filter((r) => recordBelongsToProject(r, item.id));
-      const totalSeconds = projectRecords.reduce((s, r) => s + r.seconds, 0);
-      const createdStr = todayStr(new Date(item.createdAt));
-      const completedStr = todayStr(new Date(completedAt!));
-      setCompletionReport({
-        project: item,
-        totalSeconds,
-        recordCount: projectRecords.length,
-        daysTaken: Math.max(1, daysBetweenDateStrs(createdStr, completedStr) + 1),
-        onTime: completedStr <= item.dueDate,
-      });
+    if (!item.completedAt) {
+      // 未完了の段階が残っていれば、完了にする前に知らせる
+      if (openStageTitles(item).length > 0) {
+        setCascade({ step: "openStages", projectId: item.id });
+        return;
+      }
+      await completeProjectWithReport(item);
+      const origin = await findOriginTodo(item.id);
+      if (origin && !origin.completed) setCascade({ step: "originTodo", projectId: item.id });
+      return;
     }
+    const r = await setProjectCompleted(item.id, false);
+    if (!r) return;
+    showUndoToast(`「${item.title}」を未完了に戻しました`, r.undo);
   }
 
+  async function completeProjectWithReport(item: ProjectItem) {
+    const r = await setProjectCompleted(item.id, true);
+    if (!r) return;
+    const completedAt = r.completedAt!;
+    showUndoToast(`「${item.title}」を完了にしました`, async () => {
+      await r.undo();
+      setCompletionReport((rep) => (rep?.project.id === item.id ? null : rep));
+    });
+    fireConfetti();
+    const projectRecords = (records ?? []).filter((rec) => !rec.excludedFromStats && recordBelongsToProject(rec, item.id));
+    const totalSeconds = projectRecords.reduce((sum, rec) => sum + rec.seconds, 0);
+    const createdStr = todayStr(new Date(item.createdAt));
+    const completedStr = todayStr(new Date(completedAt));
+    setCompletionReport({
+      project: { ...item, completedAt },
+      totalSeconds,
+      recordCount: projectRecords.length,
+      daysTaken: Math.max(1, daysBetweenDateStrs(createdStr, completedStr) + 1),
+      onTime: completedStr <= item.dueDate,
+    });
+  }
+
+  // 本日の作業へ入れる入口は📈進捗と共通(同じ段階は重ねない・元のToDoを紐付け・業務区分の既定)
   async function addToToday(item: ProjectItem, category: string, workName: string, stageId?: string, startNow = false) {
-    const master = await findOrCreateMasterTask(category, workName, 0);
-    const estimatedSeconds = await computeRemainingEstimatedSeconds(
-      today,
-      category,
-      workName,
-      master.estimatedSeconds
-    );
-    const todayTasks = await db.dailyTasks.where("date").equals(today).toArray();
-    const nowMs = Date.now();
-    if (startNow) {
-      // 既に計測中の作業があれば、他のテーマ画面の「すぐ開始」系操作と同じく先に一時停止してから始める
-      const running = todayTasks.find((t) => t.status === "running");
-      if (running) {
-        await pauseDailyTask(running, nowMs);
-      }
-    }
-    const task: DailyTask = {
-      id: uid(),
-      date: today,
-      order: todayTasks.length,
-      masterTaskId: master.id,
-      category,
-      name: workName,
-      estimatedSeconds,
-      status: startNow ? "running" : "pending",
-      segments: startNow ? [{ start: nowMs }] : [],
-      accumulatedMs: 0,
-      startedAt: startNow ? nowMs : undefined,
-      isSpontaneous: true,
-      projectId: item.id,
-      stageId,
-      todoTaskId: todoTaskIdByProjectId.get(item.id),
-    };
-    await db.dailyTasks.add(task);
+    const r = await addProjectToToday({ projectId: item.id, stageId, category, name: workName, startNow, today });
+    if (r.status === "missing") return;
+    if (r.status === "already") showUndoToast(`「${r.task.name}」はもう本日の作業に入っています`);
     onAddedToToday?.(startNow);
   }
 
@@ -537,8 +535,10 @@ export default function ProjectsSection({
 
   async function confirmStageComplete() {
     if (!stageCompleteConfirm) return;
-    await toggleProjectStageShared(stageCompleteConfirm.project, stageCompleteConfirm.stageId);
+    const r = await toggleProjectStageShared(stageCompleteConfirm.project, stageCompleteConfirm.stageId);
     setStageCompleteConfirm(null);
+    // 最後の段階が済んだら「案件も完了にしますか」
+    if (r?.offerProjectCompletion) setCascade({ step: "allStagesDone", projectId: stageCompleteConfirm.project.id });
   }
 
   // 段階を本日の作業に追加する前に、案件の業務区分(大項目)を引き継ぎ、
@@ -552,7 +552,7 @@ export default function ProjectsSection({
   async function confirmStageAddToToday() {
     if (!stageAddTarget) return;
     const { project, stage } = stageAddTarget;
-    await addToToday(project, project.category, stage.title, stage.id, stageAddStartNow);
+    await addToToday(project, projectCategoryFor(project), stage.title, stage.id, stageAddStartNow);
     setStageAddTarget(null);
   }
 
@@ -803,6 +803,7 @@ export default function ProjectsSection({
             </datalist>
             <input
               placeholder="業務区分（大項目）"
+              title={`空のままなら「${DEFAULT_PROJECT_CATEGORY}」になります`}
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
@@ -933,6 +934,7 @@ export default function ProjectsSection({
             onAnalysis={() => setAnalysisProject(project)}
             onWbs={() => setWbsProject(project)}
             onTemplate={() => setTemplateSource(project)}
+            onDuplicate={() => requestDuplicate(project)}
             onDelete={() => deleteProject(project)}
             onArchive={() => toggleArchiveProject(project)}
             onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
@@ -982,6 +984,7 @@ export default function ProjectsSection({
                   onAnalysis={() => setAnalysisProject(project)}
                   onWbs={() => setWbsProject(project)}
                   onTemplate={() => setTemplateSource(project)}
+                  onDuplicate={() => requestDuplicate(project)}
                   onDelete={() => deleteProject(project)}
                   onArchive={() => toggleArchiveProject(project)}
                   onToggleStage={(stageId) => toggleProjectStage(project, stageId)}
@@ -1369,7 +1372,7 @@ export default function ProjectsSection({
         <CategoryWorkNameDialog
           title="本日の作業に追加"
           confirmLabel="追加する"
-          defaultCategory={addToTodayTarget.category || addToTodayTarget.title}
+          defaultCategory={projectCategoryFor(addToTodayTarget)}
           defaultWorkName={addToTodayTarget.workName}
           toggleLabel="追加してすぐ開始する"
           onConfirm={(category, workName, startNow) => {
@@ -1384,7 +1387,7 @@ export default function ProjectsSection({
         <Modal title="本日の作業に追加" onClose={() => setStageAddTarget(null)}>
           <div className="space-y-3 text-sm">
             <p className="text-cream/70">
-              業務区分（大項目）: <span className="font-bold text-cream">{stageAddTarget.project.category || stageAddTarget.project.title}</span>
+              業務区分（大項目）: <span className="font-bold text-cream">{projectCategoryFor(stageAddTarget.project)}</span>
               <br />
               詳細作業名: <span className="font-bold text-cream">{stageAddTarget.stage.title}</span>
               {stageAddTarget.stage.targetCount != null && (
@@ -1410,7 +1413,43 @@ export default function ProjectsSection({
         </Modal>
       )}
 
-      {completionReport && (
+      {cascade && (
+        <ProjectCascadeDialog cascade={cascade} onCompleteProject={completeProjectWithReport} onClose={() => setCascade(null)} />
+      )}
+
+      {archiveConfirm && (
+        <Modal title="まだ完了していない案件です" onClose={() => setArchiveConfirm(null)}>
+          <p className="text-sm text-cream/80">
+            「{archiveConfirm.title}」は未完了です（期日 {archiveConfirm.dueDate}）。アーカイブすると通常の一覧・ガント・カレンダー等に出なくなります。
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => setArchiveConfirm(null)}>
+              やめる
+            </button>
+            <button className="btn-pill text-sm" onClick={() => setArchived(archiveConfirm, true)}>
+              アーカイブする
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {duplicateTarget && (
+        <Modal title="案件を複製" onClose={() => setDuplicateTarget(null)}>
+          <p className="text-sm text-cream/80">
+            「{duplicateTarget.project.title}」にはWBSが{duplicateTarget.wbsCount}件あります。WBSも写しますか?（進捗は0%から）
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => doDuplicate(duplicateTarget.project, false)}>
+              段階だけ写す
+            </button>
+            <button className="btn-pill text-sm" onClick={() => doDuplicate(duplicateTarget.project, true)}>
+              WBSも写す
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {completionReport && !cascade && (
         <Modal title="🎉 案件完了レポート" onClose={() => setCompletionReport(null)}>
           <div className="space-y-3 text-sm">
             <div>
@@ -1531,6 +1570,7 @@ function ProjectRow({
   onAnalysis,
   onWbs,
   onTemplate,
+  onDuplicate,
   onDelete,
   onArchive,
   onToggleStage,
@@ -1556,6 +1596,7 @@ function ProjectRow({
   onAnalysis: () => void;
   onWbs: () => void;
   onTemplate: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
   onArchive: () => void;
   onToggleStage: (stageId: string) => void;
@@ -2090,6 +2131,13 @@ function ProjectRow({
             title="この案件の段階の構成を引き継いで、同じ種類の新しい案件を作ります(過去の実績から段階ごとの目安時間も出します)"
           >
             <IconLabel text="📐 型にして作る" />
+          </button>
+          <button
+            className="btn-pill-outline text-xs"
+            onClick={onDuplicate}
+            title="段階・対応状況・URL・取引先をそのまま写した案件を作ります(実績は写しません。期日は登録日からの日数を保ちます)"
+          >
+            複製
           </button>
           <button
             className="btn-pill-outline text-xs"

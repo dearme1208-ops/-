@@ -16,6 +16,7 @@ import VisualModeInit from "@/components/VisualModeInit";
 import AccessibilityInit from "@/components/AccessibilityInit";
 import AppIconSync from "@/components/AppIconSync";
 import StoragePersistInit from "@/components/StoragePersistInit";
+import GlobalErrorToast from "@/components/GlobalErrorToast";
 import AutoBackupInit from "@/components/AutoBackupInit";
 import LobotomyOverrunWatcher from "@/components/LobotomyOverrunWatcher";
 import ToastHost from "@/components/ui/ToastHost";
@@ -263,6 +264,7 @@ export default function HomePage() {
       <AccessibilityInit />
       <AppIconSync />
       <StoragePersistInit />
+      <GlobalErrorToast />
       <AutoBackupInit />
       <LobotomyOverrunWatcher />
       <ToastHost />

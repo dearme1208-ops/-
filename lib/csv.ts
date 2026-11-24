@@ -173,12 +173,52 @@ export function parseCsvLine(line: string): string[] {
 export interface ParsedCsvResult {
   records: Omit<WorkRecord, "masterTaskId">[];
   errors: string[];
+  /**
+   * records と同じ並びで、その行のCSVに実際に値があった項目。既存の実績へ取り込み直す時は
+   * これだけを上書きする(CSVに無い案件・段階・ToDo・メモ・区間などを消さないように)
+   */
+  provided: (keyof WorkRecord)[][];
+}
+
+/** 実績CSVの取り込み計画 */
+export interface RecordsImportPlan {
+  /** 新しいIDの行 */
+  added: Omit<WorkRecord, "masterTaskId">[];
+  /** 既にあるIDの行(before: 今の実績、after: CSVの列だけを重ねたもの) */
+  updated: { before: WorkRecord; after: WorkRecord }[];
+}
+
+/**
+ * 既にあるIDの実績へは、CSVにある列だけを重ねる。CSVに無い項目(案件・段階・ToDo・メモ・区間・
+ * トラブル・兼務・手動の除外指定など)は今の実績のまま残す。
+ * 区分・作業名が変わらなければ作業マスタの紐付けも今のまま。開始・終了を変えた行は区間を捨てる
+ * (区間と開始〜終了が食い違うため)
+ */
+export function planRecordsImport(
+  parsed: Pick<ParsedCsvResult, "records" | "provided">,
+  existingById: Map<string, WorkRecord>
+): RecordsImportPlan {
+  const added: RecordsImportPlan["added"] = [];
+  const updated: RecordsImportPlan["updated"] = [];
+  parsed.records.forEach((row, i) => {
+    const before = existingById.get(row.id);
+    if (!before) {
+      added.push(row);
+      return;
+    }
+    const after: WorkRecord = { ...before };
+    const target = after as unknown as Record<string, unknown>;
+    for (const key of parsed.provided[i] ?? []) target[key] = (row as Record<string, unknown>)[key];
+    if (after.startedAt !== before.startedAt || after.endedAt !== before.endedAt) after.segments = undefined;
+    updated.push({ before, after });
+  });
+  return { added, updated };
 }
 
 export function parseRecordsCsv(text: string): ParsedCsvResult {
   const lines = csvLines(text);
   const errors: string[] = [];
-  if (lines.length === 0) return { records: [], errors: ["空のファイルです"] };
+  if (lines.length === 0) return { records: [], errors: ["空のファイルです"], provided: [] };
 
   const header = parseCsvLine(lines[0]).map((h) => h.trim());
   const idx = (name: string) => header.indexOf(name);
@@ -186,9 +226,10 @@ export function parseRecordsCsv(text: string): ParsedCsvResult {
   for (const req of required) {
     if (idx(req) === -1) errors.push(`必須列 "${req}" がありません`);
   }
-  if (errors.length > 0) return { records: [], errors };
+  if (errors.length > 0) return { records: [], errors, provided: [] };
 
   const records: Omit<WorkRecord, "masterTaskId">[] = [];
+  const provided: (keyof WorkRecord)[][] = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]);
     const dateRaw = cols[idx("date")]?.trim() ?? "";
@@ -220,16 +261,19 @@ export function parseRecordsCsv(text: string): ParsedCsvResult {
     // ・食い違う時は日時の列を使う(Excelで時刻を手直しした、とみなす)
     // ・数値の列が空・指数表記に丸められた等で読めない時も日時の列を使う
     // ・どちらも読めなければ、従来どおり取り込んだ時刻にする
-    const msCol = (col: number, textCol: number) => {
+    // 読めた時刻の項目(取り込んだ時刻で埋めたものは「CSVに値があった」に含めない)
+    const readTimes = new Set<"startedAt" | "endedAt">();
+    const msCol = (col: number, textCol: number, key: "startedAt" | "endedAt") => {
       const epoch = col !== -1 ? parseCsvEpochMs(cols[col]) : undefined;
       const fromText = textCol !== -1 ? parseCsvDateTime(cols[textCol]) : undefined;
+      if (epoch !== undefined || fromText !== undefined) readTimes.add(key);
       if (epoch !== undefined && fromText !== undefined) return Math.abs(epoch - fromText) < 60_000 ? epoch : fromText;
       if (epoch === undefined && fromText === undefined && col !== -1 && /\d\s*e\s*\+?\d/i.test(cols[col] ?? "")) rounded = true;
       return epoch ?? fromText ?? now;
     };
     let rounded = false;
-    const startedAt = msCol(startedAtCol, startedTextCol);
-    const endedAt = msCol(endedAtCol, endedTextCol);
+    const startedAt = msCol(startedAtCol, startedTextCol, "startedAt");
+    const endedAt = msCol(endedAtCol, endedTextCol, "endedAt");
     // 行は取り込むが、時刻が元どおりでないことは黙って通さずに知らせる
     if (rounded) {
       errors.push(`${i + 1}行目: 開始・終了の時刻がExcelで丸められていて(1.7E+12 のような形)読めないため、取り込んだ時刻にしました`);
@@ -249,6 +293,11 @@ export function parseRecordsCsv(text: string): ParsedCsvResult {
           ? (cols[reasonCol] as "auto-iqr" | "manual")
           : undefined,
     });
+    const keys: (keyof WorkRecord)[] = ["date", "category", "name", "seconds", ...readTimes];
+    if (methodCol !== -1) keys.push("method");
+    if (excludedCol !== -1) keys.push("excludedFromStats");
+    if (reasonCol !== -1) keys.push("excludeReason");
+    provided.push(keys);
   }
-  return { records, errors };
+  return { records, errors, provided };
 }

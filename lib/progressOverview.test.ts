@@ -110,3 +110,10 @@ describe("見込み・相手待ち・累計の線", () => {
     expect(b.find((p) => p.date === "2026-10-12")!.ideal).toBe(3);
   });
 });
+
+describe("案件へ反映済みのToDo", () => {
+  it("案件の行と重なるToDoは出さない。案件が一覧に無ければToDoを残す", () => {
+    const r = rows([todo({ id: "反映済み", projectId: "p1" }), todo({ id: "完了案件の元", projectId: "p9" }), todo({ id: "ふつう" })], [project({ id: "p1" })]);
+    expect(r.map((x) => x.key).sort()).toEqual(["project:p1", "todo:ふつう", "todo:完了案件の元"].sort());
+  });
+});

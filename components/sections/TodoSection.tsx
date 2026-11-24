@@ -1,6 +1,6 @@
 "use client";
 
-import { readTextFile } from "@/lib/csv";
+import { csvLines, parseCsvLine, readTextFile } from "@/lib/csv";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -17,16 +17,25 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 import { db, uid } from "@/lib/db";
 import {
+  canBeParent,
   completeTodoTask,
   computeDateOrderedPosition,
   DEFAULT_TAG_PRESETS,
   effectiveDueDate,
   effectiveTag,
   fillRecurrenceDefaults,
+  findParentCandidates,
   normalizeUrl,
+  parseParentPrefix,
   parsePresetList,
+  setTodoArchived,
+  setTodoParent,
+  undoTodoChanges,
   upsertTodoFromCsv,
+  type TodoChange,
 } from "@/lib/todo";
+import { isImeComposing, isSubmitEnter } from "@/lib/keyboard";
+import ParentTaskPicker from "@/components/sections/todo/ParentTaskPicker";
 import { todoPostpones, todoWaitingInfo } from "@/lib/waiting";
 import { useWaitingSettings } from "@/lib/waitingSettings";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
@@ -67,6 +76,8 @@ import GuideImportDialog from "@/components/sections/GuideImportDialog";
 import type { TreeNode, TreeNodeBadge } from "@/components/ui/TreeView";
 import PedigreeTable from "@/components/ui/PedigreeTable";
 import { showUndoToast } from "@/lib/toast";
+import { completeTodoWithUndo, completeTodoWithUndoToast } from "@/lib/progressActions";
+import { deleteProjectCascade } from "@/lib/projects";
 import BottomTabBar, { type TabBarStyle } from "@/components/ui/BottomTabBar";
 import { useRunningTaskStrip } from "@/lib/runningStrip";
 import ProgressSyncModal from "@/components/ProgressSyncModal";
@@ -99,6 +110,15 @@ type TodoSortMode = "manual" | "category" | "title" | "customer" | "dueDate" | "
 // タスク1件分の「島」。一覧全体が既にpanelで囲まれているため、島にpanelをそのまま使うと
 // 背景と同じ色になって境目が見えない。cream側へ一段持ち上げて、囲いの中でも浮いて見せる
 const TASK_ISLAND_CLASS = "rounded-2xl border border-cream/20 bg-cream/[0.05] p-3 shadow-panel";
+
+// 一覧のサブタスク行の「⋯」と、サブタスクの塊の末尾の「+ サブタスク」から行う操作
+interface SubtaskActions {
+  open: (sub: TodoTask) => void;
+  changeParent: (sub: TodoTask) => void;
+  promote: (sub: TodoTask) => void;
+  remove: (sub: TodoTask) => void;
+  add: (parent: TodoTask, title: string) => Promise<void>;
+}
 
 const TODO_SORT_MODE_LABELS: Record<TodoSortMode, string> = {
   manual: "手動(ドラッグ&ドロップ)",
@@ -234,7 +254,8 @@ export default function TodoSection({
   useEffect(() => {
     if (!showAddTaskForm) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowAddTaskForm(false);
+      // 手前の窓(親タスクの選択など)が先に閉じた時・変換中のEscでは閉じない
+      if (e.key === "Escape" && !e.defaultPrevented && !isImeComposing(e)) setShowAddTaskForm(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -255,6 +276,15 @@ export default function TodoSection({
   // 保存せず名前だけを並べておき、追加した瞬間に親と一緒に書き込む
   const [newTaskSubtasks, setNewTaskSubtasks] = useState<string[]>([]);
   const [newTaskSubtaskDraft, setNewTaskSubtaskDraft] = useState("");
+  // 「親タスク（任意）」で選んだ親。選んでいる間は、追加するタスクをその親のサブタスクとして作る
+  const [newTaskParentId, setNewTaskParentId] = useState("");
+  // 親タスクの選択窓。新規追加の親選び・既存タスクの付け替え・選択モードの一括付け替えで共通に使う
+  const [parentPicker, setParentPicker] = useState<
+    | { kind: "new" }
+    | { kind: "task"; taskId: string; reopenDetail: boolean }
+    | { kind: "bulk"; taskIds: string[] }
+    | null
+  >(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   // 「コピーして追加」で作ったタスクを開いている間、それがコピーだと分かる帯を出す(元と見た目が同じで、
   // コピーできたのか分からなかったため)
@@ -595,6 +625,7 @@ export default function TodoSection({
   // 戻す。空文字は「未選択=既定を使う」を表す
   useEffect(() => {
     setNewTaskListId("");
+    setNewTaskParentId("");
   }, [view]);
 
   const searchActive =
@@ -628,14 +659,11 @@ export default function TodoSection({
     }
     if (searchActive) {
       const q = searchQuery.trim().toLowerCase();
+      const hit = (t: TodoTask) =>
+        t.title.toLowerCase().includes(q) || (t.action ?? "").toLowerCase().includes(q) || (t.notes ?? "").toLowerCase().includes(q);
       filtered = filtered.filter((t) => {
-        if (
-          q &&
-          !t.title.toLowerCase().includes(q) &&
-          !(t.action ?? "").toLowerCase().includes(q) &&
-          !(t.notes ?? "").toLowerCase().includes(q)
-        )
-          return false;
+        // サブタスクの名前・メモで当たった時も、親を出す(サブタスクは親の下に並ぶ)
+        if (q && !hit(t) && !(subtasksByParent.get(t.id) ?? []).some(hit)) return false;
         const tTag = effectiveTag(t, subtasksByParent.get(t.id) ?? [], tagOptions);
         if (filterTagsMulti.length > 0) {
           if (!filterTagsMulti.includes(tTag ?? "")) return false;
@@ -795,6 +823,8 @@ export default function TodoSection({
   }, [visibleTasks, showCompletedInTimeline, lists, subtasksByParent, today, tagOptions]);
 
   const detailTask = allTasks?.find((t) => t.id === detailTaskId) ?? null;
+  const detailParent = detailTask?.parentTaskId ? (allTasks?.find((t) => t.id === detailTask.parentTaskId) ?? null) : null;
+  const newTaskParent = newTaskParentId ? (allTasks?.find((t) => t.id === newTaskParentId) ?? null) : null;
 
   // 手で並べ替えられる場所かどうか(並び替え設定は問わない)。
   // 期日順などで並んでいる最中は、手で動かしても次の再描画で元の位置へ戻ってしまうため、
@@ -893,6 +923,10 @@ export default function TodoSection({
   // 続けて入れることが多いため)。閉じる場合はすべて初期状態へ戻す
   async function addTask(options?: { keepOpen?: boolean }) {
     if (!newTaskTitle.trim()) return;
+    if (newTaskParentId) {
+      await addTaskAsSubtask(options);
+      return;
+    }
     const targetListId = newTaskListId || currentListId || lists?.[0]?.id;
     if (!targetListId) return;
     const id = uid();
@@ -920,6 +954,7 @@ export default function TodoSection({
       myDayDate: view === "myday" ? today : undefined,
     };
     await db.todoTasks.add(task);
+    notifyIfHidden(task);
     // 下書きしておいたサブタスクを、親と同じリストに、打った順のまま付ける。
     // サブタスクを持つタスクの対応状況はサブタスクから自動で決まる(親に付けた値は使われない)ため、
     // 追加時に選んだ対応状況はサブタスクにも付ける。付けないと、選んだ状況が消えたように見えていた
@@ -959,6 +994,148 @@ export default function TodoSection({
     setShowAddTaskForm(false);
   }
 
+  // 「親タスク（任意）」を選んだ時の追加。親のリストに、親のサブタスクの末尾として入れる
+  async function addTaskAsSubtask(options?: { keepOpen?: boolean }) {
+    const parent = await db.todoTasks.get(newTaskParentId);
+    if (!parent || !canBeParent(parent)) {
+      showUndoToast("選んだ親タスクは親にできなくなっています（完了・アーカイブ・削除など）。親を選び直してください");
+      setNewTaskParentId("");
+      return;
+    }
+    const tag = resolveTag(newTaskTagMode, newTaskCustomTag);
+    const sub = await createSubtask(parent, {
+      title: newTaskTitle.trim(),
+      action: newTaskAction.trim() || undefined,
+      tag,
+      category: resolveCategory(newTaskCategoryMode, newTaskCustomCategory),
+      customer: resolveCustomer(newTaskCustomerMode, newTaskCustomCustomer),
+      dueDate: newTaskDueDate || undefined,
+    });
+    notifyIfHidden(sub, parent);
+    setNewTaskTitle("");
+    setNewTaskAction("");
+    setNewTaskDueDate("");
+    if (options?.keepOpen) {
+      // 同じ親へ続けて足すことが多いので、親はそのまま残す
+      newTaskTitleRef.current?.focus();
+      return;
+    }
+    setNewTaskParentId("");
+    setNewTaskTagMode(NO_TAG_VALUE);
+    setNewTaskCustomTag("");
+    setNewTaskCategoryMode(NO_CATEGORY_VALUE);
+    setNewTaskCustomCategory("");
+    setNewTaskCustomerMode(NO_CUSTOMER_VALUE);
+    setNewTaskCustomCustomer("");
+    setShowAddTaskForm(false);
+  }
+
+  // サブタスクを1件作る(親のリスト・親のサブタスクの末尾)。最初の1件には親の対応状況を引き継ぐ
+  async function createSubtask(parent: TodoTask, fields: Partial<TodoTask> & { title: string }): Promise<TodoTask> {
+    const subs = await db.todoTasks.where("parentTaskId").equals(parent.id).toArray();
+    const order = subs.reduce((m, t) => Math.max(m, t.order + 1), 0);
+    const tag = fields.tag ?? (subs.length === 0 ? parent.tag : undefined);
+    const sub: TodoTask = {
+      important: false,
+      completed: false,
+      createdAt: Date.now(),
+      ...fields,
+      ...(tag ? { tag } : {}),
+      id: uid(),
+      listId: parent.listId,
+      parentTaskId: parent.id,
+      order,
+    };
+    if (autoImportantTag && sub.tag === autoImportantTag) sub.important = true;
+    await db.todoTasks.add(sub);
+    return sub;
+  }
+
+  // 追加したタスクが今の画面に出ない時(マイデイで別リストへ足した等)は、どこに入ったかを知らせる。
+  // サブタスクは親が出ていれば見える
+  function notifyIfHidden(task: TodoTask, parent?: TodoTask) {
+    if (searchActive) return;
+    const t = parent ?? task;
+    let visible: boolean;
+    if (view === "myday") visible = t.myDayDate === today;
+    else if (view === "important") visible = t.important;
+    else if (view === "planned") visible = !!(t.dueDate || task.dueDate);
+    else if (view === "overdue") visible = !!task.dueDate && task.dueDate < today;
+    else if (view === "waiting") visible = !!t.tag && waitingTags.includes(t.tag);
+    else visible = t.listId === currentListId;
+    if (visible) return;
+    const listName = listTitleById.get(task.listId) ?? "";
+    showUndoToast(
+      parent
+        ? `「${task.title}」を「${parent.title}」のサブタスクとして、リスト「${listName}」に追加しました（この画面には出ません）`
+        : `「${task.title}」をリスト「${listName}」に追加しました（この画面には出ません）`
+    );
+  }
+
+  // 親の付け替え(サブタスクにする・親を変更・通常のタスクに戻す)。結果を知らせ、元に戻せるようにする
+  async function applyParentChange(taskId: string, parentId: string | null): Promise<boolean> {
+    const before = await db.todoTasks.get(taskId);
+    const res = await setTodoParent(taskId, parentId);
+    if (!res.ok) {
+      showUndoToast(res.message);
+      return false;
+    }
+    const name = before?.title ?? "";
+    const moved = res.fromListId !== res.toListId ? `（リスト「${listTitleById.get(res.toListId) ?? ""}」へ移動）` : "";
+    showUndoToast(
+      parentId ? `「${name}」を「${res.parentTitle}」のサブタスクにしました${moved}` : `「${name}」を通常のタスクに戻しました`,
+      () => void undoParentChanges(res.changes)
+    );
+    return true;
+  }
+
+  async function undoParentChanges(changes: TodoChange[]) {
+    const r = await undoTodoChanges(changes);
+    if (r.skipped > 0) showUndoToast(`ほかで変更されていた${r.skipped}件は元に戻しませんでした`);
+  }
+
+  // 親タスクの選択窓で親が選ばれた時
+  async function handleParentPicked(parent: TodoTask) {
+    const picker = parentPicker;
+    setParentPicker(null);
+    if (!picker) return;
+    if (picker.kind === "new") {
+      setNewTaskParentId(parent.id);
+      // ほかのリストの親を選んだら、追加先も親のリストにする
+      setNewTaskListId(parent.listId);
+      return;
+    }
+    if (picker.kind === "task") {
+      await applyParentChange(picker.taskId, parent.id);
+      if (picker.reopenDetail) setDetailTaskId(picker.taskId);
+      return;
+    }
+    // 一括: 選んだ親自身は除き、1件ずつ付け替える。断られたものは理由ごとに数えて知らせる
+    const all: TodoChange[] = [];
+    let ok = 0;
+    const refused = new Map<string, number>();
+    for (const id of picker.taskIds) {
+      if (id === parent.id) continue;
+      const res = await setTodoParent(id, parent.id);
+      if (res.ok) {
+        ok++;
+        all.push(...res.changes);
+      } else {
+        refused.set(res.message, (refused.get(res.message) ?? 0) + 1);
+      }
+    }
+    setSelectedTaskIds(new Set());
+    const refusedText = [...refused].map(([m, n]) => `${n}件: ${m}`).join(" / ");
+    if (ok === 0) {
+      showUndoToast(`サブタスクにできませんでした（${refusedText || "対象がありません"}）`);
+      return;
+    }
+    showUndoToast(
+      `${ok}件を「${parent.title}」のサブタスクにしました${refusedText ? `（できなかったもの ${refusedText}）` : ""}`,
+      () => void undoParentChanges(all)
+    );
+  }
+
   // 期日を入れずに追加したタスクを一番上に置くため、同じリストの既存タスク(トップレベルのみ)の
   // orderを1つずつ後ろにずらし、新タスクの挿入位置(0)を返す
   async function shiftSiblingsForTopInsert(listId: string): Promise<number> {
@@ -986,15 +1163,8 @@ export default function TodoSection({
         setPendingCompleteTask(task);
         return;
       }
-      await completeTodoTask(task, today);
-      // 繰り返しのタスクは完了にならず期日が次へ進むだけなので、何が起きたかを知らせて戻せるようにする
-      if (task.recurrence) {
-        const after = await db.todoTasks.get(task.id);
-        const subsBefore = subtasksByParent.get(task.id) ?? [];
-        showUndoToast(`「${task.title}」を済みにしました。次回は${after?.dueDate ? formatDateJp(after.dueDate) : "未定"}です`, async () => {
-          await db.todoTasks.bulkPut([task, ...subsBefore]);
-        });
-      }
+      // 繰り返しは期日が次へ進むだけなので、何が起きたかを知らせて戻せるようにする(他画面と共通)
+      await completeTodoWithUndoToast(task, today);
       return;
     }
     await db.todoTasks.update(task.id, { completed: false, completedAt: undefined });
@@ -1009,17 +1179,29 @@ export default function TodoSection({
     const task = pendingCompleteTask;
     const openSubtasks = (subtasksByParent.get(task.id) ?? []).filter((s) => !s.completed);
     setPendingCompleteTask(null);
+    const at = Date.now();
     await db.transaction("rw", db.todoTasks, async () => {
-      for (const s of openSubtasks) await db.todoTasks.update(s.id, { completed: true, completedAt: Date.now() });
+      for (const s of openSubtasks) await db.todoTasks.update(s.id, { completed: true, completedAt: at });
     });
-    await completeTodoTask(task, today);
+    const done = await completeTodoWithUndo(task, today);
+    if (!done) return;
+    showUndoToast(done.message, async () => {
+      await done.undo();
+      // ここで完了にしたサブタスクは、そのあと手を入れていなければ未完了に戻す
+      await db.transaction("rw", db.todoTasks, async () => {
+        for (const s of openSubtasks) {
+          const cur = await db.todoTasks.get(s.id);
+          if (cur?.completed && cur.completedAt === at) await db.todoTasks.update(s.id, { completed: false, completedAt: undefined });
+        }
+      });
+    });
   }
 
   async function resolveCompleteTaskOnly() {
     if (!pendingCompleteTask) return;
     const task = pendingCompleteTask;
     setPendingCompleteTask(null);
-    await completeTodoTask(task, today);
+    await completeTodoWithUndoToast(task, today);
   }
 
   async function toggleImportant(task: TodoTask) {
@@ -1048,12 +1230,13 @@ export default function TodoSection({
 
   // アーカイブ: 削除と違いデータは残したまま、通常の一覧・検索の既定表示から外す。
   // 完了済みが積み上がって一覧が長くなりがちな運用向けの「消さずに退避する」操作
+  // 親をアーカイブするとサブタスクも一緒にアーカイブし、解除すると一緒に戻す(lib/todo.ts setTodoArchived)
   async function toggleArchiveTask(task: TodoTask) {
     const next = !task.archived;
-    await db.todoTasks.update(task.id, { archived: next });
+    const changes = await setTodoArchived(task.id, next);
     if (detailTaskId === task.id) setDetailTaskId(null);
-    showUndoToast(next ? `「${task.title}」をアーカイブしました` : `「${task.title}」のアーカイブを解除しました`, async () => {
-      await db.todoTasks.update(task.id, { archived: !next });
+    showUndoToast(next ? `「${task.title}」をアーカイブしました` : `「${task.title}」のアーカイブを解除しました`, () => {
+      void undoTodoChanges(changes);
     });
   }
 
@@ -1082,8 +1265,25 @@ export default function TodoSection({
     setSelectedTaskIds(new Set());
   }
 
+  // 一括完了も、1件ずつの完了と同じく、未完了のサブタスクが残っていればどうするか聞く
+  const [pendingBulkComplete, setPendingBulkComplete] = useState<TodoTask[] | null>(null);
   async function applyBulkComplete() {
-    const targets = (allTasks ?? []).filter((t) => selectedTaskIds.has(t.id));
+    const targets = (allTasks ?? []).filter((t) => selectedTaskIds.has(t.id) && !t.completed);
+    if (targets.some((t) => (subtasksByParent.get(t.id) ?? []).some((s) => !s.completed))) {
+      setPendingBulkComplete(targets);
+      return;
+    }
+    await completeBulk(targets, false);
+  }
+
+  async function completeBulk(targets: TodoTask[], withSubtasks: boolean) {
+    setPendingBulkComplete(null);
+    if (withSubtasks) {
+      const openSubs = targets.flatMap((t) => (subtasksByParent.get(t.id) ?? []).filter((s) => !s.completed));
+      await db.transaction("rw", db.todoTasks, async () => {
+        for (const s of openSubs) await db.todoTasks.update(s.id, { completed: true, completedAt: Date.now() });
+      });
+    }
     for (const t of targets) {
       await completeTodoTask(t, today);
     }
@@ -1172,6 +1372,38 @@ export default function TodoSection({
       }
     );
   }
+
+  // サブタスクを消す。戻す時は、同じidのタスクがまだ無い時だけ戻す(戻すまでに作られた分を上書きしない)
+  async function deleteSubtaskWithUndo(sub: TodoTask) {
+    // 画面に出ていた古い写しではなく、消す直前の最新の内容を控える
+    const snapshot = (await db.todoTasks.get(sub.id)) ?? sub;
+    await db.todoTasks.delete(sub.id);
+    if (detailTaskId === sub.id) setDetailTaskId(null);
+    showUndoToast(`サブタスク「${snapshot.title}」を削除しました`, async () => {
+      await db.transaction("rw", db.todoTasks, async () => {
+        if (await db.todoTasks.get(snapshot.id)) return;
+        // 親が消えた・別のタスクのサブタスクになった時は、親なしの迷子や2段目を作らないよう通常のタスクとして戻す
+        const parent = snapshot.parentTaskId ? await db.todoTasks.get(snapshot.parentTaskId) : undefined;
+        if (snapshot.parentTaskId && (!parent || parent.parentTaskId)) {
+          await db.todoTasks.add({ ...snapshot, parentTaskId: undefined, listId: parent?.listId ?? snapshot.listId });
+        } else {
+          await db.todoTasks.add({ ...snapshot, listId: parent?.listId ?? snapshot.listId });
+        }
+      });
+    });
+  }
+
+  const subtaskActions: SubtaskActions = {
+    open: (sub) => setDetailTaskId(sub.id),
+    changeParent: (sub) => setParentPicker({ kind: "task", taskId: sub.id, reopenDetail: false }),
+    promote: (sub) => void applyParentChange(sub.id, null),
+    remove: (sub) => void deleteSubtaskWithUndo(sub),
+    add: async (parent, title) => {
+      const fresh = await db.todoTasks.get(parent.id);
+      if (!fresh || fresh.parentTaskId) return;
+      await createSubtask(fresh, { title });
+    },
+  };
 
   async function toggleSubtaskComplete(sub: TodoTask) {
     await db.todoTasks.update(sub.id, { completed: !sub.completed, completedAt: !sub.completed ? Date.now() : undefined });
@@ -1270,8 +1502,11 @@ export default function TodoSection({
     await db.projects.add(item);
     await db.todoTasks.update(task.id, { projectId: item.id });
     showUndoToast(`「${task.title}」を案件に追加しました`, async () => {
-      await db.projects.delete(item.id);
-      await db.todoTasks.update(task.id, { projectId: undefined });
+      // WBS・先行案件の参照もまとめて外す
+      await deleteProjectCascade(item.id);
+      // 別の案件へ反映し直していたら、その紐づけは残す
+      const cur = await db.todoTasks.get(task.id);
+      if (cur?.projectId === item.id) await db.todoTasks.update(task.id, { projectId: undefined });
     });
   }
 
@@ -1295,6 +1530,10 @@ export default function TodoSection({
       isSpontaneous: true,
       todoTaskId: task.id,
     };
+    // ToDo(サブタスクなら親)が案件に紐づいていれば、作業時間がその案件に数えられるよう案件も付ける
+    const parent = task.parentTaskId ? await db.todoTasks.get(task.parentTaskId) : undefined;
+    const projectId = task.projectId ?? parent?.projectId;
+    if (projectId) dailyTask.projectId = projectId;
     await db.dailyTasks.add(dailyTask);
     // 押しても画面が変わらず、入ったのか分からなかった
     showUndoToast(`「${workName}」を本日の作業（予定）に追加しました`, async () => {
@@ -1319,7 +1558,12 @@ export default function TodoSection({
       setImportResult("");
       return;
     }
-    const { created, updated, listsCreated } = await upsertTodoFromCsv(rows);
+    // 親(parentId)の列があるCSVの時だけ親を書き換える(列の無いCSVで既存のサブタスクが親から外れないように)
+    const header = parseCsvLine(csvLines(text)[0] ?? "").map((h) => h.trim().replace(/^\uFEFF/, ""));
+    const { created, updated, listsCreated, errors: rowErrors } = await upsertTodoFromCsv(rows, {
+      hasParentColumn: header.includes("parentId"),
+    });
+    if (rowErrors.length > 0) setImportErrors([...errors, ...rowErrors]);
     setImportResult(`${created}件を新規追加、${updated}件を更新しました（新規リスト${listsCreated}件）。`);
   }
 
@@ -1407,6 +1651,31 @@ export default function TodoSection({
   }
 
   async function quickAddInner(raw: string, targetListId: string) {
+    // 「＞親の名前の一部 件名」なら、このリストで名前が1件だけ当たる親のサブタスクにする
+    const prefix = parseParentPrefix(raw);
+    let fallbackNote = "";
+    if (prefix) {
+      const fresh = await db.todoTasks.where("listId").equals(targetListId).toArray();
+      const found = findParentCandidates(fresh, targetListId, prefix.parentQuery);
+      if (found.length === 1) {
+        const parent = found[0];
+        const parsed = parseCompose(prefix.rest, today);
+        const sub = await createSubtask(parent, {
+          title: parsed.title || prefix.rest,
+          category: parsed.category,
+          dueDate: parsed.dueDate,
+          estimateMinutes: parsed.estimateMin,
+          ...(parsed.important ? { important: true } : {}),
+        });
+        setQuickTitle("");
+        showUndoToast(`「${sub.title}」を「${parent.title}」のサブタスクに追加しました`);
+        return;
+      }
+      fallbackNote =
+        found.length === 0
+          ? `「${prefix.parentQuery}」に当たる親タスクがこのリストに無いため、通常のタスクとして追加しました`
+          : `「${prefix.parentQuery}」に当たる親タスクが${found.length}件あり決められないため、通常のタスクとして追加しました`;
+    }
     const parsed = parseCompose(raw, today);
     const title = parsed.title || raw;
     const id = uid();
@@ -1418,6 +1687,8 @@ export default function TodoSection({
       title,
       category: parsed.category,
       dueDate,
+      // 「30分」などの見込み時間も受け取る(計測を始める時の想定時間に使う)
+      estimateMinutes: parsed.estimateMin,
       important: parsed.important || view === "important",
       completed: false,
       order,
@@ -1427,6 +1698,8 @@ export default function TodoSection({
     };
     await db.todoTasks.add(task);
     setQuickTitle("");
+    if (fallbackNote) showUndoToast(fallbackNote);
+    else notifyIfHidden(task);
   }
 
   return (
@@ -1481,7 +1754,7 @@ export default function TodoSection({
               autoFocus
               value={newListTitle}
               onChange={(e) => setNewListTitle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addList()}
+              onKeyDown={(e) => isSubmitEnter(e) && addList()}
               placeholder="リスト名"
               className="w-32 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
             />
@@ -1812,11 +2085,11 @@ export default function TodoSection({
             onChange={(e) => setQuickTitle(e.target.value)}
             onKeyDown={(e) => {
               // 日本語変換の確定のEnterでは追加しない
-              if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) void quickAdd();
+              if (isSubmitEnter(e)) void quickAdd();
             }}
             placeholder="＋ すぐ追加（Enter）"
             aria-label="すばやく追加"
-            title="「明日」「金曜まで」などの期限、「@分類」、末尾の「！」(重要)も読み取ります"
+            title="「明日」「金曜まで」などの期限、「@分類」、「30分」(見込み時間)、末尾の「！」(重要)も読み取ります。「＞親の名前の一部 件名」でその親のサブタスクになります"
             className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
           />
           <button className="btn-pill-outline shrink-0 text-sm" onClick={() => setShowAddTaskForm(true)}>
@@ -1836,7 +2109,7 @@ export default function TodoSection({
                   autoFocus
                   value={newTaskTitle}
                   onChange={(e) => setNewTaskTitle(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addTask()}
+                  onKeyDown={(e) => isSubmitEnter(e) && addTask()}
                   placeholder="やることを一言で"
                   className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
                 />
@@ -1846,7 +2119,7 @@ export default function TodoSection({
                 <input
                   value={newTaskAction}
                   onChange={(e) => setNewTaskAction(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addTask()}
+                  onKeyDown={(e) => isSubmitEnter(e) && addTask()}
                   placeholder="次にとる具体的な動き"
                   className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
                 />
@@ -1868,9 +2141,11 @@ export default function TodoSection({
                 <label className="flex flex-col gap-1">
                   <span className="text-xs text-cream/60">追加先のリスト</span>
                   <select
-                    value={newTaskListId || currentListId || lists?.[0]?.id || ""}
+                    value={newTaskParent ? newTaskParent.listId : newTaskListId || currentListId || lists?.[0]?.id || ""}
                     onChange={(e) => setNewTaskListId(e.target.value)}
-                    className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                    // 親を選んでいる間は親のリストに入るので選べない
+                    disabled={!!newTaskParent}
+                    className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream disabled:opacity-60"
                   >
                     {(lists ?? []).map((l) => (
                       <option key={l.id} value={l.id}>
@@ -1952,12 +2227,42 @@ export default function TodoSection({
                   className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
                 />
               )}
+              {/* 親を選ぶと、このタスクをその親のサブタスクとして追加する(親のリストに入る)。
+                  サブタスクは1段までなので、親を選んでいる間は下のサブタスクの下書きは出さない */}
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-cream/60">親タスク（任意）</span>
+                {newTaskParent ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-cream/20 bg-ink px-3 py-2" data-testid="new-task-parent">
+                    <span className="min-w-0 flex-1 truncate text-sm text-cream">{newTaskParent.title}</span>
+                    <span className="chip shrink-0">{listTitleById.get(newTaskParent.listId) ?? ""}</span>
+                    <button type="button" className="text-xs text-cream/60 underline" onClick={() => setParentPicker({ kind: "new" })}>
+                      変更
+                    </button>
+                    <button
+                      type="button"
+                      className="text-cream/40 hover:text-alert"
+                      onClick={() => setNewTaskParentId("")}
+                      aria-label="親タスクを外す"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-pill-outline self-start text-xs"
+                    onClick={() => setParentPicker({ kind: "new" })}
+                  >
+                    親タスクを選ぶ…
+                  </button>
+                )}
+              </div>
               {/* サブタスクは登録時にまとめて決められるようにする。
                   やることを書き出す時点で手順が頭にあることが多く、
                   追加してから詳細を開き直して1件ずつ足すのは二度手間になるため。
                   親タスクがまだ無いので、ここでは名前を並べておくだけにして、
                   「追加」を押した瞬間に親と一緒に書き込む */}
-              <div className="flex flex-col gap-1.5">
+              <div className={`flex-col gap-1.5 ${newTaskParent ? "hidden" : "flex"}`}>
                 <span className="text-xs text-cream/60">サブタスク（任意）</span>
                 {newTaskSubtasks.map((sub, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -1985,7 +2290,7 @@ export default function TodoSection({
                     onChange={(e) => setNewTaskSubtaskDraft(e.target.value)}
                     onKeyDown={(e) => {
                       // ここでのEnterは「次のサブタスクへ」。タスクそのものの追加は起こさない
-                      if (e.key !== "Enter") return;
+                      if (!isSubmitEnter(e)) return;
                       e.preventDefault();
                       commitSubtaskDraft();
                     }}
@@ -2244,6 +2549,14 @@ export default function TodoSection({
                 <button
                   className="btn-pill-outline text-xs disabled:opacity-40"
                   disabled={selectedTaskIds.size === 0}
+                  onClick={() => setParentPicker({ kind: "bulk", taskIds: [...selectedTaskIds] })}
+                  title="選んだタスクを、ほかのタスクのサブタスクにします"
+                >
+                  サブタスクにする…
+                </button>
+                <button
+                  className="btn-pill-outline text-xs disabled:opacity-40"
+                  disabled={selectedTaskIds.size === 0}
                   onClick={applyBulkMyDay}
                 >
                   ☀ マイデイに追加
@@ -2300,6 +2613,7 @@ export default function TodoSection({
                         onUpdateSubtaskImage={updateSubtaskImageInline}
                         onUpdateSubtaskMail={updateSubtaskMailInline}
                         onReorderSubtasks={reorderSubtasks}
+                        subtaskActions={subtaskActions}
                       />
                     ))}
                   </SortableContext>
@@ -2322,6 +2636,7 @@ export default function TodoSection({
                       onUpdateSubtaskImage={updateSubtaskImageInline}
                       onUpdateSubtaskMail={updateSubtaskMailInline}
                       onReorderSubtasks={reorderSubtasks}
+                      subtaskActions={subtaskActions}
                       selectionMode={bulkSelectionMode}
                       selected={selectedTaskIds.has(task.id)}
                       onToggleSelect={() => toggleTaskSelect(task.id)}
@@ -2364,6 +2679,7 @@ export default function TodoSection({
                           onUpdateSubtaskTag={updateSubtaskTagInline}
                           onUpdateSubtaskImage={updateSubtaskImageInline}
                           onUpdateSubtaskMail={updateSubtaskMailInline}
+                          subtaskActions={subtaskActions}
                         />
                       </div>
                     ))}
@@ -2419,7 +2735,27 @@ export default function TodoSection({
           categoryOptions={categoryOptions}
           customerOptions={customerOptions}
           today={today}
-          linkedProjectTitle={detailTask.projectId ? projectTitleById.get(detailTask.projectId) : undefined}
+          linkedProjectTitle={
+            detailTask.projectId
+              ? projectTitleById.get(detailTask.projectId)
+              : detailParent?.projectId
+                ? projectTitleById.get(detailParent.projectId)
+                : undefined
+          }
+          parentTask={detailParent ?? undefined}
+          onOpenParent={() => detailParent && setDetailTaskId(detailParent.id)}
+          onRequestParentChange={() => {
+            // 詳細の入力内容と食い違わないよう、詳細を閉じてから選び、選んだら開き直す
+            const id = detailTask.id;
+            setDetailTaskId(null);
+            setParentPicker({ kind: "task", taskId: id, reopenDetail: true });
+          }}
+          onPromote={async () => {
+            const id = detailTask.id;
+            setDetailTaskId(null);
+            await applyParentChange(id, null);
+            setDetailTaskId(id);
+          }}
           onClose={() => setDetailTaskId(null)}
           onComplete={async () => {
             // 詳細で直した分を書き込んだ後の姿で完了にする(繰り返しの次回期日も新しい値から決める)
@@ -2452,6 +2788,60 @@ export default function TodoSection({
             setShowGuideImport(false);
           }}
         />
+      )}
+
+      {parentPicker && (
+        <ParentTaskPicker
+          tasks={allTasks ?? []}
+          lists={lists ?? []}
+          defaultListId={
+            parentPicker.kind === "new"
+              ? newTaskListId || currentListId || lists?.[0]?.id
+              : parentPicker.kind === "task"
+                ? allTasks?.find((t) => t.id === parentPicker.taskId)?.listId
+                : allTasks?.find((t) => t.id === parentPicker.taskIds[0])?.listId
+          }
+          excludeTaskIds={parentPicker.kind === "task" ? [parentPicker.taskId] : parentPicker.kind === "bulk" ? parentPicker.taskIds : []}
+          currentParentId={
+            parentPicker.kind === "task" ? allTasks?.find((t) => t.id === parentPicker.taskId)?.parentTaskId : newTaskParentId || undefined
+          }
+          title={parentPicker.kind === "bulk" ? `${parentPicker.taskIds.length}件をサブタスクにする` : "親タスクを選ぶ"}
+          note={
+            parentPicker.kind === "bulk"
+              ? "サブタスクを持つタスクは、サブタスクにできません（1段まで）。"
+              : parentPicker.kind === "task"
+                ? "繰り返し・マイデイ・統合ボードの位置は、サブタスクになると外れます（元に戻すで戻ります）。"
+                : undefined
+          }
+          onPick={(p) => void handleParentPicked(p)}
+          onClose={() => {
+            const picker = parentPicker;
+            setParentPicker(null);
+            // 詳細から開いた時は、選ばずに閉じても詳細へ戻す
+            if (picker.kind === "task" && picker.reopenDetail) setDetailTaskId(picker.taskId);
+          }}
+        />
+      )}
+
+      {pendingBulkComplete && (
+        <Modal title="サブタスクが未完了です" onClose={() => setPendingBulkComplete(null)}>
+          <p className="mb-4 text-sm text-cream/80">
+            選んだ{pendingBulkComplete.length}件のうち
+            {pendingBulkComplete.filter((t) => (subtasksByParent.get(t.id) ?? []).some((s) => !s.completed)).length}
+            件に、未完了のサブタスクが残っています。どうしますか？
+          </p>
+          <div className="flex flex-col gap-2">
+            <button className="btn-pill text-sm" onClick={() => void completeBulk(pendingBulkComplete, true)}>
+              サブタスクもまとめて完了にする
+            </button>
+            <button className="btn-pill-outline text-sm" onClick={() => void completeBulk(pendingBulkComplete, false)}>
+              タスクだけ完了にする（サブタスクはそのまま）
+            </button>
+            <button className="text-xs text-cream/50" onClick={() => setPendingBulkComplete(null)}>
+              キャンセル
+            </button>
+          </div>
+        </Modal>
       )}
 
       {pendingCompleteTask && (
@@ -2639,6 +3029,7 @@ function SubtaskRow({
   onUpdateSubtaskImage,
   onUpdateSubtaskMail,
   dragHandleProps,
+  actions,
 }: {
   sub: TodoTask;
   today: string;
@@ -2651,7 +3042,9 @@ function SubtaskRow({
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   onUpdateSubtaskMail: (sub: TodoTask, mail: MailAttachmentFields | undefined) => void;
   dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
+  actions?: SubtaskActions;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const subOverdue = !sub.completed && !!sub.dueDate && sub.dueDate < today;
   const subDueToday = !sub.completed && !!sub.dueDate && sub.dueDate === today;
   const subImageInputRef = useRef<HTMLInputElement>(null);
@@ -2692,11 +3085,48 @@ function SubtaskRow({
           key={sub.id + sub.title}
           defaultValue={sub.title}
           onBlur={(e) => onUpdateSubtaskTitle(sub, e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          onKeyDown={(e) => isSubmitEnter(e) && (e.target as HTMLInputElement).blur()}
           className={`min-w-0 flex-1 bg-transparent text-xs text-cream focus:outline-none focus:ring-1 focus:ring-cream/30 ${
             sub.completed ? "text-cream/40 line-through" : ""
           }`}
         />
+        {actions && (
+          <span className="relative flex shrink-0">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="サブタスクの操作"
+              aria-expanded={menuOpen}
+              className={`-my-1 flex h-7 w-7 items-center justify-center rounded-full text-sm ${menuOpen ? "text-cream" : "text-cream/40 hover:text-cream/70"}`}
+            >
+              ⋯
+            </button>
+            {menuOpen && (
+              <span className="panel absolute right-0 top-full z-30 mt-1 flex w-max flex-col gap-0.5 p-1.5 shadow-lg" data-testid="subtask-menu">
+                {(
+                  [
+                    ["詳細", actions.open],
+                    ["親を変更", actions.changeParent],
+                    ["通常のタスクに戻す", actions.promote],
+                    ["削除", actions.remove],
+                  ] as const
+                ).map(([label, fn]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`rounded-md px-3 py-1.5 text-left text-xs hover:bg-cream/10 ${label === "削除" ? "text-alert" : "text-cream/80"}`}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      fn(sub);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+        )}
       </div>
       {/* 対応状況・添付・期日を1行に収める(スマホで2行に折り返し、サブタスク1件で3行使っていた)。
           完了したサブタスクでは、もう触らないので出さない */}
@@ -2857,6 +3287,7 @@ function SortableSubtaskRow(props: {
   onUpdateSubtaskTag: (sub: TodoTask, tag: string) => void;
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   onUpdateSubtaskMail: (sub: TodoTask, mail: MailAttachmentFields | undefined) => void;
+  actions?: SubtaskActions;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.sub.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -2883,6 +3314,7 @@ function TaskBlock({
   onUpdateSubtaskImage,
   onUpdateSubtaskMail,
   onReorderSubtasks,
+  subtaskActions,
   selectionMode,
   selected,
   onToggleSelect,
@@ -2901,6 +3333,7 @@ function TaskBlock({
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   onUpdateSubtaskMail: (sub: TodoTask, mail: MailAttachmentFields | undefined) => void;
   onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
+  subtaskActions?: SubtaskActions;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
@@ -3019,6 +3452,7 @@ function TaskBlock({
                         onUpdateSubtaskTag={onUpdateSubtaskTag}
                         onUpdateSubtaskImage={onUpdateSubtaskImage}
                         onUpdateSubtaskMail={onUpdateSubtaskMail}
+                        actions={subtaskActions}
                       />
                     ))}
                   </SortableContext>
@@ -3036,13 +3470,67 @@ function TaskBlock({
                     onUpdateSubtaskTag={onUpdateSubtaskTag}
                     onUpdateSubtaskImage={onUpdateSubtaskImage}
                     onUpdateSubtaskMail={onUpdateSubtaskMail}
+                    actions={subtaskActions}
                   />
                 ))
               )}
+              {subtaskActions && !task.completed && <InlineSubtaskAdd onAdd={(title) => subtaskActions.add(task, title)} />}
             </>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// サブタスクの塊の末尾の「+ サブタスク」。押すと1行の入力欄になり、Enterで足して続けて打てる
+function InlineSubtaskAdd({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const busy = useRef(false);
+  async function submit() {
+    const title = value.trim();
+    if (!title || busy.current) return;
+    busy.current = true;
+    try {
+      await onAdd(title);
+      setValue("");
+    } finally {
+      busy.current = false;
+    }
+  }
+  if (!open) {
+    return (
+      <button type="button" className="text-[11px] text-cream/40 hover:text-cream/70" onClick={() => setOpen(true)}>
+        + サブタスク
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (isSubmitEnter(e)) {
+            e.preventDefault();
+            void submit();
+          } else if (e.key === "Escape" && !isImeComposing(e)) {
+            e.preventDefault();
+            setOpen(false);
+          }
+        }}
+        onBlur={() => {
+          if (!value.trim()) setOpen(false);
+        }}
+        placeholder="サブタスク名（Enterで追加）"
+        aria-label="サブタスク名"
+        className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
+      />
+      <button type="button" className="btn-pill-outline text-xs" onMouseDown={(e) => e.preventDefault()} onClick={() => void submit()} disabled={!value.trim()}>
+        追加
+      </button>
     </div>
   );
 }
@@ -3062,6 +3550,7 @@ function SortableTaskBlock(props: {
   onUpdateSubtaskImage: (sub: TodoTask, imageDataUrl: string | undefined) => void;
   onUpdateSubtaskMail: (sub: TodoTask, mail: MailAttachmentFields | undefined) => void;
   onReorderSubtasks?: (subtasks: TodoTask[], oldIndex: number, newIndex: number) => void;
+  subtaskActions?: SubtaskActions;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.task.id,
@@ -3591,6 +4080,10 @@ function TaskDetailModal({
   onAddToToday,
   onConvertToMemo,
   alreadyAddedToToday,
+  parentTask,
+  onOpenParent,
+  onRequestParentChange,
+  onPromote,
 }: {
   task: TodoTask;
   subtasks: TodoTask[];
@@ -3613,12 +4106,24 @@ function TaskDetailModal({
   onAddToToday: (category: string, workName: string) => void;
   onConvertToMemo: () => void;
   alreadyAddedToToday: boolean;
+  /** サブタスクの時、その親 */
+  parentTask?: TodoTask;
+  /** 親の詳細へ移る */
+  onOpenParent: () => void;
+  /** 親を選ぶ(サブタスクにする・親を変更)。詳細は呼ぶ側で閉じる */
+  onRequestParentChange: () => void;
+  /** 通常のタスクに戻す */
+  onPromote: () => void;
 }) {
+  // サブタスクの詳細では、サブタスクで使わない項目(リスト・繰り返し・マイデイ・アーカイブ・コピー・
+  // さらに下のサブタスク)を出さない。リストは親に合わせて決まり、サブタスクは1段まで
+  const isSubtask = !!task.parentTaskId;
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const [showReflectDialog, setShowReflectDialog] = useState(false);
   const [showAddToTodayDialog, setShowAddToTodayDialog] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [listId, setListId] = useState(task.listId);
+  const [initialListId] = useState(task.listId);
   const [action, setAction] = useState(task.action ?? "");
   const [url, setUrl] = useState(task.url ?? "");
   const [notes, setNotes] = useState(task.notes ?? "");
@@ -3705,6 +4210,14 @@ function TaskDetailModal({
   // 保存して閉じる・完了にするの途中で、もう一度押されたり Esc されたりしても二重に書き込まない
   const closingRef = useRef(false);
 
+  // 親の付け替え・親の詳細へ移る前に、直した分を書き込んでおく(閉じると入力内容が消えるため)
+  async function saveThen(next: () => void) {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    if (dirty && title.trim()) await writeUpdates();
+    next();
+  }
+
   // 完了にする: 直した分を先に書き込んでから完了にする
   async function completeFromDetail() {
     if (closingRef.current) return;
@@ -3762,7 +4275,8 @@ function TaskDetailModal({
     }
     // リストを変更した場合、サブタスクも一緒に新しいリストへ移す(サブタスクだけ元の
     // リストに取り残されて宙に浮いてしまうのを防ぐ)。並び順は移動先リストの末尾にする
-    const listChanged = listId !== task.listId;
+    // 開いている間に親の付け替えなどでリストが変わった時に、開いた時のリストへ戻さない
+    const listChanged = listId !== task.listId && listId !== initialListId;
     if (listChanged) {
       updates.listId = listId;
       if (!task.parentTaskId) {
@@ -3848,7 +4362,7 @@ function TaskDetailModal({
   // 畳んだ中で値が入っている項目。編集中の値(まだ保存していない分)で判定し、
   // 即時保存の通知・画像・メールだけはタスク本体を見る
   const foldedSetLabels = [
-    recurrenceEnabled ? "繰り返し" : "",
+    recurrenceEnabled && !isSubtask ? "繰り返し" : "",
     task.reminderAt ? "通知" : "",
     action.trim() ? "アクション" : "",
     url.trim() ? "URL" : "",
@@ -3867,6 +4381,27 @@ function TaskDetailModal({
           <p className="rounded-lg border border-cream/30 bg-cream/10 px-3 py-2 text-sm text-cream" role="status" data-testid="todo-copied-notice">
             📋 「{copiedFromTitle}」をコピーして、新しいタスクとして追加しました。ここで直すとコピーの方が変わります（元のタスクはそのまま）。
           </p>
+        )}
+        {isSubtask && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-cream/15 bg-cream/[0.04] px-3 py-2" data-testid="todo-detail-parent">
+            <span className="text-xs text-cream/60">親:</span>
+            <button
+              type="button"
+              className="min-w-0 max-w-full truncate text-left text-sm text-cream underline decoration-dotted underline-offset-2"
+              onClick={() => void saveThen(onOpenParent)}
+              title="親タスクの詳細を開きます"
+            >
+              {parentTask?.title ?? "（見つかりません）"}
+            </button>
+            <span className="ml-auto flex gap-2">
+              <button type="button" className="btn-pill-outline text-xs" onClick={() => void saveThen(onRequestParentChange)}>
+                親を変更
+              </button>
+              <button type="button" className="btn-pill-outline text-xs" onClick={() => void saveThen(onPromote)}>
+                通常のタスクに戻す
+              </button>
+            </span>
+          </div>
         )}
         <input
           value={title}
@@ -3933,12 +4468,14 @@ function TaskDetailModal({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            className={task.myDayDate === today ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-            onClick={onToggleMyDay}
-          >
-            <IconLabel text={`☀ ${task.myDayDate === today ? "マイデイから削除" : "マイデイに追加"}`} />
-          </button>
+          {!isSubtask && (
+            <button
+              className={task.myDayDate === today ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
+              onClick={onToggleMyDay}
+            >
+              <IconLabel text={`☀ ${task.myDayDate === today ? "マイデイから削除" : "マイデイに追加"}`} />
+            </button>
+          )}
           <button
             className={alreadyAddedToToday ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
             onClick={() => setShowAddToTodayDialog(true)}
@@ -3946,7 +4483,26 @@ function TaskDetailModal({
           >
             <IconLabel text={`📌 ${alreadyAddedToToday ? "本日の作業に追加済み" : "本日の作業に追加"}`} />
           </button>
+          {!isSubtask && (
+            <button
+              className="btn-pill-outline text-xs disabled:opacity-40"
+              onClick={() => void saveThen(onRequestParentChange)}
+              disabled={subtasks.length > 0}
+              title={
+                subtasks.length > 0
+                  ? "サブタスクを持つタスクは、ほかのタスクのサブタスクにできません（1段まで）"
+                  : "ほかのタスクの下に入れて、サブタスクにします"
+              }
+            >
+              サブタスクにする…
+            </button>
+          )}
         </div>
+        {!isSubtask && subtasks.length > 0 && (
+          <p className="-mt-1 text-[10px] text-cream/40">
+            サブタスクを持つため「サブタスクにする」は使えません（サブタスクは1段まで）
+          </p>
+        )}
 
         {showReflectDialog && (
           <CategoryWorkNameDialog
@@ -3976,7 +4532,9 @@ function TaskDetailModal({
           />
         )}
 
-        {/* サブタスク: 行は背景つきで区別し、字下げはしない(追加欄がほかの欄と左端をそろえる) */}
+        {/* サブタスク: 行は背景つきで区別し、字下げはしない(追加欄がほかの欄と左端をそろえる)。
+            サブタスクの詳細では出さない(3段目を作らせない) */}
+        {!isSubtask && (
         <div>
           <h4 className="mb-1.5 text-xs font-bold text-cream/70">サブタスク</h4>
           <div className="space-y-1.5">
@@ -3994,7 +4552,7 @@ function TaskDetailModal({
                   key={sub.id}
                   defaultValue={sub.title}
                   onBlur={(e) => updateSubtaskTitle(sub, e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                  onKeyDown={(e) => isSubmitEnter(e) && e.currentTarget.blur()}
                   className={`flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-xs text-cream hover:border-cream/20 focus:border-cream/30 focus:bg-ink focus:outline-none ${
                     sub.completed ? "text-cream/40 line-through" : ""
                   }`}
@@ -4024,7 +4582,7 @@ function TaskDetailModal({
               <input
                 value={newSubtask}
                 onChange={(e) => setNewSubtask(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addSubtask()}
+                onKeyDown={(e) => isSubmitEnter(e) && addSubtask()}
                 placeholder="+ サブタスクを追加"
                 className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
               />
@@ -4034,6 +4592,7 @@ function TaskDetailModal({
             </div>
           </div>
         </div>
+        )}
 
         <textarea
           value={notes}
@@ -4053,7 +4612,7 @@ function TaskDetailModal({
             aria-expanded={moreOpen}
             onClick={() => setMoreOpenStr(moreOpen ? "false" : "true")}
           >
-            {moreOpen ? "▲ くわしくを閉じる" : "▼ くわしく（リスト・分類・繰り返し など）"}
+            {moreOpen ? "▲ くわしくを閉じる" : isSubtask ? "▼ くわしく（分類・客先・通知 など）" : "▼ くわしく（リスト・分類・繰り返し など）"}
           </button>
           {/* 畳んだまま設定済みの項目に気づけないと困るので、閉じている間は何が入っているかだけ1行で出す */}
           {!moreOpen && foldedSetLabels.length > 0 && (
@@ -4064,7 +4623,7 @@ function TaskDetailModal({
         </div>
         {moreOpen && (
           <div className="space-y-3">
-            {lists.length > 1 && (
+            {lists.length > 1 && !isSubtask && (
               <label className="grid grid-cols-[4.5rem_1fr] items-center gap-2 text-xs text-cream/60">
                 リスト
                 <select
@@ -4227,7 +4786,8 @@ function TaskDetailModal({
               </p>
             )}
 
-            {/* 繰り返し設定 */}
+            {/* 繰り返し設定(サブタスクは親の繰り返しに合わせて進むので出さない) */}
+            {!isSubtask && (
             <div className="rounded-lg border border-cream/10 p-3">
               <label className="flex items-center gap-2 text-xs text-cream/70">
                 <input
@@ -4376,6 +4936,7 @@ function TaskDetailModal({
                 </div>
               )}
             </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <button
@@ -4414,6 +4975,7 @@ function TaskDetailModal({
           <button className="text-xs text-alert" onClick={onDelete}>
             タスクを削除
           </button>
+          {!isSubtask && (
           <button
             className="text-xs text-cream/50 hover:text-cream"
             onClick={onArchive}
@@ -4425,11 +4987,14 @@ function TaskDetailModal({
           >
             <IconLabel text={task.archived ? "🗄 アーカイブを解除" : "🗄 アーカイブする"} />
           </button>
+          )}
         </div>
         <div className="ml-auto flex flex-wrap justify-end gap-2">
-          <button className="btn-pill-outline text-sm" onClick={onCopy} title="内容をコピーして新しいタスクを追加します">
-            コピーして追加
-          </button>
+          {!isSubtask && (
+            <button className="btn-pill-outline text-sm" onClick={onCopy} title="内容をコピーして新しいタスクを追加します">
+              コピーして追加
+            </button>
+          )}
           <button
             className="btn-pill-outline text-sm"
             onClick={() => void completeFromDetail()}

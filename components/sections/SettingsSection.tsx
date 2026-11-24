@@ -10,7 +10,7 @@ import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib
 import { DEFAULT_WAITING_NUDGE_DAYS, DEFAULT_WAITING_TAGS } from "@/lib/changeTracking";
 import { parseWaitingTags } from "@/lib/waiting";
 import { DEFAULT_TROUBLE_DETAIL_OPTIONS } from "@/lib/trouble";
-import { importBackup, summarizeBackup, type BackupFile } from "@/lib/backup";
+import { BACKUP_VERSION, backupJsonParts, beforeRestoreFileName, exportBackup, importBackup, isNewerBackupVersion, summarizeBackup, type BackupFile } from "@/lib/backup";
 import Modal from "@/components/ui/Modal";
 import Icon, { IconLabel } from "@/components/ui/Icon";
 import { downloadBackupFile, shareBackupFile } from "@/lib/backupFile";
@@ -24,7 +24,8 @@ import {
 } from "@/lib/autoBackup";
 import { buildArchive, deleteArchivedItems, isArchiveFile, restoreArchive, type ArchiveFile } from "@/lib/archive";
 import { showUndoToast } from "@/lib/toast";
-import { downloadTextFile } from "@/lib/report";
+import { isSubmitEnter } from "@/lib/keyboard";
+import { downloadBlob, downloadTextFile } from "@/lib/report";
 import { todayStr } from "@/lib/time";
 import { ACCENT_PRESETS, DEFAULT_ACCENT_RGB } from "@/lib/theme";
 import { APP_ICON_OPTIONS, APP_ICON_SETTING_KEY, DEFAULT_APP_ICON, appIconPaths, normalizeAppIcon } from "@/lib/appIcon";
@@ -38,6 +39,8 @@ import LifeContextSelect from "@/components/ai/LifeContextSelect";
 
 export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: string) => void } = {}) {
   const [backupStatus, setBackupStatus] = useState("");
+  // 保存領域の状態(消されにくくしてあるか・使っている量)。未対応のブラウザではnull
+  const [storageInfo, setStorageInfo] = useState<{ persisted: boolean | null; usage: number | null; quota: number | null } | null>(null);
   const [autoBackupFolder, setAutoBackupFolder] = useState<string | null>(null);
   const [autoBackupStatus, setAutoBackupStatus] = useState("");
   // 最後にバックアップしてからの日数。自動バックアップが使えない環境でも
@@ -204,6 +207,16 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
   const [newRateCategory, setNewRateCategory] = useState("");
   const [newRateAmount, setNewRateAmount] = useState("");
 
+  // 設定の一覧から1件消した後の「元に戻す」。戻すまでに別の変更があれば(今の値が消した直後の値と
+  // 違えば)、新しい内容を古い控えで上書きしないよう何もしない
+  function undoSettingChange(message: string, key: string, before: string, after: string) {
+    showUndoToast(message, async () => {
+      const current = (await db.settings.get(key))?.value;
+      if (current !== after) return;
+      await db.settings.put({ key, value: before });
+    });
+  }
+
   function addCategoryRate() {
     const cat = newRateCategory.trim();
     const amount = Number(newRateAmount);
@@ -215,7 +228,9 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
   function removeCategoryRate(cat: string) {
     const next = { ...categoryRates };
     delete next[cat];
-    setCategoryRatesJson(serializeCategoryRates(next));
+    const after = serializeCategoryRates(next);
+    setCategoryRatesJson(after);
+    undoSettingChange(`「${cat}」の単価を削除しました`, "cost.categoryRates", categoryRatesJson, after);
   }
 
   function addTagPreset(value: string) {
@@ -296,7 +311,10 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
     setBreakRangesStr(serializeBreakRanges(next));
   }
   function removeBreakRange(index: number) {
-    setBreakRangesStr(serializeBreakRanges(breakRanges.filter((_, i) => i !== index)));
+    const r = breakRanges[index];
+    const after = serializeBreakRanges(breakRanges.filter((_, i) => i !== index));
+    setBreakRangesStr(after);
+    if (r) undoSettingChange(`休憩 ${r.start}〜${r.end} を削除しました`, "today.provisionalBreakRanges", breakRangesStr, after);
   }
 
   // 地点登録フォームの緯度・経度に、今いる場所の座標を自動入力する
@@ -376,8 +394,14 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
   }
 
   async function removeGeoPlace(id: string) {
+    const snapshot = await db.geoPlaces.get(id);
     await db.geoPlaces.delete(id);
     if (editingPlaceId === id) resetGeoPlaceForm();
+    if (snapshot) {
+      showUndoToast(`地点「${snapshot.label}」を削除しました`, async () => {
+        if (!(await db.geoPlaces.get(id))) await db.geoPlaces.add(snapshot);
+      });
+    }
   }
 
   // 天気変化通知用の地点登録フォームに、今いる場所の座標を自動入力する
@@ -442,8 +466,14 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
   }
 
   async function removeWeatherPlace(id: string) {
+    const snapshot = await db.weatherPlaces.get(id);
     await db.weatherPlaces.delete(id);
     if (editingWeatherPlaceId === id) resetWeatherPlaceForm();
+    if (snapshot) {
+      showUndoToast(`地点「${snapshot.label}」を削除しました`, async () => {
+        if (!(await db.weatherPlaces.get(id))) await db.weatherPlaces.add(snapshot);
+      });
+    }
   }
 
   // 保存先の指定と最終バックアップ日は非同期・localStorage経由なので、描画後に読み直す
@@ -451,6 +481,34 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
     void getAutoBackupFolderName().then(setAutoBackupFolder);
     setStaleBackupDays(daysSinceLastBackup());
   }, []);
+
+  async function loadStorageInfo() {
+    try {
+      if (typeof navigator === "undefined" || !navigator.storage) return;
+      const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : null;
+      const est = navigator.storage.estimate ? await navigator.storage.estimate() : null;
+      setStorageInfo({ persisted, usage: est?.usage ?? null, quota: est?.quota ?? null });
+    } catch {
+      setStorageInfo(null);
+    }
+  }
+  useEffect(() => {
+    void loadStorageInfo();
+  }, []);
+
+  async function requestPersist() {
+    try {
+      const ok = await navigator.storage.persist();
+      setBackupStatus(
+        ok
+          ? "このブラウザでは、容量が減っても保存が消されにくくなりました。"
+          : "ブラウザに断られました。ホーム画面に追加してから、もう一度お試しください（それでも断られる場合は、こまめにバックアップしてください）。"
+      );
+    } catch (e) {
+      setBackupStatus(`設定できませんでした: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    void loadStorageInfo();
+  }
 
   async function downloadBackup() {
     try {
@@ -536,6 +594,14 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
     }
     // 置き換わるのは「このファイルに入っている種類のデータ」だけ(古い形式のバックアップに
     // 無い種類は今のまま残る)。何がいつの時点の内容に置き換わるのかを、押す前に見せる
+    const fileVersion = typeof data.version === "number" ? data.version : null;
+    // 新しい版のアプリで取った控えは、この版が知らない形式の中身を取りこぼすので受け付けない
+    if (isNewerBackupVersion(data)) {
+      setBackupStatus(
+        `このファイルは新しい版のアプリで作られています（ファイルの形式: version ${fileVersion}、この版が読めるのは version ${BACKUP_VERSION} まで）。アプリを再読み込みして最新にしてから、もう一度復元してください。今のデータは変わっていません。`
+      );
+      return;
+    }
     const exportedAt = new Date(data.exportedAt);
     const exportedText = data.exportedAt && !Number.isNaN(exportedAt.getTime()) ? exportedAt.toLocaleString("ja-JP") : "不明";
     const summaryText = summarizeBackup(data)
@@ -543,9 +609,20 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
       .join("\n");
     if (
       !confirm(
-        `このファイルに入っている種類のデータを、ファイルの内容で置き換えます。\n\n控えを取った日時: ${exportedText}\n${summaryText}\n\nファイルに入っていない種類のデータは今のまま残ります。この操作は元に戻せません。よろしいですか?`
+        `このファイルの内容で、今のデータを置き換えます。\n\n` +
+          `控えを取った日時: ${exportedText}\nファイルの形式: version ${fileVersion ?? "不明"}\n${summaryText}\n\n` +
+          `・ファイルに入っていない種類のデータは今のまま残ります。\n` +
+          `・置き換える前に、今のデータを「koutei-hyo_before-restore_日時.json」として自動でダウンロードします。戻したくなったら、そのファイルを復元してください。\n\n` +
+          `復元しますか?`
       )
     ) {
+      return;
+    }
+    // 置き換える前に今のデータを自動で控える。控えが作れなければ復元しない(戻す手段が無くなるため)
+    try {
+      downloadBlob(beforeRestoreFileName(), new Blob(backupJsonParts(await exportBackup()), { type: "text/plain;charset=utf-8" }));
+    } catch (e) {
+      setBackupStatus(`復元前の控えを作れなかったので、復元を取りやめました（今のデータは変わっていません）: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
     let result: Awaited<ReturnType<typeof importBackup>>;
@@ -556,13 +633,14 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
       setBackupStatus(`復元できませんでした（今のデータは変わっていません）: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
-    const { restoredRows, skippedTables } = result;
+    const { restoredRows, skippedTables, droppedRows } = result;
     const skippedNote =
       skippedTables.length > 0
         ? `（このアプリが対応していない${skippedTables.length}種類のデータは復元できませんでした。アプリを最新にしてからやり直してください）`
         : "";
+    const droppedNote = droppedRows > 0 ? `（idが無く読めない${droppedRows}件は飛ばしました）` : "";
     setBackupStatus(
-      `復元しました（${restoredRows}件のデータ）。エクスポート日時: ${data.exportedAt}${skippedNote}`
+      `復元しました（${restoredRows}件のデータ）。エクスポート日時: ${data.exportedAt}${skippedNote}${droppedNote}。復元前のデータは before-restore のファイルに控えてあります。`
     );
   }
 
@@ -888,7 +966,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
                   >
                     強制ストップ: {r.forceStop ? "ON" : "OFF"}
                   </button>
-                  <button className="ml-auto text-alert" onClick={() => removeBreakRange(i)} aria-label="削除">
+                  <button className="ml-auto text-alert" onClick={() => removeBreakRange(i)} aria-label={`休憩 ${r.start}〜${r.end}を削除`}>
                     ✕
                   </button>
                 </div>
@@ -1044,7 +1122,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
                     >
                       ✎
                     </button>
-                    <button className="text-cream/40 hover:text-alert" onClick={() => removeGeoPlace(p.id)} aria-label="削除">
+                    <button className="text-cream/40 hover:text-alert" onClick={() => removeGeoPlace(p.id)} aria-label={`${p.label}を削除`}>
                       ✕
                     </button>
                   </div>
@@ -1194,7 +1272,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
                     <button
                       className="text-cream/40 hover:text-alert"
                       onClick={() => removeWeatherPlace(p.id)}
-                      aria-label="削除"
+                      aria-label={`${p.label}を削除`}
                     >
                       ✕
                     </button>
@@ -1333,7 +1411,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
             <div key={cat} className="flex items-center gap-2 text-xs text-cream/70">
               <span className="flex-1 truncate">{cat}</span>
               <span className="tabular-nums">{amount.toLocaleString("ja-JP")}円/時間</span>
-              <button className="text-alert" onClick={() => removeCategoryRate(cat)} aria-label="削除">
+              <button className="text-alert" onClick={() => removeCategoryRate(cat)} aria-label={`${cat}を削除`}>
                 ✕
               </button>
             </div>
@@ -2330,6 +2408,30 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
           />
         </div>
         {backupStatus && <p className="text-xs text-cream/65">{backupStatus}</p>}
+        {storageInfo && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-cream/65">
+            <span>
+              保存: {storageInfo.persisted === null ? "状態不明" : storageInfo.persisted ? "消されにくい設定済み" : "容量不足の時にブラウザが消すことがあります"}
+              {storageInfo.usage !== null && (
+                <>
+                  {" ・ 使用量 "}
+                  <span className="num">{formatBytes(storageInfo.usage)}</span>
+                  {storageInfo.quota ? (
+                    <>
+                      {" / "}
+                      <span className="num">{formatBytes(storageInfo.quota)}</span>
+                    </>
+                  ) : null}
+                </>
+              )}
+            </span>
+            {storageInfo.persisted === false && typeof navigator !== "undefined" && !!navigator.storage?.persist && (
+              <button className="btn-pill-outline px-3 py-1 text-xs" onClick={requestPersist}>
+                保存を消されにくくする
+              </button>
+            )}
+          </div>
+        )}
         <p className="text-xs text-cream/65">
           このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は、バックアップファイルに入っている種類のデータを置き換えます（月次アーカイブのファイルを選んだ場合は、今のデータに足し戻します）。「他の端末に共有」は、クラウドを経由せずOSの共有機能(AirDrop/近くのデバイス等)でその場だけ他の自分の端末にファイルを渡したい場合にお使いください。渡した端末側では「バックアップから復元」で取り込めます。
         </p>
@@ -2389,7 +2491,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
       </div>
 
       <div className="panel space-y-3 p-4">
-        <h3 className="section-title font-display">実績データの月次アーカイブ</h3>
+        <h3 className="section-title font-display">古いデータの書き出しと削除</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs text-cream/60">
           <input
             type="month"
@@ -2487,7 +2589,7 @@ function TagPriorityEditor({
         <input
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
+          onKeyDown={(e) => isSubmitEnter(e) && add()}
           placeholder="対応状況名"
           className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
         />
@@ -2539,7 +2641,7 @@ function PresetListEditor({
         <input
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
+          onKeyDown={(e) => isSubmitEnter(e) && add()}
           placeholder={placeholder}
           className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
         />
@@ -2561,4 +2663,12 @@ function SettingSwitch({ on, onToggle, label, caption }: { on: boolean; onToggle
       {caption && <p className="mt-1 text-[11px] leading-snug text-cream/55">{caption}</p>}
     </div>
   );
+}
+
+// 保存量の表示用(1024単位)
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)}KB`;
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)}MB`;
+  return `${(n / 1024 ** 3).toFixed(1)}GB`;
 }

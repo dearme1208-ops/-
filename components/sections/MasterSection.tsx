@@ -11,6 +11,8 @@ import {
   findDuplicateMasterGroups,
   mergeMasterTasks,
   normalizeMasterKey,
+  deleteMasterTask,
+  restoreDeletedMasterTask,
 } from "@/lib/master";
 import { recomputeOutliersForAll, clearManualOverride } from "@/lib/outliers";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
@@ -303,9 +305,11 @@ export default function MasterSection() {
   }
 
   async function deleteTask(t: MasterTask) {
-    await db.masterTasks.delete(t.id);
+    // テンプレートの紐付けも一緒に外し、戻す時は紐付けごと戻す(同じIDが既にあれば上書きしない)
+    const deleted = await deleteMasterTask(t.id);
+    if (!deleted) return;
     showUndoToast(`「${t.category} / ${t.name}」をマスタから削除しました`, async () => {
-      await db.masterTasks.add(t);
+      await restoreDeletedMasterTask(deleted);
     });
   }
 

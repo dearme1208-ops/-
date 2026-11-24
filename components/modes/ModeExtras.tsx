@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+// ToDoの完了は繰り返しの次回送りと「元に戻す」を共通の処理に任せる
+import { completeTodoWithUndoToast } from "@/lib/progressActions";
 import { findOrCreateMasterTask } from "@/lib/master";
 import {
   activityTrail,
@@ -326,7 +328,7 @@ export function NatsuyasumiPanels() {
                 <input
                   type="checkbox"
                   className="h-4 w-4 accent-[rgb(var(--accent-rgb))]"
-                  onChange={() => db.todoTasks.update(t.id, { completed: true, completedAt: Date.now() })}
+                  onChange={() => void completeTodoWithUndoToast(t, todayStr())}
                   aria-label={`「${t.title}」をおわりにする`}
                 />
                 <span className="min-w-0 flex-1 truncate text-cream">{t.title}</span>

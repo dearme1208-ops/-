@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+import { isSubmitEnter } from "@/lib/keyboard";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
@@ -211,7 +212,7 @@ export default function ZenSection() {
             autoFocus
             value={captureText}
             onChange={(e) => setCaptureText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addQuick()}
+            onKeyDown={(e) => isSubmitEnter(e) && addQuick()}
             onBlur={() => !captureText.trim() && setShowCapture(false)}
             placeholder="ひとことで"
             className="zen-input"

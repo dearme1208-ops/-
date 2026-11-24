@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import TerminalCommandLine from "@/components/sections/TerminalCommandLine";
 import { db, uid } from "@/lib/db";
+import { isSubmitEnter } from "@/lib/keyboard";
 import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
@@ -544,14 +545,14 @@ export default function TerminalDashboardSection() {
           <input
             value={newTaskCategory}
             onChange={(e) => setNewTaskCategory(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && startNewTask()}
+            onKeyDown={(e) => isSubmitEnter(e) && startNewTask()}
             placeholder="CATEGORY"
             className="min-w-[6rem] flex-1 rounded-sm border border-cream/15 bg-ink/40 px-2 py-1.5 text-xs text-cream placeholder:text-cream/30"
           />
           <input
             value={newTaskName}
             onChange={(e) => setNewTaskName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && startNewTask()}
+            onKeyDown={(e) => isSubmitEnter(e) && startNewTask()}
             placeholder="TASK NAME"
             className="min-w-[8rem] flex-[2] rounded-sm border border-cream/15 bg-ink/40 px-2 py-1.5 text-xs text-cream placeholder:text-cream/30"
           />

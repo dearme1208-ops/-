@@ -52,7 +52,7 @@ describe("外部AIとの進捗のやり取り", () => {
     const s2 = after.stages!.find((s) => s.id === "s2")!;
     expect(s2.completed).toBe(true);
     expect(new Date(s2.completedAt!).getDate()).toBe(2);
-    expect(after.stages!.find((s) => s.id === "s3")).toMatchObject({ completedCount: 10, completed: true });
+    expect(after.stages!.find((s) => s.id === "s3")).toMatchObject({ completedCount: 10, completed: false });
     expect(after.stages!.find((x) => x.id === "s2")!.tag).toBe("客先確認中");
     expect(after.dueDate).toBe("2026-10-20");
     expect(p.writes.todos.get("t1a")!.after.completed).toBe(true);
@@ -191,5 +191,16 @@ describe("取り込みの取り消し", () => {
       { id: "p", stages: [stage("a", { completed: true, completedAt: 1 }), stage("b", { tag: "手で付けた" }), stage("ai追加"), stage("手で追加")] }
     );
     expect(p.stages).toEqual([stage("a", { completedAt: undefined }), stage("b", { tag: "手で付けた" }), stage("手で追加")]);
+  });
+});
+
+describe("件数管理の段階", () => {
+  it("updateStage で件数を進めても completed は立てない(件数で完了が決まる)", () => {
+    const p = plan([{ op: "updateStage", projectId: "p1", stageId: "s3", completedCount: 10 }]);
+    const after = [...p.writes.projects.values()][0].after;
+    const s3 = after.stages!.find((s) => s.id === "s3")!;
+    expect(s3.completedCount).toBe(10);
+    expect(s3.completed).toBe(false);
+    expect(s3.completedAt).toBe(NOW);
   });
 });

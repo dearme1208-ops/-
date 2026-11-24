@@ -62,10 +62,12 @@ import { BOARD_VIEW_MODES, type BoardViewMode } from "@/lib/boardViewModes";
 import AltBoardView from "@/components/board/AltBoardView";
 import ProgressView from "@/components/board/views/ProgressView";
 import { buildProgressRows, summarizeProgress } from "@/lib/progressOverview";
-import { addProgressStepToToday, completeProgressStep, stepKeysInToday } from "@/lib/progressActions";
+import { addProgressStepToToday, completeProgressStep, completeTodoWithUndoToast, stepKeysInToday } from "@/lib/progressActions";
+import { ProjectCascadeDialog, type ProjectCascade } from "@/components/sections/today/LinkedCompletionDialog";
 import { projectWaitingInfo, todoWaitingInfo } from "@/lib/waiting";
 import { useWaitingSettings } from "@/lib/waitingSettings";
 import { showUndoToast } from "@/lib/toast";
+import { isSubmitEnter, shouldIgnoreShortcut } from "@/lib/keyboard";
 import { computeProjectForecast } from "@/lib/projectForecast";
 import { exportElementToPng } from "@/lib/pdfExport";
 import Modal from "@/components/ui/Modal";
@@ -249,7 +251,8 @@ export default function UnifiedBoardSection({
   );
   const showCompletedProjectStages = showCompletedProjectStagesStr === "true";
   // 未完了の親タスクだけを対象にする(サブタスクはカードにしない)
-  const openTodos = (todoTasks ?? []).filter((t) => !t.completed && !t.parentTaskId);
+  // アーカイブ済みは一覧と同じくボードにも出さない
+  const openTodos = (todoTasks ?? []).filter((t) => !t.completed && !t.parentTaskId && !t.archived);
   // ボードに自動で出すToDoの条件(マイデイ/重要/期日あり/期限切れをチェックボックスで選べる)。
   // どれにも当てはまらなくても、手動で「一覧から置く」で置いたものは常に出す
   const [todoAutoShowStr, setTodoAutoShowStr] = useSetting("board.todoAutoShow", JSON.stringify(DEFAULT_TODO_AUTO_SHOW));
@@ -262,7 +265,7 @@ export default function UnifiedBoardSection({
   // 自動では出さない。再度出すには「一覧から置く」で改めて置く必要がある
   const isTodoAutoShown = (t: TodoTask) => !t.boardHidden && matchesTodoAutoShow(t, todoAutoShow, today);
   const todos = openTodos.filter((t) => t.boardX !== undefined || isTodoAutoShown(t));
-  const openProjects = (projectItems ?? []).filter((p) => !p.completedAt);
+  const openProjects = (projectItems ?? []).filter((p) => !p.completedAt && !p.archived);
   // 案件は数が多くなりがちなので、自動では置かず、置いたものだけを出す
   const projects = openProjects.filter((p) => p.boardX !== undefined);
 
@@ -770,8 +773,13 @@ export default function UnifiedBoardSection({
     setCompleteTarget(null);
     if (target.kind === "task") await completeTask(target.task);
     else if (target.kind === "todo") await completeTodo(target.todo);
-    else await toggleProjectStage(target.project, target.stageId);
+    else {
+      const r = await toggleProjectStage(target.project, target.stageId);
+      if (r?.offerProjectCompletion) setProjectCascade({ step: "allStagesDone", projectId: target.project.id });
+    }
   }
+  // 最後の段階が済んだときの「案件も完了にしますか」(他画面と共通の確認)
+  const [projectCascade, setProjectCascade] = useState<ProjectCascade | null>(null);
 
   // お気に入り/マスタから、その場で新しい作業を開始する。既に計測中の作業があれば
   // 一時停止してから開始する(startTaskの「既存タスクを再開」と同じ考え方)
@@ -837,19 +845,35 @@ export default function UnifiedBoardSection({
   const [detailTodoId, setDetailTodoId] = useState<string | null>(null);
   const detailTodo = (todoTasks ?? []).find((t) => t.id === detailTodoId) ?? null;
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
-  // サブタスクの削除は取り消せないので、✕を押したら一度確認する
-  const [deleteSubtaskTarget, setDeleteSubtaskTarget] = useState<TodoTask | null>(null);
   // 「作業を追加」のメニュー。どの選び方で足すかをここで分岐させる
   const [showAddWork, setShowAddWork] = useState(false);
   const [freeCategory, setFreeCategory] = useState("");
   const [freeName, setFreeName] = useState("");
+
+  // サブタスクの✕は確認なしですぐ消し、知らせの「元に戻す」で戻せるようにする
+  // (その下の子も一緒に控える。戻す時は親が残っていて、同じidが無い時だけ足す)
+  async function deleteSubtask(sub: TodoTask) {
+    const removed = await db.transaction("rw", db.todoTasks, async () => {
+      const children = await db.todoTasks.where("parentTaskId").equals(sub.id).toArray();
+      await db.todoTasks.bulkDelete([sub.id, ...children.map((c) => c.id)]);
+      return [sub, ...children];
+    });
+    showUndoToast(`サブタスク「${sub.title}」を削除しました`, async () => {
+      await db.transaction("rw", db.todoTasks, async () => {
+        if (sub.parentTaskId && !(await db.todoTasks.get(sub.parentTaskId))) return;
+        for (const t of removed) {
+          if (!(await db.todoTasks.get(t.id))) await db.todoTasks.add(t);
+        }
+      });
+    });
+  }
 
   async function moveTodo(id: string, x: number, y: number) {
     await db.todoTasks.update(id, { boardX: x, boardY: y });
   }
   // completeTaskと同じく、確認は盤面内ダイアログ側で済んでいる
   async function completeTodo(task: TodoTask) {
-    await completeTodoTask(task, today);
+    await completeTodoWithUndoToast(task, today);
   }
   // カードの中のサブタスクは1タップで切り替える。親タスクの完了と違って取り消しが
   // 効く(もう一度押せば戻る)ため、いちいち確認は挟まない
@@ -1534,17 +1558,12 @@ export default function UnifiedBoardSection({
 
   // ------------------------------------------------------------
   // キーボード操作。矢印キーで選択中アイテムを移動、Deleteで盤面から下げる/消す。
-  // 入力欄にフォーカスしている間は文字入力を邪魔しないよう何もしない
+  // 入力欄にいる間・ダイアログが開いている間・ほかで扱い済みのキーでは何もしない
   // ------------------------------------------------------------
   useEffect(() => {
-    function isTypingTarget(el: Element | null): boolean {
-      if (!el) return false;
-      const tag = el.tagName.toLowerCase();
-      return tag === "input" || tag === "textarea" || (el as HTMLElement).isContentEditable;
-    }
     function onKeyDown(e: KeyboardEvent) {
       if (selectedIds.size === 0) return;
-      if (isTypingTarget(document.activeElement)) return;
+      if (shouldIgnoreShortcut(e)) return;
       if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         const step = e.shiftKey ? 1 : 10;
@@ -1697,7 +1716,7 @@ export default function UnifiedBoardSection({
         });
       }
     }
-    setHubList({ title: "通過していない段階", items });
+    setHubList({ title: "完了していない段階", items });
   }
   // 着地見込みの内訳。どの作業が残り時間を食っているのかを、予測残り時間の多い順に
   function openLandingList() {
@@ -1799,7 +1818,7 @@ export default function UnifiedBoardSection({
         continue;
       }
       if (openStages > 0 && days <= openStages) {
-        rows.push({ id: p.id, title: p.title, reason: `残り${days}日に未通過${openStages}段階`, level: "risk" });
+        rows.push({ id: p.id, title: p.title, reason: `残り${days}日に未完了${openStages}段階`, level: "risk" });
       }
     }
     return rows.sort((a, b) => (a.level === b.level ? 0 : a.level === "overdue" ? -1 : 1));
@@ -1901,7 +1920,8 @@ export default function UnifiedBoardSection({
   useEffect(() => {
     if (!fullscreen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFullscreen(false);
+      // ダイアログが開いている時のEscはダイアログを閉じるだけにする
+      if (e.key === "Escape" && !shouldIgnoreShortcut(e)) setFullscreen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2164,7 +2184,7 @@ export default function UnifiedBoardSection({
                   value={customStampText}
                   onChange={(e) => setCustomStampText(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") addStamp(customStampText);
+                    if (isSubmitEnter(e)) addStamp(customStampText);
                   }}
                   placeholder="一言を入力"
                   className="w-full rounded-lg border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
@@ -2345,6 +2365,7 @@ export default function UnifiedBoardSection({
           onCompleteStep={async (r, stepId) => {
             const done = await completeProgressStep(r, stepId, today);
             if (done) showUndoToast(`「${done.title}」を完了にしました`, done.undo ? () => void done.undo!() : undefined);
+            if (done?.offerProjectCompletion) setProjectCascade({ step: "allStagesDone", projectId: r.id });
           }}
           onAddStepToToday={async (r, stepId) => {
             const added = await addProgressStepToToday(r, stepId, today);
@@ -3244,11 +3265,13 @@ export default function UnifiedBoardSection({
       )}
       </div>
 
+      {projectCascade && <ProjectCascadeDialog cascade={projectCascade} onClose={() => setProjectCascade(null)} />}
+
       {/* 完了にする前の確認。取り消しの効かない操作なので、何を完了にするのかと、
           まだ残っているもの(未完了のサブタスク・未通過の前段階)を必ず添える */}
       {completeTarget && (
         <Modal
-          title={completeTarget.kind === "stage" ? "この段階を通過にしますか？" : "完了にしますか？"}
+          title={completeTarget.kind === "stage" ? "この段階を完了にしますか？" : "完了にしますか？"}
           onClose={() => setCompleteTarget(null)}
         >
           {(() => {
@@ -3297,11 +3320,11 @@ export default function UnifiedBoardSection({
             return (
               <div className="space-y-2">
                 <p className="text-sm text-cream/80">
-                  案件 <span className="text-cream/50">{project.title}</span> の段階 <b className="text-cream">{stage?.title}</b> を通過にします。
+                  案件 <span className="text-cream/50">{project.title}</span> の段階 <b className="text-cream">{stage?.title}</b> を完了にします。
                 </p>
                 {previousOpen.length > 0 && (
                   <div className="rounded-lg border border-alert/40 bg-alert/10 px-3 py-2">
-                    <p className="text-xs font-bold text-alert">前の段階がまだ通過していません</p>
+                    <p className="text-xs font-bold text-alert">前の段階がまだ完了していません</p>
                     <ul className="mt-1 space-y-0.5">
                       {previousOpen.map((s) => (
                         <li key={s.id} className="truncate text-xs text-cream/70">
@@ -3319,7 +3342,7 @@ export default function UnifiedBoardSection({
               やめる
             </button>
             <button className="btn-pill text-sm" onClick={runCompleteTarget}>
-              {completeTarget.kind === "stage" ? "通過にする" : "完了にする"}
+              完了にする
             </button>
           </div>
         </Modal>
@@ -3465,8 +3488,9 @@ export default function UnifiedBoardSection({
                       {sub.tag && !stampPresets.includes(sub.tag) && <option value={sub.tag}>{sub.tag}</option>}
                     </select>
                     <button
-                      onClick={() => setDeleteSubtaskTarget(sub)}
+                      onClick={() => void deleteSubtask(sub)}
                       title="このサブタスクを削除"
+                      aria-label={`${sub.title}を削除`}
                       className="shrink-0 px-1 text-xs text-cream/30 hover:text-alert"
                     >
                       ✕
@@ -3549,29 +3573,6 @@ export default function UnifiedBoardSection({
             </div>
           )}
           <p className="mt-3 text-[10px] text-cream/40">押すと盤面のその札まで移動して、選択状態にします。</p>
-        </Modal>
-      )}
-
-      {/* サブタスクの削除確認。ToDo詳細の上に重ねて出す */}
-      {deleteSubtaskTarget && (
-        <Modal title="サブタスクを削除しますか？" onClose={() => setDeleteSubtaskTarget(null)}>
-          <p className="text-sm text-cream/80">
-            <b className="text-cream">{deleteSubtaskTarget.title}</b> を削除します。元に戻せません。
-          </p>
-          <div className="mt-4 flex justify-end gap-2">
-            <button className="btn-pill-outline text-sm" onClick={() => setDeleteSubtaskTarget(null)}>
-              やめる
-            </button>
-            <button
-              className="btn-pill text-sm"
-              onClick={async () => {
-                await db.todoTasks.delete(deleteSubtaskTarget.id);
-                setDeleteSubtaskTarget(null);
-              }}
-            >
-              削除する
-            </button>
-          </div>
         </Modal>
       )}
 
@@ -5296,7 +5297,7 @@ function ProjectCard({
                   });
                 }}
                 className="flex w-full cursor-pointer items-center gap-1.5 rounded px-0.5 py-0.5 text-left hover:bg-cream/10"
-                title={done ? "未完了に戻す" : "この段階を通過にする"}
+                title={done ? "未完了に戻す" : "この段階を完了にする"}
               >
                 {/* 完了済みはToDoのサブタスクと同じ「✓入りの丸」にして、打ち消し線で残す
                     (showCompletedStagesがOFFの間はそもそもここに来ないので常に空の四角のまま) */}

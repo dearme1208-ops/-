@@ -122,7 +122,9 @@ export interface LinkedBreakdownRow {
 }
 
 // 案件1件の内訳。段階(ProjectStage)ごとに実績を積み上げ、時間の大きい順に並べる。
-// 段階に紐づいていない(案件タグだけ付いた)実績は「（段階未設定）」としてまとめる
+// 段階に紐づいていない(案件タグだけ付いた)実績は「（段階未設定）」、消した段階に付いていた実績は
+// 「（削除済みの段階）」としてまとめる(以前は両方とも「段階未設定」に混ざっていた)
+export const ORPHAN_STAGE_KEY = "__deleted__";
 export function computeProjectStageBreakdown(records: WorkRecord[], project: ProjectItem): LinkedBreakdownRow[] {
   const stageTitleById = new Map((project.stages ?? []).map((s) => [s.id, s.title]));
   const map = new Map<string, { totalSeconds: number; count: number }>();
@@ -130,7 +132,9 @@ export function computeProjectStageBreakdown(records: WorkRecord[], project: Pro
     if (r.excludedFromStats) continue;
     const ids = new Set([r.projectId, ...(r.secondaryProjectIds ?? [])].filter((id): id is string => !!id));
     if (!ids.has(project.id)) continue;
-    const key = r.stageId && stageTitleById.has(r.stageId) ? r.stageId : "__none__";
+    // 兼務タグで載った実績の段階は、その実績の主案件の段階なので、この案件の段階としては数えない
+    const ownStage = r.projectId === project.id ? r.stageId : undefined;
+    const key = ownStage ? (stageTitleById.has(ownStage) ? ownStage : ORPHAN_STAGE_KEY) : "__none__";
     const cur = map.get(key) ?? { totalSeconds: 0, count: 0 };
     cur.totalSeconds += r.seconds;
     cur.count += 1;
@@ -138,7 +142,7 @@ export function computeProjectStageBreakdown(records: WorkRecord[], project: Pro
   }
   const rows: LinkedBreakdownRow[] = [...map.entries()].map(([key, v]) => ({
     key,
-    title: key === "__none__" ? "（段階未設定）" : (stageTitleById.get(key) ?? key),
+    title: key === "__none__" ? "（段階未設定）" : key === ORPHAN_STAGE_KEY ? "（削除済みの段階）" : (stageTitleById.get(key) ?? key),
     totalSeconds: v.totalSeconds,
     avgSeconds: v.totalSeconds / v.count,
     count: v.count,

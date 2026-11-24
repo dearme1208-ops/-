@@ -161,8 +161,12 @@ export function buildProgressRows({
   waiting?: WaitingLookup;
 }): ProgressRow[] {
   const rows: ProgressRow[] = [];
+  // 案件へ反映済みのToDoは、その案件の行と同じものが2行並ぶだけなので出さない
+  // (案件が一覧に無い=完了・アーカイブ済みなら、ToDoのほうを残す)
+  const projectIds = new Set(projects.map((p) => p.id));
 
   for (const t of todos) {
+    if (t.projectId && projectIds.has(t.projectId)) continue;
     const subs = subtasksByParent.get(t.id) ?? [];
     const done = subs.filter((s) => s.completed).length;
     const completedAts = subs.flatMap((s) => (s.completed && s.completedAt ? [s.completedAt] : []));

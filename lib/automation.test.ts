@@ -64,7 +64,17 @@ describe("findProvisionalStart", () => {
   it("計測中の作業や既存の仮計測があれば始めない", () => {
     const now = at("10:00");
     expect(findProvisionalStart({ ...base, now, tasks: [task({ status: "running" })] })).toBeNull();
-    expect(findProvisionalStart({ ...base, now, tasks: [task({ status: "paused", isProvisional: true })] })).toBeNull();
+    expect(findProvisionalStart({ ...base, now, tasks: [task({ status: "running", isProvisional: true, segments: [{ start: at("09:30") }] })] })).toBeNull();
+  });
+
+  it("一時停止中の仮計測があっても新しい未計測を始め、その仮計測の終わりより前からは数えない", () => {
+    const paused = task({ status: "paused", isProvisional: true, segments: [{ start: at("08:30"), end: at("09:20") }] });
+    // 以前は止めてある仮計測があるとその日はもう始まらなかった
+    expect(findProvisionalStart({ ...base, now: at("10:00"), tasks: [paused] })).toBe(at("09:20"));
+    // 止めた仮計測の終わりから5分たつまでは始めない
+    expect(findProvisionalStart({ ...base, now: at("09:24"), tasks: [paused] })).toBeNull();
+    // 直近の停止の方が後なら、そちらから
+    expect(findProvisionalStart({ ...base, lastStopTime: at("09:40"), effectiveLastStopTime: at("09:40"), now: at("10:00"), tasks: [paused] })).toBe(at("09:40"));
   });
 
   it("休憩中は始めず、休憩を差し引いた正味の経過で判定する", () => {

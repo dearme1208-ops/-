@@ -2,10 +2,30 @@ import type { ProjectItem, ProjectStage } from "./types";
 import { csvEscape, csvLines, normalizeCsvDate, parseCsvLine } from "./csv";
 import { todayStr } from "./time";
 
-const HEADERS = ["id", "title", "group", "category", "workName", "dueDate", "createdDate", "completed", "stages"] as const;
+const HEADERS = [
+  "id",
+  "title",
+  "group",
+  "category",
+  "workName",
+  "dueDate",
+  "createdDate",
+  "completed",
+  "stages",
+  // 以下は後から足した列。無いCSV(以前の書き出し・手書き)では既存の値に触れない
+  "tag",
+  "url",
+  "clientId",
+  "archived",
+  "estimatedTotalSeconds",
+  "hourlyRate",
+  "retrospective",
+  "predecessorProjectIds",
+] as const;
 
-// 段階(ProjectStage)は1セルに「タイトル:期日:目標件数」を;区切りで詰めて表現する
-// (例: 初稿作成:2026-08-20:;検収立会:2026-08-25:5 )。期日・目標件数は空でもよい。
+// 段階(ProjectStage)は1セルに「タイトル:期日:目標件数:完了:完了件数:対応状況」を;区切りで詰めて表現する
+// (例: 初稿作成:2026-08-20::true::;検収立会:2026-08-25:5:false:2:客先確認中 )。
+// 以前の「タイトル:期日:目標件数」だけの形も読める。期日・目標件数・完了件数・対応状況は空でもよい。
 // タイトルに含まれる区切り文字(":" ";")と"\"は、前に"\"を置いて書き出す。
 // 以前はそのまま書き出していたため、「10:30 客先打合せ」のような段階名が取り込み直しで
 // 「10」という別の段階になり、元の段階の完了状態や添付が引き継がれなくなっていた
@@ -16,7 +36,12 @@ function escapeStageTitle(title: string): string {
 function serializeStages(stages: ProjectStage[] | undefined): string {
   if (!stages || stages.length === 0) return "";
   return stages
-    .map((s) => `${escapeStageTitle(s.title)}:${s.dueDate ?? ""}:${s.targetCount != null ? s.targetCount : ""}`)
+    .map(
+      (s) =>
+        `${escapeStageTitle(s.title)}:${s.dueDate ?? ""}:${s.targetCount != null ? s.targetCount : ""}:${s.completed ? "true" : "false"}:${
+          s.completedCount != null ? s.completedCount : ""
+        }:${escapeStageTitle(s.tag ?? "")}`
+    )
     .join(";");
 }
 
@@ -34,6 +59,14 @@ export function projectsToCsv(projects: ProjectItem[]): string {
         todayStr(new Date(p.createdAt)),
         String(!!p.completedAt),
         csvEscape(serializeStages(p.stages)),
+        csvEscape(p.tag ?? ""),
+        csvEscape(p.url ?? ""),
+        csvEscape(p.clientId ?? ""),
+        String(!!p.archived),
+        p.estimatedTotalSeconds != null ? String(p.estimatedTotalSeconds) : "",
+        p.hourlyRate != null ? String(p.hourlyRate) : "",
+        csvEscape(p.retrospective ?? ""),
+        csvEscape((p.predecessorProjectIds ?? []).join(";")),
       ].join(",")
     );
   }
@@ -56,6 +89,10 @@ export interface ParsedProjectStage {
   title: string;
   dueDate?: string;
   targetCount?: number;
+  // 以下は新しい形のセルにだけある。未定義=セルに欄が無い(既存の値に触れない)
+  done?: boolean;
+  completedCount?: number;
+  tag?: string; // 空文字は対応状況を消す
 }
 
 export interface ParsedProjectRow {
@@ -71,6 +108,15 @@ export interface ParsedProjectRow {
   // 未定義=CSVにstages列自体が無い/空セル(既存の段階には触れない)。
   // 値があれば、その内容で段階を作成・更新する(ここに無い既存の段階は消さずに残す)
   stages?: ParsedProjectStage[];
+  // 以下は後から足した列。未定義=CSVに列が無い(既存の値に触れない)。空セルは値を消す
+  tag?: string;
+  url?: string;
+  clientId?: string;
+  archived?: boolean;
+  estimatedTotalSeconds?: number | null;
+  hourlyRate?: number | null;
+  retrospective?: string;
+  predecessorProjectIds?: string[];
 }
 
 // "\"でエスケープされていない区切り文字で分ける。分けた各片のエスケープはまだ解かない
@@ -127,6 +173,30 @@ function parseStagesCell(cell: string): ParsedProjectStage[] {
     .filter((entry) => entry.length > 0)
     .map((entry) => {
       const fields = splitUnescaped(entry, ":");
+      // 新しい形(…:目標件数:完了:完了件数:対応状況)。完了欄が true/false の時だけそう読む
+      const m = fields.length;
+      if (
+        m >= 6 &&
+        /^(true|false)$/i.test(fields[m - 3].trim()) &&
+        looksLikeStageCount(fields[m - 2]) &&
+        looksLikeStageCount(fields[m - 4]) &&
+        looksLikeStageDate(fields[m - 5])
+      ) {
+        const title = unescapeStageText(fields.slice(0, m - 5).join(":")).trim();
+        const dueRaw = fields[m - 5].trim();
+        const targetRaw = fields[m - 4].trim();
+        const countRaw = fields[m - 2].trim();
+        const target = targetRaw ? Number(targetRaw) : NaN;
+        const count = countRaw ? Number(countRaw) : NaN;
+        return {
+          title,
+          dueDate: dueRaw ? normalizeCsvDate(dueRaw) ?? dueRaw : undefined,
+          targetCount: Number.isFinite(target) ? target : undefined,
+          done: /^true$/i.test(fields[m - 3].trim()),
+          completedCount: Number.isFinite(count) ? count : undefined,
+          tag: unescapeStageText(fields[m - 1]).trim(),
+        };
+      }
       const n = fields.length;
       let titleFields = fields;
       let dueDateRaw = "";
@@ -172,6 +242,18 @@ export function parseProjectsCsv(text: string): ParsedProjectsCsvResult {
   const createdCol = idx("createdDate");
   const completedCol = idx("completed");
   const stagesCol = idx("stages");
+  // 後から足した列。列が無ければ undefined のまま(既存の値に触れない)
+  const textOf = (cols: string[], name: string): string | undefined => {
+    const c = idx(name);
+    return c === -1 ? undefined : (cols[c]?.trim() ?? "");
+  };
+  const numOf = (cols: string[], name: string): number | null | undefined => {
+    const v = textOf(cols, name);
+    if (v === undefined) return undefined;
+    if (v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
   const rows: ParsedProjectRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]);
@@ -194,6 +276,21 @@ export function parseProjectsCsv(text: string): ParsedProjectsCsvResult {
       createdDate: createdCol !== -1 ? cols[createdCol]?.trim() || undefined : undefined,
       completed: completedCol !== -1 ? /^true$/i.test(cols[completedCol]?.trim() ?? "") : false,
       stages: stagesCol !== -1 && cols[stagesCol]?.trim() ? parseStagesCell(cols[stagesCol]) : undefined,
+      tag: textOf(cols, "tag"),
+      url: textOf(cols, "url"),
+      clientId: textOf(cols, "clientId"),
+      archived: idx("archived") !== -1 ? /^true$/i.test(textOf(cols, "archived") ?? "") : undefined,
+      estimatedTotalSeconds: numOf(cols, "estimatedTotalSeconds"),
+      hourlyRate: numOf(cols, "hourlyRate"),
+      // 振り返りは改行を含みうるので前後の空白だけ落とす(textOfと同じ)
+      retrospective: textOf(cols, "retrospective"),
+      predecessorProjectIds:
+        idx("predecessorProjectIds") !== -1
+          ? (textOf(cols, "predecessorProjectIds") ?? "")
+              .split(";")
+              .map((v) => v.trim())
+              .filter(Boolean)
+          : undefined,
     });
   }
   return { rows, errors };

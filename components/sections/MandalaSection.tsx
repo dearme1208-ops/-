@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { buildMandalaGrid, emptyMandalaChart, mandalaChartFromSample, MANDALA_SAMPLES, type MandalaCell } from "@/lib/mandala";
 import { showUndoToast } from "@/lib/toast";
+import { isSubmitEnter } from "@/lib/keyboard";
 import { useSetting } from "@/lib/settings";
 import Modal from "@/components/ui/Modal";
 import ScrollFadeHint from "@/components/ui/ScrollFadeHint";
@@ -165,7 +166,7 @@ export default function MandalaSection({
                 autoFocus
                 value={newChartTitle}
                 onChange={(e) => setNewChartTitle(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && createChart()}
+                onKeyDown={(e) => isSubmitEnter(e) && createChart()}
                 placeholder="チャート名"
                 className="w-40 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
               />
@@ -229,7 +230,7 @@ export default function MandalaSection({
                   autoFocus
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && saveRename()}
+                  onKeyDown={(e) => isSubmitEnter(e) && saveRename()}
                   className="w-40 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
                 />
                 <button className="btn-pill text-xs" onClick={saveRename}>

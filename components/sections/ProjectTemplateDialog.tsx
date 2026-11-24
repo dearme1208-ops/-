@@ -12,6 +12,7 @@ import {
 } from "@/lib/projectTemplate";
 import { formatDateJp, formatHms, shiftDateStr, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
+import { deleteProjectCascade } from "@/lib/projects";
 import type { ProjectItem, WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 
@@ -50,7 +51,8 @@ export default function ProjectTemplateDialog({
     await db.projects.add(item);
     onClose();
     showUndoToast(`「${item.title}」を「${source.title}」の型から作りました`, async () => {
-      await db.projects.delete(item.id);
+      // あとで付けたWBS・先行案件の参照もまとめて外す
+      await deleteProjectCascade(item.id);
     });
   }
 

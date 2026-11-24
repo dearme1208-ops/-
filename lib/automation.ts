@@ -32,12 +32,23 @@ export function findProvisionalStart(p: {
    */
   resumeAnchor?: number | null;
 }): number | null {
-  if (p.tasks.some((t) => t.isProvisional)) return null;
+  // 一時停止中の仮計測(ほかの画面から作業を始めた時に止めたもの)は、新しい未計測を妨げない。
+  // 以前はこれがあると、その日はもう仮計測が始まらなかった(呼び出し側が、新しく始める前に片付ける)
+  if (p.tasks.some((t) => t.isProvisional && t.status !== "paused")) return null;
   if (p.tasks.some((t) => t.status === "running")) return null;
   if (p.lastStopTime === null || p.effectiveLastStopTime === null) return null;
   if (isWithinBreak(p.now, p.date, p.breakRanges)) return null;
   let lastStop = p.lastStopTime;
   let effectiveStop = p.effectiveLastStopTime;
+  // 止めてある仮計測の最後より前からは数えない(同じ時間を2つの仮計測で数えないように)
+  const pausedProvisionalEnd = Math.max(
+    -Infinity,
+    ...p.tasks.filter((t) => t.isProvisional && t.status === "paused").flatMap((t) => t.segments.map((s) => s.end ?? s.start))
+  );
+  if (pausedProvisionalEnd > lastStop) {
+    lastStop = pausedProvisionalEnd;
+    effectiveStop = adjustStopTimeForBreaks(pausedProvisionalEnd, p.now, p.date, p.breakRanges);
+  }
   if (p.resumeAnchor != null && p.resumeAnchor > lastStop) {
     lastStop = p.resumeAnchor;
     effectiveStop = adjustStopTimeForBreaks(p.resumeAnchor, p.now, p.date, p.breakRanges);
@@ -157,4 +168,31 @@ export function buildMorningDigestBody(pendingCount: number, due: DueSummary): s
     parts.push(`案件 期限切れ${due.projectOverdue}件・本日期限${due.projectDueToday}件`);
   }
   return parts.join(" / ");
+}
+
+// 曜日のテンプレートから今日の作業を作り直す時に、置き換えて(消して)よい作業か。
+// 消すのは手を付けていない作業だけ。完了・計測中・仮計測・計った時間のある作業に加え、
+// ToDo・案件・段階に紐づく作業と、時刻を決めた作業(予定・時間割)も残す
+// (以前は未着手なら消していたため、ToDoから足した作業や取り込んだ予定まで消えていた)
+export function isReplacedByTemplate(t: DailyTask): boolean {
+  if (t.isProvisional) return false;
+  if (t.status !== "pending" && t.status !== "paused") return false;
+  if (t.projectId || t.stageId || t.todoTaskId) return false;
+  if (t.scheduledTime) return false;
+  return t.segments.length === 0 && t.accumulatedMs + (t.manualAdjustmentMs ?? 0) === 0;
+}
+
+// テンプレートの項目のうち、今日の作業に既にある(残した作業と同じ作業マスタ・区分と作業名)ものは作らない。
+// 午前に済ませた作業をテンプレートで作り直すと、同じ作業が未着手でもう1つ並んでいた
+export function templateItemsToCreate<T extends { masterTaskId?: string; category: string; name: string }>(
+  items: T[],
+  kept: DailyTask[]
+): T[] {
+  const keptTasks = kept.filter((t) => !t.isProvisional);
+  return items.filter(
+    (item) =>
+      !keptTasks.some((t) =>
+        item.masterTaskId && t.masterTaskId ? t.masterTaskId === item.masterTaskId : t.category === item.category && t.name === item.name
+      )
+  );
 }

@@ -12,14 +12,22 @@ import {
   recomputeEstimatesForMasterTasks,
 } from "@/lib/master";
 import { setManualOverride, clearManualOverride } from "@/lib/outliers";
-import { recordsToCsv, parseRecordsCsv, readTextFile } from "@/lib/csv";
+import { recordsToCsv, parseRecordsCsv, readTextFile, planRecordsImport, type RecordsImportPlan } from "@/lib/csv";
 import { JOURNAL_KEY_PREFIX, journalEntriesFromSettings, journalEntriesToCsv } from "@/lib/journal";
 import { collectMethodSuggestions } from "@/lib/method";
 import { REFLECTION_KEY_PREFIX, reflectionEntriesFromSettings } from "@/lib/reflection";
 import { CONDITION_LEVELS } from "@/lib/condition";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
-import { addManualRecord, findMergeTargetRecord, mergeRecordSegments, syncDailyTaskBoundaryFromRecord } from "@/lib/tasks";
+import {
+  addManualRecord,
+  findLinkedDoneTasks,
+  moveRecordToDate,
+  syncDailyTaskBoundaryFromRecord,
+  syncDailyTaskSecondsFromRecord,
+  undoMoveRecordToDate,
+} from "@/lib/tasks";
+import { recordSpanAsTask } from "@/lib/quickStamp";
 import { formatClock, formatDateJp, formatHms, parseHmsToSeconds, shiftDateStr, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
 import type { WorkRecord } from "@/lib/types";
@@ -62,6 +70,8 @@ export default function RecordsSection() {
   const [replayPickerDate, setReplayPickerDate] = useState("");
   // CSVの取り込み・書き出しボタンを出すか(ふだんは畳む)
   const [csvMenuOpen, setCsvMenuOpen] = useState(false);
+  // CSV取り込みの確認(新規・更新の件数を見せてから書き込む)
+  const [pendingImport, setPendingImport] = useState<{ plan: RecordsImportPlan; errors: string[] } | null>(null);
 
   const recordsRaw = useLiveQuery(() => db.records.orderBy("date").reverse().toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
@@ -158,6 +168,12 @@ export default function RecordsSection() {
   // 実績の一覧で、編集欄を開いている1件(ふだんは1行の要約だけを出す)
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const visibleRecords = useMemo(() => filtered.slice(0, shownCount), [filtered, shownCount]);
+  // 編集中の実績の元になった完了済みの作業の数。1件でなければ、秒数を直しても本日の作業の表示とずれる
+  const editingRecord = useMemo(() => (records ?? []).find((r) => r.id === editingRecordId), [records, editingRecordId]);
+  const editingLinkedCount = useLiveQuery(
+    async () => (editingRecord ? (await findLinkedDoneTasks(editingRecord)).length : 0),
+    [editingRecord]
+  );
   // 検索・絞り込みを変えたら先頭から見せ直す
   const filterKey = `${search}::${showExcludedOnly}`;
   const lastFilterKey = useRef(filterKey);
@@ -244,6 +260,43 @@ export default function RecordsSection() {
     return true;
   }
 
+  // 実績時間(秒)を直す。元になった完了済みの作業がちょうど1件なら、その合計と最後の区間の終わりも
+  // 同じだけ動かす(本日の作業の「完了」の表示と食い違わないように)
+  async function updateRecordSeconds(r: WorkRecord, value: string) {
+    const seconds = parseHmsToSeconds(value);
+    if (seconds === r.seconds) return;
+    const synced = await syncDailyTaskSecondsFromRecord(r, seconds);
+    if (synced.status === "rejected") {
+      showUndoToast("この時間には直せません(元になった作業の最後の区間より多く減らせません)。本日の作業の側で直してください");
+      return;
+    }
+    // 実績の終了を作業の終了に揃えていた時は、実績の終了も一緒に動かす
+    const endPatch =
+      synced.status === "synced" && synced.previousEndedAt === r.endedAt && synced.endedAt > r.startedAt ? { endedAt: synced.endedAt } : {};
+    await updateRecord(r, { seconds, ...endPatch });
+  }
+
+  // 日付を変える。移した先の日に同じ作業の実績があればそちらへ合算し、元になった完了済みの作業も
+  // その日へ移す(lib/tasks.ts の moveRecordToDate)。移せない時は理由を出して変えない
+  async function changeRecordDate(r: WorkRecord, newDate: string): Promise<boolean> {
+    if (!newDate || newDate === r.date) return true;
+    const res = await moveRecordToDate(r.id, newDate);
+    if (res.status === "rejected") {
+      showUndoToast(res.message);
+      return false;
+    }
+    if (res.status === "unchanged") return true;
+    const { undo } = res;
+    showUndoToast(
+      res.status === "merged" ? `${newDate}の同じ作業の実績へ合算しました` : `${newDate}へ移しました`,
+      async () => {
+        if (!(await undoMoveRecordToDate(undo))) showUndoToast("その後に変更があったため元に戻せませんでした");
+      }
+    );
+    if (res.status === "merged") setEditingRecordId(null);
+    return true;
+  }
+
   async function deleteRecord(r: WorkRecord) {
     // 確認を挟む代わりに、すぐ消して「元に戻す」を出す(本日の作業の削除と同じ)。
     // 画面に出ている行は少し古いことがあるので、消す直前の中身を控える
@@ -276,28 +329,90 @@ export default function RecordsSection() {
     downloadTextFile(`records_${todayStr()}.csv`, recordsToCsv(records));
   }
 
+  // 取り込み直しで、既にあるIDの実績へはCSVにある列だけを重ねる(lib/csv.ts の planRecordsImport)。
+  // 以前はbulkPutで丸ごと置き換え、CSVに無い案件・ToDo・メモ・区間などが消えていた。
+  // 件数を確かめてから書き込み、書き込んだ後は「元に戻す」を出す
   async function importCsv(file: File) {
     setImportStatus("読み込み中...");
     const text = await readTextFile(file);
-    const { records: parsed, errors } = parseRecordsCsv(text);
-    setImportErrors(errors);
-    if (parsed.length === 0) {
+    const parsed = parseRecordsCsv(text);
+    setImportErrors(parsed.errors);
+    if (parsed.records.length === 0) {
       setImportStatus("");
       return;
     }
-
-    const uniquePairs = [...new Map(parsed.map((r) => [`${r.category}::${r.name}`, { category: r.category, name: r.name }])).values()];
-    const masterMap = await bulkFindOrCreateMasterTasks(uniquePairs);
-
-    const fullRecords: WorkRecord[] = parsed.map((r) => ({
-      ...r,
-      masterTaskId: masterMap.get(`${r.category}::${r.name}`)!.id,
-    }));
-    await db.records.bulkPut(fullRecords);
-    await recomputeEstimatesForMasterTasks(Array.from(masterMap.values(), (m) => m.id));
-    setImportStatus(`${fullRecords.length}件を取り込みました。`);
+    const existing = await db.records.bulkGet(parsed.records.map((r) => r.id));
+    const existingById = new Map(existing.filter((r): r is WorkRecord => !!r).map((r) => [r.id, r]));
+    setImportStatus("");
+    setPendingImport({ plan: planRecordsImport(parsed, existingById), errors: parsed.errors });
   }
 
+  async function applyImport(plan: RecordsImportPlan) {
+    setPendingImport(null);
+    // 新しく作業マスタに繋ぐのは、新規の行と区分・作業名を変えた行だけ
+    const needsMaster = [
+      ...plan.added,
+      ...plan.updated.filter((u) => u.after.category !== u.before.category || u.after.name !== u.before.name || !u.before.masterTaskId).map((u) => u.after),
+    ];
+    const uniquePairs = [...new Map(needsMaster.map((r) => [`${r.category}::${r.name}`, { category: r.category, name: r.name }])).values()];
+    const masterMap = await bulkFindOrCreateMasterTasks(uniquePairs);
+    const masterOf = (r: { category: string; name: string }) => masterMap.get(`${r.category}::${r.name}`)?.id;
+
+    const addedRows: WorkRecord[] = plan.added.map((r) => ({ ...r, masterTaskId: masterOf(r) }));
+    const planned: WorkRecord[] = plan.updated.map(({ before, after }) =>
+      after.category !== before.category || after.name !== before.name || !before.masterTaskId ? { ...after, masterTaskId: masterOf(after) } : after
+    );
+    // 計画は確認の画面を出す前の実績から作っている。確認している間に(計測の完了での合算など)
+    // 実績が変わっていたら、CSVで変わる項目だけを今の実績へ重ねる(新しい変更を古い控えで消さない)
+    const sameVal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    const updatedRows: WorkRecord[] = [];
+    const previous: WorkRecord[] = [];
+    await db.transaction("rw", db.records, async () => {
+      for (let i = 0; i < plan.updated.length; i++) {
+        const { before } = plan.updated[i];
+        const target = planned[i];
+        const cur = await db.records.get(before.id);
+        if (!cur) continue; // 確認している間に消された実績は作り直さない
+        let row = target;
+        if (!sameVal(cur, before)) {
+          const rebased = { ...cur } as unknown as Record<string, unknown>;
+          const b = before as unknown as Record<string, unknown>;
+          const t = target as unknown as Record<string, unknown>;
+          for (const k of new Set([...Object.keys(b), ...Object.keys(t)])) {
+            if (sameVal(b[k], t[k])) continue;
+            if (t[k] === undefined) delete rebased[k];
+            else rebased[k] = t[k];
+          }
+          row = rebased as unknown as WorkRecord;
+        }
+        updatedRows.push(row);
+        previous.push(cur);
+      }
+      await db.records.bulkPut([...addedRows, ...updatedRows]);
+    });
+    const affected = new Set<string>();
+    for (const r of [...addedRows, ...updatedRows, ...previous]) if (r.masterTaskId) affected.add(r.masterTaskId);
+    await recomputeEstimatesForMasterTasks(affected);
+    setImportStatus(`新規${addedRows.length}件・更新${updatedRows.length}件を取り込みました。`);
+    showUndoToast(`実績CSVを取り込みました(新規${addedRows.length}件・更新${updatedRows.length}件)`, async () => {
+      // 取り込んだ後に直した行は、古い控えで上書きしない
+      const { skipped } = await db.transaction("rw", db.records, async () => {
+        let skipped = 0;
+        const same = async (row: WorkRecord) => JSON.stringify(await db.records.get(row.id)) === JSON.stringify(row);
+        for (const row of addedRows) {
+          if (await same(row)) await db.records.delete(row.id);
+          else skipped++;
+        }
+        for (let i = 0; i < updatedRows.length; i++) {
+          if (await same(updatedRows[i])) await db.records.put(previous[i]);
+          else skipped++;
+        }
+        return { skipped };
+      });
+      await recomputeEstimatesForMasterTasks(affected);
+      setImportStatus(skipped > 0 ? `取り込みを元に戻しました(その後に変更があった${skipped}件はそのままです)` : "取り込みを元に戻しました。");
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -425,7 +540,12 @@ export default function RecordsSection() {
                 key={`date-${r.date}`}
                 type="date"
                 defaultValue={r.date}
-                onBlur={(e) => e.target.value && updateRecord(r, { date: e.target.value })}
+                onBlur={(e) => {
+                  const el = e.currentTarget;
+                  void changeRecordDate(r, el.value).then((ok) => {
+                    if (!ok) el.value = r.date;
+                  });
+                }}
                 className="rounded-md border border-cream/20 bg-ink px-2 py-1 text-xs text-cream"
               />
               <div className="flex items-center gap-1 text-xs text-cream/50">
@@ -486,9 +606,14 @@ export default function RecordsSection() {
               <input
                 key={`seconds-${r.seconds}`}
                 defaultValue={formatHms(r.seconds)}
-                onBlur={(e) => updateRecord(r, { seconds: parseHmsToSeconds(e.target.value) })}
+                onBlur={(e) => updateRecordSeconds(r, e.target.value)}
                 className="w-24 rounded-md border border-cream/20 bg-ink px-2 py-1 text-center text-xs text-cream tabular-nums"
               />
+              {(editingLinkedCount ?? 0) > 1 && (
+                <p className="caption w-full">
+                  この実績は本日の作業の完了{editingLinkedCount}件を合算しています。時間を直しても「本日の作業」の表示は変わりません。
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-3">
               {r.excludedFromStats && (
@@ -679,11 +804,33 @@ export default function RecordsSection() {
       {showAddRecord && (
         <AddRecordDialog
           onSave={async (date, category, name, startedAt, endedAt) => {
-            await addManualRecord(date, category, name, startedAt, endedAt);
+            // 今日の分は打刻と同じく完了した作業として置く(本日の作業の「完了」に並び、そこから直せる)。
+            // 過去の日は実績だけを足す
+            if (date === todayStr()) await recordSpanAsTask(date, category, name, startedAt, endedAt);
+            else await addManualRecord(date, category, name, startedAt, endedAt);
             setShowAddRecord(false);
           }}
           onClose={() => setShowAddRecord(false)}
         />
+      )}
+      {pendingImport && (
+        <Modal title="実績CSVの取り込み" onClose={() => setPendingImport(null)}>
+          <p className="text-sm text-cream" data-testid="records-import-summary">
+            新規{pendingImport.plan.added.length}件・更新{pendingImport.plan.updated.length}件
+          </p>
+          <p className="caption mt-1">
+            既にある実績は、CSVにある列だけを書き換えます(案件・ToDo・メモなどCSVに無い項目はそのまま残ります)。
+            {pendingImport.errors.length > 0 && `読めなかった行が${pendingImport.errors.length}件あります。`}
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => setPendingImport(null)}>
+              やめる
+            </button>
+            <button className="btn-pill text-sm" onClick={() => void applyImport(pendingImport.plan)}>
+              取り込む
+            </button>
+          </div>
+        </Modal>
       )}
       {replayDate && <DayReplayModal date={replayDate} onClose={() => setReplayDate(null)} />}
     </div>

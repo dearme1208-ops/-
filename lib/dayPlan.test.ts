@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDayPlan, buildEstimator, workingIntervals, type DayPlanInput } from "./dayPlan";
+import { buildDayPlan, buildEstimator, collectPlanCandidates, workingIntervals, type DayPlanInput } from "./dayPlan";
 import type { DailyTask, MasterTask, ProjectItem, TodoTask, WorkRecord } from "./types";
 
 const TODAY = "2026-09-29";
@@ -197,5 +197,21 @@ describe("buildDayPlan", () => {
     expect(plan.remainingSeconds).toBe(0);
     expect(plan.scheduled).toHaveLength(0);
     expect(plan.overflow).toHaveLength(1);
+  });
+
+  it("親が完了・アーカイブ済みのサブタスクは候補に出さない", () => {
+    const titles = collectPlanCandidates(
+      input({
+        todoTasks: [
+          todo("p1", { completed: true }),
+          todo("s1", { parentTaskId: "p1", dueDate: TODAY }),
+          todo("p2", { archived: true }),
+          todo("s2", { parentTaskId: "p2", dueDate: TODAY }),
+          todo("p3"),
+          todo("s3", { parentTaskId: "p3", dueDate: TODAY }),
+        ],
+      })
+    ).map((c) => c.title);
+    expect(titles).toEqual(["s3"]);
   });
 });

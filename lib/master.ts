@@ -34,13 +34,13 @@ export function findDuplicateMasterGroups(tasks: MasterTask[]): DuplicateMasterG
 export async function mergeMasterTasks(
   targetId: string,
   sourceIds: string[]
-): Promise<{ movedRecords: number; movedDailyTasks: number }> {
+): Promise<{ movedRecords: number; movedDailyTasks: number; movedTemplateItems: number }> {
   const ids = [...new Set(sourceIds)].filter((id) => id !== targetId);
-  if (ids.length === 0) return { movedRecords: 0, movedDailyTasks: 0 };
+  if (ids.length === 0) return { movedRecords: 0, movedDailyTasks: 0, movedTemplateItems: 0 };
 
-  const result = await db.transaction("rw", db.masterTasks, db.records, db.dailyTasks, async () => {
+  const result = await db.transaction("rw", [db.masterTasks, db.records, db.dailyTasks, db.templateItems], async () => {
     const target = await db.masterTasks.get(targetId);
-    if (!target) return { movedRecords: 0, movedDailyTasks: 0 };
+    if (!target) return { movedRecords: 0, movedDailyTasks: 0, movedTemplateItems: 0 };
     const sources = (await db.masterTasks.bulkGet(ids)).filter((t): t is MasterTask => !!t);
 
     const idSet = new Set(ids);
@@ -52,6 +52,10 @@ export async function mergeMasterTasks(
       .anyOf(ids)
       .modify({ masterTaskId: targetId, category: target.category, name: target.name });
     const movedDailyTasks = await db.dailyTasks
+      .filter((t) => !!t.masterTaskId && idSet.has(t.masterTaskId))
+      .modify({ masterTaskId: targetId, category: target.category, name: target.name });
+    // 曜日別テンプレートも繋ぎ直す(消したマスタのIDを指したままにしない)
+    const movedTemplateItems = await db.templateItems
       .filter((t) => !!t.masterTaskId && idSet.has(t.masterTaskId))
       .modify({ masterTaskId: targetId, category: target.category, name: target.name });
 
@@ -72,7 +76,7 @@ export async function mergeMasterTasks(
       updatedAt: Date.now(),
     });
     await db.masterTasks.bulkDelete(ids);
-    return { movedRecords, movedDailyTasks };
+    return { movedRecords, movedDailyTasks, movedTemplateItems };
   });
 
   // 実績の付け替え後、目安件数・想定時間を実際の実績から数え直す
@@ -152,14 +156,55 @@ export async function recoverOrphanedMasterHistory(
   return { estimatedSeconds: Math.round(avg), sampleCount: orphaned.length };
 }
 
-// 実績が貯まったら、その平均値で想定時間を自動更新する
+/**
+ * 作業マスタを削除する。曜日別テンプレートの項目は区分・作業名を残したままマスタとの紐付けだけ外す
+ * (消したIDを指したままだと、テンプレートから作った作業が存在しないマスタを指していた)。
+ * 戻す時は restoreDeletedMasterTask に戻り値を渡す
+ */
+export interface DeletedMaster {
+  master: MasterTask;
+  unlinkedTemplateItemIds: string[];
+}
+
+export async function deleteMasterTask(id: string): Promise<DeletedMaster | undefined> {
+  return db.transaction("rw", db.masterTasks, db.templateItems, async () => {
+    const master = await db.masterTasks.get(id);
+    if (!master) return undefined;
+    const items = await db.templateItems.filter((t) => t.masterTaskId === id).toArray();
+    for (const t of items) await db.templateItems.update(t.id, { masterTaskId: undefined });
+    await db.masterTasks.delete(id);
+    return { master, unlinkedTemplateItemIds: items.map((t) => t.id) };
+  });
+}
+
+/** deleteMasterTask を取り消す。同じIDのマスタが既にあれば何もしない(false) */
+export async function restoreDeletedMasterTask(d: DeletedMaster): Promise<boolean> {
+  return db.transaction("rw", db.masterTasks, db.templateItems, async () => {
+    if (await db.masterTasks.get(d.master.id)) return false;
+    await db.masterTasks.add(d.master);
+    // 紐付けを外したままの項目だけ繋ぎ直す(その後に別のマスタへ繋いだ項目には触れない)
+    for (const id of d.unlinkedTemplateItemIds) {
+      const item = await db.templateItems.get(id);
+      if (item && !item.masterTaskId) await db.templateItems.update(id, { masterTaskId: d.master.id });
+    }
+    return true;
+  });
+}
+
+// 実績が貯まったら、その平均値で想定時間を自動更新する。
+// 実績が無くなった時は件数だけ0に戻す(想定時間は最後の値をそのまま手入力の目安として残す。
+// マスタには手入力か自動かの区別が無いため、0にすると手入力した想定時間まで消えてしまう)
 export async function recomputeEstimateFromRecords(masterTaskId: string): Promise<void> {
   const records = await db.records
     .where("masterTaskId")
     .equals(masterTaskId)
     .filter((r) => !r.excludedFromStats)
     .toArray();
-  if (records.length === 0) return;
+  if (records.length === 0) {
+    const m = await db.masterTasks.get(masterTaskId);
+    if (m && m.sampleCount !== 0) await db.masterTasks.update(masterTaskId, { sampleCount: 0, updatedAt: Date.now() });
+    return;
+  }
   const avg = records.reduce((sum, r) => sum + r.seconds, 0) / records.length;
   await db.masterTasks.update(masterTaskId, {
     estimatedSeconds: Math.round(avg),
@@ -232,6 +277,12 @@ export async function recomputeEstimatesForMasterTasks(masterTaskIds: Iterable<s
 
   const now = Date.now();
   await db.transaction("rw", db.masterTasks, async () => {
+    // 実績が1件も無くなったマスタは件数だけ0に戻す(recomputeEstimateFromRecordsと同じ)
+    for (const id of idSet) {
+      if (grouped.has(id)) continue;
+      const m = await db.masterTasks.get(id);
+      if (m && m.sampleCount !== 0) await db.masterTasks.update(id, { sampleCount: 0, updatedAt: now });
+    }
     for (const [id, secs] of grouped) {
       const avg = secs.reduce((sum, s) => sum + s, 0) / secs.length;
       await db.masterTasks.update(id, {

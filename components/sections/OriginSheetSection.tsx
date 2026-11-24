@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
+// ToDoの完了は繰り返しの次回送りと「元に戻す」を共通の処理に任せる
+import { completeTodoWithUndoToast } from "@/lib/progressActions";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { parseBreakRanges, timeToMsOfDay } from "@/lib/breaks";
 import { useSetting } from "@/lib/settings";
@@ -584,7 +586,7 @@ export default function OriginSheetSection({
                       <input
                         type="checkbox"
                         checked={false}
-                        onChange={() => db.todoTasks.update(t.id, { completed: true, completedAt: Date.now() })}
+                        onChange={() => void completeTodoWithUndoToast(t, todayStr())}
                         aria-label={`${t.title} を完了にする`}
                       />
                       <span className={overdue ? "origin-rail-title origin-overdue" : "origin-rail-title"}>{t.title}</span>

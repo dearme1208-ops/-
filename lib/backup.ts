@@ -20,12 +20,27 @@ export interface BackupFile {
   tables: Record<string, unknown[]>;
 }
 
+/** この版が書き出し・復元できるバックアップの形式 */
+export const BACKUP_VERSION = 2;
+
+/** この版より新しい形式のファイルか(新しい版のアプリで取った控え。復元すると中身を取りこぼす) */
+export function isNewerBackupVersion(data: Pick<BackupFile, "version">): boolean {
+  return typeof data.version === "number" && data.version > BACKUP_VERSION;
+}
+
+/** 復元の直前に今のデータを自動で書き出すときのファイル名 */
+export function beforeRestoreFileName(now: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}_${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+  return `koutei-hyo_before-restore_${stamp}.json`;
+}
+
 export async function exportBackup(): Promise<BackupFile> {
   const tables: Record<string, unknown[]> = {};
   for (const name of backupTableNames()) {
     tables[name] = await db.table(name).toArray();
   }
-  return { app: "koutei-hyo", version: 2, exportedAt: new Date().toISOString(), tables };
+  return { app: "koutei-hyo", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), tables };
 }
 
 // バックアップをファイルに書くためのJSONを、いくつかの文字列に分けて返す(順につなげると
@@ -79,9 +94,14 @@ export function summarizeBackup(data: BackupFile): { label: string; count: numbe
 // 復元しても、そこに含まれていないメモ・統合ボード等が巻き添えで消えることはない。
 // このアプリが知らないテーブルが入っていた場合（新しい版で取ったバックアップを
 // 古い版で復元しようとした場合など）は復元できないため、skippedTablesで返す
+// 行の主キー(多くはid、設定はkey)が無い行・オブジェクトでない行は復元できないので落とす。
+// 主キーが重複した行は後のものを残す(bulkPut)。以前はbulkAddで1件の重複が復元全体を失敗させていた
 export async function importBackup(
   data: BackupFile
-): Promise<{ restoredTables: number; restoredRows: number; skippedTables: string[] }> {
+): Promise<{ restoredTables: number; restoredRows: number; skippedTables: string[]; droppedRows: number }> {
+  if (isNewerBackupVersion(data)) {
+    throw new Error(`このファイルは新しい版の形式(version ${data.version})です。アプリを最新にしてから復元してください`);
+  }
   const known = new Set(db.tables.map((t) => t.name));
   const fileTableNames = Object.keys(data.tables ?? {});
   // 中身が配列でないテーブルは壊れているとみなして触れない(以前は空として扱い、
@@ -91,17 +111,28 @@ export async function importBackup(
   const skippedTables = fileTableNames.filter((name) => !valid(name));
   let restoredTables = 0;
   let restoredRows = 0;
+  let droppedRows = 0;
   await db.transaction("rw", db.tables, async () => {
     for (const name of names) {
-      const rows = data.tables[name] as unknown[];
       const table = db.table(name);
+      const keyPath = table.schema.primKey.keyPath;
+      const auto = table.schema.primKey.auto;
+      const all = data.tables[name] as unknown[];
+      const rows = all.filter((row): row is Record<string, unknown> => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return false;
+        if (auto || typeof keyPath !== "string") return true;
+        const key = (row as Record<string, unknown>)[keyPath];
+        return key !== undefined && key !== null && key !== "";
+      });
+      droppedRows += all.length - rows.length;
       await table.clear();
-      if (rows && rows.length > 0) {
-        await table.bulkAdd(rows);
-        restoredRows += rows.length;
+      if (rows.length > 0) {
+        await table.bulkPut(rows);
+        // 重複した主キーは1件にまとまるので、実際に入った件数を数える
+        restoredRows += new Set(typeof keyPath === "string" && !auto ? rows.map((r) => r[keyPath]) : rows).size;
       }
       restoredTables++;
     }
   });
-  return { restoredTables, restoredRows, skippedTables };
+  return { restoredTables, restoredRows, skippedTables, droppedRows };
 }

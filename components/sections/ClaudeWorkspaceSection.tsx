@@ -5,7 +5,15 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
-import { computeProjectProgress } from "@/lib/projectStage";
+import { computeProjectProgress, openStageTitles, toggleProjectStage } from "@/lib/projectStage";
+import { DEFAULT_PROJECT_CATEGORY, deleteProjectCascade, findOriginTodo, setProjectCompleted } from "@/lib/projects";
+import { completeTodoWithUndoToast } from "@/lib/progressActions";
+import { isSubmitEnter } from "@/lib/keyboard";
+import {
+  completeProjectWithToast,
+  ProjectCascadeDialog,
+  type ProjectCascade,
+} from "@/components/sections/today/LinkedCompletionDialog";
 import { daysBetweenDateStrs, formatMsClock, shiftDateStr, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
 import { useSetting } from "@/lib/settings";
@@ -244,7 +252,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
       await db.projects.add({
         id: uid(),
         title: parsed.title,
-        category: parsed.category || "プロジェクト",
+        category: parsed.category || DEFAULT_PROJECT_CATEGORY,
         workName: parsed.title,
         dueDate: due,
         createdAt: Date.now(),
@@ -330,12 +338,30 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
     await db.dailyTasks.add(task);
   }
 
+  // 完了は繰り返しの次回送りと「元に戻す」付きの知らせを共通の処理に任せる(lib/progressActions.ts)
   async function toggleTodoComplete(t: TodoTask) {
-    await db.todoTasks.update(t.id, { completed: !t.completed, completedAt: !t.completed ? Date.now() : undefined });
+    if (!t.completed) {
+      await completeTodoWithUndoToast(t, today);
+      return;
+    }
+    await db.todoTasks.update(t.id, { completed: false, completedAt: undefined });
   }
 
+  // 完了まわりの続きの確認(未完了の段階がある・全段階が済んだ・元のToDoも完了にするか)
+  const [cascade, setCascade] = useState<ProjectCascade | null>(null);
   async function toggleProjectComplete(p: ProjectItem) {
-    await db.projects.update(p.id, { completedAt: p.completedAt ? undefined : Date.now(), autoCompletedByImport: false });
+    if (p.completedAt) {
+      const r = await setProjectCompleted(p.id, false);
+      if (r) showUndoToast(`「${p.title}」を未完了に戻しました`, r.undo);
+      return;
+    }
+    if (openStageTitles(p).length > 0) {
+      setCascade({ step: "openStages", projectId: p.id });
+      return;
+    }
+    await completeProjectWithToast(p);
+    const origin = await findOriginTodo(p.id);
+    if (origin && !origin.completed) setCascade({ step: "originTodo", projectId: p.id });
   }
 
   async function updateTodoTitle(t: TodoTask, title: string) {
@@ -351,30 +377,35 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
   async function deleteTodo(t: TodoTask) {
     const subs = (allTodoTasks ?? []).filter((s) => s.parentTaskId === t.id);
     await db.todoTasks.bulkDelete([t.id, ...subs.map((s) => s.id)]);
-    showUndoToast(`「${t.title}」を取り消しました`, async () => {
-      await db.todoTasks.bulkAdd([t, ...subs]);
+    showUndoToast(`「${t.title}」を削除しました`, async () => {
+      // 消したあとで同じものが戻っていれば重ねない
+      const back = await db.todoTasks.bulkGet([t.id, ...subs.map((s) => s.id)]);
+      await db.todoTasks.bulkAdd([t, ...subs].filter((_, i) => !back[i]));
     });
   }
 
+  // WBS・ToDoの紐づけ・先行案件の参照もまとめて外す(案件タブと同じ lib/projects.ts)
   async function deleteProject(p: ProjectItem) {
-    await db.projects.delete(p.id);
-    showUndoToast(`「${p.title}」を取り消しました`, async () => {
-      await db.projects.add(p);
-    });
+    const deletion = await deleteProjectCascade(p.id);
+    if (!deletion) return;
+    showUndoToast(`「${p.title}」を削除しました`, deletion.undo);
   }
 
+  // 最新の段階に当てて切り替え、最後の段階が済んだら「案件も完了にしますか」
   async function toggleStage(p: ProjectItem, stage: ProjectStage) {
-    const stages = (p.stages ?? []).map((s) =>
-      s.id === stage.id ? { ...s, completed: !s.completed, completedAt: !s.completed ? Date.now() : undefined } : s
-    );
-    await db.projects.update(p.id, { stages });
+    const r = await toggleProjectStage(p, stage.id);
+    if (r?.offerProjectCompletion) setCascade({ step: "allStagesDone", projectId: p.id });
   }
 
   async function addStage(p: ProjectItem) {
     const title = (newStageTitle[p.id] ?? "").trim();
     if (!title) return;
-    const stages = [...(p.stages ?? []), { id: uid(), title, completed: false }];
-    await db.projects.update(p.id, { stages });
+    // 手元の写しではなく最新の段階の後ろに足す(開いている間の他の変更を巻き戻さない)
+    await db.transaction("rw", db.projects, async () => {
+      const fresh = await db.projects.get(p.id);
+      if (!fresh) return;
+      await db.projects.update(p.id, { stages: [...(fresh.stages ?? []), { id: uid(), title, completed: false }] });
+    });
     setNewStageTitle((prev) => ({ ...prev, [p.id]: "" }));
   }
 
@@ -547,7 +578,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
             <input
               value={newStageTitle[project.id] ?? ""}
               onChange={(e) => setNewStageTitle((prev) => ({ ...prev, [project.id]: e.target.value }))}
-              onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && addStage(project)}
+              onKeyDown={(e) => isSubmitEnter(e) && addStage(project)}
               placeholder="+ 段階を追加"
               className="w-full rounded-md bg-transparent px-1 py-1 text-[13px] text-cream/60 placeholder:text-cream/35 focus:bg-cream/5 focus:outline-none"
             />
@@ -709,6 +740,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
         </div>
       </section>
       {showSync && <ProgressSyncModal onClose={() => setShowSync(false)} />}
+      {cascade && <ProjectCascadeDialog cascade={cascade} onClose={() => setCascade(null)} />}
     </div>
   );
 }

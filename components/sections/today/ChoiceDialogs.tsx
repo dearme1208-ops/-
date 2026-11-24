@@ -39,6 +39,7 @@ export function TemplateConfirmDialog({
         ) : (
           <p>完了・計測中・計った時間のある作業はそのまま残ります。</p>
         )}
+        <p className="caption">ToDo・案件に紐づく作業と時刻を決めた作業も残し、今日すでにある作業は作りません。</p>
         <div className="flex justify-end gap-2">
           <button className="btn-pill-outline text-sm" onClick={onClose}>
             キャンセル

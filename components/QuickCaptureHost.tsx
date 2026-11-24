@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { dueLabel, parseCompose } from "@/lib/claudeCompose";
 import { commitCapture, QUICK_CAPTURE_EVENT, suggestDest, type CaptureDest } from "@/lib/quickCapture";
 import { showUndoToast } from "@/lib/toast";
+import { isSubmitEnter, shouldIgnoreShortcut } from "@/lib/keyboard";
 import { todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 
@@ -45,10 +46,9 @@ export default function QuickCaptureHost() {
       setText(shared);
       setOpen(true);
     }
-    // キーボードの「/」で開く(入力欄にいる時は除く)
+    // キーボードの「/」で開く(入力欄にいる時・ダイアログが開いている時・ほかで扱い済みの時は除く)
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (shouldIgnoreShortcut(e)) return;
       if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         setText("");
@@ -97,7 +97,7 @@ export default function QuickCaptureHost() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            if (isSubmitEnter(e)) {
               e.preventDefault();
               void commit(chosen);
             }

@@ -6,7 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
-import { findOrCreateMasterTask, normalizeMasterKey, recomputeEstimateFromRecords } from "@/lib/master";
+import { deleteMasterTask, findOrCreateMasterTask, normalizeMasterKey, recomputeEstimateFromRecords, restoreDeletedMasterTask, type DeletedMaster } from "@/lib/master";
 import { collectMethodSuggestions } from "@/lib/method";
 import {
   adjustStopTimeForBreaks,
@@ -25,6 +25,8 @@ import {
   addProvisionalTaskIfIdle,
   cleanupZeroLengthProvisionals,
   findMergeTargetRecord,
+  taskEndEdge,
+  taskStartEdge,
   finishDailyTask,
   importScheduleRows,
   segmentsAccumulatedMs,
@@ -41,16 +43,18 @@ import { computeStreakDays } from "@/lib/streak";
 import { computeSuggestedTask } from "@/lib/suggest";
 import { computeNextTaskPick } from "@/lib/nextTaskPick";
 import { CONDITION_LEVELS, dominantConditionLevel, computeProductivityByCondition } from "@/lib/condition";
-import { completeTodoTask } from "@/lib/todo";
 import { buildWorkContextSources, dailyTaskLinksOf, workNameWithContext, type DailyTaskLinks } from "@/lib/workContext";
 import { computeWeekdayAverages } from "@/lib/weekday";
 import { computeUntrackedGapSeconds } from "@/lib/gap";
 import { computeProductivityByWeather } from "@/lib/weather";
 import { fireConfetti } from "@/lib/confetti";
-import { findDueScheduledTasks, findProvisionalStart, inactivityCutoff } from "@/lib/automation";
+import { useAutomationLock } from "@/components/sections/today/useAutomationLock";
+import { findDueScheduledTasks, findProvisionalStart, inactivityCutoff, isReplacedByTemplate, templateItemsToCreate } from "@/lib/automation";
 
 import { createSpeechRecognition, parseVoiceCommand, speak } from "@/lib/voice";
-import { isStageDone } from "@/lib/projectStage";
+import { isStageDone, openStageTitles } from "@/lib/projectStage";
+import { setProjectCompleted } from "@/lib/projects";
+import { completeTodoWithUndoToast } from "@/lib/progressActions";
 import { computeAutoAllocation, type AutoAllocationResult } from "@/lib/allocate";
 import {
   formatClock,
@@ -88,7 +92,7 @@ import DeleteCompletedTaskDialog from "@/components/sections/DeleteCompletedTask
 import ManualFinishDialog from "@/components/sections/ManualFinishDialog";
 import FinishAtDialog from "@/components/sections/FinishAtDialog";
 import ProvisionalTaskCard, { type ProvisionalSecondHalf, type ProvisionalTarget } from "@/components/sections/ProvisionalTaskCard";
-import { closeSegmentsAt, closedSegmentsMs, splitSegmentsAt } from "@/lib/provisionalSplit";
+import { appendSegmentsKeepingRecorded, closeSegmentsAt, closedSegmentsMs, provisionalCarry, splitSegmentsAt } from "@/lib/provisionalSplit";
 import { closedMs, retimeSegments } from "@/lib/segmentEdit";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
 import TodayStatusPanel from "@/components/sections/TodayStatusPanel";
@@ -119,7 +123,11 @@ import {
   TemplateConfirmDialog,
 } from "@/components/sections/today/ChoiceDialogs";
 import DueDetailDialog from "@/components/sections/today/DueDetailDialog";
-import LinkedCompletionDialog, { type LinkedCompletionConfirm } from "@/components/sections/today/LinkedCompletionDialog";
+import LinkedCompletionDialog, {
+  ProjectCascadeDialog,
+  type LinkedCompletionConfirm,
+  type ProjectCascade,
+} from "@/components/sections/today/LinkedCompletionDialog";
 import SecondaryProjectsDialog from "@/components/sections/today/SecondaryProjectsDialog";
 import TaskCard, { type TaskCardContext } from "@/components/sections/today/TaskCard";
 import TodayToolbar from "@/components/sections/today/TodayToolbar";
@@ -179,7 +187,9 @@ export default function TodaySection({
   // 構造化されたタスクとは別の、自由記述の日次ジャーナル。日付ごとに保存する
   const [dailyJournal, setDailyJournal] = useDraftSetting(`journal.daily.${date}`, "");
   const [now, setNow] = useState(() => Date.now());
-  const [weekday, setWeekday] = useState<Weekday>(() => jsWeekdayToApp(new Date()) ?? 1);
+  // テンプレートは月〜金だけ。土日は月曜を選んだ状態で始め、画面に「月曜のテンプレートを使います」と出す
+  // (黙って月曜を使うのではなく、選んでいる曜日が見えるようにする)
+  const [weekday, setWeekday] = useState<Weekday | null>(() => jsWeekdayToApp(new Date()) ?? 1);
   // この画面は裏で動き続けて日をまたぐことがあるので、日付が変わったらテンプレートの曜日も今日に合わせ直す
   useEffect(() => {
     setWeekday(jsWeekdayToApp(new Date()) ?? 1);
@@ -371,6 +381,9 @@ export default function TodaySection({
   const wasIdleRef = useRef(false);
   const resumeAnchorRef = useRef<number | null>(null);
   const idleFinishInFlightRef = useRef(false);
+  const provisionalStartInFlightRef = useRef(false);
+  // 複数のタブで開いている時、時刻で動く自動処理はロックを持てた1つのタブだけで動かす
+  const automationLeader = useAutomationLock();
   // 本日まだ一度も作業を停止していない場合の未計測起点。ページを開いた/日付が変わった時刻を仮の起点とする
   const sessionAnchorRef = useRef(Date.now());
   useEffect(() => {
@@ -654,7 +667,7 @@ export default function TodaySection({
   const timeboxes = useMemo(() => timeboxesOf(tasks ?? [], date), [tasks, date]);
   const [timeboxEndPrompt, setTimeboxEndPrompt] = useState<DailyTask | null>(null);
   useEffect(() => {
-    if (!tasks || !automationSettingsLoaded) return;
+    if (!tasks || !automationSettingsLoaded || !automationLeader) return;
     const ended = findEndedTimeboxes(tasks, date, now);
     if (ended.length === 0) return;
     (async () => {
@@ -662,7 +675,14 @@ export default function TodaySection({
       // "false"で判断して、止めるはずの作業に確認を出していたため)
       const autoStop = ((await db.settings.get("today.timeboxAutoStop"))?.value ?? "false") === "true";
       for (const task of ended) {
-        await db.dailyTasks.update(task.id, { timeboxEndHandled: true });
+        // 「済み」の印はDBの最新の値を見て付ける(既に付いていれば、別の窓・直前の周回で知らせ済み)
+        const claimed = await db.transaction("rw", db.dailyTasks, async () => {
+          const cur = await db.dailyTasks.get(task.id);
+          if (!cur || cur.timeboxEndHandled) return false;
+          await db.dailyTasks.update(task.id, { timeboxEndHandled: true });
+          return true;
+        });
+        if (!claimed) continue;
         playChime();
         notify("時間です", `「${workLabel(task)}」の枠が終わりました。途中でも止めて次へ`, `timebox-${task.id}`);
         if (autoStop) {
@@ -674,7 +694,7 @@ export default function TodaySection({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now, tasks, date, automationSettingsLoaded]);
+  }, [now, tasks, date, automationSettingsLoaded, automationLeader]);
 
   async function resolveTimeboxEnd(choice: "stop" | "extend" | "continue") {
     const target = timeboxEndPrompt;
@@ -696,7 +716,7 @@ export default function TodaySection({
   useEffect(() => {
     // 予定の自動開始そのものは設定を見ないが、休憩の強制停止や仮計測と同じ周回で動くため、
     // それらの設定が読み終わってから始める(読み込み前に始めた計測を、直後に休憩の停止が止める等を避ける)
-    if (!tasks || !automationSettingsLoaded) return;
+    if (!tasks || !automationSettingsLoaded || !automationLeader) return;
     // 同時に時刻が来た予定をまとめて始めると、どれも「何も計っていない」と見て一斉に計測中になる。
     // 1つずつ(前のが終わってから次の周回で)扱う
     const due = findDueScheduledTasks(tasks, date, now)[0];
@@ -707,7 +727,7 @@ export default function TodaySection({
       scheduleStartInFlightRef.current = false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now, tasks, date, automationSettingsLoaded]);
+  }, [now, tasks, date, automationSettingsLoaded, automationLeader]);
 
   const nextTaskId = useMemo(() => {
     if (!tasks) return null;
@@ -1010,7 +1030,19 @@ export default function TodaySection({
       resumeAnchor: resumeAnchorRef.current,
     });
     if (gapStart === null) return;
+    if (provisionalStartInFlightRef.current) return;
+    provisionalStartInFlightRef.current = true;
     (async () => {
+      // 止めてある仮計測(ほかの画面から作業を始めた時に止めたもの)があると、新しい仮計測を始められない
+      // (1日に仮計測は1つ)。止めた時点までの分を「未分類」の記録として終えてから始める
+      // (完了の一覧から作業名を直せる。長さ1分未満なら消す)
+      const pausedProvisionals = (await db.dailyTasks.where("date").equals(date).toArray()).filter(
+        (t) => t.isProvisional && t.status === "paused"
+      );
+      for (const t of pausedProvisionals) {
+        const lastEnd = t.segments.reduce((m, sg) => Math.max(m, sg.end ?? sg.start), t.startedAt ?? 0);
+        await stopProvisionalAt(t, lastEnd);
+      }
       const added = await addProvisionalTaskIfIdle({
         id: uid(),
         date,
@@ -1026,7 +1058,11 @@ export default function TodaySection({
       });
       if (!added) return;
       setTaskViewTab("running");
-    })();
+    })()
+      .catch((e) => console.error("仮計測の開始に失敗しました", e))
+      .finally(() => {
+        provisionalStartInFlightRef.current = false;
+      });
   }, [automationSettingsLoaded, provisionalEnabled, tasks, now, provisionalAnchorTime, effectiveProvisionalAnchorTime, thresholdMinutes, date, breakRanges, provisionalIdleMs]);
 
   // 強制ストップ付きの休憩帯に入ったら、計測中の作業(仮計測含む)を一時停止し、
@@ -1034,7 +1070,7 @@ export default function TodaySection({
   // その後は本人が休憩中に手動で計測を再開しても再度は割り込まない
   const breakStopInFlightRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!automationSettingsLoaded) return;
+    if (!automationSettingsLoaded || !automationLeader) return;
     if (!activeForceStopRange || !tasks) return;
     const key = breakRangeKey(activeForceStopRange);
     if (breakStopHandled.has(key)) return;
@@ -1068,7 +1104,7 @@ export default function TodaySection({
         breakStopInFlightRef.current = null;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [automationSettingsLoaded, activeForceStopRange, tasks, breakStopHandled, date]);
+  }, [automationSettingsLoaded, automationLeader, activeForceStopRange, tasks, breakStopHandled, date]);
 
   // 放置検知: マウス/キーボード操作もタブの表示もない状態が一定時間続いたら、
   // 未計測の計測を「最後に操作していた時刻」で自動的に打ち切る。定時後・休日に
@@ -1077,14 +1113,20 @@ export default function TodaySection({
     // 放置検知の時間(provisionalIdleThresholdHours)が読み込み前の既定値(3時間)のままだと、
     // 短く設定している人の仮計測を打ち切れず、長く設定している人の仮計測を早く打ち切ってしまう
     if (!automationSettingsLoaded) return;
-    if (!provisionalTask || provisionalTask.status !== "running") return;
-    const cutoff = inactivityCutoff(provisionalTask, lastActivityAt(lastActivityRef.current), now, provisionalIdleMs);
+    // 0時を過ぎても前日の仮計測が計測中のまま残っていれば、それも同じように打ち切る
+    // (今日の作業だけを見ていたため、夜に始まった仮計測が朝まで伸び続けていた)
+    const target =
+      provisionalTask?.status === "running"
+        ? provisionalTask
+        : (allRunning ?? []).find((t) => t.isProvisional && t.date < date);
+    if (!target) return;
+    const cutoff = inactivityCutoff(target, lastActivityAt(lastActivityRef.current), now, provisionalIdleMs);
     if (cutoff === null) return;
     if (idleFinishInFlightRef.current) return;
     idleFinishInFlightRef.current = true;
     // 放置で打ち切ったので、戻ってきた時は戻った時刻から未計測を数え直す(上の仮計測の自動開始)
     wasIdleRef.current = true;
-    stopProvisionalAt(provisionalTask, cutoff).then(() => {
+    stopProvisionalAt(target, cutoff).then(() => {
       idleFinishInFlightRef.current = false;
       const hoursLabel = Math.round((provisionalIdleMs / 3600000) * 10) / 10;
       notify(
@@ -1093,7 +1135,7 @@ export default function TodaySection({
         "provisional-idle-stop"
       );
     });
-  }, [automationSettingsLoaded, now, provisionalTask, provisionalIdleMs]);
+  }, [automationSettingsLoaded, now, provisionalTask, provisionalIdleMs, allRunning, date]);
 
   // 仮計測中は、開始時と一定間隔ごとに「何を計測中か・経過時間」を通知する
   // （オフの場合や、トラブル対応などで一時停止中の場合は何もしない）
@@ -1436,13 +1478,14 @@ export default function TodaySection({
   // 失われるので残す
   // 置き換えるのは手を付けていない作業だけ。一時停止中でも計った時間がある作業は、消すとその時間が
   // 失われるので残す(完了・計測中・仮計測と同じ扱い)
-  function isReplacedByTemplate(t: DailyTask): boolean {
-    if (t.isProvisional) return false;
-    if (t.status === "pending") return true;
-    return t.status === "paused" && t.segments.length === 0 && baseAccumulatedMs(t) === 0;
-  }
+  // 置き換える作業の判定と、既にある作業を作らない判定は lib/automation.ts(isReplacedByTemplate・templateItemsToCreate)
 
   async function requestGenerateFromTemplate() {
+    // テンプレートは月〜金だけ。土日は月曜のものを黙って使わず、曜日を選んでもらう
+    if (weekday === null) {
+      showUndoToast("土日のテンプレートがありません。使う曜日を選んでから作ってください。");
+      return;
+    }
     const items = await db.templateItems.where("weekday").equals(weekday).sortBy("order");
     if (items.length === 0) {
       showUndoToast(`${WEEKDAY_LABELS[weekday]}曜日のテンプレートが空です。先に「曜日別テンプレート」で登録してください。`);
@@ -1466,14 +1509,15 @@ export default function TodaySection({
 
   async function generateFromTemplate(items: TemplateItem[]) {
     // 確認を出した後に状態が変わっていることがあるので、消す対象はこの時点のDBから選び直す
-    const { removed, created } = await db.transaction("rw", db.dailyTasks, async () => {
+    const { removed, created, skipped } = await db.transaction("rw", db.dailyTasks, async () => {
       const existing = await db.dailyTasks.where("date").equals(date).toArray();
       const removed = existing.filter(isReplacedByTemplate);
       const kept = existing.filter((t) => !isReplacedByTemplate(t));
       if (removed.length > 0) await db.dailyTasks.bulkDelete(removed.map((t) => t.id));
       // 残した作業(計測中・完了)と並び順が重ならないよう、その後ろに並べる
       const baseOrder = kept.reduce((m, t) => Math.max(m, t.order + 1), 0);
-      const created: DailyTask[] = items.map((item, idx) => ({
+      const toCreate = templateItemsToCreate(items, kept);
+      const created: DailyTask[] = toCreate.map((item, idx) => ({
         id: uid(),
         date,
         order: baseOrder + idx,
@@ -1487,9 +1531,10 @@ export default function TodaySection({
         isSpontaneous: false,
       }));
       await db.dailyTasks.bulkAdd(created);
-      return { removed, created };
+      return { removed, created, skipped: items.length - toCreate.length };
     });
-    showUndoToast(`テンプレートから${created.length}件作りました`, async () => {
+    const skippedNote = skipped > 0 ? `（今日すでにある${skipped}件は作りませんでした）` : "";
+    showUndoToast(`テンプレートから${created.length}件作りました${skippedNote}`, async () => {
       await db.transaction("rw", db.dailyTasks, async () => {
         // 作った作業のうち、その後に始めた・直したものは残す(作ったときのままのものだけ消す)
         for (const t of created) {
@@ -1564,7 +1609,9 @@ export default function TodaySection({
     estimatedSeconds: number,
     masterTaskId: string | undefined,
     startAt: number,
-    links?: DailyTaskLinks & Pick<DailyTask, "hasPlan">
+    links?: DailyTaskLinks & Pick<DailyTask, "hasPlan">,
+    /** 仮計測から引き継ぐ、startAtより前の閉じた区間 */
+    carried: TimeSegment[] = []
   ) {
     const doInsert = async () => {
       const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
@@ -1582,9 +1629,9 @@ export default function TodaySection({
         name,
         estimatedSeconds,
         status: "running",
-        segments: [{ start: startAt }],
-        accumulatedMs: 0,
-        startedAt: startAt,
+        segments: [...carried, { start: startAt }],
+        accumulatedMs: closedSegmentsMs(carried),
+        startedAt: carried[0]?.start ?? startAt,
         isSpontaneous: true,
         ...(links ?? {}),
         ...(isRetroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
@@ -1647,9 +1694,11 @@ export default function TodaySection({
   async function resolvePendingStartMerge() {
     if (!pendingStart || !provisionalTask) return;
     const provisionalId = provisionalTask.id;
-    const mergeStartAt = provisionalTask.startedAt ?? Date.now();
+    // 仮計測の区間をそのまま引き継ぐ(開始時刻から1区間にすると、仮計測が止まっていた間の
+    // ほかの作業の時間と重なっていた)
+    const { closed, openStart } = provisionalCarry(provisionalTask.segments);
     await db.transaction("rw", db.dailyTasks, async () => {
-      await insertRunningTask(pendingStart.category, pendingStart.name, pendingStart.estimatedSeconds, pendingStart.masterTaskId, mergeStartAt, pendingStart.links);
+      await insertRunningTask(pendingStart.category, pendingStart.name, pendingStart.estimatedSeconds, pendingStart.masterTaskId, openStart ?? Date.now(), pendingStart.links, closed);
       await db.dailyTasks.delete(provisionalId);
     });
     setPendingStart(null);
@@ -1666,15 +1715,19 @@ export default function TodaySection({
     setPendingStart(null);
   }
 
-  // 指定した作業より前(order昇順)で、直近に完了した作業の終了時刻を返す。
+  // この作業の開始より前に終わった完了作業のうち、いちばん遅い終了時刻を返す。
   // 完了作業の時刻編集ダイアログで「前の作業の終了時刻を開始時刻に使う」ための参照値
+  // (並び順で選ぶと、後から足した作業や並べ替えた作業で、時刻の上で前でない作業を選んでいた)
   function findPreviousTaskEndedAt(task: DailyTask): number | null {
-    const candidates = (tasks ?? []).filter(
-      (t) => t.id !== task.id && !t.isProvisional && t.order < task.order && t.endedAt !== undefined
-    );
-    if (candidates.length === 0) return null;
-    const prev = candidates.reduce((a, b) => (b.order > a.order ? b : a));
-    return prev.endedAt ?? null;
+    const start = taskStartEdge(task);
+    let best: number | null = null;
+    for (const t of tasks ?? []) {
+      if (t.id === task.id || t.isProvisional || t.status !== "done") continue;
+      const end = taskEndEdge(t);
+      if (end === undefined || (start !== undefined && end > start)) continue;
+      if (best === null || end > best) best = end;
+    }
+    return best;
   }
 
   // 完了した作業の作業マスタのID。以前は、作業マスタを持たずに完了した作業(トラブル対応・完了前に
@@ -1965,40 +2018,53 @@ export default function TodaySection({
     await db.dailyTasks.update(task.id, { autoStartDisabled: !task.autoStartDisabled });
   }
 
-  // この作業カードに紐づく元のTodoタスクを完了にする（繰り返しタスクは次回期日に進む）
+  // この作業カードに紐づく元のTodoタスクを完了にする（繰り返しタスクは次回期日に進む）。「元に戻す」付き
   async function completeLinkedTodo(todoTaskId: string) {
     const todoTask = todoTaskMap.get(todoTaskId);
     if (!todoTask) return;
-    await completeTodoTask(todoTask, date);
+    await completeTodoWithUndoToast(todoTask, date);
+  }
+
+  // 未完了の段階が残る案件を完了にしようとしたときの確認
+  const [projectCascade, setProjectCascade] = useState<ProjectCascade | null>(null);
+
+  // 確認を挟む代わりに、すぐ完了にして「元に戻す」を出す
+  async function completeLinkedProjectNow(project: ProjectItem) {
+    const r = await setProjectCompleted(project.id, true);
+    if (!r) return;
+    fireConfetti();
+    showUndoToast(`案件「${project.title}」を完了にしました`, r.undo);
   }
 
   // 段階に紐付かず案件に直接追加された作業カードから、案件そのものを完了/未完了に切り替える
   async function toggleLinkedProjectComplete(project: ProjectItem) {
-    // 確認を挟む代わりに、すぐ完了にして「元に戻す」を出す
-    const nowCompleting = !project.completedAt;
-    const completedAt = nowCompleting ? Date.now() : undefined;
-    await db.projects.update(project.id, { completedAt, autoCompletedByImport: false });
-    if (!nowCompleting) return;
-    fireConfetti();
-    showUndoToast(`案件「${project.title}」を完了にしました`, async () => {
-      // 今回書いた完了のままの時だけ戻す。その後に未完了へ戻して完了し直した等なら、新しい方を残す
-      const current = await db.projects.get(project.id);
-      if (!current || current.completedAt !== completedAt) return;
-      await db.projects.update(project.id, { completedAt: undefined, autoCompletedByImport: project.autoCompletedByImport });
-    });
+    if (project.completedAt) {
+      await setProjectCompleted(project.id, false);
+      return;
+    }
+    if (openStageTitles(project).length > 0) {
+      setProjectCascade({ step: "openStages", projectId: project.id });
+      return;
+    }
+    await completeLinkedProjectNow(project);
   }
 
   async function deleteTask(task: DailyTask) {
     // 確認を挟む代わりに、すぐ消して「元に戻す」を出す(押し間違えても戻せ、毎回の確認の手間もない)。
     // 計測した時間がある作業は、消すとその時間が実績に残らないことも一言添える
     const snapshot = (await db.dailyTasks.get(task.id)) ?? task;
-    const measuredMs = segmentsAccumulatedMs(snapshot, Date.now());
+    // 「続きから」再開した作業は、前回までの分(recordedMs)が実績に入っているので消えない。消えるのは続きの分だけ
+    const recordedMs = snapshot.recordedMs ?? 0;
+    const lostMs = Math.max(0, segmentsAccumulatedMs(snapshot, Date.now()) - recordedMs);
     await db.dailyTasks.delete(task.id);
-    const lost = measuredMs >= 60_000 ? `（計測した${formatHms(Math.round(measuredMs / 1000))}も消えました）` : "";
+    const lostPart = lostMs >= 60_000 ? `${recordedMs > 0 ? "続きに" : ""}計測した${formatHms(Math.round(lostMs / 1000))}も消えました` : "";
+    const keptPart = recordedMs > 0 ? `前回までの${formatHms(Math.round(recordedMs / 1000))}は実績に残ります` : "";
+    const note = [lostPart, keptPart].filter(Boolean).join("。");
     showUndoToast(
-      `「${workLabel(task)}」を削除しました${lost}`,
+      `「${workLabel(task)}」を削除しました${note ? `（${note}）` : ""}`,
       async () => {
-        await db.dailyTasks.put(snapshot);
+        // 同じIDの作業がもう作り直されていたら、古い控えで上書きしない
+        if (!(await db.dailyTasks.get(snapshot.id))) await db.dailyTasks.put(snapshot);
       },
       8000
     );
@@ -2045,9 +2111,11 @@ export default function TodaySection({
       }
     }
 
+    let deletedMaster: DeletedMaster | undefined;
     if (deleteMaster && masterId) {
-      masterSnapshot = await db.masterTasks.get(masterId);
-      await db.masterTasks.delete(masterId);
+      // テンプレートの紐付けも一緒に外す(lib/master.ts)。戻す時はrestoreDeletedMasterTaskで紐付けごと戻す
+      deletedMaster = await deleteMasterTask(masterId);
+      masterSnapshot = deletedMaster?.master;
     } else if (deleteRecord && existing && masterId) {
       await recomputeEstimateFromRecords(masterId);
     }
@@ -2078,9 +2146,9 @@ export default function TodaySection({
             });
           }
         }
-        // 作業マスタは、同じIDのものが既にあれば上書きしない(戻すまでの間に直した内容を消さないように)
-        if (masterSnapshot && !(await db.masterTasks.get(masterSnapshot.id))) await db.masterTasks.put(masterSnapshot);
       });
+      // 作業マスタは、同じIDのものが既にあれば上書きしない(戻すまでの間に直した内容を消さないように)
+      if (deletedMaster) await restoreDeletedMasterTask(deletedMaster);
       if (deleteRecord && existing && masterId && !deleteMaster) {
         await recomputeEstimateFromRecords(masterId);
       }
@@ -2111,10 +2179,18 @@ export default function TodaySection({
   async function assignBreakTimeToTask(task: DailyTask, range: BreakRange) {
     const startMs = timeToMsOfDay(date, range.start);
     const endMs = timeToMsOfDay(date, range.end);
-    const segments = [...task.segments, { start: startMs, end: endMs }].sort((a, b) => a.start - b.start);
+    const cur = (await db.dailyTasks.get(task.id)) ?? task;
+    // 「続きから」再開した作業は、反映済みの区間の並びを崩さずに足す(全体を並べ直すと二重に数えていた)
+    const segments = appendSegmentsKeepingRecorded(cur, [{ start: startMs, end: endMs }]);
     // 合計は今の合計に休憩帯の長さを足す(区間を足し直すと、合計に織り込み済みの「時間を加算」の分が消える)
-    const accumulatedMs = task.accumulatedMs + Math.max(0, endMs - startMs);
-    await db.dailyTasks.update(task.id, { segments, accumulatedMs });
+    const accumulatedMs = cur.accumulatedMs + Math.max(0, endMs - startMs);
+    await db.dailyTasks.update(cur.id, {
+      segments,
+      accumulatedMs,
+      startedAt: Math.min(cur.startedAt ?? startMs, startMs),
+      // 時間を持った未着手は一時停止にする(未着手のままだと、テンプレートで作り直す時に消えていた)
+      ...(cur.status === "pending" ? { status: "paused" as const, stoppedAt: endMs } : {}),
+    });
     setBreakAssignRange(null);
   }
 
@@ -2178,9 +2254,13 @@ export default function TodaySection({
       const project = projectMap.get(task.projectId);
       if (project && !project.completedAt) queue.push({ kind: "project", task });
     }
+    // 段階の作業で、紐づくToDoがその案件の元になったToDo(ToDo→案件に反映したもの)なら、段階を1つ終えただけで
+    // 元のToDo全体の完了を尋ねない(案件が完了した時に、元のToDoも完了にするか別に尋ねる)。
+    // 案件とは別のToDoに紐づいている時は、段階→ToDoの順に1つずつ尋ねる
     if (task.todoTaskId) {
       const todo = todoTaskMap.get(task.todoTaskId);
-      if (todo && !todo.completed) queue.push({ kind: "todo", task });
+      const isProjectOrigin = !!task.stageId && !!todo?.projectId && todo.projectId === task.projectId;
+      if (todo && !todo.completed && !isProjectOrigin) queue.push({ kind: "todo", task });
     }
     if (queue.length > 0) setConfirmQueue((q) => [...q, ...queue]);
   }
@@ -2209,15 +2289,24 @@ export default function TodaySection({
     if (!provisionalTask) return;
     const target = tasks?.find((t) => t.id === targetId);
     if (!target) return;
-    const provisionalId = provisionalTask.id;
-    const startAt = provisionalTask.startedAt ?? Date.now();
+    const p = provisionalTask;
+    // 仮計測の実際の区間(止まっていた間を除く)をそのまま引き継ぐ。以前は仮計測の開始から1区間で
+    // 計測し直していたため、仮計測が一時停止していた間のほかの作業の時間と重なって二重に数えていた
+    const { closed, openStart } = provisionalCarry(p.segments);
     if (target.status === "done") {
+      if (openStart === null) {
+        // 止まっている仮計測は、その時間だけを完了した作業の記録として付ける
+        await db.dailyTasks.delete(p.id);
+        await recordProvisionalPart({ kind: "existing", taskId: target.id }, closed);
+        setTaskViewTab("done");
+        return;
+      }
       // 完了済みの作業を選んだ場合は、restartCompletedTaskと同様に完了記録は
       // そのまま残し、新しいインスタンスを追加してそちらへ仮計測分を合算する
       const estimatedSeconds = await computeRemainingEstimatedSeconds(date, target.category, target.name, target.estimatedSeconds);
       await db.transaction("rw", db.dailyTasks, async () => {
-        await insertRunningTask(target.category, target.name, estimatedSeconds, target.masterTaskId, startAt);
-        await db.dailyTasks.delete(provisionalId);
+        await insertRunningTask(target.category, target.name, estimatedSeconds, target.masterTaskId, openStart, { ...dailyTaskLinksOf(target), hasPlan: target.hasPlan }, closed);
+        await db.dailyTasks.delete(p.id);
       });
       setTaskViewTab("running");
       return;
@@ -2225,10 +2314,35 @@ export default function TodaySection({
     // 対象作業を再開してから仮計測タスクを消すまでの間、両方が「計測中」に
     // 見える瞬間ができないよう、ひとつのトランザクションでまとめて処理する
     await db.transaction("rw", db.dailyTasks, async () => {
-      await startTask(target, startAt);
-      await db.dailyTasks.delete(provisionalId);
+      await carryProvisionalInto(target.id, p.segments, p.manualAdjustmentMs ?? 0);
+      await db.dailyTasks.delete(p.id);
     });
     setTaskViewTab("running");
+  }
+
+  // 仮計測の区間を、未着手・一時停止中の作業へ実際の区間のまま足す。仮計測が計測中なら、
+  // その作業が続きを計測する(計測中の区間の始まりから)。止まっていれば一時停止のまま時間だけ足す
+  async function carryProvisionalInto(targetId: string, segs: TimeSegment[], manualMs = 0) {
+    const t = await db.dailyTasks.get(targetId);
+    if (!t) return;
+    const { closed, openStart } = provisionalCarry(segs);
+    // 割り当て先が既に計測中なら、計測中の区間を2つにしない(閉じた区間だけ足す)
+    const startOpen = openStart !== null && t.status !== "running";
+    const added = startOpen ? [...closed, { start: openStart! }] : closed;
+    if (added.length === 0 && manualMs === 0) return;
+    const first = added[0]?.start ?? t.startedAt;
+    const lastClosedEnd = closed[closed.length - 1]?.end;
+    const running = startOpen || t.status === "running";
+    const isRetroactive = startOpen && openStart! < Date.now() - 5000;
+    await db.dailyTasks.update(t.id, {
+      segments: appendSegmentsKeepingRecorded(t, added),
+      accumulatedMs: t.accumulatedMs + closedSegmentsMs(closed),
+      ...(manualMs ? { manualAdjustmentMs: (t.manualAdjustmentMs ?? 0) + manualMs } : {}),
+      status: running ? "running" : "paused",
+      ...(first !== undefined ? { startedAt: Math.min(t.startedAt ?? first, first) } : {}),
+      ...(!running && lastClosedEnd !== undefined ? { stoppedAt: Math.max(t.stoppedAt ?? lastClosedEnd, lastClosedEnd) } : {}),
+      ...(isRetroactive ? { overrunPromptShown: true, overrunPromptDismissedAt: Date.now() } : {}),
+    });
   }
 
   // 仮計測タスクを、新しい作業（マスタ選択 or 自由入力 or トラブル対応）として確定する。
@@ -2268,7 +2382,7 @@ export default function TodaySection({
       // 前半と後半に同じ作業を選んだ時は、後半で計測中になったその作業へ前半も足す(計測中のまま)
       if (t.status === "pending" || t.status === "paused" || t.status === "running") {
         await db.dailyTasks.update(t.id, {
-          segments: [...t.segments, ...segs].sort((a, b) => a.start - b.start),
+          segments: appendSegmentsKeepingRecorded(t, segs),
           accumulatedMs: t.accumulatedMs + spanMs,
           status: t.status === "running" ? "running" : "paused",
           startedAt: Math.min(t.startedAt ?? first, first),
@@ -2357,14 +2471,19 @@ export default function TodaySection({
       if (t.status === "done") {
         // 完了した作業を続ける場合は、完了の記録は残して新しく計測を始める(完了した作業の「もう一度開始」と同じ)
         const estimatedSeconds = await computeRemainingEstimatedSeconds(date, t.category, t.name, t.estimatedSeconds);
+        const { closed, openStart } = provisionalCarry(after);
         await db.transaction("rw", db.dailyTasks, async () => {
           await db.dailyTasks.delete(p.id);
-          await insertRunningTask(t.category, t.name, estimatedSeconds, t.masterTaskId, splitAt, { ...dailyTaskLinksOf(t), hasPlan: t.hasPlan });
+          if (openStart !== null) {
+            await insertRunningTask(t.category, t.name, estimatedSeconds, t.masterTaskId, openStart, { ...dailyTaskLinksOf(t), hasPlan: t.hasPlan }, closed);
+          }
         });
+        // 仮計測が止まっていた(後半に計測中の区間が無い)なら、後半は完了の記録として付ける
+        if (openStart === null) await recordProvisionalPart({ kind: "existing", taskId: t.id }, closed);
       } else {
         await db.transaction("rw", db.dailyTasks, async () => {
           await db.dailyTasks.delete(p.id);
-          await startTask(t, splitAt);
+          await carryProvisionalInto(t.id, after, p.manualAdjustmentMs ?? 0);
         });
       }
     }
@@ -2474,10 +2593,12 @@ export default function TodaySection({
 
   // 完了済みの作業を、同じインスタンスのまま「続きから」再開する(区間を追加して計測を継続する)。
   // 未計測(仮計測)が計測中の場合は二重計測になるため、先に判断を仰いでから合算/破棄する
-  async function continueCompletedTaskDirect(daily: DailyTask, startAt: number) {
-    const segments = [...daily.segments, { start: startAt }];
+  async function continueCompletedTaskDirect(daily: DailyTask, startAt: number, carried: TimeSegment[] = []) {
+    // 仮計測から引き継ぐ閉じた区間は、反映済みの区間の後ろに足す(次の完了で今回分として数える)
+    const segments = [...daily.segments, ...carried, { start: startAt }];
     await db.dailyTasks.update(daily.id, {
       segments,
+      accumulatedMs: daily.accumulatedMs + closedSegmentsMs(carried),
       status: "running",
       endedAt: undefined,
       stoppedAt: undefined,
@@ -2502,9 +2623,9 @@ export default function TodaySection({
   async function resolvePendingContinueMerge() {
     if (!pendingContinue || !provisionalTask) return;
     const provisionalId = provisionalTask.id;
-    const mergeStartAt = provisionalTask.startedAt ?? Date.now();
+    const { closed, openStart } = provisionalCarry(provisionalTask.segments);
     await db.transaction("rw", db.dailyTasks, async () => {
-      await continueCompletedTaskDirect(pendingContinue, mergeStartAt);
+      await continueCompletedTaskDirect(pendingContinue, openStart ?? Date.now(), closed);
       await db.dailyTasks.delete(provisionalId);
     });
     setPendingContinue(null);
@@ -2577,17 +2698,25 @@ export default function TodaySection({
   // 停止して開始するかどうかを確認する
   async function autoStartScheduledTask(task: DailyTask) {
     // 画面の状態(tasks)は直前に始めた作業がまだ反映されていないことがあり、それだと計測中の作業を
-    // 見落として二重に計測を始めてしまうので、DBから読み直して判断する
-    const runningTasks = (await db.dailyTasks.where("date").equals(task.date).toArray()).filter(
-      (t) => t.status === "running" && t.id !== task.id
-    );
+    // 見落として二重に計測を始めてしまうので、DBから読み直して判断する。確認と書き込みは1つの
+    // トランザクションで行う(別のタブが同時に同じ予定を始めたり、別の作業を始めたりしても重ならないように)
+    const outcome = await db.transaction("rw", db.dailyTasks, async () => {
+      const latest = await db.dailyTasks.get(task.id);
+      // 別のタブが先に扱った(自動開始の印が付いた・始めた・消した)なら何もしない
+      if (!latest || latest.autoStartNotified || latest.status === "running" || latest.status === "done") return null;
+      const runningTasks = (await db.dailyTasks.where("date").equals(task.date).toArray()).filter(
+        (t) => t.status === "running" && t.id !== task.id
+      );
+      if (runningTasks.length > 0) {
+        await db.dailyTasks.update(task.id, { autoStartNotified: true });
+        return { runningTasks };
+      }
+      await startOrResumeScheduled(task.id, Date.now(), { autoStartNotified: true });
+      return { runningTasks: [] as DailyTask[] };
+    });
+    if (!outcome) return;
     notify("予定の時刻になりました", `${task.category} / ${workLabel(task)}`, `schedule-${task.id}`);
-    if (runningTasks.length > 0) {
-      await db.dailyTasks.update(task.id, { autoStartNotified: true });
-      setScheduleConflict({ task, runningTasks });
-      return;
-    }
-    await startOrResumeScheduled(task.id, Date.now(), { autoStartNotified: true });
+    if (outcome.runningTasks.length > 0) setScheduleConflict({ task, runningTasks: outcome.runningTasks });
   }
 
   // 予定・時間割の時刻での開始。未着手なら新しく始め、一時停止中(時間割の続きの枠)なら
@@ -3031,8 +3160,8 @@ export default function TodaySection({
             <IconLabel text="📋 今日の作業をテンプレートから作る" />
           </h2>
           <select
-            value={weekday}
-            onChange={(e) => setWeekday(Number(e.target.value) as Weekday)}
+            value={weekday ?? ""}
+            onChange={(e) => setWeekday(e.target.value ? (Number(e.target.value) as Weekday) : null)}
             className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-cream"
             aria-label="使うテンプレートの曜日"
           >
@@ -3045,6 +3174,9 @@ export default function TodaySection({
           <button className="btn-pill" onClick={requestGenerateFromTemplate}>
             テンプレートから生成
           </button>
+          {jsWeekdayToApp(new Date()) === null && (
+            <p className="caption w-full">今日は土日なので、選んだ曜日（はじめは月曜日）のテンプレートを使います。</p>
+          )}
         </div>
       )}
       {provisionalTask && taskViewTab === "running" && (
@@ -3659,7 +3791,7 @@ export default function TodaySection({
             setShowAddDialog(false);
             setRestartChoice(task);
           }}
-          templateWeekdayLabel={`${WEEKDAY_LABELS[weekday]}曜日`}
+          templateWeekdayLabel={weekday ? `${WEEKDAY_LABELS[weekday]}曜日` : undefined}
           onGenerateFromTemplate={() => {
             setShowAddDialog(false);
             void requestGenerateFromTemplate();
@@ -3703,7 +3835,7 @@ export default function TodaySection({
 
       {templateConfirm && (
         <TemplateConfirmDialog
-          weekday={weekday}
+          weekday={weekday ?? 1}
           itemCount={templateConfirm.items.length}
           replaceCount={templateConfirm.replaceCount}
           onConfirm={confirmGenerateFromTemplate}
@@ -3883,6 +4015,13 @@ export default function TodaySection({
         </RunningConflictDialog>
       )}
 
+      {projectCascade && (
+        <ProjectCascadeDialog
+          cascade={projectCascade}
+          onCompleteProject={completeLinkedProjectNow}
+          onClose={() => setProjectCascade(null)}
+        />
+      )}
       {activeConfirm && (
         <LinkedCompletionDialog
           confirm={activeConfirm}

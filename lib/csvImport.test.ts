@@ -102,3 +102,37 @@ describe("CSVの取り込み(Excelで開いて保存し直したファイル・�
     expect(errors[0]).toContain("2行目");
   });
 });
+
+describe("実績CSVの取り込み直し(planRecordsImport)", () => {
+  it("書き出し→取り込み直しで、CSVに無い項目(案件・ToDo・メモ・区間など)を消さない", async () => {
+    const { planRecordsImport } = await import("./csv");
+    const r: WorkRecord = {
+      id: "r1", date: "2026-09-29", category: "業務", name: "資料", masterTaskId: "m1", seconds: 90, startedAt: 1000, endedAt: 91000,
+      excludedFromStats: false, projectId: "p1", stageId: "s1", todoTaskId: "t1", note: "メモ", isTrouble: true,
+      secondaryProjectIds: ["p2"], manualOverride: true, segments: [{ start: 1000, end: 91000 }],
+    };
+    const parsed = parseRecordsCsv(recordsToCsv([r]));
+    const plan = planRecordsImport(parsed, new Map([[r.id, r]]));
+    expect(plan.added).toHaveLength(0);
+    expect(plan.updated).toHaveLength(1);
+    expect(plan.updated[0].after).toEqual(r);
+  });
+
+  it("CSVにある列だけを重ねる。時刻を変えた行は区間を捨てる。新しいIDは新規", async () => {
+    const { planRecordsImport } = await import("./csv");
+    const r: WorkRecord = {
+      id: "r1", date: "2026-09-29", category: "業務", name: "資料", masterTaskId: "m1", seconds: 90, startedAt: 1000, endedAt: 91000,
+      excludedFromStats: false, projectId: "p1", note: "メモ", segments: [{ start: 1000, end: 91000 }],
+    };
+    const parsed = parseRecordsCsv("id,date,category,name,seconds\nr1,2026-09-29,業務,資料,120\nr2,2026-09-29,業務,資料,30");
+    const plan = planRecordsImport(parsed, new Map([[r.id, r]]));
+    expect(plan.added.map((a) => a.id)).toEqual(["r2"]);
+    expect(plan.updated[0].after).toEqual({ ...r, seconds: 120 });
+
+    const parsed2 = parseRecordsCsv("id,date,category,name,seconds,startedAt,endedAt\nr1,2026-09-29,業務,資料,90,2000,91000");
+    const after2 = planRecordsImport(parsed2, new Map([[r.id, r]])).updated[0].after;
+    expect(after2.startedAt).toBe(2000);
+    expect(after2.segments).toBeUndefined();
+    expect(after2.projectId).toBe("p1");
+  });
+});

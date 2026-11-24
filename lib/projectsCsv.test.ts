@@ -113,3 +113,68 @@ describe("案件CSVの取り込みと自動完了", () => {
     expect((await db.projects.get("p1"))!.autoCompletedByImport).toBe(true);
   });
 });
+
+describe("案件CSVの追加の列(書き出し→取り込み直し)", () => {
+  it("対応状況・URL・取引先・アーカイブ・見積・単価・振り返り・先行案件と、段階の完了・件数・対応状況が戻る", async () => {
+    const createdAt = new Date("2026-11-01T14:23:00").getTime();
+    const full: ProjectItem = {
+      ...base,
+      createdAt,
+      tag: "客先確認中",
+      url: "https://example.com/a,b",
+      clientId: "c1",
+      archived: true,
+      estimatedTotalSeconds: 7200,
+      hourlyRate: 3500,
+      retrospective: "次は早めに\n確認する",
+      predecessorProjectIds: ["p0", "p9"],
+      stages: [
+        { id: "s1", title: "設計", completed: true, completedAt: 99, tag: "社内確認中" },
+        { id: "s2", title: "見積", completed: false, targetCount: 5, completedCount: 3 },
+      ],
+    };
+    await db.projects.add(full);
+    const csv = projectsToCsv([full]);
+    // 別の端末へ持っていく想定で、いったん消してから取り込む
+    await db.projects.clear();
+    const { rows, errors } = parseProjectsCsv(csv);
+    expect(errors).toEqual([]);
+    await upsertProjectsFromCsv(rows);
+    const after = (await db.projects.get("p1"))!;
+    expect(after).toMatchObject({
+      tag: "客先確認中",
+      url: "https://example.com/a,b",
+      clientId: "c1",
+      archived: true,
+      estimatedTotalSeconds: 7200,
+      hourlyRate: 3500,
+      retrospective: "次は早めに\n確認する",
+      predecessorProjectIds: ["p0", "p9"],
+    });
+    expect(after.stages!.map((s) => [s.title, s.completed, s.targetCount, s.completedCount, s.tag])).toEqual([
+      ["設計", true, undefined, undefined, "社内確認中"],
+      ["見積", false, 5, 3, undefined],
+    ]);
+  });
+
+  it("登録日が変わっていなければ登録時刻をそのまま残す", async () => {
+    const createdAt = new Date("2026-11-01T14:23:00").getTime();
+    await db.projects.add({ ...base, createdAt });
+    await roundTrip();
+    expect((await db.projects.get("p1"))!.createdAt).toBe(createdAt);
+  });
+
+  it("追加の列が無い以前のCSVでは、その項目に触れない", async () => {
+    await db.projects.add({ ...base, tag: "対応中", url: "u", archived: true, hourlyRate: 1 });
+    const { rows } = parseProjectsCsv("id,title,category,workName,dueDate\np1,案件,c,w,2026-12-10");
+    await upsertProjectsFromCsv(rows);
+    expect(await db.projects.get("p1")).toMatchObject({ tag: "対応中", url: "u", archived: true, hourlyRate: 1 });
+  });
+
+  it("CSV側で未完了の段階でも、こちらで完了にした段階は巻き戻さない", async () => {
+    await db.projects.add({ ...base, stages: [{ id: "s1", title: "設計", completed: true, completedAt: 1 }] });
+    const { rows } = parseProjectsCsv('id,title,category,workName,dueDate,stages\np1,案件,c,w,2026-12-10,"設計:::false::"');
+    await upsertProjectsFromCsv(rows);
+    expect((await db.projects.get("p1"))!.stages![0]).toMatchObject({ completed: true, completedAt: 1 });
+  });
+});

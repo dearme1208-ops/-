@@ -17,6 +17,7 @@ import { formatDateJp, formatHms, todayStr } from "@/lib/time";
 import { cardOverrunClass, useVisualMode } from "@/lib/theme";
 import Modal from "@/components/ui/Modal";
 import { db } from "@/lib/db";
+import { splitOrphanAtMidnight } from "@/lib/provisionalSplit";
 import { showUndoToast } from "@/lib/toast";
 import { useWorkContext } from "@/lib/useWorkContext";
 
@@ -92,6 +93,15 @@ export default function OrphanTaskModal() {
                       終了する（{formatDateJp(task.date)} 24:00で打ち切り）
                     </button>
                   )}
+                  {extendsPastDayEnd(task) && (
+                    <button
+                      className="btn-pill-outline text-xs"
+                      onClick={() => splitOrphanAtMidnight(task, today)}
+                      title="前の日の分は24:00で完了にし、0:00からの分を今日の作業として残します"
+                    >
+                      0時で分ける
+                    </button>
+                  )}
                   <button
                     className="btn-pill-outline text-xs"
                     onClick={() => finishOrphanedDailyTaskAsIs(task)}
@@ -104,6 +114,13 @@ export default function OrphanTaskModal() {
                   <>
                     <button className="btn-pill-outline text-xs" onClick={() => finishOrphanedDailyTask(task)}>
                       終了する（{formatDateJp(task.date)} 24:00で打ち切り）
+                    </button>
+                    <button
+                      className="btn-pill-outline text-xs"
+                      onClick={() => splitOrphanAtMidnight(task, today)}
+                      title="前の日の分は24:00で完了にし、今日の0:00から同じ作業の続きを計測します"
+                    >
+                      0時で分ける（今日の分は計測を続ける）
                     </button>
                     <button
                       className="btn-pill-outline text-xs"

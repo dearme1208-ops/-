@@ -17,12 +17,21 @@ import { db, uid } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { DEFAULT_TAG_PRESETS, normalizeUrl, parsePresetList } from "@/lib/todo";
 import type { ProjectItem, ProjectStage } from "@/lib/types";
-import { computeProjectProgress, effectiveProjectTag } from "@/lib/projectStage";
+import { computeProjectProgress, effectiveProjectTag, mergeEditedStages } from "@/lib/projectStage";
+import { stageRecordedSeconds } from "@/lib/projects";
+import { isSubmitEnter } from "@/lib/keyboard";
 import { formatHms, parseHmsToSeconds } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 import RetrospectiveInput from "@/components/sections/RetrospectiveInput";
 import { collectRetrospectives, similarCompletedProjects } from "@/lib/projectTemplate";
 import DueDateLoadWarning from "@/components/ui/DueDateLoadWarning";
+
+// 実績の長さを「N時間」で(1時間未満は分で)
+function formatStageHours(seconds: number): string {
+  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))}分`;
+  const h = Math.round((seconds / 3600) * 10) / 10;
+  return `${h}時間`;
+}
 
 // 段階1行分。件名・期日をその場で編集できる入力欄を持つ
 function StageRow({
@@ -343,7 +352,16 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       prev.map((s) => (s.id === id ? { ...s, completed: !s.completed, completedAt: !s.completed ? Date.now() : undefined } : s))
     );
   }
+  // 実績のある段階を消すと、集計で「削除済みの段階」としか出なくなるので先に知らせる
+  const projectRecords = useLiveQuery(() => db.records.filter((r) => r.projectId === project.id).toArray(), [project.id]);
+  const [removeConfirm, setRemoveConfirm] = useState<{ id: string; title: string; seconds: number } | null>(null);
   function removeStage(id: string) {
+    const seconds = stageRecordedSeconds(projectRecords ?? [], project.id, id);
+    if (seconds > 0) {
+      const stage = stages.find((s) => s.id === id);
+      setRemoveConfirm({ id, title: stage?.title ?? "", seconds });
+      return;
+    }
     setStages((prev) => prev.filter((s) => s.id !== id));
   }
   function setStageTitle(id: string, value: string) {
@@ -418,7 +436,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       estimatedTotalStr.trim() !== "" ? parseHmsToSeconds(estimatedTotalStr) : 0;
     // 段階を持つ場合、対応状況は段階側から自動算出されるため手動の値では上書きしない
     const hasStages = stages.length > 0;
-    await db.projects.update(project.id, {
+    const fields: Partial<ProjectItem> = {
       title: title.trim(),
       groupName: groupName.trim() || undefined,
       category: category.trim(),
@@ -433,9 +451,23 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
       mailFileDataUrl: mail?.mailFileDataUrl,
       mailFileName: mail?.mailFileName,
       mailSubject: mail?.mailSubject,
-      // 段階名は前後の空白を除いて保存する(空白だけの入力だと、一見「入力済み」に
-      // 見えてしまいプレースホルダーも出ないまま空欄が残ってしまうため)
-      stages: stages.map((s) => ({ ...s, title: s.title.trim() })),
+    };
+    // 段階名は前後の空白を除いて保存する(空白だけの入力だと、一見「入力済み」に
+    // 見えてしまいプレースホルダーも出ないまま空欄が残ってしまうため)
+    const editedStages = stages.map((s) => ({ ...s, title: s.title.trim() }));
+    await db.transaction("rw", db.projects, async () => {
+      // 開いている間に他の画面で変わった分(段階の完了・対応状況など)を巻き戻さないよう、
+      // 最新の案件を読み直し、この画面で実際に変えた項目だけを書く
+      const fresh = await db.projects.get(project.id);
+      if (!fresh) return;
+      const opened = project as unknown as Record<string, unknown>;
+      const patch: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(fields)) {
+        if (JSON.stringify(v) !== JSON.stringify(opened[k])) patch[k] = v;
+      }
+      const mergedStages = mergeEditedStages(project.stages ?? [], editedStages, fresh.stages ?? []);
+      if (JSON.stringify(mergedStages) !== JSON.stringify(fresh.stages ?? [])) patch.stages = mergedStages;
+      if (Object.keys(patch).length > 0) await db.projects.update(project.id, patch as Partial<ProjectItem>);
     });
     onClose();
   }
@@ -678,7 +710,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
               <input
                 value={newStageTitle}
                 onChange={(e) => setNewStageTitle(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addStage()}
+                onKeyDown={(e) => isSubmitEnter(e) && addStage()}
                 placeholder="+ 段階を追加（例: 要件定義）"
                 className="min-w-0 flex-1 basis-40 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
               />
@@ -687,7 +719,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
                 min={1}
                 value={newStageTargetCount}
                 onChange={(e) => setNewStageTargetCount(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addStage()}
+                onKeyDown={(e) => isSubmitEnter(e) && addStage()}
                 placeholder="目標件数(任意)"
                 className="w-24 shrink-0 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
               />
@@ -706,6 +738,29 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
           保存
         </button>
       </div>
+      {removeConfirm && (
+        <Modal title="段階を削除しますか？" onClose={() => setRemoveConfirm(null)}>
+          <p className="text-sm text-cream/80">
+            この段階には{formatStageHours(removeConfirm.seconds)}の実績があります（「{removeConfirm.title || "無題の段階"}」）。
+            消すと、集計では「削除済みの段階」としてまとめて出ます（実績そのものは残ります）。保存するまでは元に戻せます。
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-pill-outline text-sm" onClick={() => setRemoveConfirm(null)}>
+              やめる
+            </button>
+            <button
+              className="btn-pill text-sm text-alert"
+              onClick={() => {
+                const id = removeConfirm.id;
+                setRemoveConfirm(null);
+                setStages((prev) => prev.filter((s) => s.id !== id));
+              }}
+            >
+              削除する
+            </button>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
