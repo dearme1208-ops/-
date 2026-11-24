@@ -521,3 +521,15 @@ export interface BoardStamp {
   createdAt: number;
   boardLocked?: boolean; // trueの場合、統合ボード上でドラッグができない(くっつけ外れも防ぐ)
 }
+
+// ゴミ箱: 消したものを7日間とっておき、設定の「ゴミ箱」から戻せるようにする
+export type TrashKind = "todo" | "project" | "record" | "dailyTask" | "master" | "memoNote" | "memoBoard" | "other";
+export interface TrashItem {
+  id: string;
+  kind: TrashKind;
+  /** 一覧に出す名前(例: 「ToDo「見積もり作成」とサブタスク2件」) */
+  label: string;
+  deletedAt: number;
+  /** 戻す時に書き戻す行(テーブル名ごと)。消した時点の内容そのもの */
+  rows: { table: string; rows: unknown[] }[];
+}

@@ -23,6 +23,7 @@ import type {
   BoardStamp,
   WbsNode,
   QuickStamp,
+  TrashItem,
 } from "./types";
 
 export class KouteiDB extends Dexie {
@@ -48,6 +49,7 @@ export class KouteiDB extends Dexie {
   boardStamps!: Table<BoardStamp, string>;
   wbsNodes!: Table<WbsNode, string>;
   quickStamps!: Table<QuickStamp, string>;
+  trash!: Table<TrashItem, string>;
 
   constructor() {
     super("koutei-hyo");
@@ -289,6 +291,11 @@ export class KouteiDB extends Dexie {
       boardStamps: "id, boardId, order",
       wbsNodes: "id, projectId, parentId, order",
       quickStamps: "id, date, at",
+    });
+    // 消したものを7日間とっておくゴミ箱(trash)を追加。実績は案件ごとの集計で使うprojectIdにも索引を張る
+    this.version(16).stores({
+      records: "id, date, category, name, masterTaskId, excludedFromStats, projectId",
+      trash: "id, kind, deletedAt",
     });
   }
 }
