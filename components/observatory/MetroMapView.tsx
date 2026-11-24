@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { isStageDone } from "@/lib/projectStage";
-import { formatDateJp, todayStr } from "@/lib/time";
+import { formatDateJp } from "@/lib/time";
+import { useToday } from "@/lib/useToday";
 
 // 案件を路線、段階を駅として地下鉄の路線図に描く観測法。
 // 通過済みの駅は塗り、次に止まる駅は二重丸、まだ先の駅は白丸。
@@ -23,7 +24,7 @@ function hueFor(text: string): number {
 }
 
 export default function MetroMapView() {
-  const today = todayStr();
+  const today = useToday();
   const projects = useLiveQuery(() => db.projects.toArray(), []);
 
   const lines = useMemo(() => {

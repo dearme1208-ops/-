@@ -253,6 +253,33 @@ describe("完了した作業を分ける・まとめる", () => {
     expect(await db.dailyTasks.count()).toBe(2);
   });
 
+  it("断る区切りでは、後半の新しい作業マスタを作らない", async () => {
+    await doneTask("a", "09:00", "10:00");
+    const r = await splitDoneDailyTask("a", h("08:00"), { category: "業務", name: "新しい作業" });
+    expect(r.status).toBe("rejected");
+    expect(await db.masterTasks.count()).toBe(2);
+  });
+
+  it("新しい作業マスタを作って分けたのを元に戻すと、使われなくなったマスタも消す", async () => {
+    await doneTask("a", "09:00", "10:00");
+    const r = await splitDoneDailyTask("a", h("09:20"), { category: "業務", name: "新しい作業" });
+    if (r.status !== "ok") throw new Error("split failed");
+    expect(r.undo.createdMasterId).toBeTruthy();
+    expect(await db.masterTasks.count()).toBe(3);
+    expect(await undoDoneTaskEdit(r.undo)).toBe(true);
+    expect(await db.masterTasks.count()).toBe(2);
+    expect(await db.masterTasks.get(r.undo.createdMasterId!)).toBeUndefined();
+  });
+
+  it("既にある作業マスタへ分けた時は、元に戻してもマスタを消さない", async () => {
+    await doneTask("a", "09:00", "10:00");
+    const r = await splitDoneDailyTask("a", h("09:20"), { category: "業務", name: "電話対応" });
+    if (r.status !== "ok") throw new Error("split failed");
+    expect(r.undo.createdMasterId).toBeUndefined();
+    expect(await undoDoneTaskEdit(r.undo)).toBe(true);
+    expect(await db.masterTasks.get("m2")).toBeTruthy();
+  });
+
   it("同じ作業の2つをまとめると、区間をつなげて合計を足し、実績は変えない", async () => {
     await doneTask("a", "09:00", "09:30");
     await doneTask("b", "11:00", "11:20");

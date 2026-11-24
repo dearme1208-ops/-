@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { pauseDailyTask, segmentsAccumulatedMs } from "@/lib/tasks";
-import { formatMsClock, todayStr } from "@/lib/time";
+import { formatMsClock } from "@/lib/time";
 import { useWorkContext } from "@/lib/useWorkContext";
+import { useToday } from "@/lib/useToday";
 
 // 「今日」を独自の画面に差し替えるモード(図書館・パワプロ・登山など)で、計測中の作業を
 // 画面の左下に小さく出し続ける。絵や集計が大きいモードでは、スマホだと計測中の作業が画面の
@@ -14,7 +15,7 @@ import { useWorkContext } from "@/lib/useWorkContext";
 // 押すとその表示までスクロールし、⏸で一時停止できる(完了はモードごとの演出があるので各画面で行う)
 
 export default function RunningNowPill() {
-  const date = todayStr();
+  const date = useToday();
   const running = useLiveQuery(
     () => db.dailyTasks.where("date").equals(date).filter((t) => t.status === "running" && !t.isProvisional).first(),
     [date]

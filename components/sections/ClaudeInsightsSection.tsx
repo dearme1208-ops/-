@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { todayStr } from "@/lib/time";
 import { useVisualMode } from "@/lib/theme";
 import { buildCalibration, buildThinking, confidenceLabel, type Finding } from "@/lib/claudeThinking";
 import { claudeWordsFor } from "@/lib/claudeWords";
 import { Calibration, ConfidenceScale, Paper, Rhythm, ThreadRail } from "@/components/claude/ClaudeCanvas";
+import { useToday } from "@/lib/useToday";
 
 // Claudeモードの「インサイト」タブ。
 //
@@ -20,7 +20,7 @@ import { Calibration, ConfidenceScale, Paper, Rhythm, ThreadRail } from "@/compo
 export default function ClaudeInsightsSection() {
   const { wordingEnabled } = useVisualMode();
   const W = claudeWordsFor(wordingEnabled);
-  const today = todayStr();
+  const today = useToday();
 
   const records = useLiveQuery(() => db.records.toArray(), []);
   const masters = useLiveQuery(() => db.masterTasks.toArray(), []);

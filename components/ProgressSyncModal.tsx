@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { downloadTextFile } from "@/lib/report";
 import { notesToTodoPrompt, progressPrompt, timeboxPrompt } from "@/lib/aiPrompts";
-import { shiftDateStr, todayStr } from "@/lib/time";
+import { shiftDateStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 import PromptCopyButton from "@/components/ai/PromptCopyButton";
 import UpdateImporter from "@/components/ai/UpdateImporter";
 import LifeContextSelect from "@/components/ai/LifeContextSelect";
 import { copyText, loadSnapshot, loadSpec, loadTimeboxRequest } from "@/components/ai/aiData";
 import { snapshotToPlainList } from "@/lib/plainList";
+import { useToday } from "@/lib/useToday";
 
 // 別のAI(Claudeなど)に案件・ToDoの進捗の登録や時間割づくりを頼むための画面。
 // ①依頼文(頼み方+データ)をワンタップでコピーしてClaudeに貼る ②返ってきた更新を確認して反映する。
@@ -19,7 +20,7 @@ export default function ProgressSyncModal({ onClose }: { onClose: () => void }) 
   const [message, setMessage] = useState("");
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const plainList = async () => snapshotToPlainList(await loadSnapshot({ includeCompleted }), { includeCompleted });
-  const today = todayStr();
+  const today = useToday();
   const tomorrow = shiftDateStr(today, 1);
   const snapshotText = async () => JSON.stringify(await loadSnapshot(), null, 2);
 

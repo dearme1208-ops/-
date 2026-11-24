@@ -4,6 +4,7 @@ import { parseBreakRanges } from "@/lib/breaks";
 import { buildSnapshot, type ProgressSnapshot } from "@/lib/progressSync";
 import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import { todayStr } from "@/lib/time";
+import { DEFAULT_WORK_END, DEFAULT_WORK_START } from "@/lib/settings";
 
 // 依頼文・取り込みで使うデータを、その時点のDBから読み出す(画面を開いた後の変更も反映されるよう、押した時に読む)
 
@@ -49,8 +50,8 @@ export async function loadTimeboxRequest(date: string): Promise<TimeboxRequest> 
     db.projects.toArray(),
     db.todoTasks.toArray(),
     loadBreaks(),
-    setting("today.standardWorkStart", "08:00"),
-    setting("today.standardWorkEnd", "17:00"),
+    setting("today.standardWorkStart", DEFAULT_WORK_START),
+    setting("today.standardWorkEnd", DEFAULT_WORK_END),
     setting("today.timeboxGapMinutes", "5"),
     setting(LIFE_CONTEXT_KEY, "仕事"),
   ]);

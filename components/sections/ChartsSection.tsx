@@ -11,6 +11,7 @@ import { currentFiscalYear, PERIOD_LABELS, type PeriodType } from "@/lib/period"
 import { buildTrend, TREND_GRANULARITY_LABELS, type TrendGranularity } from "@/lib/trend";
 import { buildTodoTrend, TODO_TAG_SEGMENT_CLASSES, TODO_TAG_SWATCH_CLASSES, TODO_TREND_MAX_TAGS } from "@/lib/todoTrend";
 import { formatHms } from "@/lib/time";
+import { useSetting } from "@/lib/settings";
 import RankingBarChart from "@/components/charts/RankingBarChart";
 import TrendBarChart from "@/components/charts/TrendBarChart";
 import StackedComboChart, { type StackedComboPoint } from "@/components/charts/StackedComboChart";
@@ -20,7 +21,10 @@ const TOP_N = 10;
 export default function ChartsSection() {
   const [period, setPeriod] = useState<PeriodType>("all");
   const [fiscalYear, setFiscalYear] = useState(() => currentFiscalYear());
-  const [sortBy, setSortBy] = useState<SortMetric>("total");
+  // 並べ順は次回も保つ
+  const [sortByStr, setSortByStr] = useSetting("charts.sortBy", "total");
+  const sortBy: SortMetric = sortByStr === "avg" || sortByStr === "count" ? sortByStr : "total";
+  const setSortBy = (v: SortMetric) => setSortByStr(v);
   const [granularity, setGranularity] = useState<TrendGranularity>("day");
   const [todoGranularity, setTodoGranularity] = useState<TrendGranularity>("day");
 

@@ -4,16 +4,17 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { buildWeeklyReviewQueue, type ReviewItem } from "@/lib/weeklyReview";
-import { formatDateJp, shiftDateStr, todayStr } from "@/lib/time";
+import { formatDateJp, shiftDateStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
 import Modal from "@/components/ui/Modal";
+import { useToday } from "@/lib/useToday";
 
 // 大量のToDo・案件を抱えていると、期日切れ・期日未設定のまま放置された項目が
 // 一覧に埋もれて見逃されがちになる。ここでは一括選択ではなく、対象を1件ずつ見せて
 // 「今日やる/期日を変える/もう追わない(アーカイブ)/今は決めない」をその場で選べる
 // ガイド付きの棚卸しフローにする(GTDの週次レビューに近い考え方)
 export default function WeeklyReviewModal({ onClose }: { onClose: () => void }) {
-  const today = todayStr();
+  const today = useToday();
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const lists = useLiveQuery(() => db.todoLists.toArray(), []);

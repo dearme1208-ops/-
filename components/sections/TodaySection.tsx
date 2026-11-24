@@ -6,7 +6,18 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { aggregateRecords } from "@/lib/aggregate";
 import { db, uid } from "@/lib/db";
 import { useHomeFilteredMasterTasks } from "@/lib/homeMode";
-import { deleteMasterTask, findOrCreateMasterTask, normalizeMasterKey, recomputeEstimateFromRecords, restoreDeletedMasterTask, type DeletedMaster } from "@/lib/master";
+import {
+  deleteMasterTask,
+  findOrCreateMasterTask,
+  mergeMasterTasks,
+  normalizeMasterKey,
+  recomputeEstimateFromRecords,
+  renameMasterTask,
+  restoreDeletedMasterTask,
+  undoRenameMasterTask,
+  type DeletedMaster,
+  type MasterRenameUndo,
+} from "@/lib/master";
 import { collectMethodSuggestions } from "@/lib/method";
 import {
   adjustStopTimeForBreaks,
@@ -15,7 +26,7 @@ import {
   parseBreakRanges,
   timeToMsOfDay,
 } from "@/lib/breaks";
-import { useDraftSetting, useSetting, useSettingsLoaded } from "@/lib/settings";
+import { useDraftSetting, useSetting, useSettingsLoaded, DEFAULT_WORK_START, DEFAULT_WORK_END } from "@/lib/settings";
 import { cardOverrunClass, emphasisTextClass, getRiskTier, overrunLabel, useVisualMode } from "@/lib/theme";
 import {
   baseAccumulatedMs,
@@ -79,6 +90,7 @@ import type {
 } from "@/lib/types";
 import { WEEKDAY_LABELS } from "@/lib/types";
 import { showUndoToast } from "@/lib/toast";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { buzz } from "@/lib/haptics";
 import { usePanelUsage } from "@/lib/panelUsage";
 import { openQuickCapture } from "@/lib/quickCapture";
@@ -104,7 +116,7 @@ import {
   undoDoneTaskEdit,
   type SplitSecondPart,
 } from "@/lib/provisionalSplit";
-import { deleteFromTrash, putInTrash } from "@/lib/trash";
+import { deleteFromTrash, isTrashItemGone, putInTrash, TRASH_ALREADY_RESTORED_MESSAGE } from "@/lib/trash";
 import { MergeDoneTaskDialog, SplitDoneTaskDialog } from "@/components/sections/today/DoneTaskSplitMerge";
 import { closedMs, retimeSegments } from "@/lib/segmentEdit";
 import UnifiedBoardSection from "@/components/sections/UnifiedBoardSection";
@@ -261,8 +273,8 @@ export default function TodaySection({
   const [quickActionMessage, setQuickActionMessage] = useState<string | null>(null);
   const [quickStartEnabledStr] = useSetting("today.quickStartEnabled", "true");
   const quickStartEnabled = quickStartEnabledStr === "true";
-  const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
-  const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
+  const [standardWorkStart] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
+  const [standardWorkEnd] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
   // 自動配分: 残業務時間内に未完了作業(予測)を収めるための目標ペースを自動計算する機能。
   // 「オフ」「ライブ（常に再計算）」「手動（ボタンを押した時だけ計算）」を切り替えられる
   const [autoAllocateMode, setAutoAllocateMode] = useSetting("today.autoAllocateMode", "off");
@@ -414,6 +426,10 @@ export default function TodaySection({
   // 見ている日が変わっても、自動の処理・開始・タイマーはすべて本当の今日(date・tasks)のまま動かす
   const [pastDate, setPastDate] = useState<string | null>(null);
   const viewDate = pastDate && pastDate < date ? pastDate : date;
+  // 画面は裏でも置いたままなので、ほかのタブから戻った時は今日の表示に戻す(過去の日を見たまま残さない)
+  useEffect(() => {
+    if (!background) setPastDate(null);
+  }, [background]);
   const isPastView = viewDate !== date;
   const pastTasks = useLiveQuery(
     async () => (isPastView ? await db.dailyTasks.where("date").equals(viewDate).sortBy("order") : []),
@@ -614,6 +630,7 @@ export default function TodaySection({
         return;
       }
       if (e.key === "n" || e.key === "N") {
+        setPastDate(null);
         setShowAddDialog(true);
       }
       if (e.key === "t" || e.key === "T") {
@@ -1306,6 +1323,8 @@ export default function TodaySection({
   useEffect(() => {
     function onAction(e: Event) {
       const kind = (e as CustomEvent<string>).detail;
+      // 道具袋からの操作は今日の作業に対するものなので、今日の表示に戻す
+      setPastDate(null);
       if (kind === "trouble") startTrouble();
       else if (kind === "add") setShowAddDialog(true);
       else if (kind === "dayPlan") setShowDayPlan(true);
@@ -1329,6 +1348,7 @@ export default function TodaySection({
   // クイック起動枠(1〜4)に割り当てられた作業を、状況に応じて開始/再開/終了する
   // (計測中なら終了、一時停止中なら再開、それ以外なら新しく開始)ワンタップ用のトグル処理
   async function handleQuickStart(slot: number) {
+    setPastDate(null);
     if (!quickStartEnabled) {
       setQuickActionMessage("ホーム画面ショートカットからのクイック起動は設定でOFFになっています。");
       return;
@@ -1720,6 +1740,8 @@ export default function TodaySection({
     masterTaskId: string | undefined,
     links?: DailyTaskLinks & Pick<DailyTask, "hasPlan">
   ) {
+    // 始めた作業が見えるよう、過去の日を見ていたら今日へ戻す
+    setPastDate(null);
     if (provisionalActive) {
       setPendingStart({ category, name, estimatedSeconds, masterTaskId, links });
       return;
@@ -1969,11 +1991,30 @@ export default function TodaySection({
     }
 
     if (masterEditMode === "rename") {
+      let renameUndo: MasterRenameUndo | undefined;
       if (oldMasterId) {
-        await db.masterTasks.update(oldMasterId, { category, name, updatedAt: Date.now() });
-        // マスタ自体をリネームする設定の場合、同じマスタに紐づく他の日の実績も
-        // 表示上の名称・区分を新しいものに揃える(設定画面の説明通りの挙動にする)
-        await db.records.where("masterTaskId").equals(oldMasterId).modify({ category, name });
+        // マスタ・実績・本日の作業・テンプレートの名前をまとめて変える(作業マスタタブと同じ lib/master.ts)
+        const res = await renameMasterTask(oldMasterId, { category, name });
+        if (res.status === "invalid") return { ok: false, message: "区分と作業名を入れてください" };
+        if (res.status === "conflict") {
+          const target = res.conflictWith;
+          const merge = await confirmDialog({
+            title: "同じ名前の作業マスタがあります",
+            body: `「${target.category} / ${target.name}」にまとめますか。\nこの作業マスタの実績・本日の作業・テンプレートをすべてそちらへ移し、この作業マスタは消します。`,
+            okLabel: "まとめる",
+          });
+          if (!merge) return { ok: false, message: "同じ名前の作業マスタがあるため、名前を変えられません" };
+          await mergeMasterTasks(target.id, [oldMasterId]);
+          // まとめた先の表記に揃える(表記ゆれの違いを残さない)
+          category = target.category;
+          name = target.name;
+          taskUpdates.category = category;
+          taskUpdates.name = name;
+          taskUpdates.masterTaskId = target.id;
+          showUndoToast(`「${target.category} / ${target.name}」にまとめました`);
+        } else if (res.status === "renamed") {
+          renameUndo = res.undo;
+        }
       }
       if (existingOld) {
         await db.records.update(existingOld.id, {
@@ -1985,7 +2026,15 @@ export default function TodaySection({
         await updateRecordBoundsAfterEdit(existingOld.id, task, taskUpdates.startedAt, taskUpdates.endedAt);
       }
       await db.dailyTasks.update(task.id, taskUpdates);
-      if (delta !== 0 && oldMasterId) await recomputeEstimateFromRecords(oldMasterId);
+      const masterAfter = (taskUpdates.masterTaskId as string | undefined) ?? oldMasterId;
+      if (delta !== 0 && masterAfter) await recomputeEstimateFromRecords(masterAfter);
+      if (renameUndo) {
+        const u = renameUndo;
+        showUndoToast(`作業マスタ「${u.before.category} / ${u.before.name}」を「${u.after.category} / ${u.after.name}」に変えました`, async () => {
+          // 名前だけ戻す(その後に変わった行は上書きしない)
+          if (!(await undoRenameMasterTask(u))) showUndoToast("その後に変更があったため元に戻せませんでした");
+        });
+      }
       return { ok: true };
     }
 
@@ -2102,6 +2151,8 @@ export default function TodaySection({
     showUndoToast(
       `「${workLabel(task)}」を削除しました${note ? `（${note}）` : ""}`,
       async () => {
+        // ゴミ箱から既に戻していたら何もしない
+        if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
         // 同じIDの作業がもう作り直されていたら、古い控えで上書きしない
         if (!(await db.dailyTasks.get(snapshot.id))) {
           await db.dailyTasks.put(snapshot);
@@ -2165,7 +2216,8 @@ export default function TodaySection({
     const parts = ["本日の作業"];
     if (deleteRecord && existing) parts.push("実績");
     if (deleteMaster && masterSnapshot) parts.push("作業マスタ");
-    // ゴミ箱にも入れる。実績は丸ごと消した時だけ行を入れる(差し引いただけの実績は残っているので、戻す時に上書きしない)
+    // ゴミ箱にも入れる。実績は丸ごと消した時だけ行を入れる(差し引いただけの実績は残っているので、戻す時に上書きしない)。
+    // 作業マスタは deleteMasterTask が別にゴミ箱へ入れているので、ここには入れない(二重にしない)
     const recordGone = !!recordSnapshot && !(await db.records.get(recordSnapshot.id));
     const trashId = await putInTrash(
       "dailyTask",
@@ -2173,16 +2225,18 @@ export default function TodaySection({
       {
         dailyTasks: [taskSnapshot],
         records: recordGone && recordSnapshot ? [recordSnapshot] : [],
-        masterTasks: masterSnapshot ? [masterSnapshot] : [],
       }
     );
     showUndoToast(`「${workLabel(task)}」の${parts.join("・")}を削除しました`, async () => {
+      // ゴミ箱から既に戻していたら、実績へ秒数を二重に足さない
+      if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       if (trashId) await deleteFromTrash(trashId);
       // 「元に戻す」は操作の履歴から、しばらく経ってからでも押せる。削除した時点の控えで丸ごと
       // 上書きすると、その後に同じ実績へ入った分(別の作業の完了・時刻の編集など)が消えるため、
       // 実績が残っていればこの作業の分だけを足し戻す。控えから戻すのは、実績が無くなっている時だけ
       await db.transaction("rw", db.dailyTasks, db.records, db.masterTasks, async () => {
-        await db.dailyTasks.put(taskSnapshot);
+        if (await db.dailyTasks.get(taskSnapshot.id)) return;
+        await db.dailyTasks.add(taskSnapshot);
         if (recordSnapshot) {
           // 実績ごと消した後に、同じ作業の完了で実績が作り直されていれば、そちらへ足し戻す(同じ帰属先の実績を2件にしない)
           const current =
@@ -2800,6 +2854,7 @@ export default function TodaySection({
   // （複数同時に計測中であっても全て）あればまず一時停止し、トラブル対応が
   // 終わったら自動的に再開できるよう覚えておく
   async function startTrouble() {
+    setPastDate(null);
     const runningTasks = (tasks ?? []).filter((t) => t.status === "running");
     const count = (await db.dailyTasks.where("date").equals(date).toArray()).length;
     const nowMs = Date.now();
@@ -3020,7 +3075,7 @@ export default function TodaySection({
   // data-panel-id を、画面のどこかを押した時に見て覚える
   const PANEL_LABELS: Record<string, string> = {
     favorites: "お気に入り",
-    doneRestart: "完了した業務から再開",
+    doneRestart: "完了した作業から再開",
     nextMove: "今この一手",
     suggested: "そろそろこの作業では?",
     condition: "体調",
@@ -3268,7 +3323,10 @@ export default function TodaySection({
         }}
         showScheduleCsvTools={showScheduleCsvTools}
         onTrouble={() => startTrouble()}
-        onAddTask={() => setShowAddDialog(true)}
+        onAddTask={() => {
+          setPastDate(null);
+          setShowAddDialog(true);
+        }}
         onDayPlan={() => setShowDayPlan(true)}
         onTomorrowDraft={() => setShowTomorrowDraft(true)}
         onTimebox={() => setShowTimebox(true)}
@@ -3618,7 +3676,7 @@ export default function TodaySection({
             {!isPanelFolded("doneRestart") && doneTodayUnique.length > 0 && (
               <div data-panel-id="doneRestart" className="panel p-4">
                 <h3 className="section-title font-display">
-                  <IconLabel text="✅ 完了した業務から再開" />
+                  <IconLabel text="✅ 完了した作業から再開" />
                 </h3>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {doneTodayUnique.map((d) => (
@@ -3873,7 +3931,7 @@ export default function TodaySection({
               <textarea
                 value={dailyJournal}
                 onChange={(e) => setDailyJournal(e.target.value)}
-                placeholder="タスクに縛られない、今日の気づき・メモを自由に書けます"
+                placeholder="作業に縛られない、今日の気づき・メモを自由に書けます"
                 rows={2}
                 className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
               />
@@ -3916,7 +3974,10 @@ export default function TodaySection({
           runningStrip && runningStripShown
             ? {
                 ...runningStrip,
-                onClick: () => setTaskViewTab("running"),
+                onClick: () => {
+                  setPastDate(null);
+                  setTaskViewTab("running");
+                },
                 onPause: () => {
                   const t = tasks?.find((x) => x.id === runningStrip.taskId);
                   if (t) pauseTask(t);

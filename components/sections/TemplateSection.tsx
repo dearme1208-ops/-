@@ -296,7 +296,7 @@ function TemplatePickerDialog({
       ) : (
         <div className="space-y-2">
           <input
-            placeholder="業務区分（大項目）"
+            placeholder="区分"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"

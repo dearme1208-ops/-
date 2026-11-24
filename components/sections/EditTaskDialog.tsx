@@ -9,6 +9,7 @@ import { resolveEditedTimes } from "@/lib/segmentEdit";
 import type { DailyTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import CategoryWorkNameDialog from "@/components/sections/CategoryWorkNameDialog";
+import { useUnsavedGuard } from "@/components/ui/useUnsavedGuard";
 
 const DAY_MS = 86400000;
 
@@ -132,11 +133,24 @@ export default function EditTaskDialog({
   const inProgressInvalid = isInProgress && resolvedStart >= firstSegmentBound;
   const cannotSave = timeMissing || invalidRange || inProgressInvalid;
 
-  // 保存が済んでから閉じる。保存できなかった時は閉じずに理由を出し、ほかの入力(名前・メモなど)を残す
-  async function save() {
-    if (saving) return;
-    if (!category.trim() || !name.trim()) return;
-    if (cannotSave) return;
+  // 保存していない変更があるか(✕・Escで閉じる前に聞くため)
+  const dirty =
+    category !== task.category ||
+    name !== task.name ||
+    note !== (task.note ?? "") ||
+    method !== (task.method ?? "") ||
+    startTouched ||
+    endTouched;
+
+  // 保存が済んでから閉じる。保存できなかった時は閉じずに理由を出し、ほかの入力(名前・メモなど)を残す。
+  // 閉じたら true(閉じる前の確認から呼んだ時に、保存できなければ窓を残すため)
+  async function save(): Promise<boolean> {
+    if (saving) return false;
+    if (!category.trim() || !name.trim()) {
+      setSaveError("区分と詳細作業名を入れてください");
+      return false;
+    }
+    if (cannotSave) return false;
     setSaving(true);
     setSaveError(null);
     try {
@@ -151,7 +165,7 @@ export default function EditTaskDialog({
       );
       if (result.ok) {
         onClose();
-        return;
+        return true;
       }
       setSaveError(result.message);
     } catch (e) {
@@ -159,13 +173,17 @@ export default function EditTaskDialog({
       setSaveError("保存できませんでした。もう一度お試しください");
     }
     setSaving(false);
+    return false;
   }
 
+  // ✕・Esc・暗幕で閉じる時、変更があれば保存するか聞く
+  const requestClose = useUnsavedGuard(dirty, { onClose, onSave: save });
+
   return (
-    <Modal title="作業内容を編集" onClose={onClose}>
+    <Modal title="作業内容を編集" onClose={requestClose}>
       <div className="space-y-2">
         <input
-          placeholder="業務区分（大項目）"
+          placeholder="区分"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
@@ -359,7 +377,7 @@ export default function EditTaskDialog({
         </p>
       )}
       <div className="mt-4 flex justify-end gap-2">
-        <button className="btn-pill text-sm" disabled={saving || cannotSave} onClick={save}>
+        <button className="btn-pill text-sm" disabled={saving || cannotSave} onClick={() => void save()}>
           保存
         </button>
       </div>

@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { useSetting } from "@/lib/settings";
-import { formatDateJp, formatHms, parseHourStr, shiftDateStr, todayStr } from "@/lib/time";
+import { useSetting, DEFAULT_WORK_START, DEFAULT_WORK_END } from "@/lib/settings";
+import { formatDateJp, formatHms, parseHourStr, shiftDateStr } from "@/lib/time";
+import { useToday } from "@/lib/useToday";
 
 // 「毎営業日きっちり定時分だけ働いた並行世界の自分」と、現実の自分の累積を並べる観測法。
 // 責めるためではなく、差が開いた場所と縮まった場所を正確に見るためのもの。
@@ -16,11 +17,11 @@ const RANGE_OPTIONS = [
 ];
 
 export default function ParallelWorldView() {
-  const today = todayStr();
+  const today = useToday();
   const [rangeKey, setRangeKey] = useState("30");
   const [includeWeekend, setIncludeWeekend] = useState(false);
-  const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
-  const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
+  const [standardWorkStart] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
+  const [standardWorkEnd] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
   const records = useLiveQuery(() => db.records.toArray(), []);
 
   const days = RANGE_OPTIONS.find((r) => r.key === rangeKey)?.days ?? 30;

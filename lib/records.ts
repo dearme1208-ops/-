@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
 import { findLinkedDoneTasks } from "./tasks";
-import { putInTrash } from "./trash";
+import { isTrashItemGone, putInTrash } from "./trash";
 import type { WorkRecord } from "./types";
 
 // 実績1件だけを別の作業マスタ(区分/作業名)へ繋ぎ変える。
@@ -50,9 +50,10 @@ export async function deleteRecordToTrash(id: string): Promise<{ snapshot: WorkR
   return res;
 }
 
-/** deleteRecordToTrash を取り消す。同じIDの行が既にあれば上書きしない(false) */
+/** deleteRecordToTrash を取り消す。同じIDの行が既にある・ゴミ箱から既に戻された時は何もしない(false) */
 export async function undoDeleteRecord(d: { snapshot: WorkRecord; trashId: string | null }): Promise<boolean> {
   const restored = await db.transaction("rw", db.records, db.trash, async () => {
+    if (await isTrashItemGone(d.trashId)) return false;
     if (await db.records.get(d.snapshot.id)) return false;
     await db.records.add(d.snapshot);
     if (d.trashId) await db.trash.delete(d.trashId);

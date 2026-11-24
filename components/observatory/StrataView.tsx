@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { daysBetweenDateStrs, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
 import type { TodoTask } from "@/lib/types";
+import { useToday } from "@/lib/useToday";
 
 // 先送りを地質断面として見る観測法。上が地表(今日)で、下に行くほど古い。
 // 未完了のToDoは作られてからの経過日数に応じた深さへ沈んでいき、
@@ -36,7 +37,7 @@ function layerOf(ageDays: number): Layer {
 }
 
 export default function StrataView() {
-  const today = todayStr();
+  const today = useToday();
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
 
   const buried = useMemo(() => {

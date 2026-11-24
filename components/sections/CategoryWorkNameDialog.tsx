@@ -85,7 +85,7 @@ export default function CategoryWorkNameDialog({
       {mode === "free" ? (
         <div className="space-y-2">
           <input
-            placeholder="業務区分（大項目）"
+            placeholder="区分"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             list="cwn-categories"

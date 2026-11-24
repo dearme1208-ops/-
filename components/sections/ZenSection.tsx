@@ -7,15 +7,16 @@ import { isSubmitEnter } from "@/lib/keyboard";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { computeProjectProgress } from "@/lib/projectStage";
-import { daysBetweenDateStrs, formatMsClock, todayStr } from "@/lib/time";
+import { daysBetweenDateStrs, formatMsClock } from "@/lib/time";
 import type { DailyTask, ProjectItem, TodoTask } from "@/lib/types";
+import { useToday } from "@/lib/useToday";
 
 // 禅モード専用の画面。「今やるべき1件だけを見せる。他は見せない」という引き算を、
 // タブ構成(today/settingsのみ)だけでなくこの画面自体でも徹底する。ToDo一覧も
 // 案件一覧もレポートも出さず、Claudeが選んだ(あるいは既に進行中の)ただ1件だけを
 // 円相(禅画で悟りや静けさを表す、書き切らない一筆書きの円)とともに中央に置く
 export default function ZenSection() {
-  const today = todayStr();
+  const today = useToday();
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);

@@ -148,7 +148,7 @@ export default function TodayStatusPanel({
 
       <div className="flex flex-wrap gap-2">
         <button className="btn-pill-outline text-xs" onClick={() => setShowDonut((v) => !v)}>
-          {showDonut ? "▼" : "▶"} カテゴリ別の内訳
+          {showDonut ? "▼" : "▶"} 区分別の内訳
         </button>
         <button className="btn-pill-outline text-xs" onClick={() => setShowNarrative((v) => !v)}>
           {showNarrative ? "▼" : "▶"} 本日のあらすじ

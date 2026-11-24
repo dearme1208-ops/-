@@ -1,5 +1,6 @@
 "use client";
 
+import { TRASH_ALREADY_RESTORED_MESSAGE } from "@/lib/trash";
 import { readTextFile } from "@/lib/csv";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -77,11 +78,15 @@ import { powerproWordsFor } from "@/lib/powerproWords";
 import { PennantBar, Standings } from "@/components/powerpro/PowerproCanvas";
 import EmptyArt from "@/components/ui/EmptyArt";
 import { IconLabel } from "@/components/ui/Icon";
+import { isSubmitEnter } from "@/lib/keyboard";
+import { useToday } from "@/lib/useToday";
+import { dueLabel, parseCompose } from "@/lib/claudeCompose";
 
 // 案件を新しく登録するときの期日の初期値(今日から何日後か)
 const NEW_PROJECT_DUE_DAYS = 7;
 
-type ViewMode = "gantt" | "calendar" | "tree" | "ppm" | "progress";
+const VIEW_MODES = ["gantt", "calendar", "tree", "ppm", "progress"] as const;
+type ViewMode = (typeof VIEW_MODES)[number];
 const TREE_LEAF_LIMIT = 15;
 
 const DEFAULT_PX_PER_DAY = 28;
@@ -139,7 +144,10 @@ export default function ProjectsSection({
   const [dueDate, setDueDate] = useState(() => shiftDateStr(todayStr(), NEW_PROJECT_DUE_DAYS));
   const [clientId, setClientId] = useState("");
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
-  const [viewMode, setViewMode] = useState<ViewMode>("gantt");
+  // 表示の切替(ガント・カレンダー等)は次に開いた時も保つ
+  const [viewModeStr, setViewModeStr] = useSetting("projects.viewMode", "gantt");
+  const viewMode: ViewMode = (VIEW_MODES as readonly string[]).includes(viewModeStr) ? (viewModeStr as ViewMode) : "gantt";
+  const setViewMode = (v: ViewMode) => setViewModeStr(v);
   // ガントチャートを開いた際の初期表示位置。「今日」を基準にするか、登録されている
   // 一番古い期日（案件の中で最も早いcreatedAt/dueDate）を基準にするかを選べるようにする
   const [ganttAnchor, setGanttAnchor] = useSetting("projects.ganttAnchor", "today");
@@ -190,7 +198,17 @@ export default function ProjectsSection({
   const clients = useLiveQuery(() => db.clients.orderBy("order").toArray(), []);
   const linkedTodoTasksForClients = useLiveQuery(() => db.todoTasks.toArray(), []);
   const clientNameById = useMemo(() => new Map((clients ?? []).map((c) => [c.id, c.name])), [clients]);
-  const today = todayStr();
+  const today = useToday();
+  // 件名に「金曜まで」などの期限の言葉があれば、期日として受け取り件名から外す。
+  // 分類(@)や見込み時間も読まれてしまう書き方の時は、件名を変えないよう受け取らない
+  // 「明日葉プロジェクト」「水曜会議の準備」のように読み違えることがあるので、「期日として読まない」で外せる
+  const [ignoreTitleDue, setIgnoreTitleDue] = useState(false);
+  const parsedTitleDue = useMemo(() => {
+    const r = parseCompose(title, today);
+    if (!r.dueDate || !r.title || r.category || r.estimateMin != null || r.important) return null;
+    return { dueDate: r.dueDate, title: r.title };
+  }, [title, today]);
+  const titleDue = ignoreTitleDue ? null : parsedTitleDue;
 
   // 取引先ごとの案件・ToDo・実績時間のまとめ。案件の実績時間は、その取引先に紐づく
   // 案件ID群のいずれかに属する実績(主案件/兼務どちらでも)を合算する
@@ -359,17 +377,18 @@ export default function ProjectsSection({
     if (!title.trim() || !workName.trim() || !dueDate) return;
     const item: ProjectItem = {
       id: uid(),
-      title: title.trim(),
+      title: titleDue ? titleDue.title : title.trim(),
       groupName: groupName.trim() || undefined,
       // 業務区分を空のまま登録したら既定の区分にする(Claudeのワークスペースと同じ)
       category: category.trim() || DEFAULT_PROJECT_CATEGORY,
       workName: workName.trim(),
-      dueDate,
+      dueDate: titleDue ? titleDue.dueDate : dueDate,
       clientId: clientId || undefined,
       createdAt: Date.now(),
     };
     await db.projects.add(item);
     setTitle("");
+    setIgnoreTitleDue(false);
     setGroupName("");
     setCategory("");
     setWorkName("");
@@ -420,7 +439,10 @@ export default function ProjectsSection({
     // WBS・ToDoの紐づけ・先行案件の参照もまとめて外し、「元に戻す」で全部戻す(lib/projects.ts)
     const deletion = await deleteProjectCascade(item.id);
     if (!deletion) return;
-    showUndoToast(`「${item.title}」を削除しました`, deletion.undo);
+    showUndoToast(`「${item.title}」を削除しました`, async () => {
+      // ゴミ箱から既に戻していたら何もしない
+      if (!(await deletion.undo())) showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
+    });
   }
 
   // 複製: 段階・対応状況・URL・取引先を写す(実績は写さない)。WBSがあれば写すかを尋ねる
@@ -782,13 +804,43 @@ export default function ProjectsSection({
       {showForm && (
         <div className="panel px-4 py-3">
           <h2 className="section-title font-display">案件を登録</h2>
-          <div className="mt-2 space-y-2">
+          {/* Enterで追加できるようフォームにする(変換確定のEnterでは送らない) */}
+          <form
+            className="mt-2 space-y-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addProject();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !isSubmitEnter(e) && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault();
+            }}
+          >
             <input
               placeholder="件名"
+              aria-label="件名"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
             />
+            {parsedTitleDue && (
+              <p className="caption flex flex-wrap items-center gap-2" role="status">
+                {titleDue ? (
+                  <span>
+                    期日を {dueLabel(titleDue.dueDate, today)} にして「{titleDue.title}」で登録します
+                  </span>
+                ) : (
+                  <span>件名はそのまま登録します（期日は下で選べます）</span>
+                )}
+                <button
+                  type="button"
+                  className="chip text-xs"
+                  aria-pressed={ignoreTitleDue}
+                  onClick={() => setIgnoreTitleDue((v) => !v)}
+                >
+                  {titleDue ? "期日として読まない" : "期日として読む"}
+                </button>
+              </p>
+            )}
             <input
               placeholder="グループ名（任意。別アプリで機種名違いでも同じ案件として扱いたい場合に）"
               value={groupName}
@@ -802,7 +854,7 @@ export default function ProjectsSection({
               ))}
             </datalist>
             <input
-              placeholder="業務区分（大項目）"
+              placeholder="区分"
               title={`空のままなら「${DEFAULT_PROJECT_CATEGORY}」になります`}
               value={category}
               onChange={(e) => setCategory(e.target.value)}
@@ -818,9 +870,12 @@ export default function ProjectsSection({
               <label className="text-xs text-cream/60">期日</label>
               <input
                 type="date"
-                value={dueDate}
+                aria-label="期日"
+                value={titleDue ? titleDue.dueDate : dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
+                disabled={!!titleDue}
+                title={titleDue ? "件名の期限の言葉から決めています（「期日として読まない」で外せます）" : undefined}
+                className="rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream disabled:opacity-60"
               />
               <label className="text-xs text-cream/60">取引先</label>
               <select
@@ -836,10 +891,10 @@ export default function ProjectsSection({
                 ))}
               </select>
             </div>
-            <button className="btn-pill text-sm" onClick={addProject}>
+            <button type="submit" className="btn-pill text-sm">
               追加
             </button>
-          </div>
+          </form>
         </div>
       )}
 
@@ -1387,7 +1442,7 @@ export default function ProjectsSection({
         <Modal title="本日の作業に追加" onClose={() => setStageAddTarget(null)}>
           <div className="space-y-3 text-sm">
             <p className="text-cream/70">
-              業務区分（大項目）: <span className="font-bold text-cream">{projectCategoryFor(stageAddTarget.project)}</span>
+              区分: <span className="font-bold text-cream">{projectCategoryFor(stageAddTarget.project)}</span>
               <br />
               詳細作業名: <span className="font-bold text-cream">{stageAddTarget.stage.title}</span>
               {stageAddTarget.stage.targetCount != null && (
@@ -1605,7 +1660,7 @@ function ProjectRow({
   tagOptions: string[];
   themedMode?: ThemedMode | null;
 }) {
-  const today = todayStr();
+  const today = useToday();
   // 相手の返事待ちが何日目か・期日を後ろへずらしてきた回数(lib/waiting.ts, lib/changeTracking.ts)
   const { waitingTags, nudgeDays } = useWaitingSettings();
   const waiting = project.completedAt ? null : projectWaitingInfo(project, waitingTags, nudgeDays, Date.now());
@@ -2102,7 +2157,7 @@ function ProjectRow({
         <button className="btn-pill-outline text-xs" onClick={onToggleComplete}>
           {project.completedAt ? "未完了に戻す" : "完了"}
         </button>
-        <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onEdit}>
+        <button className="px-1 py-1.5 text-xs text-cream/60 hover:text-cream" onClick={onEdit} aria-label={`案件「${project.title}」を編集`}>
           編集
         </button>
         <button
@@ -2156,7 +2211,7 @@ function ProjectRow({
             <IconLabel text={project.archived ? "🗄 アーカイブ解除" : "🗄 アーカイブ"} />
           </button>
           {/* 削除は他の操作から少し離し、押し間違えにくくする */}
-          <button className="btn-pill-outline ml-auto text-xs text-alert" onClick={onDelete}>
+          <button className="btn-pill-outline ml-auto text-xs text-alert" onClick={onDelete} aria-label={`案件「${project.title}」を削除`}>
             削除
           </button>
         </div>

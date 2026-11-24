@@ -52,7 +52,7 @@ export default function TreemapView({ items, onOpen }: AltViewProps) {
     <div className="panel p-4">
       <h3 className="mb-3 font-display text-base font-bold">🪆 ツリーマップ</h3>
       <p className="mb-3 text-xs text-cream/50">
-        面積はサブタスク・段階の件数に比例。カテゴリ内でアイテムごとに縦分割し、色は対応状況タグを表します。
+        面積はサブタスク・段階の件数に比例。分類内でアイテムごとに縦分割し、色は対応状況タグを表します。
       </p>
       <div className="overflow-x-auto">
         <svg width={W} height={H} className="block min-w-[640px] rounded-lg">

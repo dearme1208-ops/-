@@ -1,5 +1,6 @@
 "use client";
 
+import { isTrashItemGone, TRASH_ALREADY_RESTORED_MESSAGE } from "@/lib/trash";
 import { useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useWorkContext } from "@/lib/useWorkContext";
@@ -41,6 +42,7 @@ import { ConditionHeatmapPanel, WeekBlocks } from "@/components/viz/TodayViz";
 import WeekForest from "@/components/viz/WeekForest";
 import { IconLabel } from "@/components/ui/Icon";
 import EmptyArt from "@/components/ui/EmptyArt";
+import { useToday } from "@/lib/useToday";
 
 // 時刻入力(HH:MM)の変更を、元のタイムスタンプの日付部分は保ったまま時刻だけ差し替える。
 // 日をまたいだ実績(例: 23:42開始〜翌7:02終了)でも、開始・終了それぞれの本来の日付がずれないようにする
@@ -54,6 +56,7 @@ function withNewTime(epochMs: number, timeStr: string): number {
 
 export default function RecordsSection() {
   const workCtx = useWorkContext();
+  const today = useToday();
   const [search, setSearch] = useState("");
   // 外れ値・手動除外として集計から除外されている実績だけを絞り込んで見られるようにする
   const [showExcludedOnly, setShowExcludedOnly] = useState(false);
@@ -327,6 +330,8 @@ export default function RecordsSection() {
     const deleted = await deleteRecordToTrash(r.id);
     if (!deleted) return;
     showUndoToast(`「${workCtx.label(r)}」の実績を削除しました`, async () => {
+      // ゴミ箱から既に戻していたら二重に足さない
+      if (await isTrashItemGone(deleted.trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       await undoDeleteRecord(deleted);
     });
   }
@@ -432,13 +437,14 @@ export default function RecordsSection() {
   return (
     <div className="space-y-4">
       {/* 記録を振り返る図(本日の作業から移した)。いちばん上は1週間の積み木。曜日×時間帯の調子は一覧の後 */}
-      <WeekBlocks today={todayStr()} />
+      <WeekBlocks today={today} />
       {/* 森モードだけ、同じ7日を木の並びでも見せる(他モードでは何も出さない) */}
-      <WeekForest end={todayStr()} today={todayStr()} title="🌲 この1週間の森" />
+      <WeekForest end={today} today={today} title="🌲 この1週間の森" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <input
             placeholder="日付・区分・作業名で検索"
+            aria-label="実績を検索"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full sm:w-64 rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
@@ -639,7 +645,7 @@ export default function RecordsSection() {
               <button className="btn-pill-outline text-xs" onClick={() => toggleExclude(r)}>
                 {r.excludedFromStats ? "集計に復活" : "集計から除外"}
               </button>
-              <button className="px-1 py-1 text-xs text-alert" onClick={() => deleteRecord(r)}>
+              <button className="px-1 py-1 text-xs text-alert" onClick={() => deleteRecord(r)} aria-label={`実績「${r.name}」を削除`}>
                 削除
               </button>
               <button className="btn-pill text-xs" onClick={() => setEditingRecordId(null)}>
@@ -649,11 +655,31 @@ export default function RecordsSection() {
           </div>
           )
         )}
-        {filtered.length === 0 && (
+        {/* 読み込み中(records未取得)は空の知らせを出さない(一瞬「ありません」が見えるのを防ぐ) */}
+        {records && filtered.length === 0 && (
           // 実績一覧の枠の内側なので、空の知らせの枠は消す
           <div className="empty-state border-0">
-            <EmptyArt name="records" />
-            <p>実績データがありません。</p>
+            {records.length === 0 ? (
+              <>
+                <EmptyArt name="records" />
+                <p>実績データがありません。</p>
+              </>
+            ) : (
+              // 実績はあるが、検索・絞り込みに合うものが無い
+              <>
+                <p>条件に合う実績はありません。</p>
+                <button
+                  type="button"
+                  className="btn-pill-outline mt-2 text-xs"
+                  onClick={() => {
+                    setSearch("");
+                    setShowExcludedOnly(false);
+                  }}
+                >
+                  条件をクリア
+                </button>
+              </>
+            )}
           </div>
         )}
         {filtered.length > visibleRecords.length && (
@@ -675,7 +701,7 @@ export default function RecordsSection() {
       </div>
 
       {/* 一覧の後に、振り返り用の図・リプレイ・各履歴 */}
-      <ConditionHeatmapPanel today={todayStr()} />
+      <ConditionHeatmapPanel today={today} />
 
       <div className="panel flex flex-wrap items-center gap-2 p-4">
         <h3 className="section-title font-display">📼 一日のリプレイ</h3>
@@ -920,7 +946,7 @@ function AddRecordDialog({
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
         />
         <input
-          placeholder="業務区分（大項目）"
+          placeholder="区分"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"

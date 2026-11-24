@@ -9,7 +9,6 @@ import GroupedTabNav from "@/components/GroupedTabNav";
 import { db } from "@/lib/db";
 import { useSetting, useSettingLoaded } from "@/lib/settings";
 import { finishDailyTask } from "@/lib/tasks";
-import { todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 import ThemeInit from "@/components/ThemeInit";
 import VisualModeInit from "@/components/VisualModeInit";
@@ -34,6 +33,7 @@ import TodoReminderPopup from "@/components/TodoReminderPopup";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import { PLAIN_TAB_LABELS, parseHiddenTabKeys, tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
 import { menuSkinFor } from "@/lib/mainMenu";
+import { useToday } from "@/lib/useToday";
 
 const TodaySection = dynamic(() => import("@/components/sections/TodaySection"), { ssr: false });
 const ClaudeWorkspaceSection = dynamic(() => import("@/components/sections/ClaudeWorkspaceSection"), { ssr: false });
@@ -181,7 +181,7 @@ export default function HomePage() {
   // 統合ボードのタブに、開かなくても分かるよう「期限切れ・本日期日」件数のバッジを出す。
   // ボードに置いてある(boardXが設定された)ToDo・案件だけを対象にする(タブを開いた時に
   // 実際に目に入るものと一致させるため)
-  const badgeDate = todayStr();
+  const badgeDate = useToday();
   const boardBadgeTodos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const boardBadgeProjects = useLiveQuery(() => db.projects.toArray(), []);
   const boardUrgentCount = useMemo(() => {
@@ -223,7 +223,7 @@ export default function HomePage() {
     if (!tabs.some((t) => t.key === active)) setActive("today");
   }, [tabs, active]);
 
-  const date = todayStr();
+  const date = useToday();
   const todayTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
   const [provisionalEnabledStr, setProvisionalEnabledStr] = useSetting("today.provisionalEnabled", "false");
   const provisionalEnabled = provisionalEnabledStr === "true";

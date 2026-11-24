@@ -24,7 +24,7 @@ export default function CityView({ items, onOpen }: AltViewProps) {
     <div className="panel p-4">
       <h3 className="mb-3 font-display text-base font-bold">🏙 都市計画図</h3>
       <p className="mb-4 text-xs text-cream/50">
-        カテゴリ=地区、ビルの高さ=サブタスク・段階の件数。窓の色は今日が期日・重要のものほど明るくなります。
+        分類=地区、ビルの高さ=サブタスク・段階の件数。窓の色は今日が期日・重要のものほど明るくなります。
       </p>
       <div className="space-y-6">
         {districts.map(([name, list]) => (

@@ -5,9 +5,10 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage, ADVENTURER_STAGES } from "@/lib/growth";
-import { formatHms, todayStr } from "@/lib/time";
+import { formatHms } from "@/lib/time";
 import { computeCalendarHeatmap, heatLevel, type CalendarDay } from "@/lib/calendarHeatmap";
 import RankingBarChart, { type RankingBarDatum } from "@/components/charts/RankingBarChart";
+import { useToday } from "@/lib/useToday";
 
 // 危険度マップの5段階の濃淡(GanttMonthView/HeatmapSectionと揃える)
 const LEVEL_OPACITY = [0.04, 0.22, 0.42, 0.64, 0.9];
@@ -20,7 +21,7 @@ const WEEKS_BACK = 12;
 // この世界観には自然だと判断し、既存の4タブ(グラフ/ヒートマップ/年表/残業分析)は
 // 冒険者モードでは非表示にし、この画面に統合した(集計・ランキングタブの中身を丸ごと置き換える)
 export default function AdventurerStatusSection() {
-  const today = todayStr();
+  const today = useToday();
   const records = useLiveQuery(() => db.records.toArray(), []);
   const [selectedDetail, setSelectedDetail] = useState<string | null>(null);
 
@@ -127,7 +128,7 @@ export default function AdventurerStatusSection() {
 
       {/* --- 討伐者番付: 今月のカテゴリ別合計時間 --- */}
       <div className="panel space-y-3 p-4">
-        <h3 className="font-display text-base font-bold">討伐者番付（今月・カテゴリ別）</h3>
+        <h3 className="font-display text-base font-bold">討伐者番付（今月・区分別）</h3>
         {categoryRanking.length === 0 ? (
           <p className="text-xs text-cream/40">今月の討伐記録はまだありません。</p>
         ) : (

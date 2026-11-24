@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { formatHms, shiftDateStr, todayStr } from "@/lib/time";
+import { formatHms, shiftDateStr } from "@/lib/time";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { computeStreakDays } from "@/lib/streak";
 import { tabLabel, useVisualMode, visibleTabKeys, type TabKey } from "@/lib/theme";
@@ -14,6 +14,7 @@ import { readPalette, paintPlayer, paintRankEmblem } from "@/lib/powerproArt";
 import { MENU_ENTRIES, buildMenuBadges, todayWorkedSeconds, type MenuBadge } from "@/lib/powerproMenu";
 import { paintModeIcon, type Rgb, type TileShape } from "@/lib/powerproMenuArt";
 import { PLAIN_MENU_WORDS, menuSkinFor, paletteColorFor, type MenuSkin } from "@/lib/mainMenu";
+import { useToday } from "@/lib/useToday";
 
 // モード選択メニュー。タブへ入る前の入口になる画面。
 //
@@ -32,7 +33,7 @@ import { PLAIN_MENU_WORDS, menuSkinFor, paletteColorFor, type MenuSkin } from "@
 export default function MainMenuSection({ onEnter }: { onEnter: (tab: TabKey) => void }) {
   const { mode, wordingEnabled, wordingMode } = useVisualMode();
   const W = powerproWordsFor(wordingEnabled);
-  const today = todayStr();
+  const today = useToday();
   const [now, setNow] = useState(() => Date.now());
   const [focused, setFocused] = useState<TabKey>("today");
 

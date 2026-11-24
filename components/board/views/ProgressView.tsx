@@ -201,7 +201,10 @@ export default function ProgressView({
 }) {
   const [sortStr, setSortStr] = useSetting("board.progressSort", "risk");
   const sort = (Object.keys(SORT_LABELS).includes(sortStr) ? sortStr : "risk") as ProgressSort;
-  const [kind, setKind] = useState<KindFilter>("all");
+  // 案件/ToDoの切り替えも並び順と同じく次回へ残す
+  const [kindStr, setKindStr] = useSetting("board.progressKind", "all");
+  const kind: KindFilter = kindStr === "project" || kindStr === "todo" ? kindStr : "all";
+  const setKind = (k: KindFilter) => setKindStr(k);
   const [statusFilter, setStatusFilter] = useState<ProgressStatus | null>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [showDoneSteps, setShowDoneSteps] = useState(false);

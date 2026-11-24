@@ -13,13 +13,14 @@ import {
   moveDailyTaskToToday,
   segmentsAccumulatedMs,
 } from "@/lib/tasks";
-import { formatDateJp, formatHms, todayStr } from "@/lib/time";
+import { formatDateJp, formatHms } from "@/lib/time";
 import { cardOverrunClass, useVisualMode } from "@/lib/theme";
 import Modal from "@/components/ui/Modal";
 import { db } from "@/lib/db";
 import { splitOrphanAtMidnight } from "@/lib/provisionalSplit";
 import { showUndoToast } from "@/lib/toast";
 import { useWorkContext } from "@/lib/useWorkContext";
+import { useToday } from "@/lib/useToday";
 
 // 「計測中」「一時停止中」のまま日をまたいで放置された作業をアプリ起動時に検出し、
 // 終了するか・今日の作業として引き継ぐかをその場で選べるようにする。本日の作業タブは
@@ -27,7 +28,7 @@ import { useWorkContext } from "@/lib/useWorkContext";
 // 計測中のものは内部的に時間が計測され続けてしまうため
 export default function OrphanTaskModal() {
   const workCtx = useWorkContext();
-  const today = todayStr();
+  const today = useToday();
   const orphans = useLiveQuery(() => findOrphanedDailyTasks(today), [today]);
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState(false);

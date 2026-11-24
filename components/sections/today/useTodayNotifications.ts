@@ -14,7 +14,7 @@ import { notify } from "@/lib/notifications";
 import { computeAfterHoursBreakdown } from "@/lib/overtime";
 import { getPeriodRange, isDateStrInRange } from "@/lib/period";
 import type { SuggestedTask } from "@/lib/suggest";
-import { formatHms } from "@/lib/time";
+import { formatHms, todayStr } from "@/lib/time";
 import type { ConditionLog, WorkRecord } from "@/lib/types";
 
 // 通知に使う設定と既定値。1回のクエリでまとめて読む(下記)
@@ -94,8 +94,11 @@ export function useTodayNotifications(p: {
     if (thresholdSeconds <= 0) return;
     const range = getPeriodRange({ type: "week" });
     if (!range) return;
-    const weekKey = range.start.toISOString().slice(0, 10);
-    if (settings["notify.afterHoursWeeklyNotifiedWeek"] === weekKey) return;
+    // 週の開始日(ローカル日付)。以前は世界標準時の日付で保存していたので、そちらで通知済みでも同じ週とみなす
+    const weekKey = todayStr(range.start);
+    const legacyWeekKey = range.start.toISOString().slice(0, 10);
+    const notifiedWeek = settings["notify.afterHoursWeeklyNotifiedWeek"];
+    if (notifiedWeek === weekKey || notifiedWeek === legacyWeekKey) return;
     const periodRecords = records.filter((r) => isDateStrInRange(r.date, range));
     const { totalSeconds } = computeAfterHoursBreakdown(periodRecords, afterHoursCutoff);
     if (totalSeconds >= thresholdSeconds) {

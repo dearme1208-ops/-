@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 
 test("今日の記録を別の画面で書き換えたら、本日の作業の入力欄も追従する(古い内容で上書きしない)", async ({ page }) => {
   await seed(page, { settings: { "today.collapseExtras": "false" } });
-  const box = page.getByPlaceholder("タスクに縛られない、今日の気づき・メモを自由に書けます");
+  const box = page.getByPlaceholder("作業に縛られない、今日の気づき・メモを自由に書けます");
   await box.fill("朝のメモ");
   await page.waitForTimeout(300);
   // 実績編集の「記録の履歴」で、今日のメモを書き換える

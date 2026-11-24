@@ -124,7 +124,7 @@ test("打刻を実績にすると、本日の作業の「完了」に並ぶ。�
   // 自由入力ではなく、最初からマスタの一覧が出ている
   const picker = page.locator(".modal-scrim").last();
   await picker.getByRole("button", { name: /風呂掃除/ }).click();
-  await expect(page.getByPlaceholder("業務区分（大項目）")).toHaveValue("家事");
+  await expect(page.getByPlaceholder("区分", { exact: true })).toHaveValue("家事");
   await expect(page.getByPlaceholder("詳細作業名")).toHaveValue("風呂掃除");
   await page.getByRole("button", { name: "記録する" }).click();
 
@@ -155,7 +155,7 @@ test("直前の作業が終わってから打刻するまでの時間も、打�
   await expect(panel).toContainText("前の作業の終わりから");
   await panel.getByRole("button", { name: "実績にする" }).click();
   await expect(page.getByLabel("開始時刻")).toHaveValue("13:54");
-  await page.getByPlaceholder("業務区分（大項目）").fill("業務");
+  await page.getByPlaceholder("区分", { exact: true }).fill("業務");
   await page.getByPlaceholder("詳細作業名").fill("資料作成");
   await page.getByRole("button", { name: "記録する" }).click();
   await expect(panel).toHaveCount(0);

@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { parseBreakRanges } from "@/lib/breaks";
 import { buildDayPlan, PLAN_HORIZON_DAYS, type PlanCandidate, type PlannedItem } from "@/lib/dayPlan";
 import { applyPlanToToday } from "@/lib/dayPlanApply";
-import { useSetting, useSettingLoaded } from "@/lib/settings";
+import { useSetting, useSettingLoaded, DEFAULT_WORK_START, DEFAULT_WORK_END } from "@/lib/settings";
 import { daysBetweenDateStrs, formatClock, formatDateJp, formatHms } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
 
@@ -35,8 +35,8 @@ export default function DayPlanModal({ today, onClose }: { today: string; onClos
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
-  const [workStart] = useSetting("today.standardWorkStart", "08:00");
-  const [workEnd] = useSetting("today.standardWorkEnd", "17:00");
+  const [workStart] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
+  const [workEnd] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
   const [breakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
   // 設定(始業・終業・休憩)を読み終える前に計算すると、既定の8:00〜17:00で計画が固まり、
   // 夜に開くと「残り稼働 00:00:00」になっていた。読み終えるまで待つ

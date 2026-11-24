@@ -32,11 +32,11 @@ test("話し言葉で書くと、期限・見込み・分類を受け取って�
   expect(daily[0]).toMatchObject({ status: "running", estimatedSeconds: 1800 });
 });
 
-test("「プロジェクトにする」で送ると、期日つきのプロジェクトになる(期日が無ければ1週間後)", async ({ page }) => {
+test("「案件にする」で送ると、期日つきの案件になる(期日が無ければ1週間後)", async ({ page }) => {
   await seed(page, { settings: CLAUDE });
-  await page.getByRole("button", { name: "プロジェクトにする" }).click();
+  await page.getByRole("button", { name: "案件にする" }).click();
   await page.getByTestId("claude-composer").locator("textarea").fill("新サイトの制作");
-  await page.getByRole("button", { name: "プロジェクトとして登録" }).click();
+  await page.getByRole("button", { name: "案件として登録" }).click();
   const projects = await readAll<{ title: string; dueDate: string }>(page, "projects");
   expect(projects).toEqual([expect.objectContaining({ title: "新サイトの制作", dueDate: jstDate(7) })]);
   await expect(page.getByText("新サイトの制作").first()).toBeVisible();

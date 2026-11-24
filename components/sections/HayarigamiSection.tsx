@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { computeRemainingEstimatedSeconds, finishDailyTask, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { formatHms, formatMsClock, todayStr } from "@/lib/time";
+import { formatHms, formatMsClock } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage } from "@/lib/growth";
 import { useSetting } from "@/lib/settings";
@@ -31,6 +31,7 @@ import {
 import type { DailyTask, MasterTask, TodoTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
 import Modal from "@/components/ui/Modal";
+import { useToday } from "@/lib/useToday";
 
 // 流行り神風モード(怪異調査モード)専用の「本日の作業」タブ。
 // ホラーサウンドノベルの画面構成(暗闇の背景 + 下部のメッセージウィンドウ + 選択肢)を
@@ -63,7 +64,7 @@ export default function HayarigamiSection() {
   // 設定の「テーマに合わせた文言を使う」がオフなら、色・絵はこのモードのまま
   // 言葉づかいだけ工程表本来のものへ差し替える
   const W = wordsFor(wordingEnabled);
-  const today = todayStr();
+  const today = useToday();
 
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);

@@ -8,7 +8,7 @@ import { isSubmitEnter } from "@/lib/keyboard";
 import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, pauseRunningProvisional, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
-import { formatClock, formatHms, formatMsClock, todayStr } from "@/lib/time";
+import { formatClock, formatHms, formatMsClock } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage, TERMINAL_STAGES } from "@/lib/growth";
 import { useVisualMode, getRiskTier, riskBadgeClasses, riskBadgeLabel, RISK_TIERS_TERMINAL } from "@/lib/theme";
@@ -16,6 +16,7 @@ import { fetchCurrentWeatherCode, weatherCodeToCategory, type WeatherCategory } 
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { dailyTaskLinksOf, type DailyTaskLinks } from "@/lib/workContext";
 import { useWorkContext } from "@/lib/useWorkContext";
+import { useToday } from "@/lib/useToday";
 
 // computeGrowthStageの分岐(0h/1h/2h/4h/6h/8h以上)と対応させた表示用ラベル
 const GROWTH_HOUR_LABELS = ["0h", "1h", "2h", "4h", "6h", "8h+"];
@@ -65,7 +66,7 @@ export default function TerminalDashboardSection() {
   const workCtx = useWorkContext();
   const { themedMode } = useVisualMode();
   const mode = themedMode ?? "terminal";
-  const today = todayStr();
+  const today = useToday();
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);

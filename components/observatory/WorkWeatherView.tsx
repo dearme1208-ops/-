@@ -3,7 +3,8 @@
 import { useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { formatDateJp, formatHms, shiftDateStr, todayStr } from "@/lib/time";
+import { formatDateJp, formatHms, shiftDateStr } from "@/lib/time";
+import { useToday } from "@/lib/useToday";
 
 // これから来る期日の混み具合を、週間天気予報として見る観測法。
 // 実際の天気ではなく「その日に締切が何件集まっているか」を天気に変換する。
@@ -31,7 +32,7 @@ function weatherOf(load: number): { icon: string; label: string; tone: "clear" |
 }
 
 export default function WorkWeatherView() {
-  const today = todayStr();
+  const today = useToday();
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const dailyTasks = useLiveQuery(() => db.dailyTasks.toArray(), []);

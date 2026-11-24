@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
-import { useSetting } from "@/lib/settings";
+import { useSetting, DEFAULT_WORK_START, DEFAULT_WORK_END } from "@/lib/settings";
 import { SETTINGS_CATEGORIES, settingCategoryOf } from "@/lib/settingsCategories";
 import { parseBreakRanges, serializeBreakRanges } from "@/lib/breaks";
 import { DEFAULT_TAG_PRESETS, parsePresetList, serializePresetList } from "@/lib/todo";
@@ -37,6 +37,7 @@ import type { BreakRange, TrashItem, TrashKind } from "@/lib/types";
 import { deleteFromTrash, restoreFromTrash, TRASH_KEEP_DAYS } from "@/lib/trash";
 import { WEEKDAY_JP } from "@/lib/types";
 import LifeContextSelect from "@/components/ai/LifeContextSelect";
+import { confirmDialog } from "@/components/ui/ConfirmDialog";
 
 export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: string) => void } = {}) {
   const [backupStatus, setBackupStatus] = useState("");
@@ -146,8 +147,8 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
   );
   const patternSuggestNotifyEnabled = patternSuggestNotifyEnabledStr === "true";
   const [masterEditModeStr, setMasterEditModeStr] = useSetting("records.masterEditMode", "relink");
-  const [standardWorkStart, setStandardWorkStart] = useSetting("today.standardWorkStart", "08:00");
-  const [standardWorkEnd, setStandardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
+  const [standardWorkStart, setStandardWorkStart] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
+  const [standardWorkEnd, setStandardWorkEnd] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
   const [conditionEnabledStr, setConditionEnabledStr] = useSetting("condition.enabled", "true");
   const conditionEnabled = conditionEnabledStr === "true";
   const [simpleButtonsStr, setSimpleButtonsStr] = useSetting("today.simpleButtons", "false");
@@ -364,7 +365,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
     const lon = Number(newPlaceLon);
     const radius = Math.max(10, Number(newPlaceRadius) || 150);
     if (!newPlaceLabel.trim() || !newPlaceCategory.trim() || !newPlaceName.trim() || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-      setGeoPlaceStatus("地点名・業務区分・作業名・緯度経度（現在地を登録）を入力してください。");
+      setGeoPlaceStatus("地点名・区分・作業名・緯度経度（現在地を登録）を入力してください。");
       return;
     }
     if (editingPlaceId) {
@@ -581,11 +582,11 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
       try {
         const { restoredRecords, restoredDailyTasks, skippedExisting } = await restoreArchive(data);
         setBackupStatus(
-          `アーカイブから実績${restoredRecords}件・作業${restoredDailyTasks}件を戻しました` +
+          `古いデータの書き出しファイルから実績${restoredRecords}件・作業${restoredDailyTasks}件を戻しました` +
             (skippedExisting > 0 ? `（すでにある${skippedExisting}件は今の内容のまま残しました）。` : "。")
         );
       } catch (e) {
-        setBackupStatus(`アーカイブを戻せませんでした（今のデータは変わっていません）: ${e instanceof Error ? e.message : String(e)}`);
+        setBackupStatus(`書き出しファイルを戻せませんでした（今のデータは変わっていません）: ${e instanceof Error ? e.message : String(e)}`);
       }
       return;
     }
@@ -609,13 +610,16 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
       .map(({ label, count }) => `${label} ${count === null ? "なし(今のまま残ります)" : `${count}件`}`)
       .join("\n");
     if (
-      !confirm(
-        `このファイルの内容で、今のデータを置き換えます。\n\n` +
+      !(await confirmDialog({
+        title: "バックアップから復元しますか？",
+        body:
+          `このファイルの内容で、今のデータを置き換えます。\n\n` +
           `控えを取った日時: ${exportedText}\nファイルの形式: version ${fileVersion ?? "不明"}\n${summaryText}\n\n` +
           `・ファイルに入っていない種類のデータは今のまま残ります。\n` +
-          `・置き換える前に、今のデータを「koutei-hyo_before-restore_日時.json」として自動でダウンロードします。戻したくなったら、そのファイルを復元してください。\n\n` +
-          `復元しますか?`
-      )
+          `・置き換える前に、今のデータを「koutei-hyo_before-restore_日時.json」として自動でダウンロードします。戻したくなったら、そのファイルを復元してください。`,
+        okLabel: "復元する",
+        danger: true,
+      }))
     ) {
       return;
     }
@@ -655,7 +659,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
     }
     downloadTextFile(`koutei-hyo_archive_before-${archiveBeforeMonth}.json`, JSON.stringify(data, null, 2));
     setArchiveStatus(
-      `実績${data.records.length}件、日次タスク${data.dailyTasks.length}件をダウンロードしました。内容を確認してから削除を実行してください。`
+      `実績${data.records.length}件、作業${data.dailyTasks.length}件をダウンロードしました。内容を確認してから削除を実行してください。`
     );
     setArchiveExported(data);
   }
@@ -663,15 +667,18 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
   async function deleteArchive() {
     if (!archiveExported) return;
     if (
-      !confirm(
-        `${archiveBeforeMonth}より前の実績・日次タスクを削除します。ダウンロードしたアーカイブファイルは保存済みですか？この操作は元に戻せません。`
-      )
+      !(await confirmDialog({
+        title: "古いデータを削除しますか？",
+        body: `${archiveBeforeMonth}より前の実績・作業を削除します。ダウンロードしたファイルは保存済みですか？この操作は元に戻せません。`,
+        okLabel: "削除する",
+        danger: true,
+      }))
     ) {
       return;
     }
     const { deletedRecords, deletedDailyTasks, keptChanged } = await deleteArchivedItems(archiveExported);
     setArchiveStatus(
-      `削除しました（実績${deletedRecords}件、日次タスク${deletedDailyTasks}件）。` +
+      `削除しました（実績${deletedRecords}件、作業${deletedDailyTasks}件）。` +
         (keptChanged > 0 ? `ダウンロードの後に書き換えられた${keptChanged}件は、ファイルの内容と違うため残しました。` : "")
     );
     setArchiveExported(null);
@@ -1050,7 +1057,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
                 type="text"
                 value={geoCategory}
                 onChange={(e) => setGeoCategory(e.target.value)}
-                placeholder="業務区分（例: 移動）"
+                placeholder="区分（例: 移動）"
                 className="w-32 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
               />
               <span>/</span>
@@ -1119,7 +1126,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
                     <button
                       className="ml-auto text-cream/40 hover:text-cream"
                       onClick={() => startEditGeoPlace(p)}
-                      aria-label="編集"
+                      aria-label={`${p.label}を編集`}
                     >
                       ✎
                     </button>
@@ -1150,7 +1157,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
                   type="text"
                   value={newPlaceCategory}
                   onChange={(e) => setNewPlaceCategory(e.target.value)}
-                  placeholder="業務区分"
+                  placeholder="区分"
                   className="w-32 rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
                 />
                 <span>/</span>
@@ -1266,7 +1273,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
                     <button
                       className="ml-auto text-cream/40 hover:text-cream"
                       onClick={() => startEditWeatherPlace(p)}
-                      aria-label="編集"
+                      aria-label={`${p.label}を編集`}
                     >
                       ✎
                     </button>
@@ -1404,10 +1411,10 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
           <span className="text-xs text-cream/60">円/時間</span>
         </div>
         <p className="text-[10px] text-cream/40">
-          設定すると、集計・週報/月報・案件などの画面に概算金額（作業時間×単価）が表示されます。未設定のカテゴリ・案件にはこのデフォルト単価が使われます。案件ごとの単価は「案件」タブから個別に設定できます。
+          設定すると、集計・週報/月報・案件などの画面に概算金額（作業時間×単価）が表示されます。未設定の区分・案件にはこのデフォルト単価が使われます。案件ごとの単価は「案件」タブから個別に設定できます。
         </p>
         <div className="space-y-2 border-t border-cream/10 pt-3">
-          <p className="text-xs text-cream/65">カテゴリ別の単価（デフォルトより優先されます）</p>
+          <p className="text-xs text-cream/65">区分別の単価（デフォルトより優先されます）</p>
           {Object.entries(categoryRates).map(([cat, amount]) => (
             <div key={cat} className="flex items-center gap-2 text-xs text-cream/70">
               <span className="flex-1 truncate">{cat}</span>
@@ -1421,7 +1428,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
             <input
               value={newRateCategory}
               onChange={(e) => setNewRateCategory(e.target.value)}
-              placeholder="業務区分"
+              placeholder="区分"
               className="w-28 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
             />
             <input
@@ -1507,7 +1514,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
           最初に「どこから追加しますか」と聞き、作業マスタ／お気に入り／自由入力のどれかを選んでから、その専用の画面に進みます。演出テーマの育成選手モードと同じ流れです。
           <br />
           <b className="text-cream">1枚にまとめる</b>=
-          マスタの検索・一覧と、業務区分＋詳細作業名の直接入力を1つの画面に載せます。画面を切り替えずに済むぶん縦に長くなります。演出テーマの登山モードと同じ形です。
+          マスタの検索・一覧と、区分＋詳細作業名の直接入力を1つの画面に載せます。画面を切り替えずに済むぶん縦に長くなります。演出テーマの登山モードと同じ形です。
         </p>
       </div>
 
@@ -1900,7 +1907,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
             月次ダイジェスト通知: {monthlySummaryEnabled ? "ON" : "OFF"}
           </button>
           <p className="mt-2 text-xs text-cream/65">
-            月が変わって初めてアプリを開いたタイミングで、先月の合計作業時間と最も時間を使った業務区分を通知します（月1回）。
+            月が変わって初めてアプリを開いたタイミングで、先月の合計作業時間と最も時間を使った区分を通知します（月1回）。
           </p>
         </div>
         {/* 本日タブのパネル表示から移した、通知・振動のスイッチ */}
@@ -2434,7 +2441,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
           </div>
         )}
         <p className="text-xs text-cream/65">
-          このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は、バックアップファイルに入っている種類のデータを置き換えます（月次アーカイブのファイルを選んだ場合は、今のデータに足し戻します）。「他の端末に共有」は、クラウドを経由せずOSの共有機能(AirDrop/近くのデバイス等)でその場だけ他の自分の端末にファイルを渡したい場合にお使いください。渡した端末側では「バックアップから復元」で取り込めます。
+          このアプリのデータは端末のブラウザ内にのみ保存されています。定期的にバックアップをダウンロードしておくと、機種変更やブラウザデータ消去の際に復元できます。復元は、バックアップファイルに入っている種類のデータを置き換えます（「古いデータの書き出しと削除」で書き出したファイルを選んだ場合は、今のデータに足し戻します）。「他の端末に共有」は、クラウドを経由せずOSの共有機能(AirDrop/近くのデバイス等)でその場だけ他の自分の端末にファイルを渡したい場合にお使いください。渡した端末側では「バックアップから復元」で取り込めます。
         </p>
       </div>
 
@@ -2504,11 +2511,11 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
             }}
             className="rounded border border-cream/20 bg-ink px-2 py-1 text-cream"
           />
-          <span>より前の実績・日次タスクをアーカイブ</span>
+          <span>より前の実績・作業が対象</span>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn-pill-outline text-sm" onClick={exportArchive}>
-            アーカイブをダウンロード
+            古いデータをダウンロード
           </button>
           <button
             className="btn-pill-outline text-sm disabled:opacity-30"
@@ -2520,7 +2527,7 @@ export default function SettingsSection({ onOpenTab }: { onOpenTab?: (tab: strin
         </div>
         {archiveStatus && <p className="text-xs text-cream/65">{archiveStatus}</p>}
         <p className="text-xs text-cream/65">
-          データが増えすぎて動作が重くなってきた場合などに使います。まずダウンロードしてバックアップし、内容を確認してから削除を実行してください（削除ボタンは同じ期間でダウンロードするまで押せません。削除されるのはダウンロードしたファイルに入っている分だけです）。作業マスタや案件、ToDoは削除されません。削除した分を戻したいときは、上の「バックアップから復元」でアーカイブのファイルを選んでください。
+          データが増えすぎて動作が重くなってきた場合などに使います。まずダウンロードしてバックアップし、内容を確認してから削除を実行してください（削除ボタンは同じ期間でダウンロードするまで押せません。削除されるのはダウンロードしたファイルに入っている分だけです）。作業マスタや案件、ToDoは削除されません。削除した分を戻したいときは、上の「バックアップから復元」で書き出したファイルを選んでください。
         </p>
       </div>
 
@@ -2568,7 +2575,15 @@ function TrashPanel() {
   async function emptyAll() {
     const list = items ?? [];
     if (list.length === 0) return;
-    if (!confirm(`ゴミ箱の${list.length}件を完全に消します。元に戻せません。よろしいですか？`)) return;
+    if (
+      !(await confirmDialog({
+        title: "ゴミ箱を空にしますか？",
+        body: `ゴミ箱の${list.length}件を完全に消します。元に戻せません。`,
+        okLabel: "完全に消す",
+        danger: true,
+      }))
+    )
+      return;
     // 確認のあとに入ったものは消さない
     await db.trash.bulkDelete(list.map((i) => i.id));
     showUndoToast("ゴミ箱を空にしました");
@@ -2609,7 +2624,11 @@ function TrashPanel() {
                   <button className="btn-pill px-3 py-1 text-xs" onClick={() => void restore(item)}>
                     戻す
                   </button>
-                  <button className="btn-pill-outline px-3 py-1 text-xs text-alert" onClick={() => void remove(item)}>
+                  <button
+                    className="btn-pill-outline px-3 py-1 text-xs text-alert"
+                    onClick={() => void remove(item)}
+                    aria-label={`「${item.label}」を完全に消す`}
+                  >
                     完全に消す
                   </button>
                 </div>

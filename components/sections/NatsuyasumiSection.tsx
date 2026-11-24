@@ -6,7 +6,7 @@ import { db, uid } from "@/lib/db";
 import { computeRemainingEstimatedSeconds, finishDailyTask, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { computeStreakDays } from "@/lib/streak";
-import { formatHms, todayStr } from "@/lib/time";
+import { formatHms } from "@/lib/time";
 import { useDraftSetting } from "@/lib/settings";
 import { useVisualMode } from "@/lib/theme";
 import {
@@ -26,6 +26,7 @@ import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
 import Modal from "@/components/ui/Modal";
+import { useToday } from "@/lib/useToday";
 
 // ぼくのなつやすみ風モードの「本日の作業」タブ。
 //
@@ -50,7 +51,7 @@ export default function NatsuyasumiSection() {
   const workCtx = useWorkContext();
   const { wordingEnabled } = useVisualMode();
   const W = natsuWordsFor(wordingEnabled);
-  const today = todayStr();
+  const today = useToday();
   const month = today.slice(0, 7);
 
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);

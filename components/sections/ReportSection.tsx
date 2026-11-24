@@ -31,6 +31,8 @@ import RankingBarChart from "@/components/charts/RankingBarChart";
 import OverlayLineChart from "@/components/charts/OverlayLineChart";
 import Modal from "@/components/ui/Modal";
 import WeekForest from "@/components/viz/WeekForest";
+import { useToday } from "@/lib/useToday";
+import { reportPeriodKeys, useLegacyReportValue } from "@/lib/reportPeriodKey";
 
 const TOP_N = 10;
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -75,17 +77,14 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
   // ToDoの推移(新規作成/完了/未完了)の内訳一覧を見せるためのモーダル。各行はさらにonOpenTodoDetailで詳細を開ける
   const [viewingTodoList, setViewingTodoList] = useState<{ title: string; tasks: TodoTask[] } | null>(null);
   const filter: PeriodFilter = { type: kind };
-  const today = todayStr();
+  const today = useToday();
 
-  // 今日/今週/今月の一言メモ。期間の開始日をキーにして保存する
-  const periodKey = useMemo(() => {
-    const range = getPeriodRange(filter);
-    if (!range) return "all";
-    // 注意: このキーは世界標準時の日付で作られている(日本時間では期間の開始日の前日になる)。
-    // 書き残したメモがこのキーで保存済みなので、読めなくならないよう変えずに使い続ける
-    return kind === "month" ? range.start.toISOString().slice(0, 7) : range.start.toISOString().slice(0, 10);
-  }, [kind]);
-  const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, "");
+  // 今日/今週/今月の一言メモ。期間の開始日(ローカル日付)をキーにして保存する。
+  // 日付が変わったら(today)キーも作り直す。旧UTCキーの値はローカルのキーが無い間だけ代わりに出す
+  const periodKeys = useMemo(() => reportPeriodKeys(kind, new Date(`${today}T12:00:00`)), [kind, today]);
+  const periodKey = periodKeys.local;
+  const legacyNote = useLegacyReportValue(`report.note.${kind}.`, periodKeys.legacyUtc);
+  const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, legacyNote);
   // 相手の返事待ち(報告の時点で待っているもの)。何日待っているかまで出して、催促・相談の材料にする
   const { waitingTags, nudgeDays } = useWaitingSettings();
   const [tagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
@@ -94,12 +93,14 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
     () => collectWaitingItems(todoTasks ?? [], projects ?? [], tagPriority, waitingTags, nudgeDays, Date.now()),
     [todoTasks, projects, tagPriority, waitingTags, nudgeDays]
   );
-  const [goalCelebratedKey, setGoalCelebratedKey] = useSetting(`report.goalCelebrated.${kind}.${periodKey}`, "");
+  const legacyGoalCelebrated = useLegacyReportValue(`report.goalCelebrated.${kind}.`, periodKeys.legacyUtc);
+  const [goalCelebratedKey, setGoalCelebratedKey] = useSetting(`report.goalCelebrated.${kind}.${periodKey}`, legacyGoalCelebrated);
   // 負担にならない「1問だけ」の振り返り。自由記述の一言メモとは別に、
   // 期間ごとに固定の1問だけ答える軽い振り返りの儀式として設ける
   const reflectionQuestion =
     kind === "week" ? "今週、一番良かった判断は?" : kind === "month" ? "今月、一番の成長は?" : "今日、一番手応えがあった作業は?";
-  const [reflectionAnswer, setReflectionAnswer] = useDraftSetting(`report.reflection.${kind}.${periodKey}`, "");
+  const legacyReflection = useLegacyReportValue(`report.reflection.${kind}.`, periodKeys.legacyUtc);
+  const [reflectionAnswer, setReflectionAnswer] = useDraftSetting(`report.reflection.${kind}.${periodKey}`, legacyReflection);
 
   const data = useMemo(() => {
     if (!records || !masterTasks) return null;
@@ -300,12 +301,13 @@ export default function ReportSection({ onOpenTodoDetail }: { onOpenTodoDetail?:
   const goalCelebratedFiredRef = useRef<string | null>(null);
   useEffect(() => {
     if (!data || !goalSeconds || data.totalSeconds < goalSeconds) return;
-    if (goalCelebratedKey === periodKey) return;
+    // 旧UTCキーで祝った印もそのまま有効にする
+    if (goalCelebratedKey === periodKey || goalCelebratedKey === periodKeys.legacyUtc) return;
     if (goalCelebratedFiredRef.current === periodKey) return;
     goalCelebratedFiredRef.current = periodKey;
     fireConfetti();
     setGoalCelebratedKey(periodKey);
-  }, [data, goalSeconds, goalCelebratedKey, periodKey, setGoalCelebratedKey]);
+  }, [data, goalSeconds, goalCelebratedKey, periodKey, periodKeys.legacyUtc, setGoalCelebratedKey]);
 
   function download() {
     if (!records || !masterTasks) return;
@@ -530,7 +532,7 @@ ${note ? `<h2>今${periodLabel}の一言</h2><p>${esc(note)}</p>` : ""}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <StatTile label="合計作業時間" value={formatHms(data.totalSeconds)} />
             <StatTile label="記録件数" value={`${data.totalCount}件`} />
-            <StatTile label="対象タスク数" value={`${data.ranking.length}種類`} />
+            <StatTile label="対象作業数" value={`${data.ranking.length}種類`} />
             <StatTile
               label={`${afterHoursCutoff}以降`}
               value={formatHms(data.afterHours.totalSeconds)}

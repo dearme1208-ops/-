@@ -20,10 +20,11 @@ import {
   yearCard,
 } from "@/lib/modeExtras";
 import { hmToMs } from "@/lib/timebox";
-import { useDraftSetting, useSetting } from "@/lib/settings";
+import { useDraftSetting, useSetting, DEFAULT_WORK_END } from "@/lib/settings";
 import { formatMsClock, shiftDateStr, todayStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
 import type { TodoTask } from "@/lib/types";
+import { useToday } from "@/lib/useToday";
 
 // 本日の作業を独自の画面に差し替える各モードに、その画面の下へ足す機能(計算は lib/modeExtras.ts)。
 // 見た目は各モードの .panel / .btn-pill の装飾にそのまま乗る
@@ -73,9 +74,9 @@ async function addTodoToToday(t: TodoTask, today: string): Promise<void> {
 
 // ━━ 登山: 登山計画書・引き返す判断・活動日記 ━━
 export function MountainPlanPanel() {
-  const today = todayStr();
+  const today = useToday();
   const now = useNow();
-  const [workEnd] = useSetting("today.standardWorkEnd", "17:30");
+  const [workEnd] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const sunset = hmToMs(today, workEnd) ?? now;
   const plan = useMemo(() => mountainPlan(tasks ?? [], now, sunset), [tasks, now, sunset]);
@@ -142,7 +143,7 @@ export function MountainPlanPanel() {
 
 // ━━ パワプロ: ケガ(働きすぎ)と試合(期日)の戦績 ━━
 export function PowerproInjuryPanel() {
-  const today = todayStr();
+  const today = useToday();
   const records = useLiveQuery(() => db.records.where("date").aboveOrEqual(shiftDateStr(today, -40)).toArray(), [today]);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
@@ -181,7 +182,7 @@ export function PowerproInjuryPanel() {
 
 // ━━ 流行り神: 推理ロジック(想定を超えた原因を結ぶ) ━━
 export function HayarigamiDeductionPanel() {
-  const today = todayStr();
+  const today = useToday();
   const records = useLiveQuery(() => db.records.where("date").aboveOrEqual(shiftDateStr(today, -60)).toArray(), [today]);
   const masters = useLiveQuery(() => db.masterTasks.toArray(), []);
   const [causesJson, setCausesJson] = useSetting("hayarigami.causes", "{}");
@@ -249,7 +250,7 @@ export function HayarigamiDeductionPanel() {
 
 // ━━ ロボトミー: 収容違反 / 冒険者: クエスト掲示板(どちらも期限を過ぎたToDo) ━━
 export function OverdueTodoPanel({ variant }: { variant: "lobotomy" | "adventurer" }) {
-  const today = todayStr();
+  const today = useToday();
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const overdue = useMemo(() => overdueTodos(todos ?? [], today), [todos, today]);
   const open = useMemo(
@@ -305,7 +306,7 @@ export function OverdueTodoPanel({ variant }: { variant: "lobotomy" | "adventure
 
 // ━━ なつやすみ: 月末までの宿題と、絵日記のアルバム ━━
 export function NatsuyasumiPanels() {
-  const today = todayStr();
+  const today = useToday();
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.where("date").aboveOrEqual(shiftDateStr(today, -29)).toArray(), [today]);
   const hw = useMemo(() => monthHomework(todos ?? [], today), [todos, today]);
@@ -356,7 +357,7 @@ export function NatsuyasumiPanels() {
 
 // ━━ 禅: 一息・今日の一行・石庭 ━━
 export function ZenPanels() {
-  const today = todayStr();
+  const today = useToday();
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const [line, setLine] = useDraftSetting(`journal.daily.${today}`, "");
   const [breathing, setBreathing] = useState<number | null>(null);
@@ -424,7 +425,7 @@ export function ZenPanels() {
 
 // ━━ 図書館: 貸出カウンター(予約・返却期限)と1年の蔵書票 ━━
 export function LibraryCounterPanel() {
-  const today = todayStr();
+  const today = useToday();
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.where("date").aboveOrEqual(shiftDateStr(today, -400)).toArray(), [today]);
@@ -495,7 +496,7 @@ export function LibraryCounterPanel() {
 
 // ━━ ハブ: 今の時刻線と時間割の枠 ━━
 export function HubTimelineStrip() {
-  const today = todayStr();
+  const today = useToday();
   const now = useNow();
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const startH = 6;

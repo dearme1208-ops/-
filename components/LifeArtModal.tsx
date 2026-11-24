@@ -35,7 +35,7 @@ export default function LifeArtModal({ data, onClose }: { data: LifeArtData; onC
           <>
             <canvas ref={canvasRef} className="w-full rounded-xl border border-cream/10" style={{ aspectRatio: "1 / 1" }} />
             <p className="text-[10px] text-cream/40">
-              1つの星が1件の実績です。角度は開始時刻(0時が真上、時計回り)、中心からの距離は最初の記録からの経過時間、大きさは作業時間、色は大項目を表します。同じ時間帯に働く習慣があるほど、渦の腕がはっきり見えてきます。
+              1つの星が1件の実績です。角度は開始時刻(0時が真上、時計回り)、中心からの距離は最初の記録からの経過時間、大きさは作業時間、色は区分を表します。同じ時間帯に働く習慣があるほど、渦の腕がはっきり見えてきます。
             </p>
             <button className="btn-pill w-full text-sm" onClick={save}>
               {saved ? "保存しました！" : "画像として保存"}

@@ -6,13 +6,14 @@ import { db } from "@/lib/db";
 import { closeRunningNotification, showRunningNotification } from "@/lib/notifications";
 import { useSetting } from "@/lib/settings";
 import { finishDailyTask, pauseDailyTask } from "@/lib/tasks";
-import { formatClock, todayStr } from "@/lib/time";
+import { formatClock } from "@/lib/time";
+import { useToday } from "@/lib/useToday";
 
 // 計測中の作業を、アプリを閉じている間だけ通知に出しておく(画面を開いている間は出さない)。
 // 通知の「⏸ 一時停止」「✓ 完了」を押すと、Service Worker(worker/index.js)がアプリを前に出して
 // 操作を渡してくるので、ここで実行する。アプリが閉じていた場合は ?nact= 付きで開かれる
 export default function RunningNotifier() {
-  const date = todayStr();
+  const date = useToday();
   const [enabledStr] = useSetting("today.runningNotification", "true");
   const enabled = enabledStr === "true";
   const running = useLiveQuery(

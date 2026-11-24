@@ -450,7 +450,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
   // 保存できたら true(閉じるのは呼び出し側)
   async function save(): Promise<boolean> {
     if (!title.trim() || !category.trim() || !workName.trim() || !dueDate) {
-      setSaveError("件名・業務区分・詳細作業名・期日を入力してください。");
+      setSaveError("件名・区分・詳細作業名・期日を入力してください。");
       return false;
     }
     const rate = Number(hourlyRateStr);
@@ -547,7 +547,7 @@ export default function EditProjectDialog({ project, onClose }: { project: Proje
           ))}
         </datalist>
         <input
-          placeholder="業務区分（大項目）"
+          placeholder="区分"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"

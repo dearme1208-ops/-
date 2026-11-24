@@ -1,5 +1,6 @@
 "use client";
 
+import { TRASH_ALREADY_RESTORED_MESSAGE } from "@/lib/trash";
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
@@ -14,7 +15,7 @@ import {
   ProjectCascadeDialog,
   type ProjectCascade,
 } from "@/components/sections/today/LinkedCompletionDialog";
-import { daysBetweenDateStrs, formatMsClock, shiftDateStr, todayStr } from "@/lib/time";
+import { daysBetweenDateStrs, formatMsClock, shiftDateStr } from "@/lib/time";
 import { showUndoToast } from "@/lib/toast";
 import { useSetting } from "@/lib/settings";
 import { useVisualMode } from "@/lib/theme";
@@ -29,6 +30,7 @@ import { buildHandoff, deriveMemories, parseForgotten, parseNotes } from "@/lib/
 import type { ComposeResult } from "@/lib/claudeCompose";
 import type { DailyTask, ProjectItem, ProjectStage, TodoTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
+import { useToday } from "@/lib/useToday";
 
 // Claudeモード専用の統合ワークスペース。
 //
@@ -41,7 +43,7 @@ import { useWorkContext } from "@/lib/useWorkContext";
 // そのまま使うため、モードを切り替えても記録は失われない
 export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsights?: () => void }) {
   const workCtx = useWorkContext();
-  const today = todayStr();
+  const today = useToday();
   const { wordingEnabled } = useVisualMode();
   const W = claudeWordsFor(wordingEnabled);
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
@@ -174,7 +176,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
       candidates.push({
         label: p.title,
         score: projectScore(p),
-        reason: days < 0 ? "期日を過ぎているため" : days <= 3 ? "期日が近いため" : "進行中のプロジェクトのため",
+        reason: days < 0 ? "期日を過ぎているため" : days <= 3 ? "期日が近いため" : "進行中の案件のため",
       });
     }
     for (const t of activeTodos) {
@@ -388,7 +390,9 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
   async function deleteProject(p: ProjectItem) {
     const deletion = await deleteProjectCascade(p.id);
     if (!deletion) return;
-    showUndoToast(`「${p.title}」を削除しました`, deletion.undo);
+    showUndoToast(`「${p.title}」を削除しました`, async () => {
+      if (!(await deletion.undo())) showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
+    });
   }
 
   // 最新の段階に当てて切り替え、最後の段階が済んだら「案件も完了にしますか」
@@ -530,7 +534,7 @@ export default function ClaudeWorkspaceSection({ onOpenInsights }: { onOpenInsig
           <section key={project.id} className={`claude-card space-y-3 ${overdue ? "claude-card-alert" : ""}`}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="claude-eyebrow">プロジェクト・期日 {dueLabel(project.dueDate, today)}</p>
+                <p className="claude-eyebrow">案件・期日 {dueLabel(project.dueDate, today)}</p>
                 <h3 className="claude-display mt-1 text-[20px] leading-snug text-cream">{project.title}</h3>
                 {daily && !isRunning && (
                   <p className="mt-0.5 text-[12px] text-cream/45">今日はこれまで {formatMsClock(segmentsAccumulatedMs(daily, now))}</p>

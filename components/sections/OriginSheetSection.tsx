@@ -7,7 +7,7 @@ import { db, uid } from "@/lib/db";
 import { completeTodoWithUndoToast } from "@/lib/progressActions";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { parseBreakRanges, timeToMsOfDay } from "@/lib/breaks";
-import { useSetting } from "@/lib/settings";
+import { useSetting, DEFAULT_WORK_START, DEFAULT_WORK_END } from "@/lib/settings";
 import { finishDailyTask } from "@/lib/tasks";
 import { formatHms, shiftDateStr, todayStr } from "@/lib/time";
 import { buildXlsx } from "@/lib/xlsx";
@@ -34,6 +34,7 @@ import type { DailyTask, MasterTask, TodoTask, WorkRecord } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
 import { useWorkContext } from "@/lib/useWorkContext";
 import { formatContexts, workContextsByKey } from "@/lib/workContext";
+import { useToday } from "@/lib/useToday";
 
 // ===== 原点モード: 工程表.xlsm の画面 =====
 //
@@ -83,8 +84,8 @@ export default function OriginSheetSection({
     return () => clearInterval(id);
   }, []);
 
-  const [startHm] = useSetting("today.standardWorkStart", "08:00");
-  const [closingHm] = useSetting("today.standardWorkEnd", "17:00");
+  const [startHm] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
+  const [closingHm] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
   const [breakJson] = useSetting("today.provisionalBreakRanges", "[]");
   const [roundStampStr, setRoundStampStr] = useSetting("origin.roundStamp", "true");
   const [rowSize, setRowSize] = useSetting("origin.rowSize", "md");
@@ -157,7 +158,8 @@ export default function OriginSheetSection({
 
   const runningRow = rows.find((r) => r.running) ?? null;
   const nextPending = rows.find((r) => r.task.status === "pending") ?? null;
-  const isToday = date === todayStr();
+  const today = useToday();
+  const isToday = date === today;
 
   // やることリスト(元ブックの CK列)。マイデイに入っているものと、期日が来ているものを並べる
   const todoList = useMemo(() => {

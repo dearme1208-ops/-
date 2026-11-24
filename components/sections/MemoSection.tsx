@@ -8,7 +8,7 @@ import { useSetting } from "@/lib/settings";
 import { downloadTextFile } from "@/lib/report";
 import { createSpeechRecognition } from "@/lib/voice";
 import { showUndoToast } from "@/lib/toast";
-import { deleteFromTrash, putInTrash } from "@/lib/trash";
+import { deleteFromTrash, isTrashItemGone, putInTrash, TRASH_ALREADY_RESTORED_MESSAGE } from "@/lib/trash";
 import { isSubmitEnter } from "@/lib/keyboard";
 import { deleteProjectCascade } from "@/lib/projects";
 import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
@@ -165,7 +165,9 @@ export default function MemoSection() {
   // 以前はメモタブの中だけに帯を出していたが、ほかのタブの「元に戻す」と同じ知らせ(と操作の履歴)に揃える
   // trashId: 同じものをゴミ箱にも入れた時のid。取り消したらゴミ箱からは消す(二重に戻せる状態を残さない)
   function pushUndo(entry: MemoUndoEntry, trashId?: string | null) {
-    showUndoToast(undoMessage(entry), () => {
+    showUndoToast(undoMessage(entry), async () => {
+      // ゴミ箱から既に戻していたら何もしない
+      if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       if (trashId) void deleteFromTrash(trashId);
       void restoreUndo(entry);
     });

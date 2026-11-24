@@ -21,6 +21,15 @@ export async function putInTrash(kind: TrashKind, label: string, tables: Record<
   return item.id;
 }
 
+/** 「元に戻す」を押した時、控えが既にゴミ箱から戻されていた場合の知らせ */
+export const TRASH_ALREADY_RESTORED_MESSAGE = "ゴミ箱から既に戻されています";
+
+/** ゴミ箱に入れた控えが既に無い(ゴミ箱から戻した/完全に消した)か。trashIdが無ければfalse。
+ *  「元に戻す」はこれがtrueなら何もしない(二重に足さない・消したものを蘇らせない) */
+export async function isTrashItemGone(trashId: string | null | undefined): Promise<boolean> {
+  return !!trashId && !(await db.trash.get(trashId));
+}
+
 /** ゴミ箱から戻す。戻した行数と、既に同じidがあって戻さなかった行数を返す */
 export async function restoreFromTrash(id: string): Promise<{ restored: number; skipped: number } | null> {
   const tableNames = new Set<string>(["trash"]);
@@ -45,6 +54,19 @@ export async function restoreFromTrash(id: string): Promise<{ restored: number; 
     }
     await db.trash.delete(id);
   });
+  // 実績・作業マスタを戻したら、そのマスタの想定時間を数え直す(master.tsはこのファイルを読むので遅延読み込み)
+  const masterIds = new Set<string>();
+  for (const group of item.rows) {
+    if (group.table === "records") {
+      for (const row of group.rows as { masterTaskId?: string }[]) if (row.masterTaskId) masterIds.add(row.masterTaskId);
+    } else if (group.table === "masterTasks") {
+      for (const row of group.rows as { id?: string }[]) if (row.id) masterIds.add(row.id);
+    }
+  }
+  if (masterIds.size > 0 && restored > 0) {
+    const { recomputeEstimateFromRecords } = await import("./master");
+    for (const mid of masterIds) await recomputeEstimateFromRecords(mid);
+  }
   return { restored, skipped };
 }
 

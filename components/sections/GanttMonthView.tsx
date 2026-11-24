@@ -7,6 +7,7 @@ import { DOW_LABELS, buildMonthGrid } from "@/lib/calendarGrid";
 import { segmentsAccumulatedMs } from "@/lib/tasks";
 import { formatHms, todayStr } from "@/lib/time";
 import { heatLevel } from "@/lib/calendarHeatmap";
+import { useToday } from "@/lib/useToday";
 
 // ヒートマップタブと同じ5段階の濃淡(lib/calendarHeatmap.tsのheatLevelと揃える)
 const LEVEL_OPACITY = [0.04, 0.22, 0.42, 0.64, 0.9];
@@ -24,7 +25,7 @@ export default function GanttMonthView({
   onShiftMonth: (deltaMonths: number) => void;
 }) {
   const anchor = useMemo(() => new Date(anchorDate + "T00:00:00"), [anchorDate]);
-  const today = todayStr();
+  const today = useToday();
   const now = Date.now();
 
   const grid = useMemo(() => buildMonthGrid(anchor.getFullYear(), anchor.getMonth()), [anchor]);

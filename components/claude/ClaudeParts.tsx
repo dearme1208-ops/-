@@ -156,9 +156,9 @@ export function Composer({
             className={`claude-chip claude-chip-button shrink-0 ${asProject ? "claude-chip-on" : ""}`}
             onClick={() => setAsProject((v) => !v)}
             aria-pressed={asProject}
-            title="段階と期日で進めたい大きな仕事は、プロジェクトとして登録します"
+            title="段階と期日で進めたい大きな仕事は、案件として登録します"
           >
-            {asProject ? "✓ プロジェクト" : "プロジェクトにする"}
+            {asProject ? "✓ 案件" : "案件にする"}
           </button>
         </div>
         <button
@@ -166,7 +166,7 @@ export function Composer({
           className="claude-send"
           onClick={send}
           disabled={!canSend}
-          aria-label={asProject ? "プロジェクトとして登録" : "タスクとして追加"}
+          aria-label={asProject ? "案件として登録" : "タスクとして追加"}
         >
           ↑
         </button>

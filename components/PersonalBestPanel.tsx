@@ -4,17 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
-import { todayStr } from "@/lib/time";
 import { buildPersonalBestDetail, computePersonalBests, computeNewBestsToday, type PersonalBest } from "@/lib/personalBests";
 import { fireConfetti } from "@/lib/confetti";
 import { showUndoToast } from "@/lib/toast";
 import Modal from "@/components/ui/Modal";
 import { useWorkContext } from "@/lib/useWorkContext";
+import { useToday } from "@/lib/useToday";
 
 // 平均との比較(要注意リスト等)とは逆に、これまでの実績の中で最も良かった記録を見せる。
 // 過去に更新したベストはそのまま残り続け、今日それを更新した場合だけ祝う
 export default function PersonalBestPanel() {
-  const date = todayStr();
+  const date = useToday();
   const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);

@@ -3,6 +3,10 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
 import { readBootSnapshot, type BootSnapshot } from "./boot";
 
+// 定時(today.standardWorkStart / today.standardWorkEnd)の既定値。設定画面と同じ値をどこでも使う
+export const DEFAULT_WORK_START = "08:00";
+export const DEFAULT_WORK_END = "17:00";
+
 export function useSetting(key: string, defaultValue: string): [string, (value: string) => void] {
   const row = useLiveQuery(() => db.settings.get(key), [key]);
   const value = row?.value ?? defaultValue;

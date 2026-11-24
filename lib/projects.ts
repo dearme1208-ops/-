@@ -1,5 +1,5 @@
 import { db, uid } from "./db";
-import { putInTrash } from "./trash";
+import { isTrashItemGone, putInTrash } from "./trash";
 import { daysBetweenDateStrs, shiftDateStr, todayStr } from "./time";
 import type { ProjectItem, ProjectStage, TodoTask, WbsNode, WorkRecord } from "./types";
 import type { ParsedProjectRow, ParsedProjectStage } from "./projectsCsv";
@@ -180,8 +180,9 @@ export async function findOriginTodo(projectId: string): Promise<TodoTask | unde
 
 export interface ProjectDeletion {
   project: ProjectItem;
-  /** 消したものをすべて戻す。消したあとに付け直された紐づけ・作り直されたものは上書きしない */
-  undo: () => Promise<void>;
+  /** 消したものをすべて戻す。消したあとに付け直された紐づけ・作り直されたものは上書きしない。
+   *  ゴミ箱から既に戻されていたら何もしない(false) */
+  undo: () => Promise<boolean>;
 }
 
 /**
@@ -216,7 +217,8 @@ export async function deleteProjectCascade(projectId: string): Promise<ProjectDe
   return {
     project,
     undo: async () => {
-      await db.transaction("rw", db.projects, db.wbsNodes, db.todoTasks, db.trash, async () => {
+      return db.transaction("rw", db.projects, db.wbsNodes, db.todoTasks, db.trash, async () => {
+        if (await isTrashItemGone(trashId)) return false;
         // 取り消したらゴミ箱からは消す(二重に戻せる状態を残さない)
         if (trashId) await db.trash.delete(trashId);
         if (!(await db.projects.get(project.id))) await db.projects.add(project);
@@ -231,6 +233,7 @@ export async function deleteProjectCascade(projectId: string): Promise<ProjectDe
           if (!p || p.predecessorProjectIds?.includes(project.id)) continue;
           await db.projects.update(id, { predecessorProjectIds: [...(p.predecessorProjectIds ?? []), project.id] });
         }
+        return true;
       });
     },
   };

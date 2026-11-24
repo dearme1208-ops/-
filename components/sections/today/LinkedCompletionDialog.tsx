@@ -155,7 +155,7 @@ export default function LinkedCompletionDialog({
     const incompletePrevious = stages.slice(0, idx).filter((s) => !isStageDone(s));
     return (
       <Modal title="段階の進捗確認" onClose={onDone}>
-        <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
+        <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を終了しました。</p>
         {isCountBased ? (
           <p className="mb-4 text-sm text-cream/80">
             案件「{project.title}」の段階「{stage.title}」は現在{" "}
@@ -200,7 +200,7 @@ export default function LinkedCompletionDialog({
     const skipOriginTodo = !!confirmTask.todoTaskId;
     return (
       <Modal title="案件の進捗確認" onClose={onDone}>
-        <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
+        <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を終了しました。</p>
         <p className="mb-4 text-sm text-cream/80">案件「{project.title}」はこれで完了ですか?</p>
         {open.length > 0 && (
           <p className="mb-4 rounded-lg border border-alert/40 bg-alert/5 p-2 text-xs text-alert">
@@ -231,7 +231,7 @@ export default function LinkedCompletionDialog({
   if (!todo) return null;
   return (
     <Modal title="Todoの進捗確認" onClose={onDone}>
-      <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を完了しました。</p>
+      <p className="mb-1 text-sm text-cream/80">「{confirmTask.name}」の作業を終了しました。</p>
       <p className="mb-4 text-sm text-cream/80">元のTodo「{todoLabel(todo, todoTaskMap)}」はこれで完了ですか?</p>
       <div className="flex justify-end gap-2">
         <button className="btn-pill-outline text-sm" onClick={onDone}>

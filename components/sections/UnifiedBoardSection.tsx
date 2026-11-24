@@ -1,13 +1,14 @@
 "use client";
 
+import { isTrashItemGone, TRASH_ALREADY_RESTORED_MESSAGE } from "@/lib/trash";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useWorkContext } from "@/lib/useWorkContext";
 import { db, uid } from "@/lib/db";
 import { todoLabel } from "@/lib/todoLabel";
-import { useSetting } from "@/lib/settings";
+import { useSetting, DEFAULT_WORK_START, DEFAULT_WORK_END } from "@/lib/settings";
+import { useToday } from "@/lib/useToday";
 import { daysBetweenDateStrs, formatClock, formatMsClock, todayStr } from "@/lib/time";
 import { baseAccumulatedMs, computePredictedSecondsByTaskId, computeRemainingEstimatedSeconds, segmentsAccumulatedMs, finishDailyTask, pauseDailyTask } from "@/lib/tasks";
 import { completeTodoTask, DEFAULT_TAG_PRESETS, effectiveTag, normalizeUrl, parsePresetList, todoTrashLabel, trashTodos } from "@/lib/todo";
@@ -175,7 +176,7 @@ export default function UnifiedBoardSection({
   /** 案件カードの件名を押した時に、案件タブへ切り替えつつその案件の編集を開く */
   onOpenProjectEdit?: (projectId: string) => void;
 }) {
-  const today = todayStr();
+  const today = useToday();
   // ハブモード専用の進化版機能(進捗リング・負荷ヒートマップ・自動連結線・時間軸モード)は
   // このフラグでのみ出し分ける。統合ボードタブ自体は他のテーマでも共通の見た目のまま
   const { hubMode } = useVisualMode();
@@ -325,7 +326,10 @@ export default function UnifiedBoardSection({
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [todos, subtasksByParent, projects]);
 
-  const [tagFilterRaw, setTagFilterRaw] = useState<string | null>(null);
+  // 対応状況の絞り込みは次に開いた時も残す(空文字=絞り込みなし)
+  const [tagFilterStr, setTagFilterStr] = useSetting("board.tagFilter", "");
+  const tagFilterRaw = tagFilterStr || null;
+  const setTagFilterRaw = (tag: string | null) => setTagFilterStr(tag ?? "");
   // 絞り込み中の対応状況が盤面から消えた(最後の1件を完了した等)場合に、
   // 何も出ない盤面のまま取り残されないよう、その時点で絞り込みを外れたものとして扱う
   const tagFilter = tagFilterRaw && boardTagOptions.some(([t]) => t === tagFilterRaw) ? tagFilterRaw : null;
@@ -431,8 +435,8 @@ export default function UnifiedBoardSection({
   }, [hubMode, tasks, predictedSecondsByTaskId, now]);
 
   // 進捗リング・時間軸モード共通。所定労働時間の開始/終了(本日の作業タブの設定と同じ)
-  const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
-  const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
+  const [standardWorkStart] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
+  const [standardWorkEnd] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
   const progressStats = useMemo(() => {
     const today = (dailyTasks ?? []).filter((t) => !t.isProvisional);
     const doneCount = today.filter((t) => t.status === "done").length;
@@ -861,6 +865,8 @@ export default function UnifiedBoardSection({
       return { removed: [sub, ...children], trashId };
     });
     showUndoToast(`サブタスク「${sub.title}」を削除しました`, async () => {
+      // ゴミ箱から既に戻していたら何もしない
+      if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       await db.transaction("rw", db.todoTasks, db.trash, async () => {
         if (trashId) await db.trash.delete(trashId);
         if (sub.parentTaskId && !(await db.todoTasks.get(sub.parentTaskId))) return;
@@ -1507,7 +1513,10 @@ export default function UnifiedBoardSection({
   // 最初の区間の開始時刻、未着手は予定時刻scheduledTimeがあればそれ)に沿って
   // 横に並べ直す。時刻が分からない未着手の作業は右端の「未定」帯にまとめる
   // ------------------------------------------------------------
-  const [timeAxisMode, setTimeAxisMode] = useState(false);
+  // 時間軸の目盛りを出すかどうかも覚えておく
+  const [timeAxisModeStr, setTimeAxisModeStr] = useSetting("board.timeAxisMode", "false");
+  const timeAxisMode = timeAxisModeStr === "true";
+  const setTimeAxisMode = (on: boolean) => setTimeAxisModeStr(on ? "true" : "false");
   const timeAxisTicks = useMemo(() => {
     if (!hubMode) return [] as { minutes: number; x: number; label: string }[];
     const axisStart = parseHM(standardWorkStart);
@@ -2312,7 +2321,7 @@ export default function UnifiedBoardSection({
               <>
                 <button
                   className={timeAxisMode ? "btn-pill text-xs" : "btn-pill-outline text-xs"}
-                  onClick={() => setTimeAxisMode((v) => !v)}
+                  onClick={() => setTimeAxisMode(!timeAxisMode)}
                   title="所定労働時間の目盛りを盤面に表示します"
                 >
                   🕐 時間軸: {timeAxisMode ? "ON" : "OFF"}
@@ -3494,7 +3503,7 @@ export default function UnifiedBoardSection({
                       onClick={() => void deleteSubtask(sub)}
                       title="このサブタスクを削除"
                       aria-label={`${sub.title}を削除`}
-                      className="shrink-0 px-1 text-xs text-cream/30 hover:text-alert"
+                      className="relative shrink-0 px-1 text-xs text-cream/30 hover:text-alert [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-3"
                     >
                       ✕
                     </button>
@@ -3663,7 +3672,7 @@ export default function UnifiedBoardSection({
               <p className="mb-1.5 text-xs font-bold text-cream/70">自由入力</p>
               <div className="space-y-2">
                 <input
-                  placeholder="業務区分（大項目）"
+                  placeholder="区分"
                   value={freeCategory}
                   onChange={(e) => setFreeCategory(e.target.value)}
                   className="w-full rounded-lg border border-cream/20 bg-ink px-3 py-2 text-sm text-cream"
@@ -3822,6 +3831,9 @@ function boardItemVisualStyle(selected: boolean, matched: boolean, dimmed: boole
 // 暗いカードには淡色のバンド+ドットを使い、どちらの背景でも視認できるようにする)
 // カードの見出しのロック・最前面固定の線画(森のみ)を、11pxの絵文字と同じくらいの大きさにそろえる
 const BOARD_CTRL_ICON = "[&_.ico-svg]:h-3 [&_.ico-svg]:w-3";
+// カード角の小さな操作ボタン(✕・🔒・📌)。指で触る端末でだけ、透明な::afterで押せる範囲を縦40px程度に広げる。
+// 横は隣のボタンと重ならない幅に留める(重なると押したつもりのない✕を押してしまうため)
+const BOARD_TOUCH_HIT = "[@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-x-1 [@media(pointer:coarse)]:after:-inset-y-3.5";
 
 function DragHandle({
   tone,
@@ -4010,7 +4022,7 @@ function ShapeElement({
           ドラッグの当たり判定と競合しない */}
       <div className="absolute -top-6 left-0 flex flex-wrap items-center gap-1 whitespace-nowrap rounded bg-ink/85 px-1 py-0.5">
         {isLineLike && (
-          <button onClick={onRotate} className="text-[11px] leading-none text-cream/70 hover:text-cream" title="向きを変える(横⇔縦)">
+          <button onClick={onRotate} className={`${BOARD_TOUCH_HIT} relative text-[11px] leading-none text-cream/70 hover:text-cream`} title="向きを変える(横⇔縦)">
             ⟳
           </button>
         )}
@@ -4037,20 +4049,20 @@ function ShapeElement({
         />
         <button
           onClick={onToggleLock}
-          className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
+          className={`${BOARD_TOUCH_HIT} relative text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
           title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
         >
           <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
         </button>
         <button
           onClick={onTogglePin}
-          className={`text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/60 hover:text-cream"}`}
+          className={`${BOARD_TOUCH_HIT} relative text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/60 hover:text-cream"}`}
           title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
           aria-pressed={pinned}
         >
           <Icon emoji="📌" className={BOARD_CTRL_ICON} />
         </button>
-        <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="図形を削除">
+        <button onClick={onRemove} className={`${BOARD_TOUCH_HIT} relative text-[11px] leading-none text-cream/60 hover:text-cream`} title="図形を削除">
           ✕
         </button>
       </div>
@@ -4268,12 +4280,12 @@ function StampElement({
           ))}
           <button
             onClick={onToggleLock}
-            className={`text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
+            className={`${BOARD_TOUCH_HIT} relative text-[11px] leading-none ${locked ? "text-cream" : "text-cream/60 hover:text-cream"}`}
             title={locked ? "ロックを解除する" : "ロックする(くっ付けの解除・ドラッグを防ぐ)"}
           >
             <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
           </button>
-          <button onClick={onRemove} className="text-[11px] leading-none text-cream/60 hover:text-cream" title="スタンプを削除">
+          <button onClick={onRemove} className={`${BOARD_TOUCH_HIT} relative text-[11px] leading-none text-cream/60 hover:text-cream`} title="スタンプを削除">
             ✕
           </button>
         </div>
@@ -4435,7 +4447,7 @@ function NoteCard({
           e.stopPropagation();
           onToggleLock();
         }}
-        className={`absolute right-8 top-0.5 text-[11px] leading-none ${locked ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
+        className={`${BOARD_TOUCH_HIT} absolute right-8 top-0.5 text-[11px] leading-none ${locked ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
         title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
       >
         <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
@@ -4447,7 +4459,7 @@ function NoteCard({
           onTogglePin();
         }}
         // 絵文字は文字色を変えても色が変わらないので、状態は濃さ(opacity)で示す
-        className={`absolute right-1 top-0.5 text-[11px] leading-none ${
+        className={`${BOARD_TOUCH_HIT} absolute right-1 top-0.5 text-[11px] leading-none ${
           note.pinned ? "opacity-100" : "opacity-40 hover:opacity-100"
         }`}
         title={note.pinned ? "最前面固定を解除する" : "最前面に固定する"}
@@ -4646,7 +4658,7 @@ function TaskCard({
             e.stopPropagation();
             onToggleLock();
           }}
-          className={`text-[11px] leading-none ${locked ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
+          className={`${BOARD_TOUCH_HIT} relative text-[11px] leading-none ${locked ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
           title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
         >
           <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
@@ -4657,7 +4669,7 @@ function TaskCard({
             e.stopPropagation();
             onTogglePin();
           }}
-          className={`text-[11px] leading-none ${pinned ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
+          className={`${BOARD_TOUCH_HIT} relative text-[11px] leading-none ${pinned ? "opacity-100" : "opacity-40 hover:opacity-100"}`}
           title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
           aria-pressed={pinned}
         >
@@ -4807,7 +4819,7 @@ function TodoCard({
           e.stopPropagation();
           onToggleLock();
         }}
-        className={`absolute right-11 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        className={`${BOARD_TOUCH_HIT} absolute right-11 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
         title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
       >
         <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
@@ -4818,7 +4830,7 @@ function TodoCard({
           e.stopPropagation();
           onTogglePin();
         }}
-        className={`absolute right-6 top-0.5 text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        className={`${BOARD_TOUCH_HIT} absolute right-6 top-0.5 text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/35 hover:text-cream"}`}
         title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
         aria-pressed={pinned}
       >
@@ -4980,22 +4992,12 @@ function TodoCard({
           ))}
         </div>
       )}
-      {imageExpanded &&
-        todo.imageDataUrl &&
-        createPortal(
-          // 盤面はズーム倍率をtransform: scaleで掛けているため、その内側でposition: fixedを
-          // 使うと「ビューポート基準」ではなくこの変形済み祖先基準になってしまい、
-          // 表示位置・サイズが大きくずれる。document.bodyへポータルで逃がして回避する
-          <div
-            className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4"
-            onClick={(e) => {
-              e.stopPropagation();
-              setImageExpanded(false);
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
+      {imageExpanded && todo.imageDataUrl && (
+        // Modalはdocument.bodyへポータルで出す(盤面のtransform: scaleに巻き込まれない)。
+        // ポータル内の操作もReact上はカードへ伝わるので、ここで止めてカードのクリック・ドラッグを起こさない
+        <BoardImageModal title={`${todo.title}の画像`} onClose={() => setImageExpanded(false)}>
             <img src={todo.imageDataUrl} alt={todo.title} className="max-h-[75vh] max-w-full rounded-lg object-contain" />
-            <div className="flex gap-2" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+            <div className="flex gap-2">
               <button onClick={() => imageReplaceInputRef.current?.click()} className="btn-pill-outline text-xs">
                 差し替え
               </button>
@@ -5022,28 +5024,20 @@ function TodoCard({
                 e.target.value = "";
               }}
             />
-          </div>,
-          document.body
-        )}
+        </BoardImageModal>
+      )}
       {expandedSubtaskImageId &&
         (() => {
           const expandedSub = subtasks.find((s) => s.id === expandedSubtaskImageId);
           if (!expandedSub?.imageDataUrl) return null;
-          return createPortal(
-            <div
-              className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4"
-              onClick={(e) => {
-                e.stopPropagation();
-                setExpandedSubtaskImageId(null);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
+          return (
+            <BoardImageModal title={`${expandedSub.title}の画像`} onClose={() => setExpandedSubtaskImageId(null)}>
               <img
                 src={expandedSub.imageDataUrl}
                 alt={expandedSub.title}
                 className="max-h-[75vh] max-w-full rounded-lg object-contain"
               />
-              <div className="flex gap-2" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+              <div className="flex gap-2">
                 <button onClick={() => subtaskImageReplaceInputRef.current?.click()} className="btn-pill-outline text-xs">
                   差し替え
                 </button>
@@ -5070,10 +5064,28 @@ function TodoCard({
                   e.target.value = "";
                 }}
               />
-            </div>,
-            document.body
+            </BoardImageModal>
           );
         })()}
+    </div>
+  );
+}
+
+// カード上の画像を大きく見せる窓(ToDo・サブタスク・案件の段階で共通)。暗幕を押すと閉じる。
+// ポータル越しの操作もReact上は親のカードへ伝わるため、外側で止めてカードのクリック・ドラッグを起こさない
+function BoardImageModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="contents" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+      <Modal
+        title={title}
+        variant="bare"
+        closeOnBackdrop
+        scrimClassName="bg-black/80"
+        panelClassName="flex max-w-full flex-col items-center gap-3"
+        onClose={onClose}
+      >
+        {children}
+      </Modal>
     </div>
   );
 }
@@ -5169,7 +5181,7 @@ function ProjectCard({
           e.stopPropagation();
           onToggleLock();
         }}
-        className={`absolute right-11 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        className={`${BOARD_TOUCH_HIT} absolute right-11 top-0.5 text-[11px] leading-none ${locked ? "text-cream" : "text-cream/35 hover:text-cream"}`}
         title={locked ? "ロックを解除する" : "ロックする(ドラッグ・矢印キー移動を防ぐ)"}
       >
         <Icon emoji={locked ? "🔒" : "🔓"} className={BOARD_CTRL_ICON} />
@@ -5180,7 +5192,7 @@ function ProjectCard({
           e.stopPropagation();
           onTogglePin();
         }}
-        className={`absolute right-6 top-0.5 text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/35 hover:text-cream"}`}
+        className={`${BOARD_TOUCH_HIT} absolute right-6 top-0.5 text-[11px] leading-none ${pinned ? "text-cream" : "text-cream/35 hover:text-cream"}`}
         title={pinned ? "最前面固定を解除する" : "最前面に固定する"}
         aria-pressed={pinned}
       >
@@ -5370,21 +5382,14 @@ function ProjectCard({
               { stages: stages.map((s) => (s.id === expandedStage.id ? { ...s, imageDataUrl: dataUrl } : s)) }
             );
           };
-          return createPortal(
-            <div
-              className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 p-4"
-              onClick={(e) => {
-                e.stopPropagation();
-                setExpandedImageStageId(null);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
+          return (
+            <BoardImageModal title={`${expandedStage.title}の画像`} onClose={() => setExpandedImageStageId(null)}>
               <img
                 src={expandedStage.imageDataUrl}
                 alt={expandedStage.title}
                 className="max-h-[75vh] max-w-full rounded-lg object-contain"
               />
-              <div className="flex gap-2" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+              <div className="flex gap-2">
                 <button onClick={() => stageImageReplaceInputRef.current?.click()} className="btn-pill-outline text-xs">
                   差し替え
                 </button>
@@ -5411,8 +5416,7 @@ function ProjectCard({
                   e.target.value = "";
                 }}
               />
-            </div>,
-            document.body
+            </BoardImageModal>
           );
         })()}
     </div>
@@ -5429,7 +5433,7 @@ function BoardRemoveButton({ onRemove, title }: { onRemove: () => void; title: s
         e.stopPropagation();
         onRemove();
       }}
-      className="absolute right-1 top-0.5 text-[11px] leading-none text-cream/35 hover:text-cream"
+      className={`${BOARD_TOUCH_HIT} absolute right-1 top-0.5 text-[11px] leading-none text-cream/35 hover:text-cream`}
       title={title}
       aria-label={title}
     >

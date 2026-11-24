@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { computeRemainingEstimatedSeconds, finishDailyTask, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { formatHms, todayStr } from "@/lib/time";
+import { formatHms } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { useVisualMode } from "@/lib/theme";
 import { useSetting } from "@/lib/settings";
@@ -43,6 +43,7 @@ import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
 import Modal from "@/components/ui/Modal";
+import { useToday } from "@/lib/useToday";
 
 // パワプロ風モード(育成選手モード)の「本日の作業」タブ。
 //
@@ -85,7 +86,7 @@ export default function PowerproTrainingSection() {
   const workCtx = useWorkContext();
   const { wordingEnabled } = useVisualMode();
   const W = powerproWordsFor(wordingEnabled);
-  const today = todayStr();
+  const today = useToday();
   // チームカラーは設定のアクセントカラーに従う。図版(球場・ユニフォーム)も同じ色を読むので、
   // ここでボタンや見出しにも同じ色を掛けておかないと、絵とUIで色が食い違ってしまう
   const accent = useAccentRgb();

@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
-import { formatDateJp, todayStr } from "@/lib/time";
+import { formatDateJp } from "@/lib/time";
 import { dueTerrain, projectClimbs, waitingSand } from "@/lib/visuals";
 import { DEFAULT_TAG_PRESETS, parsePresetList } from "@/lib/todo";
 import { collectWaitingItems } from "@/lib/waiting";
 import { useWaitingSettings } from "@/lib/waitingSettings";
 import type { ProjectItem, TodoTask } from "@/lib/types";
 import { IconLabel } from "@/components/ui/Icon";
+import { useToday } from "@/lib/useToday";
 
 // 案件タブ・ToDoタブに置く可視化。計算は lib/visuals.ts
 
@@ -50,7 +51,7 @@ function Fold({ settingKey, title, children, testId }: { settingKey: string; tit
 
 // ---- 7. 案件の山登り ----
 export function ProjectClimbPanel({ onOpen }: { onOpen?: (id: string) => void }) {
-  const today = todayStr();
+  const today = useToday();
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const rows = useMemo(() => projectClimbs(projects ?? [], today), [projects, today]);
   if (rows.length === 0) return null;
@@ -109,7 +110,7 @@ export function ProjectClimbPanel({ onOpen }: { onOpen?: (id: string) => void })
 
 // ---- 10. 期日の山 ----
 export function DueTerrainPanel() {
-  const today = todayStr();
+  const today = useToday();
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const days = useMemo(() => dueTerrain(todos ?? [], projects ?? [], today), [todos, projects, today]);
@@ -211,7 +212,7 @@ export function WaitingHourglassPanel({ kind, onOpen }: { kind: "todo" | "projec
   const { waitingTags, nudgeDays } = useWaitingSettings();
   const [tagPresetsJson] = useSetting("todo.tagPresets", JSON.stringify(DEFAULT_TAG_PRESETS));
   const priority = useMemo(() => parsePresetList(tagPresetsJson), [tagPresetsJson]);
-  const today = todayStr();
+  const today = useToday();
   const items = useMemo(
     () => collectWaitingItems(todos ?? [], projects ?? [], priority, waitingTags, nudgeDays, Date.now()),
     // 日付が変われば日数も変わる

@@ -47,7 +47,7 @@ test.describe("未計測の仮計測", () => {
 
     await openTaskTab(page, "実行中");
     await clickButton(page, /^自由入力$/);
-    await page.getByPlaceholder("業務区分（大項目）").fill("総務");
+    await page.getByPlaceholder("区分", { exact: true }).fill("総務");
     await page.getByPlaceholder("詳細作業名").fill("電話対応");
     await clickButton(page, "この作業に割り当てる");
     const assigned = (await readOne<Daily>(page, "dailyTasks", prov.id))!;

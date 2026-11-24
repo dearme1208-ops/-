@@ -134,7 +134,7 @@ export default function CategoryChainGraph({
           <p className="font-bold text-cream/80">
             {selected} ・ 合計 {formatValue(nodes.find((n) => n.category === selected)?.totalSeconds ?? 0)}
           </p>
-          {relatedEdges.length === 0 && <p className="text-cream/40">他の大項目との連鎖はありません。</p>}
+          {relatedEdges.length === 0 && <p className="text-cream/40">他の区分との連鎖はありません。</p>}
           {relatedEdges
             .slice()
             .sort((a, b) => b.count - a.count)
@@ -145,7 +145,7 @@ export default function CategoryChainGraph({
             ))}
         </div>
       ) : (
-        <p className="text-center text-[10px] text-cream/40">丸をタップすると、その大項目の前後の連鎖を確認できます。</p>
+        <p className="text-center text-[10px] text-cream/40">丸をタップすると、その区分の前後の連鎖を確認できます。</p>
       )}
     </div>
   );

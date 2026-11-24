@@ -10,6 +10,7 @@ import { computeDailyChallenges, trendWindowRange, type ChallengeResult } from "
 import { countStagesCompletedOn } from "@/lib/stageProgress";
 import { fireConfetti } from "@/lib/confetti";
 import { showUndoToast } from "@/lib/toast";
+import { useToday } from "@/lib/useToday";
 
 // 毎朝(日付が変わるたびに)8種類のチャレンジテンプレートから3件を決定的に選び、
 // その日の作業データから進捗を計算して表示する。目標値は、直近の実績が十分に
@@ -21,7 +22,7 @@ import { showUndoToast } from "@/lib/toast";
  * 渡しておくと最初の描画から高さが決まり、下の中身を後から押し下げない(森モードの CLS 対策)
  */
 export default function DailyChallengePanel({ tasks: tasksProp }: { tasks?: DailyTask[] } = {}) {
-  const date = todayStr();
+  const date = useToday();
   const tasksQuery = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
   // 自前の結果が届いたらそちらを正にする(渡された一覧と中身は同じだが、更新はこちらが先に届くことがある)
   const tasks = tasksQuery ?? tasksProp;

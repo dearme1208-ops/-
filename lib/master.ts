@@ -1,7 +1,7 @@
 import { db, uid } from "./db";
 import type { MasterTask } from "./types";
 import type { ParsedMasterRow } from "./masterCsv";
-import { putInTrash } from "./trash";
+import { isTrashItemGone, putInTrash } from "./trash";
 
 export interface DuplicateMasterGroup {
   category: string;
@@ -196,6 +196,31 @@ export function normalizeMasterKey(s: string): string {
   return s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+/** 区分・作業名が同じ(表記ゆれ込み)作業マスタを探す。無ければundefined(作らない) */
+export async function findMasterTask(category: string, name: string): Promise<MasterTask | undefined> {
+  const cat = category.trim();
+  const nm = name.trim();
+  return (
+    (await db.masterTasks.filter((t) => t.category === cat && t.name === nm).first()) ??
+    (await db.masterTasks
+      .filter((t) => normalizeMasterKey(t.category) === normalizeMasterKey(cat) && normalizeMasterKey(t.name) === normalizeMasterKey(nm))
+      .first())
+  );
+}
+
+/** 作業マスタが実績・本日の作業・テンプレートのどこからも使われていなければ消す(消したらtrue)。
+ *  操作の途中で作ったマスタを、取り消し・失敗の時に残さないために使う */
+export async function deleteMasterIfUnused(id: string): Promise<boolean> {
+  return db.transaction("rw", db.masterTasks, db.records, db.dailyTasks, db.templateItems, async () => {
+    if (!(await db.masterTasks.get(id))) return false;
+    if ((await db.records.where("masterTaskId").equals(id).count()) > 0) return false;
+    if ((await db.dailyTasks.filter((t) => t.masterTaskId === id).count()) > 0) return false;
+    if ((await db.templateItems.filter((t) => t.masterTaskId === id).count()) > 0) return false;
+    await db.masterTasks.delete(id);
+    return true;
+  });
+}
+
 export async function findOrCreateMasterTask(
   category: string,
   name: string,
@@ -203,11 +228,7 @@ export async function findOrCreateMasterTask(
 ): Promise<MasterTask> {
   const cat = category.trim();
   const nm = name.trim();
-  const existing =
-    (await db.masterTasks.filter((t) => t.category === cat && t.name === nm).first()) ??
-    (await db.masterTasks
-      .filter((t) => normalizeMasterKey(t.category) === normalizeMasterKey(cat) && normalizeMasterKey(t.name) === normalizeMasterKey(nm))
-      .first());
+  const existing = await findMasterTask(cat, nm);
   if (existing) return existing;
 
   const now = Date.now();
@@ -285,9 +306,10 @@ export async function deleteMasterTask(id: string): Promise<DeletedMaster | unde
   });
 }
 
-/** deleteMasterTask を取り消す。同じIDのマスタが既にあれば何もしない(false) */
+/** deleteMasterTask を取り消す。同じIDのマスタが既にある・ゴミ箱から既に戻された時は何もしない(false) */
 export async function restoreDeletedMasterTask(d: DeletedMaster): Promise<boolean> {
   return db.transaction("rw", [db.masterTasks, db.templateItems, db.trash], async () => {
+    if (await isTrashItemGone(d.trashId)) return false;
     if (await db.masterTasks.get(d.master.id)) return false;
     await db.masterTasks.add(d.master);
     // 紐付けを外したままの項目だけ繋ぎ直す(その後に別のマスタへ繋いだ項目には触れない)

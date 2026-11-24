@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { getPeriodRange, isDateStrInRange, type PeriodFilter } from "@/lib/period";
 import { formatHms, formatDateJp, todayStr } from "@/lib/time";
 import { useDraftSetting } from "@/lib/settings";
+import { useToday } from "@/lib/useToday";
+import { reportPeriodKeys, useLegacyReportValue } from "@/lib/reportPeriodKey";
 import { computeTodoPeriodSummary } from "@/lib/todoTrend";
 
 interface CompletionEntry {
@@ -45,18 +47,16 @@ export default function ClaudeReportSection() {
   const periodLabel = kind === "week" ? "今週" : kind === "month" ? "今月" : "今日";
   const prevLabel = kind === "week" ? "先週" : kind === "month" ? "先月" : "昨日";
 
-  const periodKey = useMemo(() => {
-    const range = getPeriodRange(filter);
-    if (!range) return "all";
-    // 注意: このキーは世界標準時の日付で作られている(日本時間では期間の開始日の前日になる)。
-    // 書き残したメモがこのキーで保存済みなので、読めなくならないよう変えずに使い続ける
-    return kind === "month" ? range.start.toISOString().slice(0, 7) : range.start.toISOString().slice(0, 10);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind]);
-  const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, "");
+  // 期間の開始日(ローカル日付)のキー。日付が変わったら作り直す。旧UTCキーの値は代わりに出すだけ
+  const today = useToday();
+  const periodKeys = useMemo(() => reportPeriodKeys(kind, new Date(`${today}T12:00:00`)), [kind, today]);
+  const periodKey = periodKeys.local;
+  const legacyNote = useLegacyReportValue(`report.note.${kind}.`, periodKeys.legacyUtc);
+  const legacyReflection = useLegacyReportValue(`report.reflection.${kind}.`, periodKeys.legacyUtc);
+  const [note, setNote] = useDraftSetting(`report.note.${kind}.${periodKey}`, legacyNote);
   const reflectionQuestion =
     kind === "week" ? "今週、一番良かった判断は?" : kind === "month" ? "今月、一番の成長は?" : "今日、一番手応えがあった作業は?";
-  const [reflectionAnswer, setReflectionAnswer] = useDraftSetting(`report.reflection.${kind}.${periodKey}`, "");
+  const [reflectionAnswer, setReflectionAnswer] = useDraftSetting(`report.reflection.${kind}.${periodKey}`, legacyReflection);
 
   const summary = useMemo(() => {
     if (!records) return null;
@@ -204,7 +204,7 @@ export default function ClaudeReportSection() {
         const suffix = uniqueTitles.length > 3 ? `など${projectCompletions.length}件` : "";
         sentences.push(
           pickVariant(
-            [`プロジェクト「${shown}」${suffix}が完了しました。`, `「${shown}」${suffix}を完了させています。`],
+            [`案件「${shown}」${suffix}が完了しました。`, `「${shown}」${suffix}を完了させています。`],
             `${periodKey}-project`
           )
         );
@@ -268,7 +268,7 @@ export default function ClaudeReportSection() {
                         c.kind === "project" ? "bg-alert/15 text-alert" : "bg-cream/10 text-cream/50"
                       }`}
                     >
-                      {c.kind === "project" ? "プロジェクト" : "段階"}
+                      {c.kind === "project" ? "案件" : "段階"}
                     </span>
                     {c.label}
                   </span>
@@ -295,7 +295,7 @@ export default function ClaudeReportSection() {
 
       {summary && summary.categoryRanking.length > 0 && (
         <div className="panel space-y-2 p-4">
-          <h3 className="font-display text-sm font-bold text-cream/70">分類別の内訳</h3>
+          <h3 className="font-display text-sm font-bold text-cream/70">区分別の内訳</h3>
           {summary.categoryRanking.map(([category, seconds]) => (
             <div key={category} className="space-y-0.5">
               <div className="flex items-center justify-between text-xs text-cream/60">

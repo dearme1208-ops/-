@@ -36,7 +36,7 @@ import {
   upsertTodoFromCsv,
   type TodoChange,
 } from "@/lib/todo";
-import { deleteFromTrash } from "@/lib/trash";
+import { deleteFromTrash, isTrashItemGone, TRASH_ALREADY_RESTORED_MESSAGE } from "@/lib/trash";
 import { isImeComposing, isSubmitEnter } from "@/lib/keyboard";
 import ParentTaskPicker from "@/components/sections/todo/ParentTaskPicker";
 import { todoPostpones, todoWaitingInfo } from "@/lib/waiting";
@@ -44,6 +44,7 @@ import { useWaitingSettings } from "@/lib/waitingSettings";
 import { todoTasksToCsv, todoCsvTemplate, parseTodoCsv } from "@/lib/todoCsv";
 import { downloadTextFile } from "@/lib/report";
 import { useSetting } from "@/lib/settings";
+import { useToday } from "@/lib/useToday";
 import { parseCompose } from "@/lib/claudeCompose";
 import { cardOverrunClass, emphasisTextClass, overrunLabel, useVisualMode } from "@/lib/theme";
 import {
@@ -104,7 +105,12 @@ const ROW_H = 40;
 const MIN_LABEL_SPACING_PX = 50;
 
 type ViewKey = "myday" | "important" | "planned" | "overdue" | "waiting" | `list:${string}`;
-type DisplayMode = "list" | "gantt" | "calendar" | "kanban" | "tree";
+const DISPLAY_MODES = ["list", "gantt", "calendar", "kanban", "tree"] as const;
+type DisplayMode = (typeof DISPLAY_MODES)[number];
+const FIXED_VIEWS = ["myday", "important", "planned", "overdue", "waiting"];
+function isViewKey(v: string): v is ViewKey {
+  return FIXED_VIEWS.includes(v) || (v.startsWith("list:") && v.length > 5);
+}
 
 // リスト内の並び替え。「手動」はドラッグ&ドロップで決めたorder順、それ以外は
 // 選んだ項目でその都度並べ替える(手動の並び順自体は保持され、いつでも「手動」に戻せる)
@@ -222,7 +228,11 @@ export default function TodoSection({
   initialFilterTaskId?: string | null;
   onInitialFilterConsumed?: () => void;
 } = {}) {
-  const [view, setView] = useState<ViewKey>("myday");
+  // 見ていたビュー・表示切替・絞り込みは次に開いた時も残す(検索語だけはその場限り)
+  const [viewStr, setViewStr] = useSetting("todo.view", "myday");
+  // 保存値が知らないビュー(古い版・壊れた値)ならマイデイにする
+  const view: ViewKey = isViewKey(viewStr) ? viewStr : "myday";
+  const setView = (v: ViewKey) => setViewStr(v);
   const [csvMenuOpen, setCsvMenuOpen] = useState(false);
   // 本日の作業を計測したままToDoを触ることが多いので、このタブでも
   // 下部バーに「今なにを計測しているか」を出す
@@ -239,7 +249,9 @@ export default function TodoSection({
   const [tabBarStyle] = useSetting("ui.bottomTabBarStyle", "pill");
   const [tabBarAdaptiveEmphasisStr] = useSetting("ui.bottomTabBarAdaptiveEmphasis", "false");
   const tabBarAdaptiveEmphasis = tabBarAdaptiveEmphasisStr === "true";
-  const [displayMode, setDisplayMode] = useState<DisplayMode>("list");
+  const [storedDisplayModeStr, setStoredDisplayModeStr] = useSetting("todo.displayMode", "list");
+  const storedDisplayMode: DisplayMode = (DISPLAY_MODES as readonly string[]).includes(storedDisplayModeStr) ? (storedDisplayModeStr as DisplayMode) : "list";
+  const setDisplayMode = (m: DisplayMode) => setStoredDisplayModeStr(m);
   const [showNewList, setShowNewList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
   // タスク追加フォームは既定で畳んでおき、「+ タスクを追加」ボタンで必要な入力欄を
@@ -294,12 +306,21 @@ export default function TodoSection({
   const [copiedFrom, setCopiedFrom] = useState<{ id: string; title: string } | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterTag, setFilterTag] = useState("");
+  const [filterTag, setFilterTag] = useSetting("todo.filterTag", "");
   // 対応状況を複数選んでOR条件で絞り込むビュー(保存済みビューから適用された場合のみ使う)。
   // 単一選択のfilterTagとは独立して持ち、どちらか一方だけが有効になる
-  const [filterTagsMulti, setFilterTagsMulti] = useState<string[]>([]);
-  const [filterCategory, setFilterCategory] = useState("");
-  const [filterCustomer, setFilterCustomer] = useState("");
+  const [filterTagsMultiJson, setFilterTagsMultiJson] = useSetting("todo.filterTagsMulti", "[]");
+  const filterTagsMulti: string[] = useMemo(() => {
+    try {
+      const p = JSON.parse(filterTagsMultiJson);
+      return Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  }, [filterTagsMultiJson]);
+  const setFilterTagsMulti = (tags: string[]) => setFilterTagsMultiJson(JSON.stringify(tags));
+  const [filterCategory, setFilterCategory] = useSetting("todo.filterCategory", "");
+  const [filterCustomer, setFilterCustomer] = useSetting("todo.filterCustomer", "");
   // 対応状況・分類・客先の組み合わせに名前を付けて保存し、1タップで呼び出せるようにする
   const [savedViewsJson, setSavedViewsJson] = useSetting("todo.savedViews", "[]");
   const savedViews: SavedTodoView[] = useMemo(() => {
@@ -374,7 +395,9 @@ export default function TodoSection({
       cancelled = true;
     };
   }, []);
-  const [kanbanAxis, setKanbanAxis] = useState<KanbanAxis>("tag");
+  const [kanbanAxisStr, setKanbanAxisStr] = useSetting("todo.kanbanAxis", "tag");
+  const kanbanAxis: KanbanAxis = kanbanAxisStr === "category" ? "category" : "tag";
+  const setKanbanAxis = (a: KanbanAxis) => setKanbanAxisStr(a);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importResult, setImportResult] = useState<string>("");
   const [showGuideImport, setShowGuideImport] = useState(false);
@@ -388,7 +411,7 @@ export default function TodoSection({
   // 一番古い期日（開始日/作成日）を基準にするかを選べるようにする
   const [ganttAnchor, setGanttAnchor] = useSetting("todo.ganttAnchor", "today");
 
-  const today = todayStr();
+  const today = useToday();
 
   // ドラフトボード(育成選手モードの見出し)で使う。行側とは別に、一覧の親でも参照する
   const {
@@ -447,7 +470,8 @@ export default function TodoSection({
   // 下の「存在しないリストならマイデイへ」に弾かれてしまう。戻したリストが届くまでは弾かない
   const restoringListIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (view.startsWith("list:") && lists && lists.length > 0) {
+    // リストが1つも無い時も、無いリストを見たままにしない
+    if (view.startsWith("list:") && lists) {
       const listId = view.slice(5);
       if (!lists.some((l) => l.id === listId)) {
         if (restoringListIdRef.current === listId) return;
@@ -640,6 +664,15 @@ export default function TodoSection({
     (filterCategory !== "" ? 1 : 0) +
     (filterCustomer !== "" ? 1 : 0);
 
+  // 検索語と絞り込みをまとめて外す(フィルタ欄の「クリア」と、0件時の「条件をクリア」で共通)
+  function clearFilters() {
+    setSearchQuery("");
+    setFilterTag("");
+    setFilterTagsMulti([]);
+    setFilterCategory("");
+    setFilterCustomer("");
+  }
+
   const visibleTasks = useMemo(() => {
     let filtered: TodoTask[];
     if (searchActive) {
@@ -717,9 +750,8 @@ export default function TodoSection({
   // このビューにタスクが1件も無い間は表示切替(かんばん/ガント等)のボタン自体を畳むため、
   // かんばん等を選んだままタスクが0件のビューへ来ると、切り替えの手段が無いまま
   // 空のかんばん盤面等に取り残されてしまう。そうならないよう自動でリストへ戻す
-  useEffect(() => {
-    if (visibleTasks.length === 0 && displayMode !== "list") setDisplayMode("list");
-  }, [visibleTasks.length, displayMode]);
+  // (覚えている表示切替は消さず、0件の間だけリストで見せる)
+  const displayMode: DisplayMode = visibleTasks.length === 0 ? "list" : storedDisplayMode;
 
   const incompleteTasks = visibleTasks.filter((t) => !t.completed);
   const completedTasks = visibleTasks.filter((t) => t.completed);
@@ -889,6 +921,8 @@ export default function TodoSection({
     });
     if (wasViewing) setView("myday");
     showUndoToast(`リスト「${list.title}」と中のタスク${count}件を削除しました`, async () => {
+      // ゴミ箱から既に戻していたら、戻した後の変更を控えで上書きしない
+      if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       // bulkPut: 戻すまでの間に同じIDが作られていても失敗せず、控えた内容で戻す
       await db.transaction("rw", db.todoLists, db.todoTasks, db.trash, async () => {
         if (trashId) await db.trash.delete(trashId);
@@ -1232,6 +1266,7 @@ export default function TodoSection({
     await db.todoTasks.bulkDelete([task.id, ...subs.map((s) => s.id)]);
     if (detailTaskId === task.id) setDetailTaskId(null);
     showUndoToast(`「${task.title}」を削除しました`, async () => {
+      if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       if (trashId) await deleteFromTrash(trashId);
       await db.todoTasks.bulkAdd([task, ...subs]);
     });
@@ -1319,6 +1354,7 @@ export default function TodoSection({
     const trashId = await trashTodos(todoTrashLabel(targets, subs.length), [...targets, ...subs]);
     await db.todoTasks.bulkDelete([...targets.map((t) => t.id), ...subs.map((s) => s.id)]);
     showUndoToast(`${targets.length}件のタスクを削除しました`, async () => {
+      if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       if (trashId) await deleteFromTrash(trashId);
       await db.todoTasks.bulkAdd([...targets, ...subs]);
     });
@@ -1392,6 +1428,7 @@ export default function TodoSection({
     await db.todoTasks.delete(sub.id);
     if (detailTaskId === sub.id) setDetailTaskId(null);
     showUndoToast(`サブタスク「${snapshot.title}」を削除しました`, async () => {
+      if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       await db.transaction("rw", db.todoTasks, db.trash, async () => {
         if (trashId) await db.trash.delete(trashId);
         if (await db.todoTasks.get(snapshot.id)) return;
@@ -1851,7 +1888,7 @@ export default function TodoSection({
         {filterTagsMulti.length > 0 && (
           <span className="flex items-center gap-1 rounded-lg border border-cream/20 bg-ink px-2 py-2 text-xs text-cream">
             対応状況: {filterTagsMulti.join(" / ")}
-            <button className="text-cream/40 hover:text-alert" onClick={() => setFilterTagsMulti([])} aria-label="対応状況の条件を解除">
+            <button className={`${TOUCH_HIT} text-cream/40 hover:text-alert`} onClick={() => setFilterTagsMulti([])} aria-label="対応状況の条件を解除">
               ✕
             </button>
           </span>
@@ -1883,13 +1920,7 @@ export default function TodoSection({
         {searchActive && (
           <button
             className="btn-pill-outline text-xs"
-            onClick={() => {
-              setSearchQuery("");
-              setFilterTag("");
-              setFilterTagsMulti([]);
-              setFilterCategory("");
-              setFilterCustomer("");
-            }}
+            onClick={clearFilters}
           >
             クリア
           </button>
@@ -1905,7 +1936,7 @@ export default function TodoSection({
               <button className="rounded-full px-2 py-0.5 text-xs text-cream hover:bg-cream/10" onClick={() => applySavedView(v)}>
                 {v.name}
               </button>
-              <button className="text-cream/30 hover:text-alert" onClick={() => deleteSavedView(v.id)} aria-label="削除">
+              <button className={`${TOUCH_HIT} text-cream/30 hover:text-alert`} onClick={() => deleteSavedView(v.id)} aria-label={`${v.name}を削除`}>
                 ✕
               </button>
             </div>
@@ -2253,7 +2284,7 @@ export default function TodoSection({
                     </button>
                     <button
                       type="button"
-                      className="text-cream/40 hover:text-alert"
+                      className={`${TOUCH_HIT} text-cream/40 hover:text-alert`}
                       onClick={() => setNewTaskParentId("")}
                       aria-label="親タスクを外す"
                     >
@@ -2288,7 +2319,7 @@ export default function TodoSection({
                       className="flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-sm text-cream"
                     />
                     <button
-                      className="text-cream/40 hover:text-alert"
+                      className={`${TOUCH_HIT} text-cream/40 hover:text-alert`}
                       onClick={() => setNewTaskSubtasks((prev) => prev.filter((_, j) => j !== i))}
                       aria-label={`${sub}を外す`}
                     >
@@ -2657,13 +2688,28 @@ export default function TodoSection({
                   </div>
                 ))
               )}
-              {incompleteTasks.length === 0 && (
-                // 森モードでは切り株から双葉の線画を添える(文言は<p>に残すので、テストの文字列一致は同じ)
-                <div className="empty-state">
-                  <EmptyArt name="todo" />
-                  <p>タスクはありません。</p>
-                </div>
-              )}
+              {incompleteTasks.length === 0 &&
+                (allTasks === undefined ? (
+                  // 読み込み中は「空」を一瞬見せない(小さな仮置きだけ出す)
+                  <div className="space-y-2" aria-busy="true" aria-label="読み込み中">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="h-11 animate-pulse rounded-xl bg-cream/5" />
+                    ))}
+                  </div>
+                ) : searchActive && visibleTasks.length === 0 ? (
+                  <div className="empty-state">
+                    <p>条件に合うタスクはありません</p>
+                    <button className="btn-pill-outline mt-2 text-xs" onClick={clearFilters}>
+                      条件をクリア
+                    </button>
+                  </div>
+                ) : (
+                  // 森モードでは切り株から双葉の線画を添える(文言は<p>に残すので、テストの文字列一致は同じ)
+                  <div className="empty-state">
+                    <EmptyArt name="todo" />
+                    <p>タスクはありません。</p>
+                  </div>
+                ))}
             </div>
 
             {completedTasks.length > 0 && (
@@ -3110,7 +3156,7 @@ function SubtaskRow({
               onClick={() => setMenuOpen((v) => !v)}
               aria-label="サブタスクの操作"
               aria-expanded={menuOpen}
-              className={`-my-1 flex h-7 w-7 items-center justify-center rounded-full text-sm ${menuOpen ? "text-cream" : "text-cream/40 hover:text-cream/70"}`}
+              className={`${TOUCH_HIT} -my-1 flex h-7 w-7 items-center justify-center rounded-full text-sm ${menuOpen ? "text-cream" : "text-cream/40 hover:text-cream/70"}`}
             >
               ⋯
             </button>
@@ -3221,14 +3267,14 @@ function SubtaskRow({
               type="button"
               onClick={() => openMailAttachment(sub.mailFileDataUrl!, sub.mailFileName || "mail.msg")}
               title={`ダウンロードして元のメールを開きます: ${sub.mailSubject ?? sub.mailFileName ?? ""}`}
-              className="text-[11px] text-cream/40 hover:text-cream/70"
+              className={`${TOUCH_HIT} text-[11px] text-cream/40 hover:text-cream/70`}
             >
               📧
             </button>
             <button
               onClick={() => onUpdateSubtaskMail(sub, undefined)}
-              className="text-[9px] text-cream/30 hover:text-alert"
-              aria-label="添付メールを削除"
+              className={`${TOUCH_HIT} text-[9px] text-cream/30 hover:text-alert`}
+              aria-label={`${sub.title}の添付メールを削除`}
             >
               ✕
             </button>
@@ -3254,7 +3300,7 @@ function SubtaskRow({
         />
         {sub.dueDate && (
           <button
-            className="shrink-0 text-[10px] text-cream/40 hover:text-alert"
+            className={`${TOUCH_HIT} shrink-0 text-[10px] text-cream/40 hover:text-alert`}
             onClick={() => onUpdateSubtaskDueDate(sub, "")}
             aria-label="期日をクリア"
           >
@@ -3263,11 +3309,15 @@ function SubtaskRow({
         )}
       </div>
       {subImageExpanded && sub.imageDataUrl && (
-        <div
-          className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setSubImageExpanded(false)}
+        <Modal
+          title={`${sub.title}の画像`}
+          variant="bare"
+          closeOnBackdrop
+          scrimClassName="bg-black/80"
+          panelClassName="max-h-[85vh] max-w-full"
+          onClose={() => setSubImageExpanded(false)}
         >
-          <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
+          <div>
             <img src={sub.imageDataUrl} alt={sub.title} className="max-h-[75vh] max-w-full rounded-lg object-contain" />
             <div className="mt-2 flex justify-center gap-2">
               <button
@@ -3284,7 +3334,7 @@ function SubtaskRow({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -3351,7 +3401,7 @@ function TaskBlock({
   selected?: boolean;
   onToggleSelect?: () => void;
 }) {
-  const today = todayStr();
+  const today = useToday();
   // 設定画面の「完了済みサブタスクの表示」と同じキーを共有する。ここで切り替えても
   // 設定画面側の表示に反映され、逆に設定画面で変えてもここに反映される(単一の値)
   const [showCompletedSubtasksStr, setShowCompletedSubtasksStr] = useSetting("todo.showCompletedSubtasks", "true");
@@ -3593,6 +3643,9 @@ function SortableTaskBlock(props: {
   );
 }
 
+// 小さな✕などの押せる範囲を、指で触る端末でだけ広げる(見た目・行の高さは変えず、透明な::afterで40px角ほどにする)
+const TOUCH_HIT = "relative [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-3";
+
 // 行の右端の小さなアイコン。見た目はそのまま、押せる範囲を40px角にする(負の余白で行の高さ・幅を抑える)
 const ROW_ICON_HIT = "-mx-1 -my-2.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full";
 
@@ -3613,7 +3666,7 @@ function TaskRow({
   onToggleImportant: () => void;
   onOpenDetail: () => void;
 }) {
-  const today = todayStr();
+  const today = useToday();
   const [autoImportantTag] = useSetting("todo.autoImportantTag", "対応中");
   const { themedMode, wordingEnabled } = useVisualMode();
   const dueDate = effectiveDueDate(task, subtasks);
@@ -3879,7 +3932,7 @@ function TaskRow({
 // 「今日・明日・来週月曜・期日なし」を出し、選んだら「元に戻す」付きで知らせる
 function QuickDueButton({ task }: { task: TodoTask }) {
   const [open, setOpen] = useState(false);
-  const today = todayStr();
+  const today = useToday();
   const d = new Date(`${today}T00:00:00`);
   const toNextMonday = ((8 - d.getDay()) % 7) || 7;
   const options: { label: string; value: string | undefined }[] = [
@@ -3976,7 +4029,7 @@ function TaskImageField({ task }: { task: TodoTask }) {
           <button className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80" onClick={() => inputRef.current?.click()}>
             画像を差し替え
           </button>
-          <button className="text-xs text-alert" onClick={removeImage}>
+          <button className="text-xs text-alert" onClick={removeImage} aria-label={`${task.title}の画像を削除`}>
             削除
           </button>
         </>
@@ -3986,16 +4039,21 @@ function TaskImageField({ task }: { task: TodoTask }) {
         </button>
       )}
       {expanded && imageDataUrl && (
-        <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setExpanded(false)}>
-          <div className="max-h-[85vh] max-w-full" onClick={(e) => e.stopPropagation()}>
-            <img src={imageDataUrl} alt="" className="max-h-[75vh] max-w-full rounded-lg object-contain" />
-            <div className="mt-2 flex justify-center">
-              <button className="btn-pill text-xs" onClick={() => setExpanded(false)}>
-                閉じる
-              </button>
-            </div>
+        <Modal
+          title={`${task.title}の画像`}
+          variant="bare"
+          closeOnBackdrop
+          scrimClassName="bg-black/80"
+          panelClassName="max-h-[85vh] max-w-full"
+          onClose={() => setExpanded(false)}
+        >
+          <img src={imageDataUrl} alt="" className="max-h-[75vh] max-w-full rounded-lg object-contain" />
+          <div className="mt-2 flex justify-center">
+            <button className="btn-pill text-xs" onClick={() => setExpanded(false)}>
+              閉じる
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -4059,7 +4117,7 @@ function TaskMailField({ task }: { task: TodoTask }) {
           <button className="text-xs text-cream/50 underline decoration-dotted hover:text-cream/80" onClick={() => inputRef.current?.click()}>
             差し替え
           </button>
-          <button className="text-xs text-alert" onClick={removeMail}>
+          <button className="text-xs text-alert" onClick={removeMail} aria-label={`${task.title}の添付メールを削除`}>
             削除
           </button>
         </>
@@ -4359,6 +4417,7 @@ function TaskDetailModal({
     const trashId = await trashTodos(todoTrashLabel([sub]), [sub]);
     await db.todoTasks.delete(sub.id);
     showUndoToast(`サブタスク「${sub.title}」を削除しました`, async () => {
+      if (await isTrashItemGone(trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       if (trashId) await deleteFromTrash(trashId);
       await db.todoTasks.add(sub);
     });
@@ -4581,14 +4640,14 @@ function TaskDetailModal({
                 />
                 {sub.dueDate && (
                   <button
-                    className="shrink-0 text-[11px] text-cream/40 hover:text-alert"
+                    className={`${TOUCH_HIT} shrink-0 text-[11px] text-cream/40 hover:text-alert`}
                     onClick={() => updateSubtaskDueDate(sub, "")}
                     aria-label="期日をクリア"
                   >
                     ✕
                   </button>
                 )}
-                <button className="text-cream/40 hover:text-alert" onClick={() => deleteSubtask(sub)} aria-label="削除">
+                <button className={`${TOUCH_HIT} text-cream/40 hover:text-alert`} onClick={() => deleteSubtask(sub)} aria-label={`${sub.title}を削除`}>
                   ✕
                 </button>
               </div>

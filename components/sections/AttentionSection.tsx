@@ -205,7 +205,7 @@ export default function AttentionSection() {
                     )}
                   </div>
                   <div>
-                    <div className="mb-1 text-xs font-bold text-cream/60">📁 案件の期限切れ内訳（分類別）</div>
+                    <div className="mb-1 text-xs font-bold text-cream/60">📁 案件の期限切れ内訳（区分別）</div>
                     {backlogBreakdown.projectByCategory.length === 0 ? (
                       <p className="text-xs text-cream/40">期限切れの案件はありません。</p>
                     ) : (

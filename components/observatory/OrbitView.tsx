@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { computeProjectProgress } from "@/lib/projectStage";
-import { daysBetweenDateStrs, todayStr } from "@/lib/time";
+import { daysBetweenDateStrs } from "@/lib/time";
+import { useToday } from "@/lib/useToday";
 
 // 案件を惑星、その案件に紐づくToDoを衛星として公転させる観測法。
 // 期日が近いものほど内側を速く回り、期限切れのものは軌道が崩れて中心へ落ちていく。
@@ -32,7 +33,7 @@ function hashHue(text: string): number {
 }
 
 export default function OrbitView() {
-  const today = todayStr();
+  const today = useToday();
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const runningTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);

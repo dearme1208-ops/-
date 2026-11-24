@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { parseBreakRanges } from "@/lib/breaks";
-import { useSetting } from "@/lib/settings";
+import { useSetting, DEFAULT_WORK_START } from "@/lib/settings";
 import { formatDateJp, shiftDateStr } from "@/lib/time";
 import { hmToMin, layoutTimeboxes, minToHm } from "@/lib/timebox";
 import { useWorkContext } from "@/lib/useWorkContext";
@@ -42,7 +42,7 @@ export default function TimeboxModal({ today, onClose }: { today: string; onClos
   const [target, setTarget] = useState<"today" | "tomorrow">(() => (new Date().getHours() >= 15 ? "tomorrow" : "today"));
   const date = target === "today" ? today : shiftDateStr(today, 1);
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).sortBy("order"), [date]);
-  const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
+  const [standardWorkStart] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
   const [breakRangesStr] = useSetting("today.provisionalBreakRanges", "[]");
   const breaks = useMemo(() => parseBreakRanges(breakRangesStr), [breakRangesStr]);
   const [gapStr, setGapStr] = useSetting("today.timeboxGapMinutes", "5");

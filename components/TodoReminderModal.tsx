@@ -5,17 +5,18 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useSetting } from "@/lib/settings";
 import { effectiveDueDate } from "@/lib/todo";
-import { daysBetweenDateStrs, formatDateJp, todayStr } from "@/lib/time";
+import { daysBetweenDateStrs, formatDateJp } from "@/lib/time";
 import { notify } from "@/lib/notifications";
 import { cardOverrunClass, emphasisTextClass, useVisualMode } from "@/lib/theme";
 import type { TodoTask } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import { useToday } from "@/lib/useToday";
 
 // Todoの期日が近づいている・過ぎている未完了タスクを、タブに関わらずアプリを開いた際に
 // ポップアップで知らせる。「期限切れ」タブのような常設一覧と違い、こちらは見落とし防止の
 // ための能動的な通知。1回のセッション中に確認・詳細確認した項目は再表示しない
 export default function TodoReminderModal({ onViewDetail }: { onViewDetail: (taskId: string) => void }) {
-  const today = todayStr();
+  const today = useToday();
   const [reminderEnabledStr] = useSetting("todo.reminderEnabled", "true");
   const reminderEnabled = reminderEnabledStr === "true";
   const [daysBeforeStr] = useSetting("todo.reminderDaysBefore", "1");

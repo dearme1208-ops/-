@@ -35,7 +35,7 @@ const OBSERVATORIES: ObservatoryDef[] = [
   { key: "strata", label: "⛏ 地層", icon: "mountain", summary: "手つかずの期間が長いToDoほど深く埋まる、先送りの地層断面" },
   { key: "weather", label: "🌦 業務天気予報", icon: "sun", summary: "この先の期日の混み具合を週間天気予報として出す" },
   { key: "orbit", label: "🪐 軌道", icon: "compass", summary: "案件を惑星、ToDoを衛星として公転させる。期限切れは軌道が崩れる" },
-  { key: "soundtrack", label: "🎵 サウンドトラック", icon: "play", summary: "1日の実績を音楽に変換して再生する。カテゴリごとに音色が変わる" },
+  { key: "soundtrack", label: "🎵 サウンドトラック", icon: "play", summary: "1日の実績を音楽に変換して再生する。区分ごとに音色が変わる" },
   { key: "metro", label: "🚇 路線図", icon: "pin", summary: "案件を路線、段階を駅として地下鉄の路線図に描く" },
   { key: "parallel", label: "🌓 並行世界", icon: "moon", summary: "理想通りに働いた並行世界の自分と、現実の自分の差を並べて見る" },
 ];

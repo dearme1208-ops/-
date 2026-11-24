@@ -257,7 +257,7 @@ export default function SoundtrackView() {
           </div>
 
           <ul className="mt-2 space-y-0.5 text-[10px] leading-relaxed text-cream/40">
-            <li>・音の高さ = 業務区分（区分ごとに固定の音。同じ区分は毎回同じ高さで鳴ります）</li>
+            <li>・音の高さ = 区分（区分ごとに固定の音。同じ区分は毎回同じ高さで鳴ります）</li>
             <li>・音色 = 区分の並び順で sine / triangle / square / saw を割り当て</li>
             <li>・音の長さ = 作業時間　音量 = その日の最長作業に対する比率</li>
             <li>・調 = 記録した体調（不調の日は短調になります）</li>

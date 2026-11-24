@@ -5,8 +5,8 @@ import { dueLabel, parseCompose } from "@/lib/claudeCompose";
 import { commitCapture, QUICK_CAPTURE_EVENT, suggestDest, type CaptureDest } from "@/lib/quickCapture";
 import { showUndoToast } from "@/lib/toast";
 import { isSubmitEnter, shouldIgnoreShortcut } from "@/lib/keyboard";
-import { todayStr } from "@/lib/time";
 import Modal from "@/components/ui/Modal";
+import { useToday } from "@/lib/useToday";
 
 // 「ひとこと入力」の画面。どのモード・どのタブからでも開ける(道具・本日の作業の操作列・
 // キーボードの「/」・他のアプリの「共有」)。書いた内容をその場で読み取って見せ、
@@ -26,7 +26,7 @@ export default function QuickCaptureHost() {
   const [dest, setDest] = useState<CaptureDest | null>(null);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const today = todayStr();
+  const today = useToday();
   const parsed = useMemo(() => parseCompose(text, today), [text, today]);
   const suggested = suggestDest(text, parsed);
   const chosen = dest ?? suggested;

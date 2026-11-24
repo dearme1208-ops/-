@@ -6,7 +6,7 @@ import { db, uid } from "@/lib/db";
 import { todoLabel } from "@/lib/todoLabel";
 import { findOrCreateMasterTask } from "@/lib/master";
 import { finishDailyTask, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
-import { formatHms, formatMsClock, todayStr } from "@/lib/time";
+import { formatHms, formatMsClock } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { computeGrowthStage, ADVENTURER_STAGES } from "@/lib/growth";
 import { fireConfetti } from "@/lib/confetti";
@@ -16,6 +16,7 @@ import DailyChallengePanel from "@/components/DailyChallengePanel";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { dailyTaskLinksOf, type DailyTaskLinks } from "@/lib/workContext";
 import { useWorkContext } from "@/lib/useWorkContext";
+import { useToday } from "@/lib/useToday";
 
 // computeGrowthStageの分岐(0h/1h/2h/4h/6h/8h以上)と対応させた、各ランクの開始時間(h)
 const RANK_HOUR_THRESHOLDS = [0, 1, 2, 4, 6, 8];
@@ -35,7 +36,7 @@ export default function AdventurerQuestSection() {
   const mode = themedMode ?? "adventurer";
   const [showDailyChallengeStr] = useSetting("today.showDailyChallenge", "true");
   const showDailyChallenge = showDailyChallengeStr === "true";
-  const today = todayStr();
+  const today = useToday();
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const todoTasks = useLiveQuery(() => db.todoTasks.toArray(), []);
   const records = useLiveQuery(() => db.records.toArray(), []);
@@ -355,7 +356,7 @@ export default function AdventurerQuestSection() {
                       value={newCategory}
                       onChange={(e) => setNewCategory(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && encounterNewMonster()}
-                      placeholder="大項目（例: 経理）"
+                      placeholder="区分（例: 経理）"
                       className="min-w-[7rem] flex-1 rounded-md border border-cream/20 bg-ink/30 px-2.5 py-1.5 text-xs text-cream placeholder:text-cream/30"
                     />
                     <input

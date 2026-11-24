@@ -818,7 +818,7 @@ export default function GanttSection() {
               onChange={(e) => setGroupModeStr(e.target.checked ? "category" : "detail")}
               className="h-4 w-4 rounded border-cream/30 bg-ink accent-cream"
             />
-            大項目でまとめて表示
+            区分でまとめて表示
           </label>
         )}
         <label className="flex items-center gap-2 text-xs text-cream/60">

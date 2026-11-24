@@ -23,6 +23,7 @@ import { downloadTextFile } from "@/lib/report";
 import { daysBetweenDateStrs, formatDateJp, shiftDateStr, todayStr } from "@/lib/time";
 import type { ProjectItem, WbsNode } from "@/lib/types";
 import Modal from "@/components/ui/Modal";
+import { useToday } from "@/lib/useToday";
 
 // ===== WBS(作業分解構成図)ダイアログ =====
 //
@@ -65,7 +66,7 @@ export default function WbsDialog({ project, onClose }: { project: ProjectItem; 
 
   const [pxPerDay, setPxPerDay] = useState(DEFAULT_PX_PER_DAY);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const today = todayStr();
+  const today = useToday();
 
   const dataRange = useMemo(() => computeWbsDateRange(list), [list]);
   const { rangeStartStr, totalDays } = useMemo(() => {

@@ -300,7 +300,7 @@ export default function OvertimeSection() {
                   setBreakdownDetail(null);
                 }}
               >
-                業務区分別
+                区分別
               </button>
               <button
                 className={breakdownMode === "project" ? "btn-pill text-xs" : "btn-pill-outline text-xs"}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { finishDailyTask, segmentsAccumulatedMs, pauseDailyTask } from "@/lib/tasks";
-import { formatHms, todayStr } from "@/lib/time";
+import { formatHms } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { useSetting } from "@/lib/settings";
 import { useVisualMode } from "@/lib/theme";
@@ -36,6 +36,7 @@ import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import type { DailyTask, MasterTask } from "@/lib/types";
 import { useWorkContext } from "@/lib/useWorkContext";
 import Modal from "@/components/ui/Modal";
+import { useToday } from "@/lib/useToday";
 
 // Lobotomy Corporation風モード(管理局モード)の「本日の作業」タブ。
 //
@@ -55,7 +56,7 @@ export default function LobotomySection() {
   const workCtx = useWorkContext();
   const { wordingEnabled } = useVisualMode();
   const W = lobotomyWordsFor(wordingEnabled);
-  const today = todayStr();
+  const today = useToday();
 
   const dailyTasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const records = useLiveQuery(() => db.records.toArray(), []);

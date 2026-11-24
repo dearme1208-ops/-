@@ -78,6 +78,12 @@ export function ConfirmHost() {
     setItems(queue);
     return () => {
       listeners.delete(setItems);
+      // 窓の置き場所が無くなったら、答えを待っている呼び出し元を取り消し扱いで終わらせる(待ったままにしない)
+      if (listeners.size === 0) {
+        const pending = queue;
+        queue = [];
+        for (const r of pending) r.resolve(r.notice ? "ok" : "cancel");
+      }
     };
   }, []);
   // 一度に出すのは先頭の1つだけ(答えたら次を出す)

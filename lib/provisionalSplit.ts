@@ -1,5 +1,5 @@
 import { db, uid } from "./db";
-import { findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
+import { deleteMasterIfUnused, findMasterTask, findOrCreateMasterTask, recomputeEstimateFromRecords } from "./master";
 import { findMergeTargetRecord, finishDailyTask, mergeRecordSegments, sameAttribution } from "./tasks";
 import type { DailyTask, TimeSegment, WorkRecord } from "./types";
 import { dailyTaskLinksOf } from "./workContext";
@@ -173,6 +173,8 @@ export interface DoneTaskEditUndo {
   tasks: { id: string; before: DailyTask | null; after: DailyTask | null }[];
   records: { id: string; before: WorkRecord | null; after: WorkRecord | null }[];
   masterIds: string[];
+  /** この操作で新しく作った作業マスタ。取り消した時、どこからも使われていなければ消す */
+  createdMasterId?: string;
 }
 
 export type DoneTaskEditResult =
@@ -307,15 +309,40 @@ export interface SplitSecondPart {
  * 「時間を加算」で足した分(区間に現れない分)は前半に残す。
  * secondPart で後半を別の作業にした時は、後半の秒数・区間を元の実績から新しい作業の実績へ移す
  */
+/** 完了した作業を atMs で前後に分けられるか確かめ、分けた区間を返す(書き込みはしない) */
+function planDoneSplit(task: DailyTask, atMs: number): { before: TimeSegment[]; after: TimeSegment[]; afterMs: number; firstMs: number } | { rejected: string } {
+  if (task.segments.some((s) => s.end === undefined)) return { rejected: "計測中の区間がある作業は分けられません" };
+  const { before, after: rawAfter } = splitSegmentsAt(task.segments, atMs);
+  const after = rawAfter.filter((s) => s.end! > s.start);
+  const afterMs = closedSegmentsMs(after);
+  const firstMs = task.accumulatedMs - afterMs;
+  if (before.length === 0 || after.length === 0 || afterMs <= 0 || firstMs <= 0) {
+    return { rejected: "開始と終了の間の、作業していた時刻を選んでください" };
+  }
+  return { before, after, afterMs, firstMs };
+}
+
 export async function splitDoneDailyTask(taskId: string, atMs: number, secondPart?: SplitSecondPart): Promise<DoneTaskEditResult> {
   const pre = await db.dailyTasks.get(taskId);
   if (!pre || pre.status !== "done") return { status: "rejected", message: "完了した作業だけ分けられます" };
+  // 作業マスタを作る前に分けられるか確かめる(断る時に使われないマスタを残さない)
+  const prePlan = planDoneSplit(pre, atMs);
+  if ("rejected" in prePlan) return { status: "rejected", message: prePlan.rejected };
   let second: { category: string; name: string; masterTaskId?: string } | undefined;
+  let createdMasterId: string | undefined;
   if (secondPart) {
     const category = secondPart.category.trim();
     const name = secondPart.name.trim();
     if (!category || !name) return { status: "rejected", message: "後半の区分と作業名を入れてください" };
-    const masterTaskId = secondPart.masterTaskId ?? (category === pre.category && name === pre.name ? pre.masterTaskId : undefined) ?? (await findOrCreateMasterTask(category, name)).id;
+    let masterTaskId = secondPart.masterTaskId ?? (category === pre.category && name === pre.name ? pre.masterTaskId : undefined);
+    if (!masterTaskId) {
+      const found = await findMasterTask(category, name);
+      if (found) masterTaskId = found.id;
+      else {
+        masterTaskId = (await findOrCreateMasterTask(category, name)).id;
+        createdMasterId = masterTaskId;
+      }
+    }
     second = { category, name, masterTaskId };
   }
   const oldMasterId = await masterIdOf(pre);
@@ -327,14 +354,9 @@ export async function splitDoneDailyTask(taskId: string, atMs: number, secondPar
   const result = await withUndo([taskId], [oldRec?.id, newTarget?.id].filter((v): v is string => !!v), async () => {
     const cur = await db.dailyTasks.get(taskId);
     if (!cur || cur.status !== "done" || JSON.stringify(cur) !== JSON.stringify(pre)) return { rejected: "その間に作業が変わりました。もう一度お試しください" };
-    if (cur.segments.some((s) => s.end === undefined)) return { rejected: "計測中の区間がある作業は分けられません" };
-    const { before, after: rawAfter } = splitSegmentsAt(cur.segments, atMs);
-    const after = rawAfter.filter((s) => s.end! > s.start);
-    const afterMs = closedSegmentsMs(after);
-    const firstMs = cur.accumulatedMs - afterMs;
-    if (before.length === 0 || after.length === 0 || afterMs <= 0 || firstMs <= 0) {
-      return { rejected: "開始と終了の間の、作業していた時刻を選んでください" };
-    }
+    const plan = planDoneSplit(cur, atMs);
+    if ("rejected" in plan) return plan;
+    const { before, after, afterMs, firstMs } = plan;
     const firstEnd = before[before.length - 1].end!;
     await db.dailyTasks.update(cur.id, {
       segments: before,
@@ -375,7 +397,13 @@ export async function splitDoneDailyTask(taskId: string, atMs: number, secondPar
     }
     return { taskId: newId, recordIdsAfter };
   });
-  if (result.status === "ok") await recomputeAll(result.undo.masterIds);
+  if (result.status === "ok") {
+    if (createdMasterId) result.undo.createdMasterId = createdMasterId;
+    await recomputeAll(result.undo.masterIds);
+  } else if (createdMasterId) {
+    // その間に作業が変わって断った時は、作ったマスタを残さない
+    await deleteMasterIfUnused(createdMasterId);
+  }
   return result;
 }
 
@@ -459,6 +487,10 @@ export async function undoDoneTaskEdit(u: DoneTaskEditUndo): Promise<boolean> {
     }
     return true;
   });
-  if (ok) await recomputeAll(u.masterIds);
+  if (ok) {
+    // 分けた時に作ったマスタは、もう使われていなければ消す
+    if (u.createdMasterId) await deleteMasterIfUnused(u.createdMasterId);
+    await recomputeAll(u.masterIds);
+  }
   return ok;
 }

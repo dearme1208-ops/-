@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { useHomeFilteredRecords } from "@/lib/homeMode";
 import { formatHms } from "@/lib/time";
+import { useSetting } from "@/lib/settings";
 import { computeHourDowMatrix } from "@/lib/heatmap";
 import { computeCalendarHeatmap, heatLevel } from "@/lib/calendarHeatmap";
 import ScrollFadeHint from "@/components/ui/ScrollFadeHint";
@@ -25,7 +26,10 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 
 export default function HeatmapSection() {
   const [viewMode, setViewMode] = useState<ViewMode>("category");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
+  // 並べ順は次回も保つ
+  const [sortKeyStr, setSortKeyStr] = useSetting("heatmap.sortKey", "name");
+  const sortKey: SortKey = SORT_OPTIONS.some((o) => o.key === sortKeyStr) ? (sortKeyStr as SortKey) : "name";
+  const setSortKey = (k: SortKey) => setSortKeyStr(k);
   const recordsRaw = useLiveQuery(() => db.records.toArray(), []);
   const records = useHomeFilteredRecords(recordsRaw);
   // ホバーが効かないタッチ端末でも確実に内訳を見せるため、セルタップ時にここへ整形済みの

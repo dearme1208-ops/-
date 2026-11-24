@@ -5,10 +5,10 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, uid } from "@/lib/db";
 import { computeRemainingEstimatedSeconds, finishDailyTask, pauseDailyTask } from "@/lib/tasks";
 import { findOrCreateMasterTask } from "@/lib/master";
-import { formatHms, todayStr } from "@/lib/time";
+import { formatHms } from "@/lib/time";
 import { computeStreakDays } from "@/lib/streak";
 import { useVisualMode } from "@/lib/theme";
-import { useSetting } from "@/lib/settings";
+import { useSetting, DEFAULT_WORK_START, DEFAULT_WORK_END } from "@/lib/settings";
 import {
   buildAltimeter,
   buildClimbLog,
@@ -37,6 +37,7 @@ import {
 import MasterTaskPicker from "@/components/sections/MasterTaskPicker";
 import Modal from "@/components/ui/Modal";
 import type { DailyTask, MasterTask } from "@/lib/types";
+import { useToday } from "@/lib/useToday";
 
 // 登山モードの「本日の作業」タブ。
 //
@@ -54,7 +55,7 @@ type PanelKey = "route" | "peaks" | "pack" | "log";
 export default function MountainSection() {
   const { wordingEnabled } = useVisualMode();
   const W = mountainWordsFor(wordingEnabled);
-  const today = todayStr();
+  const today = useToday();
   const [now, setNow] = useState(() => Date.now());
   const [panel, setPanel] = useState<PanelKey>("route");
   const [showPicker, setShowPicker] = useState(false);
@@ -73,8 +74,8 @@ export default function MountainSection() {
   const projects = useLiveQuery(() => db.projects.toArray(), []) ?? [];
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []) ?? [];
   const records = useLiveQuery(() => db.records.toArray(), []) ?? [];
-  const [workStart] = useSetting("today.standardWorkStart", "08:30");
-  const [workEnd] = useSetting("today.standardWorkEnd", "17:30");
+  const [workStart] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
+  const [workEnd] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
 
   const realTasks = useMemo(() => tasks.filter((t) => !t.isProvisional), [tasks]);
   const legs = useMemo(() => buildLegs(realTasks, now), [realTasks, now]);
@@ -423,7 +424,7 @@ export default function MountainSection() {
                 <input
                   value={freeCategory}
                   onChange={(e) => setFreeCategory(e.target.value)}
-                  placeholder="業務区分"
+                  placeholder="区分"
                   className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
                 />
                 <input

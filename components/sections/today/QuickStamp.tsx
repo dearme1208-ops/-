@@ -340,7 +340,7 @@ function ConvertStampDialog({ span, defaultEnd, onClose }: { span: StampSpan; de
         )}
         <div className="grid grid-cols-2 gap-2">
           <input
-            placeholder="業務区分（大項目）"
+            placeholder="区分"
             value={category}
             onChange={(e) => {
               pickedRef.current = true;

@@ -28,7 +28,7 @@ export default function IslandsView({ items, onOpen }: AltViewProps) {
     <div className="panel p-4">
       <h3 className="mb-3 font-display text-base font-bold">🗺 諸島マップ</h3>
       <p className="mb-4 text-xs text-cream/50">
-        分類(カテゴリ)ごとに島を1つ。嵐雲は期限切れを抱えている島の目印です。
+        分類ごとに島を1つ。嵐雲は期限切れを抱えている島の目印です。
       </p>
       <div
         className="flex flex-wrap items-start gap-6 rounded-2xl p-6"

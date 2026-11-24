@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { formatHms, todayStr } from "@/lib/time";
+import { formatHms } from "@/lib/time";
 import type { WorkRecord } from "@/lib/types";
 import { useVisualMode } from "@/lib/theme";
+import { useToday } from "@/lib/useToday";
 
 // 1か月 = 1本の年輪。中心が一番古い月で、外側へ行くほど新しい。
 // 年輪の太さ=その月の作業時間、色の濃さ=1日あたりの密度、
@@ -85,7 +86,7 @@ function buildMonths(records: WorkRecord[], today: string): MonthRing[] {
 
 export default function TreeRingsView() {
   const records = useLiveQuery(() => db.records.toArray(), []);
-  const today = todayStr();
+  const today = useToday();
   const [hovered, setHovered] = useState<MonthRing | null>(null);
   // 年輪は全モード共通の部品。木の色にするのは森モードだけ(他モードは基調色の濃淡のまま)
   const { homeMode } = useVisualMode();

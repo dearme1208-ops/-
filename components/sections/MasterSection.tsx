@@ -1,5 +1,6 @@
 "use client";
 
+import { isTrashItemGone, TRASH_ALREADY_RESTORED_MESSAGE } from "@/lib/trash";
 import { readTextFile } from "@/lib/csv";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -17,6 +18,7 @@ import {
   undoRenameMasterTask,
 } from "@/lib/master";
 import { isImeComposing, isSubmitEnter } from "@/lib/keyboard";
+import { useToday } from "@/lib/useToday";
 import { recomputeOutliersForAll, clearManualOverride } from "@/lib/outliers";
 import { formatHms, parseHmsToSeconds, todayStr } from "@/lib/time";
 import { masterTasksToCsv, masterCsvTemplate, parseMasterCsv } from "@/lib/masterCsv";
@@ -90,10 +92,14 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 ];
 
 export default function MasterSection() {
+  const today = useToday();
   const workCtx = useWorkContext();
   const { adventurerMode } = useVisualMode();
   const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
+  // 並べ順・アーカイブ表示は次回も保つ(検索語はその場限り)
+  const [sortKeyStr, setSortKeyStr] = useSetting("master.sortKey", "name");
+  const sortKey: SortKey = SORT_OPTIONS.some((o) => o.key === sortKeyStr) ? (sortKeyStr as SortKey) : "name";
+  const setSortKey = (k: SortKey) => setSortKeyStr(k);
   // 折りたたみは次回もそのまま残す(大項目ごとに畳んでも、タブを再訪するたびに
   // 全部展開に戻ってしまうと畳んだ意味が無いため)
   const [collapsed, setCollapsed] = useCollapsedPanels("master.collapsedPanels");
@@ -101,7 +107,8 @@ export default function MasterSection() {
   // 本日の作業タブの「簡易表示（アイコンのみ）」設定を、一覧の「+ 追加」ボタンでも共有する
   const [simpleButtonsStr] = useSetting("today.simpleButtons", "false");
   const simpleButtons = simpleButtonsStr === "true";
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchivedStr, setShowArchivedStr] = useSetting("master.showArchived", "false");
+  const showArchived = showArchivedStr === "true";
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   // CSV・再計算の道具の折りたたみ
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -148,8 +155,8 @@ export default function MasterSection() {
   const [showClientAggregation, setShowClientAggregation] = useState(false);
 
   const staleCandidates = useMemo(
-    () => computeStaleMasterTasks(tasks ?? [], records ?? [], staleDays, todayStr()),
-    [tasks, records, staleDays]
+    () => computeStaleMasterTasks(tasks ?? [], records ?? [], staleDays, today),
+    [tasks, records, staleDays, today]
   );
 
   // 区分/作業名が完全一致する、生きている作業マスタの重複候補
@@ -312,6 +319,7 @@ export default function MasterSection() {
     const deleted = await deleteMasterTask(t.id);
     if (!deleted) return;
     showUndoToast(`「${t.category} / ${t.name}」をマスタから削除しました`, async () => {
+      if (await isTrashItemGone(deleted.trashId)) return showUndoToast(TRASH_ALREADY_RESTORED_MESSAGE);
       await restoreDeletedMasterTask(deleted);
     });
   }
@@ -490,7 +498,7 @@ export default function MasterSection() {
           </div>
           <button
             className={showArchived ? "btn-pill px-3 py-1.5 text-xs" : "btn-pill-outline px-3 py-1.5 text-xs"}
-            onClick={() => setShowArchived((v) => !v)}
+            onClick={() => setShowArchivedStr(showArchived ? "false" : "true")}
             aria-pressed={showArchived}
           >
             アーカイブ済みを表示
@@ -556,7 +564,7 @@ export default function MasterSection() {
       {showNew && (
         <div className="panel space-y-2 p-4">
           <input
-            placeholder="業務区分（大項目）"
+            placeholder="区分"
             value={newCategory}
             onChange={(e) => {
               setNewCategory(e.target.value);
@@ -901,7 +909,7 @@ export default function MasterSection() {
                           アーカイブ
                         </button>
                       )}
-                      <button className="text-xs text-alert" onClick={() => deleteTask(t)}>
+                      <button className="text-xs text-alert" onClick={() => deleteTask(t)} aria-label={`「${t.category} / ${t.name}」を削除`}>
                         削除
                       </button>
                     </div>
@@ -1144,7 +1152,7 @@ function MonsterCard({
             封印する
           </button>
         )}
-        <button className="text-alert" onClick={onDelete}>
+        <button className="text-alert" onClick={onDelete} aria-label={`「${task.name}」を削除`}>
           削除
         </button>
       </div>

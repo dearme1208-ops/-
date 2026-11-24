@@ -122,7 +122,7 @@ export default function MasterTaskPicker({
             {search.trim() && (
               <div className="flex flex-col gap-1.5 sm:flex-row">
                 <input
-                  placeholder="業務区分（大項目）"
+                  placeholder="区分"
                   value={newCategoryValue}
                   onChange={(e) => setNewCategory(e.target.value)}
                   className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"

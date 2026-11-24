@@ -185,7 +185,7 @@ test.describe("画面の整理", () => {
     await page.locator("button", { hasText: "案件を登録" }).click();
     await expect(page.locator("input[type=date]").first()).toHaveValue(jstDate(7));
     await page.getByPlaceholder("件名").first().fill("J社見積");
-    await page.getByPlaceholder("業務区分（大項目）").first().fill("営業");
+    await page.getByPlaceholder("区分", { exact: true }).first().fill("営業");
     await page.getByPlaceholder("詳細作業名").first().fill("見積");
     await page.locator("button", { hasText: /^追加$/ }).first().click();
     await expect(page.getByText(`案件「J社見積」を登録しました（期日 ${jstDate(7)}）`)).toBeVisible();

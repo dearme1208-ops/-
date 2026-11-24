@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkContext } from "@/lib/useWorkContext";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { formatClock, formatHms, todayStr } from "@/lib/time";
+import { formatClock, formatHms } from "@/lib/time";
 import type { DailyTask } from "@/lib/types";
+import { useToday } from "@/lib/useToday";
 
 const DEFAULT_PX_PER_MIN = 4;
 const MIN_PX_PER_MIN = 0.5;
@@ -35,7 +36,8 @@ export default function CompletedTasksGantt({
   // 案件の段階・ToDoのサブタスクから追加した作業は「案件名 › 作業名」で出す(lib/workContext.ts)
   const workLabel = useWorkContext().label;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isToday = date === todayStr();
+  const today = useToday();
+  const isToday = date === today;
 
   const doneTasks = useMemo(
     () =>

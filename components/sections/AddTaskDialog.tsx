@@ -379,7 +379,7 @@ export default function AddTaskDialog({
   const freeFields = (
     <div className="space-y-2">
       <div>
-        <label className="mb-1 block text-xs text-cream/60">業務区分（大項目）</label>
+        <label className="mb-1 block text-xs text-cream/60">区分</label>
         <input
           placeholder="例: 資料作成"
           value={category}
@@ -413,7 +413,7 @@ export default function AddTaskDialog({
       </div>
       {sameNameElsewhere.length > 0 && (
         <div className="rounded-lg border border-cream/20 p-2 text-xs text-cream/75" data-testid="same-name-hint">
-          <p>同じ作業名が、別の業務区分で登録されています。同じ作業なら、こちらを選ぶと集計が分かれません。</p>
+          <p>同じ作業名が、別の区分で登録されています。同じ作業なら、こちらを選ぶと集計が分かれません。</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {sameNameElsewhere.map((m) => (
               <button key={m.id} type="button" className="btn-pill-outline px-2.5 py-1 text-xs" onClick={() => setCategory(m.category)}>
@@ -557,7 +557,7 @@ export default function AddTaskDialog({
             <input
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              placeholder="業務区分"
+              placeholder="区分"
               className="min-w-0 flex-1 rounded-lg border border-cream/20 bg-ink px-2 py-1.5 text-xs text-cream"
             />
             <input

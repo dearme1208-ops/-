@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import { useSetting } from "@/lib/settings";
+import { useSetting, DEFAULT_WORK_START, DEFAULT_WORK_END } from "@/lib/settings";
 import { baseAccumulatedMs, segmentsAccumulatedMs } from "@/lib/tasks";
-import { formatHms, parseHourStr, todayStr } from "@/lib/time";
+import { formatHms, parseHourStr } from "@/lib/time";
+import { useToday } from "@/lib/useToday";
 
 // 工程表の「今」を生体モニタとして出す観測法。数値は全部その場の実データから引く:
 // 心拍=今日の負荷、血圧=予定に対する進み具合、SpO2=記録した体調、体温=定時外の時間。
@@ -25,13 +26,13 @@ function ecgAmplitude(t: number): number {
 }
 
 export default function VitalMonitorView() {
-  const today = todayStr();
+  const today = useToday();
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(today).toArray(), [today]);
   const todos = useLiveQuery(() => db.todoTasks.toArray(), []);
   const projects = useLiveQuery(() => db.projects.toArray(), []);
   const conditionLogs = useLiveQuery(() => db.conditionLogs.where("date").equals(today).toArray(), [today]);
-  const [standardWorkStart] = useSetting("today.standardWorkStart", "08:00");
-  const [standardWorkEnd] = useSetting("today.standardWorkEnd", "17:00");
+  const [standardWorkStart] = useSetting("today.standardWorkStart", DEFAULT_WORK_START);
+  const [standardWorkEnd] = useSetting("today.standardWorkEnd", DEFAULT_WORK_END);
   const [soundOn, setSoundOn] = useState(false);
 
   const [now, setNow] = useState(() => Date.now());

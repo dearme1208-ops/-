@@ -27,7 +27,7 @@ export default function GardenView({ items, onOpen }: AltViewProps) {
     <div className="panel p-4">
       <h3 className="mb-3 font-display text-base font-bold">🌳 庭園栽培記録</h3>
       <p className="mb-4 text-xs text-cream/50">
-        カテゴリごとに1つの花壇。進捗が進むほど育ち、期限切れは萎れて表示されます。
+        分類ごとに1つの花壇。進捗が進むほど育ち、期限切れは萎れて表示されます。
       </p>
       <div className="space-y-4">
         {beds.map(([name, list]) => (

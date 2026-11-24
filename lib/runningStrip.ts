@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db";
 import { computePredictedSecondsByTaskId, computeRunningOverrunTaskIds, segmentsAccumulatedMs } from "./tasks";
-import { formatHms, todayStr } from "./time";
+import { formatHms } from "./time";
 import { useWorkContext } from "./useWorkContext";
+import { useToday } from "./useToday";
 
 // 下部のタブバーは「実行中(3)」のように件数しか出さないため、何を計測しているのか・
 // どれだけ経ったのかは一覧まで見に行かないと分からなかった。
@@ -32,7 +33,7 @@ export interface RunningStripInfo {
 /** externalNow: 呼び出し側がすでに毎秒進む時計を持っている場合に渡す(渡すと、ここでは時計を回さない。
  *  本日の作業は自前の時計と合わせて毎秒2回描き直していた) */
 export function useRunningTaskStrip(externalNow?: number): RunningStripInfo | null {
-  const date = todayStr();
+  const date = useToday();
   const tasks = useLiveQuery(() => db.dailyTasks.where("date").equals(date).toArray(), [date]);
   const masterTasks = useLiveQuery(() => db.masterTasks.toArray(), []);
   const workCtx = useWorkContext();

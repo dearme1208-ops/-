@@ -763,7 +763,7 @@ export const TAB_LABELS_BY_MODE: Record<ThemedMode, Record<TabKey, string>> = {
   claude: {
     today: "ワークスペース",
     todo: "タスク",
-    projects: "プロジェクト",
+    projects: "案件",
     master: "スキル",
     homeMaster: "家庭モード管理",
     template: "ルーティン",

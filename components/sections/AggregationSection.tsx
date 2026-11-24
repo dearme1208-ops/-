@@ -65,7 +65,10 @@ const WEEKDAY_PERIOD_LABELS: Record<FiscalPeriodType, string> = {
 export default function AggregationSection() {
   const [period, setPeriod] = useState<PeriodType>("all");
   const [fiscalYear, setFiscalYear] = useState(() => currentFiscalYear());
-  const [sortBy, setSortBy] = useState<SortMetric>("total");
+  // 並べ順は次回も保つ
+  const [sortByStr, setSortByStr] = useSetting("aggregation.sortBy", "total");
+  const sortBy: SortMetric = sortByStr === "avg" || sortByStr === "count" ? sortByStr : "total";
+  const setSortBy = (v: SortMetric) => setSortByStr(v);
   // 折りたたみは次回もそのまま残す(タブを再訪するたびに全パネルが展開に
   // 戻ってしまうと、興味のない集計まで毎回スクロールで通過することになるため)
   const [collapsed, setCollapsed] = useCollapsedPanels("aggregation.collapsedPanels");
@@ -331,7 +334,7 @@ export default function AggregationSection() {
       </div>
 
       <CollapsiblePanel
-        title="業務区分別の内訳"
+        title="区分別の内訳"
         collapsed={!!collapsed.categoryDonut}
         onToggle={() => toggleSection("categoryDonut")}
       >
@@ -628,7 +631,7 @@ export default function AggregationSection() {
         >
           <CategoryChainGraph nodes={categoryChain.nodes} edges={categoryChain.edges} formatValue={formatHms} />
           <p className="mt-3 text-xs text-cream/40">
-            日ごとに開始時刻順で並べたとき、大項目が切り替わったタイミングを「前→次」の矢印として数えています。丸の大きさは合計時間、矢印の太さは切り替わった回数です。
+            日ごとに開始時刻順で並べたとき、区分が切り替わったタイミングを「前→次」の矢印として数えています。丸の大きさは合計時間、矢印の太さは切り替わった回数です。
           </p>
         </CollapsiblePanel>
       )}
